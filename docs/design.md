@@ -363,7 +363,7 @@ against workspace names, branch names, PR numbers, and dock names.
   Intended as a tmux keybinding for rapid triage.
 
 **Tmux keybinding**: `bay go --next-waiting` bound to a configurable
-tmux key (e.g., `prefix + w`). Installed by `bay setup`.
+tmux key (default `M-w`, i.e., option/alt + w). Installed by `bay setup`.
 
 **Picker display format**:
 ```
@@ -537,7 +537,7 @@ interval_seconds = 3
 
 [keybinding]
 add_prompt = "P"           # prefix + P: capture prompt pattern
-next_waiting = "w"         # prefix + w: bay go --next-waiting
+next_waiting = "M-w"       # option/alt + w: bay go --next-waiting
 ```
 
 **Template files** live in `~/.config/bay/templates/`. Example

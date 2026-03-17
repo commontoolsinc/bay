@@ -38,7 +38,7 @@ interval_seconds = 3
 
 [keybinding]
 add_prompt = "P"
-next_waiting = "w"
+next_waiting = "M-w"
 `
 	cfg, err := Parse(data)
 	if err != nil {

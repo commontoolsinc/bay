@@ -202,7 +202,7 @@ interval_seconds = 3               # how often to check for waiting agents
 
 [keybinding]
 add_prompt = "P"                   # prefix + P: capture a waiting pattern
-next_waiting = "w"                 # prefix + w: jump to next waiting agent
+next_waiting = "M-w"               # option/alt + w: jump to next waiting agent
 ```
 
 ## Templates
@@ -286,8 +286,8 @@ bay go --waiting                         # picker filtered to waiting agents
 bay go --next-waiting                    # cycle to next waiting agent
 ```
 
-`bay go --next-waiting` is designed to be bound to a tmux key (e.g.,
-`prefix + w`) for rapid triage of waiting agents.
+`bay go --next-waiting` is bound to `option + w` (`M-w`) by default
+for rapid triage of waiting agents.
 
 ### Updating workspace metadata
 

@@ -67,7 +67,7 @@ interval_seconds = 3
 
 [keybinding]
 add_prompt = "P"
-next_waiting = "w"
+next_waiting = "M-w"
 `
 				if err := os.WriteFile(configPath, []byte(defaultConfig), 0o644); err != nil {
 					return fmt.Errorf("writing config: %w", err)
@@ -230,7 +230,7 @@ func installKeybindings(reader *bufio.Reader, configPath string) {
 
 	nextWaitingKey := cfg.Keybind.NextWaiting
 	if nextWaitingKey == "" {
-		nextWaitingKey = "w"
+		nextWaitingKey = "M-w"
 	}
 	addPromptKey := cfg.Keybind.AddPrompt
 	if addPromptKey == "" {
@@ -246,12 +246,12 @@ func installKeybindings(reader *bufio.Reader, configPath string) {
 
 	var additions []string
 
-	bayNextWaiting := fmt.Sprintf("bind-key %s run-shell 'bay go --next-waiting'", nextWaitingKey)
+	bayNextWaiting := tmuxBindCmd(nextWaitingKey, "bay go --next-waiting")
 	if !strings.Contains(content, "bay go --next-waiting") {
 		additions = append(additions, bayNextWaiting)
 	}
 
-	bayAddPrompt := fmt.Sprintf("bind-key %s run-shell 'bay add-prompt'", addPromptKey)
+	bayAddPrompt := tmuxBindCmd(addPromptKey, "bay add-prompt")
 	if !strings.Contains(content, "bay add-prompt") {
 		additions = append(additions, bayAddPrompt)
 	}
@@ -277,4 +277,13 @@ func installKeybindings(reader *bufio.Reader, configPath string) {
 	for _, line := range additions {
 		fmt.Printf("    %s\n", line)
 	}
+}
+
+// tmuxBindCmd generates a tmux bind-key command. Keys starting with "M-"
+// use bind-key -n (no prefix required); others use plain bind-key (prefix required).
+func tmuxBindCmd(key, shellCmd string) string {
+	if strings.HasPrefix(key, "M-") {
+		return fmt.Sprintf("bind-key -n %s run-shell '%s'", key, shellCmd)
+	}
+	return fmt.Sprintf("bind-key %s run-shell '%s'", key, shellCmd)
 }
