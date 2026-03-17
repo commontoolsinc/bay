@@ -47,6 +47,9 @@ func newWsNewCmd() *cobra.Command {
 				if tmuxErr != nil {
 					return fmt.Errorf("not in a tmux session; specify dock name explicitly")
 				}
+				if _, ok := eng.Config.Docks[dock]; !ok {
+					return fmt.Errorf("current tmux session %q is not a bay dock; specify dock name explicitly", dock)
+				}
 				opts.Dock = dock
 			}
 			opts.Shell = shell
