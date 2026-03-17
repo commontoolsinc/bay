@@ -1,0 +1,5 @@
+# Bay binary (built at repo root)
+/bay
+
+# Claude Code local settings
+.claude/

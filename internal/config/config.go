@@ -1,0 +1,161 @@
+// Package config handles loading and saving bay's configuration file.
+package config
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/BurntSushi/toml"
+)
+
+// Config represents the top-level bay configuration.
+type Config struct {
+	Agents  map[string]AgentConfig  `toml:"agents"`
+	Repos   map[string]RepoConfig   `toml:"repos"`
+	Docks   map[string]DockConfig   `toml:"docks"`
+	Monitor MonitorConfig           `toml:"monitor"`
+	Keybind KeybindingConfig        `toml:"keybinding"`
+}
+
+// AgentConfig defines an agent type.
+type AgentConfig struct {
+	Command    string `toml:"command"`
+	ConfigFile string `toml:"config_file"`
+}
+
+// RepoConfig defines a managed repository.
+type RepoConfig struct {
+	Path        string `toml:"path"`
+	WorktreeDir string `toml:"worktree_dir"`
+}
+
+// EffectiveWorktreeDir returns the worktree directory, defaulting to {path}-worktrees.
+func (r RepoConfig) EffectiveWorktreeDir() string {
+	if r.WorktreeDir != "" {
+		return ExpandPath(r.WorktreeDir)
+	}
+	return ExpandPath(r.Path) + "-worktrees"
+}
+
+// DockConfig defines a dock (tmux session group).
+type DockConfig struct {
+	Repo                string   `toml:"repo"`
+	Agent               string   `toml:"agent"`
+	AgentArgs           []string `toml:"agent_args"`
+	AgentConfigTemplate string   `toml:"agent_config_template"`
+}
+
+// MonitorConfig configures the pane monitor.
+type MonitorConfig struct {
+	IntervalSeconds int `toml:"interval_seconds"`
+}
+
+// EffectiveInterval returns the monitor interval, defaulting to 3 seconds.
+func (m MonitorConfig) EffectiveInterval() int {
+	if m.IntervalSeconds <= 0 {
+		return 3
+	}
+	return m.IntervalSeconds
+}
+
+// KeybindingConfig configures tmux keybindings.
+type KeybindingConfig struct {
+	AddPrompt   string `toml:"add_prompt"`
+	NextWaiting string `toml:"next_waiting"`
+}
+
+// DefaultConfigDir returns the default config directory.
+func DefaultConfigDir() string {
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		return filepath.Join(xdg, "bay")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "bay")
+}
+
+// DefaultDataDir returns the default data directory.
+func DefaultDataDir() string {
+	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
+		return filepath.Join(xdg, "bay")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".local", "share", "bay")
+}
+
+// DefaultConfigPath returns the default path to config.toml.
+func DefaultConfigPath() string {
+	return filepath.Join(DefaultConfigDir(), "config.toml")
+}
+
+// Load reads and parses a config file.
+func Load(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading config: %w", err)
+	}
+	return Parse(string(data))
+}
+
+// Parse parses TOML config data.
+func Parse(data string) (*Config, error) {
+	var cfg Config
+	if _, err := toml.Decode(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parsing config: %w", err)
+	}
+	if cfg.Agents == nil {
+		cfg.Agents = make(map[string]AgentConfig)
+	}
+	if cfg.Repos == nil {
+		cfg.Repos = make(map[string]RepoConfig)
+	}
+	if cfg.Docks == nil {
+		cfg.Docks = make(map[string]DockConfig)
+	}
+	return &cfg, nil
+}
+
+// Save writes the config to a file.
+func Save(path string, cfg *Config) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("creating config dir: %w", err)
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("creating config file: %w", err)
+	}
+	defer f.Close()
+	enc := toml.NewEncoder(f)
+	return enc.Encode(cfg)
+}
+
+// Validate checks the config for errors.
+func (c *Config) Validate() []string {
+	var errs []string
+	for name, dock := range c.Docks {
+		if dock.Repo != "" {
+			if _, ok := c.Repos[dock.Repo]; !ok {
+				errs = append(errs, fmt.Sprintf("dock %q references unknown repo %q", name, dock.Repo))
+			}
+		}
+		if dock.Agent != "" {
+			if _, ok := c.Agents[dock.Agent]; !ok {
+				errs = append(errs, fmt.Sprintf("dock %q references unknown agent %q", name, dock.Agent))
+			}
+		}
+	}
+	return errs
+}
+
+// ExpandPath expands ~ to the user's home directory.
+func ExpandPath(path string) string {
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return path
+		}
+		return filepath.Join(home, path[2:])
+	}
+	return path
+}

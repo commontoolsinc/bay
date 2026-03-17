@@ -1,0 +1,463 @@
+package tmux
+
+import (
+	"strings"
+	"testing"
+)
+
+// Verify Mock and Real implement Interface at compile time.
+var _ Interface = (*Mock)(nil)
+var _ Interface = (*Real)(nil)
+
+// --- Session tests ---
+
+func TestNewSession(t *testing.T) {
+	m := NewMock()
+	if err := m.NewSession("work"); err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	has, err := m.HasSession("work")
+	if err != nil {
+		t.Fatalf("HasSession: %v", err)
+	}
+	if !has {
+		t.Error("expected HasSession to return true after NewSession")
+	}
+}
+
+func TestNewSession_Duplicate(t *testing.T) {
+	m := NewMock()
+	if err := m.NewSession("work"); err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if err := m.NewSession("work"); err == nil {
+		t.Error("expected error creating duplicate session")
+	}
+}
+
+func TestHasSession_Missing(t *testing.T) {
+	m := NewMock()
+	has, err := m.HasSession("nope")
+	if err != nil {
+		t.Fatalf("HasSession: %v", err)
+	}
+	if has {
+		t.Error("expected HasSession to return false for missing session")
+	}
+}
+
+func TestListSessions(t *testing.T) {
+	m := NewMock()
+	m.NewSession("alpha")
+	m.NewSession("beta")
+	sessions, err := m.ListSessions()
+	if err != nil {
+		t.Fatalf("ListSessions: %v", err)
+	}
+	if len(sessions) != 2 {
+		t.Fatalf("expected 2 sessions, got %d", len(sessions))
+	}
+	names := map[string]bool{}
+	for _, s := range sessions {
+		names[s.Name] = true
+	}
+	if !names["alpha"] || !names["beta"] {
+		t.Errorf("unexpected session names: %v", sessions)
+	}
+}
+
+func TestKillSession(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	if err := m.KillSession("work"); err != nil {
+		t.Fatalf("KillSession: %v", err)
+	}
+	has, _ := m.HasSession("work")
+	if has {
+		t.Error("session should not exist after KillSession")
+	}
+}
+
+func TestKillSession_Missing(t *testing.T) {
+	m := NewMock()
+	if err := m.KillSession("nope"); err == nil {
+		t.Error("expected error killing non-existent session")
+	}
+}
+
+// --- Window tests ---
+
+func TestNewWindow(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	id, err := m.NewWindow("work", "editor", "/home")
+	if err != nil {
+		t.Fatalf("NewWindow: %v", err)
+	}
+	if !strings.HasPrefix(id, "@") {
+		t.Errorf("expected window ID starting with @, got %q", id)
+	}
+}
+
+func TestNewWindow_NoSession(t *testing.T) {
+	m := NewMock()
+	_, err := m.NewWindow("nope", "editor", "/home")
+	if err == nil {
+		t.Error("expected error creating window in non-existent session")
+	}
+}
+
+func TestListWindows(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	m.NewWindow("work", "editor", "/home")
+	m.NewWindow("work", "shell", "/tmp")
+	windows, err := m.ListWindows("work")
+	if err != nil {
+		t.Fatalf("ListWindows: %v", err)
+	}
+	if len(windows) != 2 {
+		t.Fatalf("expected 2 windows, got %d", len(windows))
+	}
+	if windows[0].Name != "editor" || windows[1].Name != "shell" {
+		t.Errorf("unexpected window names: %v, %v", windows[0].Name, windows[1].Name)
+	}
+	if windows[0].Index != 0 || windows[1].Index != 1 {
+		t.Errorf("unexpected window indices: %d, %d", windows[0].Index, windows[1].Index)
+	}
+}
+
+func TestRenameWindow(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	id, _ := m.NewWindow("work", "old", "/home")
+	if err := m.RenameWindow(id, "new"); err != nil {
+		t.Fatalf("RenameWindow: %v", err)
+	}
+	windows, _ := m.ListWindows("work")
+	found := false
+	for _, w := range windows {
+		if w.ID == id && w.Name == "new" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("window was not renamed")
+	}
+}
+
+func TestRenameWindow_Missing(t *testing.T) {
+	m := NewMock()
+	if err := m.RenameWindow("@999", "new"); err == nil {
+		t.Error("expected error renaming non-existent window")
+	}
+}
+
+func TestKillWindow(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	id, _ := m.NewWindow("work", "editor", "/home")
+	if err := m.KillWindow(id); err != nil {
+		t.Fatalf("KillWindow: %v", err)
+	}
+	windows, _ := m.ListWindows("work")
+	for _, w := range windows {
+		if w.ID == id {
+			t.Error("window should not exist after KillWindow")
+		}
+	}
+}
+
+func TestKillWindow_Missing(t *testing.T) {
+	m := NewMock()
+	if err := m.KillWindow("@999"); err == nil {
+		t.Error("expected error killing non-existent window")
+	}
+}
+
+func TestWindowExists(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	id, _ := m.NewWindow("work", "editor", "/home")
+	exists, err := m.WindowExists(id)
+	if err != nil {
+		t.Fatalf("WindowExists: %v", err)
+	}
+	if !exists {
+		t.Error("expected window to exist")
+	}
+	exists, _ = m.WindowExists("@999")
+	if exists {
+		t.Error("expected non-existent window to return false")
+	}
+}
+
+func TestFindWindowByName(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	id, _ := m.NewWindow("work", "editor", "/home")
+	m.NewWindow("work", "shell", "/tmp")
+	found, err := m.FindWindowByName("work", "editor")
+	if err != nil {
+		t.Fatalf("FindWindowByName: %v", err)
+	}
+	if found != id {
+		t.Errorf("expected %q, got %q", id, found)
+	}
+}
+
+func TestFindWindowByName_NotFound(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	_, err := m.FindWindowByName("work", "nope")
+	if err == nil {
+		t.Error("expected error for missing window name")
+	}
+}
+
+func TestSetGetWindowOption(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	id, _ := m.NewWindow("work", "editor", "/home")
+	if err := m.SetWindowOption(id, "remain-on-exit", "on"); err != nil {
+		t.Fatalf("SetWindowOption: %v", err)
+	}
+	val, err := m.GetWindowOption(id, "remain-on-exit")
+	if err != nil {
+		t.Fatalf("GetWindowOption: %v", err)
+	}
+	if val != "on" {
+		t.Errorf("expected option value %q, got %q", "on", val)
+	}
+}
+
+func TestGetWindowOption_Missing(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	id, _ := m.NewWindow("work", "editor", "/home")
+	_, err := m.GetWindowOption(id, "nonexistent")
+	if err == nil {
+		t.Error("expected error for missing option")
+	}
+}
+
+func TestSelectWindow(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	id, _ := m.NewWindow("work", "editor", "/home")
+	if err := m.SelectWindow(id); err != nil {
+		t.Fatalf("SelectWindow: %v", err)
+	}
+	// Verify the call was recorded.
+	if len(m.Calls) == 0 {
+		t.Fatal("expected calls to be tracked")
+	}
+	last := m.Calls[len(m.Calls)-1]
+	if last.Method != "SelectWindow" {
+		t.Errorf("expected last call to be SelectWindow, got %q", last.Method)
+	}
+}
+
+// --- Pane tests ---
+
+func TestSplitWindow(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	winID, _ := m.NewWindow("work", "editor", "/home")
+	paneID, err := m.SplitWindow(winID, "h", "/home")
+	if err != nil {
+		t.Fatalf("SplitWindow: %v", err)
+	}
+	if !strings.HasPrefix(paneID, "%") {
+		t.Errorf("expected pane ID starting with %%, got %q", paneID)
+	}
+}
+
+func TestSplitWindow_MissingWindow(t *testing.T) {
+	m := NewMock()
+	_, err := m.SplitWindow("@999", "h", "/home")
+	if err == nil {
+		t.Error("expected error splitting non-existent window")
+	}
+}
+
+func TestListPanes(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	winID, _ := m.NewWindow("work", "editor", "/home")
+	m.SplitWindow(winID, "h", "/home")
+	panes, err := m.ListPanes(winID)
+	if err != nil {
+		t.Fatalf("ListPanes: %v", err)
+	}
+	// NewWindow creates one initial pane, SplitWindow adds another.
+	if len(panes) != 2 {
+		t.Fatalf("expected 2 panes, got %d", len(panes))
+	}
+}
+
+func TestKillPane(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	winID, _ := m.NewWindow("work", "editor", "/home")
+	paneID, _ := m.SplitWindow(winID, "v", "/home")
+	if err := m.KillPane(paneID); err != nil {
+		t.Fatalf("KillPane: %v", err)
+	}
+	panes, _ := m.ListPanes(winID)
+	for _, p := range panes {
+		if p.ID == paneID {
+			t.Error("pane should not exist after KillPane")
+		}
+	}
+}
+
+func TestKillPane_Missing(t *testing.T) {
+	m := NewMock()
+	if err := m.KillPane("%999"); err == nil {
+		t.Error("expected error killing non-existent pane")
+	}
+}
+
+func TestSendKeys(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	winID, _ := m.NewWindow("work", "editor", "/home")
+	panes, _ := m.ListPanes(winID)
+	paneID := panes[0].ID
+	if err := m.SendKeys(paneID, "echo hello"); err != nil {
+		t.Fatalf("SendKeys: %v", err)
+	}
+	found := false
+	for _, c := range m.Calls {
+		if c.Method == "SendKeys" && c.Args[0] == paneID && c.Args[1] == "echo hello" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected SendKeys call to be recorded")
+	}
+}
+
+func TestCapturePane(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	winID, _ := m.NewWindow("work", "editor", "/home")
+	panes, _ := m.ListPanes(winID)
+	paneID := panes[0].ID
+	// Set capture content on the mock.
+	m.SetCaptureContent(paneID, "line1\nline2\nline3")
+	output, err := m.CapturePane(paneID, 10)
+	if err != nil {
+		t.Fatalf("CapturePane: %v", err)
+	}
+	if output != "line1\nline2\nline3" {
+		t.Errorf("unexpected capture output: %q", output)
+	}
+}
+
+func TestRespawnPane(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	winID, _ := m.NewWindow("work", "editor", "/home")
+	panes, _ := m.ListPanes(winID)
+	paneID := panes[0].ID
+	if err := m.RespawnPane(paneID, "/tmp", "bash"); err != nil {
+		t.Fatalf("RespawnPane: %v", err)
+	}
+	found := false
+	for _, c := range m.Calls {
+		if c.Method == "RespawnPane" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected RespawnPane call to be recorded")
+	}
+}
+
+func TestGetPanePID(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	winID, _ := m.NewWindow("work", "editor", "/home")
+	panes, _ := m.ListPanes(winID)
+	paneID := panes[0].ID
+	pid, err := m.GetPanePID(paneID)
+	if err != nil {
+		t.Fatalf("GetPanePID: %v", err)
+	}
+	if pid <= 0 {
+		t.Errorf("expected positive PID, got %d", pid)
+	}
+}
+
+func TestGetPanePID_Missing(t *testing.T) {
+	m := NewMock()
+	_, err := m.GetPanePID("%999")
+	if err == nil {
+		t.Error("expected error for non-existent pane")
+	}
+}
+
+// --- Current context tests ---
+
+func TestCurrentSession(t *testing.T) {
+	m := NewMock()
+	m.SetCurrentSession("work")
+	name, err := m.CurrentSession()
+	if err != nil {
+		t.Fatalf("CurrentSession: %v", err)
+	}
+	if name != "work" {
+		t.Errorf("expected %q, got %q", "work", name)
+	}
+}
+
+func TestCurrentSession_NotSet(t *testing.T) {
+	m := NewMock()
+	_, err := m.CurrentSession()
+	if err == nil {
+		t.Error("expected error when current session not set")
+	}
+}
+
+func TestCurrentWindowID(t *testing.T) {
+	m := NewMock()
+	m.SetCurrentWindowID("@3")
+	id, err := m.CurrentWindowID()
+	if err != nil {
+		t.Fatalf("CurrentWindowID: %v", err)
+	}
+	if id != "@3" {
+		t.Errorf("expected @3, got %q", id)
+	}
+}
+
+func TestCurrentWindowID_NotSet(t *testing.T) {
+	m := NewMock()
+	_, err := m.CurrentWindowID()
+	if err == nil {
+		t.Error("expected error when current window ID not set")
+	}
+}
+
+// --- Call tracking tests ---
+
+func TestCallTracking(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	m.HasSession("work")
+	m.ListSessions()
+	if len(m.Calls) != 3 {
+		t.Fatalf("expected 3 calls, got %d", len(m.Calls))
+	}
+	if m.Calls[0].Method != "NewSession" {
+		t.Errorf("expected first call NewSession, got %q", m.Calls[0].Method)
+	}
+	if m.Calls[1].Method != "HasSession" {
+		t.Errorf("expected second call HasSession, got %q", m.Calls[1].Method)
+	}
+	if m.Calls[2].Method != "ListSessions" {
+		t.Errorf("expected third call ListSessions, got %q", m.Calls[2].Method)
+	}
+}
