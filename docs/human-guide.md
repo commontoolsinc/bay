@@ -27,14 +27,7 @@ without managing the plumbing by hand.
 ## Installation
 
 ```
-# Homebrew (macOS)
-brew install commontoolsinc/tap/bay
-
-# Pre-built binary (macOS/Linux)
-# Download from GitHub releases
-
-# From source
-go install github.com/commontoolsinc/bay@latest
+go install github.com/commontoolsinc/bay/cmd/bay@latest
 ```
 
 ## Quick start

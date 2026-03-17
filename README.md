@@ -24,7 +24,7 @@ bay recover              # reconstruct everything after reboot
 ## Install
 
 ```
-go install github.com/commontoolsinc/bay@latest
+go install github.com/commontoolsinc/bay/cmd/bay@latest
 ```
 
 Then run `bay setup` to create your config and install shell completions.
