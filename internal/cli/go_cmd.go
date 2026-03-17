@@ -6,8 +6,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/mpsalisbury/bay/internal/engine"
-	"github.com/mpsalisbury/bay/internal/nav"
+	"github.com/commontoolsinc/bay/internal/engine"
+	"github.com/commontoolsinc/bay/internal/nav"
 	"github.com/spf13/cobra"
 )
 

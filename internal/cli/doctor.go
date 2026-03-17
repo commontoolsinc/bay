@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/mpsalisbury/bay/internal/config"
+	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/spf13/cobra"
 )
 

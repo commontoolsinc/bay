@@ -1,4 +1,4 @@
-module github.com/mpsalisbury/bay
+module github.com/commontoolsinc/bay
 
 go 1.26.1
 

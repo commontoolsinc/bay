@@ -12,10 +12,10 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/mpsalisbury/bay/internal/config"
-	"github.com/mpsalisbury/bay/internal/git"
-	"github.com/mpsalisbury/bay/internal/manifest"
-	"github.com/mpsalisbury/bay/internal/tmux"
+	"github.com/commontoolsinc/bay/internal/config"
+	"github.com/commontoolsinc/bay/internal/git"
+	"github.com/commontoolsinc/bay/internal/manifest"
+	"github.com/commontoolsinc/bay/internal/tmux"
 )
 
 // Engine is the core coordinator for all bay operations.

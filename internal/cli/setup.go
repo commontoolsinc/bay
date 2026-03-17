@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mpsalisbury/bay/internal/config"
+	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/spf13/cobra"
 )
 

@@ -28,13 +28,13 @@ without managing the plumbing by hand.
 
 ```
 # Homebrew (macOS)
-brew install mpsalisbury/tap/bay
+brew install commontoolsinc/tap/bay
 
 # Pre-built binary (macOS/Linux)
 # Download from GitHub releases
 
 # From source
-go install github.com/mpsalisbury/bay@latest
+go install github.com/commontoolsinc/bay@latest
 ```
 
 ## Quick start

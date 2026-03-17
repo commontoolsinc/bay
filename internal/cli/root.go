@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/mpsalisbury/bay/internal/config"
-	"github.com/mpsalisbury/bay/internal/engine"
-	gitpkg "github.com/mpsalisbury/bay/internal/git"
-	tmuxpkg "github.com/mpsalisbury/bay/internal/tmux"
+	"github.com/commontoolsinc/bay/internal/config"
+	"github.com/commontoolsinc/bay/internal/engine"
+	gitpkg "github.com/commontoolsinc/bay/internal/git"
+	tmuxpkg "github.com/commontoolsinc/bay/internal/tmux"
 	"github.com/spf13/cobra"
 )
 

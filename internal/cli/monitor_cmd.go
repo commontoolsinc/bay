@@ -7,9 +7,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/mpsalisbury/bay/internal/config"
-	"github.com/mpsalisbury/bay/internal/monitor"
-	tmuxpkg "github.com/mpsalisbury/bay/internal/tmux"
+	"github.com/commontoolsinc/bay/internal/config"
+	"github.com/commontoolsinc/bay/internal/monitor"
+	tmuxpkg "github.com/commontoolsinc/bay/internal/tmux"
 	"github.com/spf13/cobra"
 )
 

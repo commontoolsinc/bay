@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mpsalisbury/bay/internal/manifest"
-	"github.com/mpsalisbury/bay/internal/tmux"
+	"github.com/commontoolsinc/bay/internal/manifest"
+	"github.com/commontoolsinc/bay/internal/tmux"
 )
 
 // Entry represents a single navigable target (one tmux window within a workspace).

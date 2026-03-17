@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mpsalisbury/bay/internal/manifest"
-	"github.com/mpsalisbury/bay/internal/tmux"
+	"github.com/commontoolsinc/bay/internal/manifest"
+	"github.com/commontoolsinc/bay/internal/tmux"
 )
 
 // buildTestManifest creates a manifest with two docks and several workspaces.

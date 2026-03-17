@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mpsalisbury/bay/internal/config"
-	tmuxpkg "github.com/mpsalisbury/bay/internal/tmux"
+	"github.com/commontoolsinc/bay/internal/config"
+	tmuxpkg "github.com/commontoolsinc/bay/internal/tmux"
 	"github.com/spf13/cobra"
 )
 

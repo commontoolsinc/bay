@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/mpsalisbury/bay/internal/cli"
+	"github.com/commontoolsinc/bay/internal/cli"
 )
 
 func main() {

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mpsalisbury/bay/internal/manifest"
-	"github.com/mpsalisbury/bay/internal/tmux"
+	"github.com/commontoolsinc/bay/internal/manifest"
+	"github.com/commontoolsinc/bay/internal/tmux"
 )
 
 // --- TestStripANSI ---
