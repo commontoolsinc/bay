@@ -12,7 +12,7 @@ import (
 )
 
 func TestFindCmd(t *testing.T) {
-	root := NewRootCmd()
+	root := NewRootCmd("test")
 
 	tests := []struct {
 		path    string
@@ -37,7 +37,7 @@ func TestFindCmd(t *testing.T) {
 }
 
 func TestCompletionsRegistered(t *testing.T) {
-	root := NewRootCmd()
+	root := NewRootCmd("test")
 
 	// These commands should have ValidArgsFunction set
 	withCompletions := []string{

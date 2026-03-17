@@ -48,7 +48,7 @@ func newEngine() (*engine.Engine, error) {
 }
 
 // NewRootCmd creates the root bay command.
-func NewRootCmd() *cobra.Command {
+func NewRootCmd(version string) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "bay",
 		Short: "Multi-session workspace management for tmux and git worktrees",
@@ -71,6 +71,7 @@ func NewRootCmd() *cobra.Command {
 		newSetupCmd(),
 		newMonitorCmd(),
 		newAddPromptCmd(),
+		newVersionCmd(version),
 	)
 
 	RegisterCompletion(root)

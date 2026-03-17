@@ -5,7 +5,7 @@ import (
 )
 
 func TestNewRootCmd(t *testing.T) {
-	root := NewRootCmd()
+	root := NewRootCmd("test")
 	if root.Use != "bay" {
 		t.Errorf("root command use = %q, want bay", root.Use)
 	}
@@ -14,7 +14,7 @@ func TestNewRootCmd(t *testing.T) {
 	expected := map[string]bool{
 		"dock": false, "ws": false, "win": false, "pane": false,
 		"go": false, "ls": false, "recover": false, "doctor": false,
-		"setup": false, "monitor": false, "add-prompt": false,
+		"setup": false, "monitor": false, "add-prompt": false, "version": false,
 	}
 	for _, cmd := range root.Commands() {
 		if _, ok := expected[cmd.Name()]; ok {
@@ -29,7 +29,7 @@ func TestNewRootCmd(t *testing.T) {
 }
 
 func TestDockSubcommands(t *testing.T) {
-	root := NewRootCmd()
+	root := NewRootCmd("test")
 	dock, _, err := root.Find([]string{"dock"})
 	if err != nil {
 		t.Fatalf("finding dock: %v", err)
@@ -48,7 +48,7 @@ func TestDockSubcommands(t *testing.T) {
 }
 
 func TestWsSubcommands(t *testing.T) {
-	root := NewRootCmd()
+	root := NewRootCmd("test")
 	ws, _, err := root.Find([]string{"ws"})
 	if err != nil {
 		t.Fatalf("finding ws: %v", err)
@@ -67,7 +67,7 @@ func TestWsSubcommands(t *testing.T) {
 }
 
 func TestWinSubcommands(t *testing.T) {
-	root := NewRootCmd()
+	root := NewRootCmd("test")
 	win, _, err := root.Find([]string{"win"})
 	if err != nil {
 		t.Fatalf("finding win: %v", err)
