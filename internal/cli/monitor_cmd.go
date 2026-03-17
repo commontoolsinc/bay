@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -36,6 +37,9 @@ func newMonitorWithConfig() (*monitor.Monitor, error) {
 	}
 	cfg, err := config.Load(path)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("no config file found at %s\nRun 'bay setup' to get started.", path)
+		}
 		return nil, err
 	}
 
