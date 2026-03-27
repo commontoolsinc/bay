@@ -957,3 +957,118 @@ func TestWsNew_DuplicateDisplayName(t *testing.T) {
 		t.Error("expected error for duplicate display name")
 	}
 }
+
+func TestPlaceholder_CleanedOnWsNew(t *testing.T) {
+	// When a session is created, it gets a placeholder window.
+	// Creating a workspace should clean it up.
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	windows, _ := mockTmux.ListWindows("labs")
+
+	// Should have exactly 1 window (the workspace), no placeholder
+	for _, w := range windows {
+		val, _ := mockTmux.GetWindowOption(w.ID, "@bay-placeholder")
+		if val == "1" {
+			t.Errorf("placeholder window %q should have been cleaned up", w.Name)
+		}
+	}
+	_ = ws
+}
+
+func TestPlaceholder_CreatedOnLastWsClose(t *testing.T) {
+	// Closing the last workspace should leave a placeholder.
+	eng, _ := testEngine(t)
+
+	eng.WsNew(WsNewOptions{Dock: "labs"})
+
+	err := eng.WsClose("labs", "w1", true)
+	if err != nil {
+		t.Fatalf("WsClose failed: %v", err)
+	}
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+
+	// Session should still exist
+	has, _ := mockTmux.HasSession("labs")
+	if !has {
+		t.Fatal("session should still exist (placeholder keeps it alive)")
+	}
+
+	// Should have a placeholder window
+	windows, _ := mockTmux.ListWindows("labs")
+	foundPlaceholder := false
+	for _, w := range windows {
+		val, _ := mockTmux.GetWindowOption(w.ID, "@bay-placeholder")
+		if val == "1" {
+			foundPlaceholder = true
+		}
+	}
+	if !foundPlaceholder {
+		t.Error("expected a placeholder window after closing last workspace")
+	}
+}
+
+func TestPlaceholder_NotCleanedIfUsed(t *testing.T) {
+	// If the user has typed in the placeholder, it should not be cleaned up.
+	eng, _ := testEngine(t)
+
+	// Manually create session with placeholder (simulating DockNew)
+	eng.DockNew("research", "labs", "claude", "")
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+
+	// Find the placeholder pane and simulate user interaction
+	windows, _ := mockTmux.ListWindows("research")
+	for _, w := range windows {
+		val, _ := mockTmux.GetWindowOption(w.ID, "@bay-placeholder")
+		if val == "1" {
+			panes, _ := mockTmux.ListPanes(w.ID)
+			if len(panes) > 0 {
+				mockTmux.SetPaneCursorY(panes[0].ID, 5) // user has been typing
+			}
+		}
+	}
+
+	// Create a workspace — should NOT clean the used placeholder
+	eng.WsNew(WsNewOptions{Dock: "research"})
+
+	windows, _ = mockTmux.ListWindows("research")
+	foundUsedPlaceholder := false
+	for _, w := range windows {
+		val, _ := mockTmux.GetWindowOption(w.ID, "@bay-placeholder")
+		if val == "1" {
+			foundUsedPlaceholder = true
+		}
+	}
+	if !foundUsedPlaceholder {
+		t.Error("used placeholder should not have been cleaned up")
+	}
+}
+
+func TestPlaceholder_CleanedOnRecovery(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, _ := eng.WsNew(WsNewOptions{Dock: "labs"})
+	os.MkdirAll(ws.Path, 0o755)
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.Reset()
+
+	// Recovery creates session (with placeholder), then workspace windows,
+	// then cleans placeholders
+	eng.Recover()
+
+	windows, _ := mockTmux.ListWindows("labs")
+	for _, w := range windows {
+		val, _ := mockTmux.GetWindowOption(w.ID, "@bay-placeholder")
+		if val == "1" {
+			t.Error("placeholder should be cleaned after recovery")
+		}
+	}
+}

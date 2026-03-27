@@ -28,6 +28,7 @@ type mockPane struct {
 	pid      int
 	active   bool
 	capture  string // content returned by CapturePane
+	cursorY  int
 }
 
 // Mock is a test double that implements Interface using in-memory state.
@@ -89,6 +90,9 @@ func (m *Mock) NewSession(name string) error {
 		return fmt.Errorf("session %q already exists", name)
 	}
 	m.sessions[name] = true
+	// Real tmux creates a default window when a session is created.
+	// Replicate that behavior so placeholder logic works correctly.
+	m.NewWindow(name, "", "")
 	return nil
 }
 
@@ -340,6 +344,22 @@ func (m *Mock) GetPanePID(paneID string) (int, error) {
 		return 0, fmt.Errorf("pane %q not found", paneID)
 	}
 	return p.pid, nil
+}
+
+func (m *Mock) GetPaneCursorY(paneID string) (int, error) {
+	m.record("GetPaneCursorY", paneID)
+	p, ok := m.panes[paneID]
+	if !ok {
+		return 0, fmt.Errorf("pane %q not found", paneID)
+	}
+	return p.cursorY, nil
+}
+
+// SetPaneCursorY sets the cursor Y position for a pane (test helper).
+func (m *Mock) SetPaneCursorY(paneID string, y int) {
+	if p, ok := m.panes[paneID]; ok {
+		p.cursorY = y
+	}
 }
 
 // --- Current context ---

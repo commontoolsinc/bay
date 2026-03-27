@@ -110,20 +110,20 @@ func TestNewWindow_NoSession(t *testing.T) {
 func TestListWindows(t *testing.T) {
 	m := NewMock()
 	m.NewSession("work")
+	// NewSession creates a default window; NewWindow adds more
 	m.NewWindow("work", "editor", "/home")
 	m.NewWindow("work", "shell", "/tmp")
 	windows, err := m.ListWindows("work")
 	if err != nil {
 		t.Fatalf("ListWindows: %v", err)
 	}
-	if len(windows) != 2 {
-		t.Fatalf("expected 2 windows, got %d", len(windows))
+	// 1 default from NewSession + 2 explicit = 3
+	if len(windows) != 3 {
+		t.Fatalf("expected 3 windows (1 default + 2 added), got %d", len(windows))
 	}
-	if windows[0].Name != "editor" || windows[1].Name != "shell" {
-		t.Errorf("unexpected window names: %v, %v", windows[0].Name, windows[1].Name)
-	}
-	if windows[0].Index != 0 || windows[1].Index != 1 {
-		t.Errorf("unexpected window indices: %d, %d", windows[0].Index, windows[1].Index)
+	// The explicitly added windows are at indices 1 and 2
+	if windows[1].Name != "editor" || windows[2].Name != "shell" {
+		t.Errorf("unexpected window names: %v, %v", windows[1].Name, windows[2].Name)
 	}
 }
 
@@ -445,19 +445,21 @@ func TestCurrentWindowID_NotSet(t *testing.T) {
 
 func TestCallTracking(t *testing.T) {
 	m := NewMock()
-	m.NewSession("work")
+	m.NewSession("work") // also records an internal NewWindow call
 	m.HasSession("work")
 	m.ListSessions()
-	if len(m.Calls) != 3 {
-		t.Fatalf("expected 3 calls, got %d", len(m.Calls))
+	// NewSession records 2 calls (NewSession + NewWindow for default window),
+	// then HasSession and ListSessions = 4 total
+	if len(m.Calls) != 4 {
+		t.Fatalf("expected 4 calls, got %d: %v", len(m.Calls), m.Calls)
 	}
 	if m.Calls[0].Method != "NewSession" {
 		t.Errorf("expected first call NewSession, got %q", m.Calls[0].Method)
 	}
-	if m.Calls[1].Method != "HasSession" {
-		t.Errorf("expected second call HasSession, got %q", m.Calls[1].Method)
+	if m.Calls[2].Method != "HasSession" {
+		t.Errorf("expected call[2] HasSession, got %q", m.Calls[2].Method)
 	}
-	if m.Calls[2].Method != "ListSessions" {
-		t.Errorf("expected third call ListSessions, got %q", m.Calls[2].Method)
+	if m.Calls[3].Method != "ListSessions" {
+		t.Errorf("expected call[3] ListSessions, got %q", m.Calls[3].Method)
 	}
 }

@@ -127,6 +127,89 @@ func abbreviateBranch(branch string) string {
 	return result
 }
 
+const placeholderName = "~"
+
+// ensureSession creates the tmux session if it doesn't exist.
+// The default window created by new-session is tagged as a placeholder.
+func (e *Engine) ensureSession(name string) error {
+	exists, err := e.Tmux.HasSession(name)
+	if err != nil {
+		return fmt.Errorf("checking tmux session: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	if err := e.Tmux.NewSession(name); err != nil {
+		return fmt.Errorf("creating tmux session: %w", err)
+	}
+	// Tag the default window as a placeholder
+	windows, err := e.Tmux.ListWindows(name)
+	if err == nil && len(windows) > 0 {
+		_ = e.Tmux.SetWindowOption(windows[0].ID, "@bay-placeholder", "1")
+		_ = e.Tmux.RenameWindow(windows[0].ID, placeholderName)
+	}
+	return nil
+}
+
+// cleanPlaceholders removes unused placeholder windows from a session.
+// A placeholder is unused if cursor_y <= 1 (no commands have been run).
+// Called after creating a real window, so the session won't be empty.
+func (e *Engine) cleanPlaceholders(session string) {
+	windows, err := e.Tmux.ListWindows(session)
+	if err != nil {
+		return
+	}
+	for _, win := range windows {
+		val, err := e.Tmux.GetWindowOption(win.ID, "@bay-placeholder")
+		if err != nil || val != "1" {
+			continue
+		}
+		// Check if the placeholder has been used
+		panes, err := e.Tmux.ListPanes(win.ID)
+		if err != nil || len(panes) == 0 {
+			_ = e.Tmux.KillWindow(win.ID)
+			continue
+		}
+		cursorY, err := e.Tmux.GetPaneCursorY(panes[0].ID)
+		if err != nil {
+			continue // can't determine, leave it
+		}
+		if cursorY <= 1 {
+			_ = e.Tmux.KillWindow(win.ID)
+		}
+		// If cursor has moved, the user is using it — leave it alone
+	}
+}
+
+// ensurePlaceholderIfLastWindow checks if killing windowID would leave the
+// session empty, and if so, creates a placeholder first.
+func (e *Engine) ensurePlaceholderIfLastWindow(session, windowID string) {
+	windows, err := e.Tmux.ListWindows(session)
+	if err != nil {
+		return
+	}
+	// Count non-placeholder windows (excluding the one about to be killed)
+	remaining := 0
+	for _, win := range windows {
+		if win.ID == windowID {
+			continue
+		}
+		val, _ := e.Tmux.GetWindowOption(win.ID, "@bay-placeholder")
+		if val != "1" {
+			remaining++
+		}
+	}
+	if remaining > 0 {
+		return // other real windows exist
+	}
+	// This is the last real window — create a placeholder to keep the session alive
+	phID, err := e.Tmux.NewWindow(session, placeholderName, "")
+	if err != nil {
+		return
+	}
+	_ = e.Tmux.SetWindowOption(phID, "@bay-placeholder", "1")
+}
+
 // DockNew creates a new dock configuration and tmux session.
 func (e *Engine) DockNew(name, repo, agent, template string) error {
 	if err := ValidateName(name); err != nil {
@@ -157,9 +240,9 @@ func (e *Engine) DockNew(name, repo, agent, template string) error {
 		return fmt.Errorf("tmux session %q already exists and is not a bay dock", name)
 	}
 
-	// Create tmux session
-	if err := e.Tmux.NewSession(name); err != nil {
-		return fmt.Errorf("creating tmux session: %w", err)
+	// Create tmux session (default window is tagged as placeholder)
+	if err := e.ensureSession(name); err != nil {
+		return err
 	}
 
 	// Add dock to config and save to disk
@@ -368,17 +451,10 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		}
 	}
 
-	// Ensure tmux session exists
-	exists, err := e.Tmux.HasSession(dockName)
-	if err != nil {
+	// Ensure tmux session exists (default window tagged as placeholder)
+	if err := e.ensureSession(dockName); err != nil {
 		rollbackWorktree()
-		return nil, fmt.Errorf("checking tmux session: %w", err)
-	}
-	if !exists {
-		if err := e.Tmux.NewSession(dockName); err != nil {
-			rollbackWorktree()
-			return nil, fmt.Errorf("creating tmux session: %w", err)
-		}
+		return nil, err
 	}
 
 	// Create tmux window
@@ -391,6 +467,9 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 
 	// Set remain-on-exit
 	_ = e.Tmux.SetWindowOption(windowID, "remain-on-exit", "on")
+
+	// Clean up placeholder windows now that a real window exists
+	e.cleanPlaceholders(dockName)
 
 	// Build launch command
 	var paneType manifest.PaneType
@@ -579,9 +658,11 @@ func (e *Engine) WsClose(dockName, wsID string, force bool) error {
 		}
 	}
 
-	// Close all tmux windows
+	// Close all tmux windows. For each, check if it's the last real window
+	// in the session and create a placeholder to keep the session alive.
 	for _, win := range ws.Windows {
 		if win.TmuxWindowID != "" {
+			e.ensurePlaceholderIfLastWindow(dockName, win.TmuxWindowID)
 			_ = e.Tmux.KillWindow(win.TmuxWindowID)
 		}
 	}
@@ -802,6 +883,9 @@ func (e *Engine) WinOpen(dockName, wsID string, agent string, shell bool, cmd st
 	// Set remain-on-exit
 	_ = e.Tmux.SetWindowOption(tmuxWinID, "remain-on-exit", "on")
 
+	// Clean up placeholder windows now that a real window exists
+	e.cleanPlaceholders(dockName)
+
 	// Determine the effective agent and generate its config if needed
 	effectiveAgent := agent
 	if effectiveAgent == "" && !shell && cmd == "" {
@@ -878,6 +962,7 @@ func (e *Engine) WinClose(dockName, wsID string, winID int) error {
 	for i, win := range ws.Windows {
 		if win.ID == winID {
 			if win.TmuxWindowID != "" {
+				e.ensurePlaceholderIfLastWindow(dockName, win.TmuxWindowID)
 				_ = e.Tmux.KillWindow(win.TmuxWindowID)
 			}
 			ws.Windows = append(ws.Windows[:i], ws.Windows[i+1:]...)
@@ -1103,18 +1188,12 @@ func (e *Engine) DockRecover(name string) (string, error) {
 	}
 	dockCfg, hasCfg := e.Config.Docks[name]
 
-	// Ensure tmux session exists
-	exists, err := e.Tmux.HasSession(name)
-	if err != nil {
-		return "", fmt.Errorf("checking session %s: %w", name, err)
-	}
-	if !exists {
-		if err := e.Tmux.NewSession(name); err != nil {
-			return "", fmt.Errorf("creating session %s: %w", name, err)
-		}
+	if err := e.ensureSession(name); err != nil {
+		return "", err
 	}
 
 	e.recoverDockWorkspaces(name, dockState, dockCfg, hasCfg)
+	e.cleanPlaceholders(name)
 
 	if err := e.saveManifest(m); err != nil {
 		return "", err
@@ -1178,18 +1257,12 @@ func (e *Engine) Recover() ([]string, error) {
 	for dockName, dockState := range m.Docks {
 		dockCfg, hasCfg := e.Config.Docks[dockName]
 
-		// Ensure tmux session exists
-		exists, err := e.Tmux.HasSession(dockName)
-		if err != nil {
-			return nil, fmt.Errorf("checking session %s: %w", dockName, err)
-		}
-		if !exists {
-			if err := e.Tmux.NewSession(dockName); err != nil {
-				return nil, fmt.Errorf("creating session %s: %w", dockName, err)
-			}
+		if err := e.ensureSession(dockName); err != nil {
+			return nil, err
 		}
 
 		e.recoverDockWorkspaces(dockName, dockState, dockCfg, hasCfg)
+		e.cleanPlaceholders(dockName)
 
 		attachCmds = append(attachCmds, fmt.Sprintf("tmux attach -t %s", dockName))
 	}

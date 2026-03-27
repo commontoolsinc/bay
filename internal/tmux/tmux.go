@@ -29,6 +29,9 @@ type Interface interface {
 	ListPanes(windowID string) ([]Pane, error)
 	GetPanePID(paneID string) (int, error)
 
+	// Pane state
+	GetPaneCursorY(paneID string) (int, error)
+
 	// Current context
 	CurrentSession() (string, error)
 	CurrentWindowID() (string, error)

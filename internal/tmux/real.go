@@ -247,6 +247,18 @@ func (r *Real) GetPanePID(paneID string) (int, error) {
 	return pid, nil
 }
 
+func (r *Real) GetPaneCursorY(paneID string) (int, error) {
+	out, err := run("display-message", "-t", paneID, "-p", "#{cursor_y}")
+	if err != nil {
+		return 0, err
+	}
+	y, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		return 0, fmt.Errorf("parsing cursor_y %q: %w", out, err)
+	}
+	return y, nil
+}
+
 // --- Current context ---
 
 func (r *Real) CurrentSession() (string, error) {
