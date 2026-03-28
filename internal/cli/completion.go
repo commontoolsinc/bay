@@ -107,6 +107,11 @@ func registerCompletions(root *cobra.Command) {
 		}
 	}
 
+	// Repo commands: repo remove
+	if cmd := findCmd(root, "repo remove"); cmd != nil {
+		cmd.ValidArgsFunction = repoCompletionsFunc()
+	}
+
 	// bay go
 	if cmd := findCmd(root, "go"); cmd != nil {
 		cmd.ValidArgsFunction = goCompl
@@ -299,6 +304,16 @@ func agentCompletions(cmd *cobra.Command, args []string, toComplete string) ([]s
 		completions = append(completions, name+"\t"+agent.Command)
 	}
 	return completions, cobra.ShellCompDirectiveNoFileComp
+}
+
+// repoCompletionsFunc returns a ValidArgsFunction for repo name positional args.
+func repoCompletionsFunc() func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		return repoCompletions(cmd, args, toComplete)
+	}
 }
 
 // repoCompletions returns repo names from config.
