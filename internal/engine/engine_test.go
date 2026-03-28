@@ -1100,6 +1100,51 @@ func TestRepoRemove_NotFound(t *testing.T) {
 	}
 }
 
+func TestWsClose_CleansEmptyWorktreeDir(t *testing.T) {
+	eng, dir := testEngine(t)
+
+	// Create a real worktree parent directory to simulate the filesystem
+	repoCfg := eng.Config.Repos["labs"]
+	wtDir := repoCfg.EffectiveWorktreeDir()
+	wsDir := filepath.Join(wtDir, "w1")
+	os.MkdirAll(wsDir, 0o755)
+
+	eng.WsNew(WsNewOptions{Dock: "labs"})
+	eng.WsClose("labs", "w1", true)
+
+	// The worktree parent dir should be removed if empty
+	if _, err := os.Stat(wtDir); err == nil {
+		// Check if it's empty — os.Remove would have succeeded
+		entries, _ := os.ReadDir(wtDir)
+		if len(entries) == 0 {
+			t.Error("empty worktree parent dir should have been removed")
+		}
+		// If non-empty, that's fine — other worktrees may exist
+	}
+	// If stat fails (not found), cleanup worked
+	_ = dir
+}
+
+func TestWsClose_KeepsNonEmptyWorktreeDir(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	// Create two workspaces
+	eng.WsNew(WsNewOptions{Dock: "labs"})
+	eng.WsNew(WsNewOptions{Dock: "labs"})
+
+	// Create the worktree parent dir with a subdirectory to simulate w2 still there
+	repoCfg := eng.Config.Repos["labs"]
+	wtDir := repoCfg.EffectiveWorktreeDir()
+	os.MkdirAll(filepath.Join(wtDir, "w2"), 0o755)
+
+	// Close w1 — parent dir should remain because w2 dir exists
+	eng.WsClose("labs", "w1", true)
+
+	if _, err := os.Stat(wtDir); err != nil {
+		t.Error("worktree parent dir should still exist (w2 is there)")
+	}
+}
+
 func TestPlaceholder_CleanedOnWsNew(t *testing.T) {
 	// When a session is created, it gets a placeholder window.
 	// Creating a workspace should clean it up.

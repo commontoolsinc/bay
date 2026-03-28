@@ -766,6 +766,10 @@ func (e *Engine) WsClose(dockName, wsID string, force bool) error {
 					return fmt.Errorf("removing worktree: %w", err)
 				}
 			}
+			// Clean up the worktree parent directory if it's now empty.
+			// os.Remove only succeeds on empty directories.
+			wtDir := repoCfg.EffectiveWorktreeDir()
+			_ = os.Remove(wtDir)
 		}
 	}
 
