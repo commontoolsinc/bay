@@ -12,7 +12,7 @@ func TestNewRootCmd(t *testing.T) {
 
 	// Verify all subcommands are registered
 	expected := map[string]bool{
-		"dock": false, "ws": false, "win": false, "pane": false,
+		"dock": false, "repo": false, "ws": false, "win": false, "pane": false,
 		"go": false, "ls": false, "recover": false, "doctor": false,
 		"setup": false, "monitor": false, "add-prompt": false, "version": false,
 	}

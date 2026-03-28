@@ -271,6 +271,62 @@ func (e *Engine) DockNew(name, repo, agent, template string) error {
 	})
 }
 
+// RepoAdd adds a repo to the configuration.
+func (e *Engine) RepoAdd(name, path, worktreeDir string) error {
+	if err := ValidateName(name); err != nil {
+		return err
+	}
+	if _, exists := e.Config.Repos[name]; exists {
+		return fmt.Errorf("repo %q already exists", name)
+	}
+
+	// Verify path exists
+	expandedPath := config.ExpandPath(path)
+	info, err := os.Stat(expandedPath)
+	if err != nil {
+		return fmt.Errorf("path %q: %w", path, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("path %q is not a directory", path)
+	}
+
+	e.Config.Repos[name] = config.RepoConfig{
+		Path:        path,
+		WorktreeDir: worktreeDir,
+	}
+	if e.ConfigPath != "" {
+		if err := config.Save(e.ConfigPath, e.Config); err != nil {
+			return fmt.Errorf("saving config: %w", err)
+		}
+	}
+	return nil
+}
+
+// RepoRemove removes a repo from the configuration.
+func (e *Engine) RepoRemove(name string) error {
+	if _, exists := e.Config.Repos[name]; !exists {
+		return fmt.Errorf("repo %q not found", name)
+	}
+	// Check if any dock references this repo
+	for dockName, dock := range e.Config.Docks {
+		if dock.Repo == name {
+			return fmt.Errorf("repo %q is used by dock %q — remove the dock first", name, dockName)
+		}
+	}
+	delete(e.Config.Repos, name)
+	if e.ConfigPath != "" {
+		if err := config.Save(e.ConfigPath, e.Config); err != nil {
+			return fmt.Errorf("saving config: %w", err)
+		}
+	}
+	return nil
+}
+
+// RepoList returns all configured repos.
+func (e *Engine) RepoList() map[string]config.RepoConfig {
+	return e.Config.Repos
+}
+
 // workspaceAgent returns the effective agent for a workspace:
 // the first pane's agent if set, otherwise the dock's default.
 func workspaceAgent(ws *manifest.Workspace, dockAgent string) string {

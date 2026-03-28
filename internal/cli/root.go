@@ -61,6 +61,7 @@ func NewRootCmd(version string) *cobra.Command {
 
 	root.AddCommand(
 		newDockCmd(),
+		newRepoCmd(),
 		newWsCmd(),
 		newWinCmd(),
 		newPaneCmd(),
