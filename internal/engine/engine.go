@@ -322,14 +322,20 @@ func (e *Engine) RepoAdd(name, path, worktreeDir, cloneURL string) error {
 }
 
 // RepoRemove removes a repo from the configuration.
-func (e *Engine) RepoRemove(name string) error {
+// If force is true, also closes and removes any docks that reference this repo.
+func (e *Engine) RepoRemove(name string, force bool) error {
 	if _, exists := e.Config.Repos[name]; !exists {
 		return fmt.Errorf("repo %q not found", name)
 	}
-	// Check if any dock references this repo
+	// Find docks that reference this repo
 	for dockName, dock := range e.Config.Docks {
 		if dock.Repo == name {
-			return fmt.Errorf("repo %q is used by dock %q — remove the dock first", name, dockName)
+			if !force {
+				return fmt.Errorf("repo %q is used by dock %q (use --force to also remove the dock)", name, dockName)
+			}
+			// Force: close the dock's workspaces and remove the dock
+			_ = e.DockClose(dockName, true)
+			delete(e.Config.Docks, dockName)
 		}
 	}
 	delete(e.Config.Repos, name)

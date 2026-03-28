@@ -79,7 +79,9 @@ func newRepoLsCmd() *cobra.Command {
 }
 
 func newRepoRemoveCmd() *cobra.Command {
-	return &cobra.Command{
+	var force bool
+
+	cmd := &cobra.Command{
 		Use:     "remove <name>",
 		Aliases: []string{"rm"},
 		Short:   "Remove a repo from bay config",
@@ -89,11 +91,15 @@ func newRepoRemoveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := eng.RepoRemove(args[0]); err != nil {
+			if err := eng.RepoRemove(args[0], force); err != nil {
 				return err
 			}
 			fmt.Printf("Repo %q removed.\n", args[0])
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&force, "force", false, "also close and remove docks that use this repo")
+
+	return cmd
 }

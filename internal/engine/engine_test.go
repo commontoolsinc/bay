@@ -1024,12 +1024,30 @@ func TestRepoAdd_CloneIntoExistingDir(t *testing.T) {
 func TestRepoRemove_InUse(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	err := eng.RepoRemove("labs")
+	err := eng.RepoRemove("labs", false)
 	if err == nil {
 		t.Fatal("expected error removing repo in use by dock")
 	}
 	if !strings.Contains(err.Error(), "used by dock") {
 		t.Errorf("error = %q, want 'used by dock' message", err)
+	}
+}
+
+func TestRepoRemove_Force(t *testing.T) {
+	eng, dir := testEngine(t)
+	eng.ConfigPath = filepath.Join(dir, "config.toml")
+	config.Save(eng.ConfigPath, eng.Config)
+
+	// labs repo is used by labs dock — force should remove both
+	err := eng.RepoRemove("labs", true)
+	if err != nil {
+		t.Fatalf("force remove failed: %v", err)
+	}
+	if _, ok := eng.Config.Repos["labs"]; ok {
+		t.Error("repo should be removed")
+	}
+	if _, ok := eng.Config.Docks["labs"]; ok {
+		t.Error("dock should be removed with --force")
 	}
 }
 
