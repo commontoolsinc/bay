@@ -119,6 +119,11 @@ func (m *Mock) Clone(url, destPath string) error {
 	return nil
 }
 
+func (m *Mock) IsGitRepo(path string) bool {
+	m.record("IsGitRepo", path)
+	return true // mock defaults to yes
+}
+
 func (m *Mock) CreateWorktree(repoPath, worktreePath string) error {
 	m.record("CreateWorktree", repoPath, worktreePath)
 	r := m.repo(repoPath)

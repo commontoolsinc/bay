@@ -967,7 +967,7 @@ func TestRepoAdd_Local(t *testing.T) {
 	repoDir := filepath.Join(dir, "new-repo")
 	os.MkdirAll(repoDir, 0o755)
 
-	err := eng.RepoAdd("newrepo", repoDir, "", "")
+	err := eng.RepoAdd("newrepo", repoDir, "", "", false)
 	if err != nil {
 		t.Fatalf("RepoAdd failed: %v", err)
 	}
@@ -990,7 +990,7 @@ func TestRepoAdd_CloneURL(t *testing.T) {
 
 	destPath := filepath.Join(dir, "cloned-repo")
 	// Path must NOT exist for clone
-	err := eng.RepoAdd("cloned", destPath, "", "git@github.com:org/repo.git")
+	err := eng.RepoAdd("cloned", destPath, "", "git@github.com:org/repo.git", false)
 	if err != nil {
 		t.Fatalf("RepoAdd with clone failed: %v", err)
 	}
@@ -1012,7 +1012,7 @@ func TestRepoAdd_CloneIntoExistingDir(t *testing.T) {
 	existingDir := filepath.Join(dir, "already-here")
 	os.MkdirAll(existingDir, 0o755)
 
-	err := eng.RepoAdd("bad", existingDir, "", "git@github.com:org/repo.git")
+	err := eng.RepoAdd("bad", existingDir, "", "git@github.com:org/repo.git", false)
 	if err == nil {
 		t.Fatal("expected error cloning into existing directory")
 	}

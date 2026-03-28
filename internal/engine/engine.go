@@ -273,7 +273,8 @@ func (e *Engine) DockNew(name, repo, agent, template string) error {
 
 // RepoAdd adds a repo to the configuration.
 // If cloneURL is non-empty and the path does not exist, the repo is cloned first.
-func (e *Engine) RepoAdd(name, path, worktreeDir, cloneURL string) error {
+// If force is false and the path is not a git repo, an error is returned.
+func (e *Engine) RepoAdd(name, path, worktreeDir, cloneURL string, force bool) error {
 	if err := ValidateName(name); err != nil {
 		return err
 	}
@@ -301,6 +302,10 @@ func (e *Engine) RepoAdd(name, path, worktreeDir, cloneURL string) error {
 		}
 		if !info.IsDir() {
 			return fmt.Errorf("path %q is not a directory", expandedPath)
+		}
+		// Verify it's a git repo
+		if !force && !e.Git.IsGitRepo(expandedPath) {
+			return fmt.Errorf("path %q is not a git repository (use --force to add anyway)", expandedPath)
 		}
 	}
 
