@@ -22,18 +22,25 @@ func newRepoCmd() *cobra.Command {
 }
 
 func newRepoAddCmd() *cobra.Command {
-	var worktreeDir string
+	var worktreeDir, cloneURL string
 
 	cmd := &cobra.Command{
 		Use:   "add <name> <path>",
 		Short: "Add a repo to bay config",
-		Args:  cobra.ExactArgs(2),
+		Long: `Add a repo to bay config. The path must be an existing local git checkout.
+
+With --url, clones the repo first. The path must NOT already exist:
+  bay repo add myproject ~/projects/myproject --url git@github.com:org/myproject.git`,
+		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
 				return err
 			}
-			if err := eng.RepoAdd(args[0], args[1], worktreeDir); err != nil {
+			if cloneURL != "" {
+				fmt.Printf("Cloning %s into %s...\n", cloneURL, args[1])
+			}
+			if err := eng.RepoAdd(args[0], args[1], worktreeDir, cloneURL); err != nil {
 				return err
 			}
 			fmt.Printf("Repo %q added (%s)\n", args[0], args[1])
@@ -42,6 +49,7 @@ func newRepoAddCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&worktreeDir, "worktree-dir", "", "worktree directory (default: <path>-worktrees)")
+	cmd.Flags().StringVar(&cloneURL, "url", "", "git URL to clone (path must not exist)")
 
 	return cmd
 }

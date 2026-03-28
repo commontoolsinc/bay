@@ -159,3 +159,28 @@ func ExpandPath(path string) string {
 	}
 	return path
 }
+
+// NormalizePath converts a path to an absolute form suitable for config storage.
+// Relative paths are resolved to absolute. Paths under the user's home directory
+// are shortened to use ~/. This ensures paths work from any working directory.
+func NormalizePath(path string) string {
+	// Expand ~ first
+	expanded := ExpandPath(path)
+
+	// Make absolute
+	abs, err := filepath.Abs(expanded)
+	if err != nil {
+		return expanded
+	}
+
+	// Shorten to ~/ if under home
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return abs
+	}
+	if strings.HasPrefix(abs, home+"/") {
+		return "~/" + abs[len(home)+1:]
+	}
+
+	return abs
+}

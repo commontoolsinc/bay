@@ -272,7 +272,8 @@ func (e *Engine) DockNew(name, repo, agent, template string) error {
 }
 
 // RepoAdd adds a repo to the configuration.
-func (e *Engine) RepoAdd(name, path, worktreeDir string) error {
+// If cloneURL is non-empty and the path does not exist, the repo is cloned first.
+func (e *Engine) RepoAdd(name, path, worktreeDir, cloneURL string) error {
 	if err := ValidateName(name); err != nil {
 		return err
 	}
@@ -280,18 +281,36 @@ func (e *Engine) RepoAdd(name, path, worktreeDir string) error {
 		return fmt.Errorf("repo %q already exists", name)
 	}
 
-	// Verify path exists
-	expandedPath := config.ExpandPath(path)
-	info, err := os.Stat(expandedPath)
-	if err != nil {
-		return fmt.Errorf("path %q: %w", path, err)
+	// Normalize to absolute path for config storage
+	normalizedPath := config.NormalizePath(path)
+	expandedPath := config.ExpandPath(normalizedPath)
+
+	if cloneURL != "" {
+		// Clone mode: destination must NOT exist
+		if _, err := os.Stat(expandedPath); err == nil {
+			return fmt.Errorf("directory %q already exists — cannot clone into an existing directory", expandedPath)
+		}
+		if err := e.Git.Clone(cloneURL, expandedPath); err != nil {
+			return fmt.Errorf("cloning %s: %w", cloneURL, err)
+		}
+	} else {
+		// Local mode: path must exist
+		info, err := os.Stat(expandedPath)
+		if err != nil {
+			return fmt.Errorf("path %q: %w", expandedPath, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("path %q is not a directory", expandedPath)
+		}
 	}
-	if !info.IsDir() {
-		return fmt.Errorf("path %q is not a directory", path)
+
+	// Normalize worktree dir too if provided
+	if worktreeDir != "" {
+		worktreeDir = config.NormalizePath(worktreeDir)
 	}
 
 	e.Config.Repos[name] = config.RepoConfig{
-		Path:        path,
+		Path:        normalizedPath,
 		WorktreeDir: worktreeDir,
 	}
 	if e.ConfigPath != "" {

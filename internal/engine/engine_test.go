@@ -3,6 +3,7 @@ package engine
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/commontoolsinc/bay/internal/config"
@@ -955,6 +956,80 @@ func TestWsNew_DuplicateDisplayName(t *testing.T) {
 	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "my-ws"})
 	if err == nil {
 		t.Error("expected error for duplicate display name")
+	}
+}
+
+func TestRepoAdd_Local(t *testing.T) {
+	eng, dir := testEngine(t)
+	eng.ConfigPath = filepath.Join(dir, "config.toml")
+	config.Save(eng.ConfigPath, eng.Config)
+
+	repoDir := filepath.Join(dir, "new-repo")
+	os.MkdirAll(repoDir, 0o755)
+
+	err := eng.RepoAdd("newrepo", repoDir, "", "")
+	if err != nil {
+		t.Fatalf("RepoAdd failed: %v", err)
+	}
+
+	if _, ok := eng.Config.Repos["newrepo"]; !ok {
+		t.Error("repo not added to config")
+	}
+
+	// Path should be normalized (absolute)
+	savedPath := eng.Config.Repos["newrepo"].Path
+	if savedPath != repoDir && savedPath != config.NormalizePath(repoDir) {
+		t.Errorf("saved path = %q, want normalized form of %q", savedPath, repoDir)
+	}
+}
+
+func TestRepoAdd_CloneURL(t *testing.T) {
+	eng, dir := testEngine(t)
+	eng.ConfigPath = filepath.Join(dir, "config.toml")
+	config.Save(eng.ConfigPath, eng.Config)
+
+	destPath := filepath.Join(dir, "cloned-repo")
+	// Path must NOT exist for clone
+	err := eng.RepoAdd("cloned", destPath, "", "git@github.com:org/repo.git")
+	if err != nil {
+		t.Fatalf("RepoAdd with clone failed: %v", err)
+	}
+
+	// Verify Clone was called
+	mockGit := eng.Git.(*git.Mock)
+	cloneCalls := mockGit.Calls("Clone")
+	if len(cloneCalls) != 1 {
+		t.Fatalf("expected 1 Clone call, got %d", len(cloneCalls))
+	}
+	if cloneCalls[0].Args[0] != "git@github.com:org/repo.git" {
+		t.Errorf("clone URL = %q", cloneCalls[0].Args[0])
+	}
+}
+
+func TestRepoAdd_CloneIntoExistingDir(t *testing.T) {
+	eng, dir := testEngine(t)
+
+	existingDir := filepath.Join(dir, "already-here")
+	os.MkdirAll(existingDir, 0o755)
+
+	err := eng.RepoAdd("bad", existingDir, "", "git@github.com:org/repo.git")
+	if err == nil {
+		t.Fatal("expected error cloning into existing directory")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("error = %q, want 'already exists' message", err)
+	}
+}
+
+func TestRepoRemove_InUse(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	err := eng.RepoRemove("labs")
+	if err == nil {
+		t.Fatal("expected error removing repo in use by dock")
+	}
+	if !strings.Contains(err.Error(), "used by dock") {
+		t.Errorf("error = %q, want 'used by dock' message", err)
 	}
 }
 
