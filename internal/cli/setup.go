@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/commontoolsinc/bay/internal/config"
+	gitpkg "github.com/commontoolsinc/bay/internal/git"
 	"github.com/spf13/cobra"
 )
 
@@ -115,7 +116,7 @@ Do you want to proceed
 
 			fmt.Println("\nSetup complete. Next steps:")
 			fmt.Println("  1. Add a repo:  bay repo add <name> <path>")
-			fmt.Println("  2. Add CLAUDE.local.md to your repos' .gitignore")
+			printGitignoreAdvice(configPath)
 			fmt.Println("  3. Create a dock:  bay dock new <name> --repo <repo> --agent claude")
 			fmt.Println()
 			fmt.Println("To teach an orchestrator agent about bay:")
@@ -298,4 +299,46 @@ func tmuxBindCmd(key, shellCmd string) string {
 		return fmt.Sprintf("bind-key -n %s run-shell '%s'", key, shellCmd)
 	}
 	return fmt.Sprintf("bind-key %s run-shell '%s'", key, shellCmd)
+}
+
+// printGitignoreAdvice checks configured repos and only advises about
+// gitignore entries that are actually missing.
+func printGitignoreAdvice(configPath string) {
+	cfg, err := config.Load(configPath)
+	if err != nil || len(cfg.Repos) == 0 {
+		fmt.Println("  2. Add CLAUDE.local.md to your repos' .gitignore")
+		return
+	}
+
+	// Collect all config filenames from agents
+	configFiles := map[string]bool{}
+	for _, agent := range cfg.Agents {
+		if agent.ConfigFile != "" {
+			configFiles[agent.ConfigFile] = true
+		}
+	}
+	if len(configFiles) == 0 {
+		return
+	}
+
+	g := gitpkg.NewReal()
+	var missing []string
+	for repoName, repo := range cfg.Repos {
+		repoPath := config.ExpandPath(repo.Path)
+		for file := range configFiles {
+			ignored, err := g.IsIgnored(repoPath, file)
+			if err != nil || !ignored {
+				missing = append(missing, fmt.Sprintf("%s in %s", file, repoName))
+			}
+		}
+	}
+
+	if len(missing) == 0 {
+		return // all repos have correct gitignore entries
+	}
+
+	fmt.Println("  2. Add to .gitignore (missing):")
+	for _, m := range missing {
+		fmt.Printf("     %s\n", m)
+	}
 }
