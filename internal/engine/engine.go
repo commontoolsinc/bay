@@ -589,8 +589,9 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		}
 	}
 
-	// Generate agent config
-	if agentName != "" && !opts.Shell {
+	// Always generate agent config if an agent type is available,
+	// even in shell mode — the user may later add an agent pane.
+	if agentName != "" {
 		if err := e.generateAgentConfig(dockName, agentName, wsID, displayName, wsPath, wsType, repoName); err != nil {
 			rollbackWorktree()
 			return nil, fmt.Errorf("generating agent config: %w", err)
@@ -1006,6 +1007,26 @@ func (e *Engine) ResolveSelf() (string, string, error) {
 	return "", "", fmt.Errorf("current directory %s does not match any workspace", cwd)
 }
 
+// ResolveByWindowID finds the workspace that owns the given tmux window ID.
+// This is faster than ResolveSelf (no CWD stat calls) and works reliably in
+// tmux status-line contexts where CWD may not be set.
+func (e *Engine) ResolveByWindowID(tmuxWindowID string) (dockName, wsID string, ws *manifest.Workspace, err error) {
+	m, err := e.LoadManifest()
+	if err != nil {
+		return "", "", nil, err
+	}
+	for dn, dockState := range m.Docks {
+		for wid, w := range dockState.Workspaces {
+			for _, win := range w.Windows {
+				if win.TmuxWindowID == tmuxWindowID {
+					return dn, wid, w, nil
+				}
+			}
+		}
+	}
+	return "", "", nil, fmt.Errorf("no workspace found for tmux window %s", tmuxWindowID)
+}
+
 // WinOpen opens a new window for an existing workspace.
 func (e *Engine) WinOpen(dockName, wsID string, agent string, shell bool, cmd string) error {
 	m, err := e.LoadManifest()
@@ -1300,6 +1321,32 @@ func (e *Engine) PaneAdd(dockName, wsID string, winID int, agent string, shell b
 	win.Panes = append(win.Panes, pane)
 
 	return e.saveManifest(m)
+}
+
+// Edit returns the workspace path for opening in an editor.
+func (e *Engine) Edit(dockName, wsID string) (string, error) {
+	ws, err := e.WsShow(dockName, wsID)
+	if err != nil {
+		return "", err
+	}
+	return ws.Path, nil
+}
+
+// EditAll returns all active workspace paths across all docks.
+func (e *Engine) EditAll() ([]string, error) {
+	m, err := e.LoadManifest()
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for _, dockState := range m.Docks {
+		for _, ws := range dockState.Workspaces {
+			if ws.Path != "" {
+				paths = append(paths, ws.Path)
+			}
+		}
+	}
+	return paths, nil
 }
 
 // DockClose closes all workspaces in a dock.

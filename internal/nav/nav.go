@@ -20,6 +20,7 @@ type Entry struct {
 	Status       manifest.WorkspaceStatus
 	TmuxWindowID string
 	Waiting      bool
+	WindowType   string // "agent", "shell", "cmd", or "" if unknown
 }
 
 // CollectEntries builds a list of all navigation entries from the manifest.
@@ -55,6 +56,12 @@ func CollectEntries(m *manifest.Manifest, tc tmux.Interface) []Entry {
 						waiting = true
 					}
 				}
+				// Determine window type from the first pane.
+				winType := ""
+				if len(win.Panes) > 0 {
+					winType = string(win.Panes[0].Type)
+				}
+
 				entries = append(entries, Entry{
 					DockName:     dockName,
 					WsID:         wsID,
@@ -64,6 +71,7 @@ func CollectEntries(m *manifest.Manifest, tc tmux.Interface) []Entry {
 					Status:       ws.Status,
 					TmuxWindowID: win.TmuxWindowID,
 					Waiting:      waiting,
+					WindowType:   winType,
 				})
 			}
 		}
@@ -83,7 +91,8 @@ func FuzzyMatch(entries []Entry, query string) []Entry {
 		if strings.Contains(strings.ToLower(e.WsName), q) ||
 			strings.Contains(strings.ToLower(e.Branch), q) ||
 			strings.Contains(strings.ToLower(e.PR), q) ||
-			strings.Contains(strings.ToLower(e.DockName), q) {
+			strings.Contains(strings.ToLower(e.DockName), q) ||
+			strings.Contains(strings.ToLower(e.WindowType), q) {
 			matched = append(matched, e)
 		}
 	}
@@ -142,12 +151,16 @@ func FormatEntry(e Entry) string {
 	if e.PR != "" {
 		pr = "#" + e.PR
 	}
+	tag := ""
+	if e.WindowType != "" {
+		tag = "  [" + e.WindowType + "]"
+	}
 	waiting := ""
 	if e.Waiting {
 		waiting = "  WAITING"
 	}
-	return fmt.Sprintf("%s  %s  %s  %s  %s  %s%s",
-		e.DockName, e.WsID, e.WsName, e.Branch, pr, string(e.Status), waiting)
+	return fmt.Sprintf("%s  %s  %s  %s  %s  %s%s%s",
+		e.DockName, e.WsID, e.WsName, e.Branch, pr, string(e.Status), tag, waiting)
 }
 
 // FormatEntries formats all entries with aligned columns.
@@ -164,16 +177,21 @@ func FormatEntries(entries []Entry) string {
 		branch  string
 		pr      string
 		status  string
+		winType string
 		waiting string
 	}
 
 	rows := make([]row, len(entries))
-	maxDock, maxWsID, maxWsName, maxBranch, maxPR, maxStatus := 0, 0, 0, 0, 0, 0
+	maxDock, maxWsID, maxWsName, maxBranch, maxPR, maxStatus, maxWinType := 0, 0, 0, 0, 0, 0, 0
 
 	for i, e := range entries {
 		pr := ""
 		if e.PR != "" {
 			pr = "#" + e.PR
+		}
+		winType := ""
+		if e.WindowType != "" {
+			winType = "[" + e.WindowType + "]"
 		}
 		waiting := ""
 		if e.Waiting {
@@ -186,6 +204,7 @@ func FormatEntries(entries []Entry) string {
 			branch:  e.Branch,
 			pr:      pr,
 			status:  string(e.Status),
+			winType: winType,
 			waiting: waiting,
 		}
 		rows[i] = r
@@ -208,6 +227,9 @@ func FormatEntries(entries []Entry) string {
 		if len(r.status) > maxStatus {
 			maxStatus = len(r.status)
 		}
+		if len(r.winType) > maxWinType {
+			maxWinType = len(r.winType)
+		}
 	}
 
 	var sb strings.Builder
@@ -220,6 +242,9 @@ func FormatEntries(entries []Entry) string {
 			maxPR, r.pr,
 			maxStatus, r.status,
 		)
+		if maxWinType > 0 {
+			line += fmt.Sprintf("  %-*s", maxWinType, r.winType)
+		}
 		if r.waiting != "" {
 			line += "  " + r.waiting
 		}

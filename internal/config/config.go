@@ -15,8 +15,15 @@ type Config struct {
 	Agents  map[string]AgentConfig  `toml:"agents"`
 	Repos   map[string]RepoConfig   `toml:"repos"`
 	Docks   map[string]DockConfig   `toml:"docks"`
+	Editor  EditorConfig            `toml:"editor"`
 	Monitor MonitorConfig           `toml:"monitor"`
 	Keybind KeybindingConfig        `toml:"keybinding"`
+}
+
+// EditorConfig configures the editor launched by `bay edit`.
+type EditorConfig struct {
+	Command string `toml:"command"`
+	GUI     *bool  `toml:"gui,omitempty"` // nil = auto-detect from command name
 }
 
 // AgentConfig defines an agent type.
