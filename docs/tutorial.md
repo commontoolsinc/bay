@@ -25,7 +25,7 @@ bay setup
 ```
 
 This creates bay's config file at `~/.config/bay/config.toml` with
-default agent definitions (Claude Code and Codex). It also offers to
+default agent definitions (Claude Code, Codex, and Gemini). It also offers to
 install shell tab completions and tmux keybindings.
 
 Accept the defaults for now — you can change everything later.

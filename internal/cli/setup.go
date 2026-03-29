@@ -55,6 +55,10 @@ config_file = "CLAUDE.local.md"
 command = "codex"
 config_file = "AGENTS.local.md"
 
+[agents.gemini]
+command = "gemini"
+config_file = "GEMINI.local.md"
+
 # [repos.myproject]
 # path = "~/projects/myproject"
 # worktree_dir = "~/projects/myproject-worktrees"  # optional
@@ -89,6 +93,10 @@ Allow.*Deny
 
 # Codex
 \[Y/n\]
+
+# Gemini
+Approve\? \(y/n
+Allow command.*\[y/N\]
 
 # Generic
 \(y/n\)

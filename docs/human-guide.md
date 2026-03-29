@@ -544,6 +544,9 @@ echo "CLAUDE.local.md" >> .gitignore
 
 # For Codex
 echo "AGENTS.local.md" >> .gitignore
+
+# For Gemini
+echo "GEMINI.local.md" >> .gitignore
 ```
 
 Bay checks this before writing config files and will refuse (with a
