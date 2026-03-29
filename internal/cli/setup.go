@@ -115,9 +115,13 @@ Do you want to proceed
 			installKeybindings(reader, configPath)
 
 			fmt.Println("\nSetup complete. Next steps:")
-			fmt.Println("  1. Add a repo:  bay repo add <name> <path>")
-			printGitignoreAdvice(configPath)
-			fmt.Println("  3. Create a dock:  bay dock new <name> --repo <repo> --agent claude")
+			step := 1
+			fmt.Printf("  %d. Add a repo:  bay repo add <name> <path>\n", step)
+			step++
+			if printGitignoreAdvice(configPath, step) {
+				step++
+			}
+			fmt.Printf("  %d. Create a dock:  bay dock new <name> --repo <repo> --agent claude\n", step)
 			fmt.Println()
 			fmt.Println("To teach an orchestrator agent about bay:")
 			fmt.Printf("  claude --add-dir %s\n", configDir)
@@ -302,12 +306,12 @@ func tmuxBindCmd(key, shellCmd string) string {
 }
 
 // printGitignoreAdvice checks configured repos and only advises about
-// gitignore entries that are actually missing.
-func printGitignoreAdvice(configPath string) {
+// gitignore entries that are actually missing. Returns true if it printed.
+func printGitignoreAdvice(configPath string, step int) bool {
 	cfg, err := config.Load(configPath)
 	if err != nil || len(cfg.Repos) == 0 {
-		fmt.Println("  2. Add CLAUDE.local.md to your repos' .gitignore")
-		return
+		fmt.Printf("  %d. Add CLAUDE.local.md to your repos' .gitignore\n", step)
+		return true
 	}
 
 	// Collect all config filenames from agents
@@ -318,7 +322,7 @@ func printGitignoreAdvice(configPath string) {
 		}
 	}
 	if len(configFiles) == 0 {
-		return
+		return false
 	}
 
 	g := gitpkg.NewReal()
@@ -334,11 +338,12 @@ func printGitignoreAdvice(configPath string) {
 	}
 
 	if len(missing) == 0 {
-		return // all repos have correct gitignore entries
+		return false
 	}
 
-	fmt.Println("  2. Add to .gitignore (missing):")
+	fmt.Printf("  %d. Add to .gitignore (missing):\n", step)
 	for _, m := range missing {
 		fmt.Printf("     %s\n", m)
 	}
+	return true
 }
