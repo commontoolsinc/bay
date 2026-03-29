@@ -30,6 +30,12 @@ without managing the plumbing by hand.
 go install github.com/commontoolsinc/bay/cmd/bay@latest
 ```
 
+For private repos, configure Go to use SSH:
+```
+go env -w GOPRIVATE=github.com/commontoolsinc/bay
+git config --global url."git@github.com:".insteadOf "https://github.com/"
+```
+
 ## Quick start
 
 ### 1. Run setup
@@ -38,21 +44,33 @@ go install github.com/commontoolsinc/bay/cmd/bay@latest
 bay setup
 ```
 
-This walks you through creating your config file, defining agents and
-repos, setting up your first dock, installing tmux keybindings, and
-shell completions.
+This creates your config file, seeds default agent definitions,
+installs shell completions, and sets up tmux keybindings.
 
-### 2. Create a workspace
+### 2. Add a repo and create a dock
 
 ```
-bay ws new labs
+bay repo add myproject ~/projects/myproject
+bay dock new dev --repo myproject --agent claude
+tmux attach -t dev
 ```
 
-This creates a git worktree from the dock's default repo and launches
-your agent in a new tmux window. You're now in a fresh checkout, ready
-to work.
+Or clone and register in one step:
+```
+bay repo add myproject ~/projects/myproject --url git@github.com:org/myproject.git
+```
 
-### 3. Do your work
+### 3. Create a workspace
+
+From inside the dock:
+```
+bay ws new
+```
+
+This creates a git worktree and opens a new tmux window with your
+agent. The placeholder `~` window disappears automatically.
+
+### 4. Do your work
 
 Interact with the agent in the tmux window. When the agent creates a
 branch or opens a PR, it should update bay's tracking:
@@ -64,34 +82,61 @@ bay ws update self --pr 347
 
 (Your agent template can include instructions to do this automatically.)
 
-### 4. Check on things
-
-From any terminal:
+### 5. Check on things
 
 ```
 bay ls
 ```
 
-This shows all your workspaces across all docks, with status, branch,
-PR, and whether any agent is waiting for input.
+Shows the full hierarchy: repos, docks, and workspaces with status,
+branch, PR, and agent.
 
-### 5. Clean up
+### 6. Clean up
 
 ```
 bay ws close fix-auth-header
 ```
 
-Bay checks for uncommitted/unpushed work, then removes the worktree and
-archives the workspace.
+Bay checks for uncommitted/unpushed work, then removes the worktree
+and archives the workspace. When the last workspace is closed, a
+placeholder `~` window appears to keep the tmux session alive.
+
+For a full interactive walkthrough, see the [Tutorial](tutorial.md).
 
 ## Concepts
+
+### Repos
+
+A **repo** is a local git checkout that bay creates worktrees from.
+Register repos with `bay repo add` — bay validates the path is a git
+repository and stores the absolute path in config.
+
+```
+bay repo add myproject ~/projects/myproject
+bay repo add myproject ~/projects/myproject --url git@github.com:org/repo.git
+bay repo ls
+bay repo remove myproject
+bay repo remove myproject --force    # also removes docks using this repo
+```
 
 ### Docks
 
 A **dock** is a named tmux session that groups related workspaces. You
-might have a `labs` dock for one project and a `server` dock for
-another. Each dock has defaults: which repo to use, which agent to
-launch, and which template to inject.
+might have a `dev` dock for one project and a `ops` dock for another.
+Each dock has defaults: which repo to use, which agent to launch, and
+which template to inject.
+
+When a dock is created, its tmux session starts with a placeholder `~`
+window. This window is automatically cleaned up when you create your
+first workspace, and recreated when you close your last — keeping the
+tmux session alive so you don't have to reattach.
+
+```
+bay dock new dev --repo myproject --agent claude
+bay dock ls
+bay dock close dev
+bay dock close dev --force
+```
 
 ### Workspaces
 
@@ -133,10 +178,13 @@ Workspaces can be referenced by name (`auth-fix`), by ID (`w3`), or by
 full qualifier (`labs:w3`). The short form works when the name or ID is
 unambiguous across docks. Names must match `[a-zA-Z0-9_-]+`.
 
+`self` refers to the current workspace (resolved from your tmux
+window and working directory).
+
 ## Configuration
 
-Bay's config lives at `~/.config/bay/config.toml`. It has four sections:
-agents, repos, docks, and settings.
+Bay's config lives at `~/.config/bay/config.toml`. You can manage it
+entirely through CLI commands — no need to edit directly.
 
 ### Agents
 
@@ -158,51 +206,42 @@ repos.
 
 ### Repos
 
-Define repos you work in:
+Managed via `bay repo add` / `bay repo remove`:
 
 ```toml
 [repos.labs]
 path = "~/projects/labs"
 worktree_dir = "~/projects/labs-worktrees"    # optional
-
-[repos.ct-server]
-path = "~/projects/ct-server"
-# worktree_dir defaults to ~/projects/ct-server-worktrees
 ```
 
 `worktree_dir` is where bay creates worktrees for this repo. If
-omitted, it defaults to `{path}-worktrees`.
+omitted, it defaults to `{path}-worktrees`. The directory is created
+on first use and cleaned up when the last worktree is removed.
 
 ### Docks
 
-Define your working environments:
+Managed via `bay dock new`:
 
 ```toml
 [docks.labs]
-repo = "labs"                                  # references [repos.labs]
-agent = "claude"                               # default agent type
-agent_args = ["--add-dir", "~/shared-data"]    # extra agent flags
-agent_config_template = "~/.config/bay/templates/labs.md"
-
-[docks.research]
 repo = "labs"
 agent = "claude"
-agent_config_template = "~/.config/bay/templates/research.md"
+agent_args = ["--add-dir", "~/shared-data"]
+agent_config_template = "~/.config/bay/templates/labs.md"
 ```
 
-`repo` references a `[repos.*]` entry. `agent` sets the default — you
-can override per workspace with `--agent`. `agent_args` are appended to
-the agent launch command for all workspaces in this dock.
+`agent_args` are appended to the agent launch command. Docks without a
+template launch agents with just the repo's own config.
 
 ### Monitor and keybindings
 
 ```toml
 [monitor]
-interval_seconds = 3               # how often to check for waiting agents
+interval_seconds = 3
 
 [keybinding]
-add_prompt = "P"                   # prefix + P: capture a waiting pattern
-next_waiting = "M-w"               # option/alt + w: jump to next waiting agent
+add_prompt = "P"           # prefix + P: capture a waiting pattern
+next_waiting = "M-w"       # option/alt + w: jump to next waiting agent
 ```
 
 ## Templates
@@ -249,92 +288,118 @@ Templates are rendered once at workspace creation. If you edit a
 template, existing workspaces won't see the change until you run
 `bay win restart` to regenerate the config and relaunch the agent.
 
-## Usage
+## Command reference
 
-### Creating workspaces
-
-```
-bay ws new labs                          # worktree, default repo and agent
-bay ws new labs --name auth-fix          # with a display name
-bay ws new labs --repo ct-server         # worktree from a different repo
-bay ws new labs --dir ~/projects/foo     # external workspace
-bay ws new labs --shell                  # shell instead of agent
-bay ws new labs --agent codex            # override the default agent
-```
-
-### Managing windows and panes
+### Repos
 
 ```
-bay win open auth-fix --shell            # shell window in same worktree
-bay win open auth-fix --agent codex      # second agent, different type
-bay win open auth-fix --cmd "npm test --watch"
-
-bay pane add --shell --split v           # shell pane, vertical split
-bay pane add --cmd "tail -f app.log"     # log tail pane
-
-bay win close self                       # close just this window
-bay win restart self                     # restart all panes in this window
+bay repo add <name> <path>                  # register existing local repo
+bay repo add <name> <path> --url <git-url>  # clone then register
+bay repo add <name> <path> --force          # skip git repo check
+bay repo ls                                 # list repos and their docks
+bay repo remove <name>                      # remove (shows what --force would delete)
+bay repo remove <name> --force              # remove repo + all its docks
 ```
 
-### Navigating
+### Docks
 
 ```
-bay go                                   # fzf picker of all windows
-bay go auth-fix                          # jump to workspace by name
-bay go 347                               # jump by PR number
-bay go --waiting                         # picker filtered to waiting agents
-bay go --next-waiting                    # cycle to next waiting agent
+bay dock new <name> --repo <r> --agent <a>  # create dock + tmux session
+bay dock ls                                 # list docks (current dock if inside one)
+bay dock close <name>                       # close all workspaces + kill session
+bay dock close <name> --force               # skip safety checks
+bay dock recover <name>                     # recover a single dock
 ```
 
-`bay go --next-waiting` is bound to `option + w` (`M-w`) by default
-for rapid triage of waiting agents.
-
-### Updating workspace metadata
+### Workspaces
 
 ```
-bay ws update self --branch feature-x --status active
-bay ws update self --pr 234
-bay ws update self --status done
-bay ws update auth-fix --status done     # from outside
+bay ws new [dock]                           # new worktree + agent
+bay ws new [dock] --shell                   # new worktree + shell
+bay ws new [dock] --name <n>                # with display name
+bay ws new [dock] --repo <r>                # override dock's repo
+bay ws new [dock] --dir <path>              # external workspace
+bay ws new [dock] --agent <a>               # override dock's agent
+bay ws close <name|self>                    # close (safety checks)
+bay ws close <name|self> --force            # skip safety checks
+bay ws show <name|self>                     # detailed view
+bay ws update <name|self> --branch <b>      # update metadata
+bay ws update <name|self> --pr <n>
+bay ws update <name|self> --status <s>      # idle, active, done
+bay ws rename <name|self> <new-name>        # permanent rename
 ```
 
-This updates bay's tracking and refreshes tmux window names. It does
-not modify git state — the agent (or you) already did the git work.
-
-### Listing and inspecting
+### Windows
 
 ```
-bay ls                                   # all workspaces across all docks
-bay ws show self                         # detailed view of current workspace
-bay ws show auth-fix                     # detailed view by name
-bay dock ls                              # list docks and their workspaces
+bay win open <workspace>                    # add window (dock default agent)
+bay win open <workspace> --shell            # add shell window
+bay win open <workspace> --agent <a>        # add window with specific agent
+bay win open <workspace> --cmd "..."        # add window running a command
+bay win close [self|workspace]              # close window (not workspace)
+bay win close [self|workspace] --window N   # close specific window
+bay win restart [self|workspace]            # kill + respawn all panes
+bay win restart [self|workspace] --window N # restart specific window
 ```
 
-### Closing workspaces
+### Panes
 
 ```
-bay ws close auth-fix                    # close by name
-bay ws close self                        # close from inside
-bay ws close self --force                # skip safety checks
-bay dock close labs                      # close all workspaces in a dock
-bay dock close labs --force              # force close entire dock
+bay pane add --shell                        # shell pane, vertical split
+bay pane add --shell --split h              # horizontal split
+bay pane add --agent <a>                    # agent pane
+bay pane add --cmd "..."                    # command pane
 ```
 
-For worktree workspaces, bay checks for uncommitted changes and unpushed
-commits before closing. Use `--force` to override.
-
-For external workspaces, bay just closes windows and removes its config
-file. The directory is untouched.
-
-### Renaming
+### Navigation
 
 ```
-bay ws rename w3 mem-refactor
-bay ws rename self mem-refactor
+bay go                                      # fzf picker of all windows
+bay go <query>                              # fuzzy match name/branch/PR
+bay go --waiting                            # picker filtered to waiting
+bay go --next-waiting                       # cycle to next waiting
 ```
 
-Overrides the auto-abbreviated name permanently. The change shows up
-immediately in tmux window titles.
+### Global
+
+```
+bay ls                                      # full repo/dock/workspace tree
+bay recover                                 # reconstruct after reboot
+bay doctor                                  # health checks
+bay setup                                   # first-time setup
+bay version                                 # show version + commit
+bay monitor start|stop|status               # manage pane monitor
+bay add-prompt                              # capture waiting pattern
+bay completion bash|zsh|fish                # generate completion script
+```
+
+## Listing views
+
+`bay ls` shows the full hierarchy:
+
+```
+repo myproject (~/projects/myproject)
+  dock dev
+    w1  auth          feature/auth  #42  active  claude
+    w2  w2            —                  idle    claude
+  dock staging
+    w1  deploy        release/v2    #87  done    claude
+```
+
+`bay dock ls` shows just docks (narrows to current dock if inside one):
+
+```
+dock dev (repo=myproject, agent=claude)
+  w1  auth          feature/auth  #42  active
+  w2  w2            —                  idle
+```
+
+`bay repo ls` shows repos with their docks:
+
+```
+myproject  ~/projects/myproject  (worktrees: ~/projects/myproject-worktrees)
+  docks: dev, staging
+```
 
 ## Waiting detection
 
@@ -370,25 +435,13 @@ When you see a prompt the monitor doesn't catch:
 ### Managing the monitor
 
 ```
-bay monitor status                       # check if running
-bay monitor start                        # start manually
-bay monitor stop                         # stop
+bay monitor status
+bay monitor start
+bay monitor stop
 ```
 
 The monitor is normally started by `bay recover`. You shouldn't need to
 manage it directly.
-
-### Shell completions
-
-`bay setup` installs shell completions automatically. If you need to
-regenerate them (e.g., after switching shells):
-
-```
-bay completion bash                      # or zsh, fish
-```
-
-This prints the completion script to stdout. Pipe it to the appropriate
-file for your shell, or use `bay setup` to reinstall.
 
 ## Recovery
 
@@ -407,6 +460,7 @@ agent config files, relaunches agents, starts the monitor, and prints
 
 Recovery is idempotent — you can run it multiple times safely. It
 detects and reuses existing tmux state rather than creating duplicates.
+Panes with live foreground processes are left alone.
 
 ### What to do if you closed your terminal
 
@@ -436,6 +490,20 @@ For Codex, also add to `~/.codex/config.toml`:
 project_doc_fallback_filenames = ["AGENTS.local.md"]
 ```
 
+## Shell completions
+
+`bay setup` installs shell completions automatically. Tab completion
+covers workspace names and IDs, dock names, repo names, agent types,
+status values, and split directions.
+
+To regenerate manually:
+
+```
+bay completion bash > /usr/local/etc/bash_completion.d/bay
+bay completion zsh > "${fpath[1]}/_bay"
+bay completion fish > ~/.config/fish/completions/bay.fish
+```
+
 ## Tips and troubleshooting
 
 **"I closed my terminal and everything is gone."**
@@ -445,26 +513,16 @@ Your worktrees and code are still on disk.
 
 **"My agent doesn't see my template changes."**
 Templates are rendered at workspace creation time, not live-reloaded.
-Run `bay win restart self` (or `bay win restart <name>` from outside)
-to regenerate the config file and relaunch the agent.
-
-**"I edited the template but new workspaces look wrong."**
-Check that you edited the external template file (e.g.,
-`~/.config/bay/templates/labs.md`), not something else. Verify the
-`agent_config_template` path in your dock config points to the right
-file.
+Run `bay win restart self` to regenerate the config and relaunch.
 
 **"`bay ws close` refuses and I just want it gone."**
-The safety checks exist to prevent losing work. If you're sure (e.g.,
-the branch was already merged), use `--force`. Otherwise, push your
-commits first and try again.
+The safety checks prevent losing work. If you're sure (e.g., the
+branch was already merged), use `--force`.
 
 **"The waiting indicator isn't working."**
-Check that the monitor is running: `bay monitor status`. If it's
-running, the issue is likely that the prompt text doesn't match any
-pattern. Switch to the window, see what the prompt looks like, and use
-`prefix + P` or `bay add-prompt` to capture it. Then edit
-`~/.config/bay/bay-prompts.txt` to generalize the pattern to a regex.
+Check `bay monitor status`. If running, the prompt text probably
+doesn't match any pattern. Use `prefix + P` or `bay add-prompt` to
+capture it, then edit `bay-prompts.txt` to generalize to a regex.
 
 **"I want to use bay with an agent that isn't Claude or Codex."**
 Add an agent definition to your config:
@@ -475,17 +533,19 @@ command = "myagent-cli"
 config_file = ".myagent.local.md"
 ```
 
-`command` is what bay runs in the pane. `config_file` is the filename
-bay writes the rendered template into — make sure it's in your repos'
-`.gitignore`. Then reference it with `--agent myagent` or set it as a
-dock's default.
+Then reference it with `--agent myagent` or set it as a dock default.
 
 **"Two docks use the same repo — is that okay?"**
-Yes. Worktree directories are per-repo (configured in `[repos.*]`), so
-workspaces from different docks sharing a repo get separate worktrees
-in the same directory. No conflicts.
+Yes. They share the same worktree directory but each workspace gets
+its own subdirectory. No conflicts.
 
 **"I renamed a workspace but the agent still shows the old name."**
-`bay ws rename` updates the manifest and tmux window title immediately,
-but the agent's config file contains the old name. Run
-`bay win restart` to regenerate the config with the new name.
+`bay ws rename` updates the manifest and tmux immediately, but the
+agent's config file contains the old name. Run `bay win restart` to
+regenerate.
+
+**"What's the `~` window?"**
+That's a placeholder. It keeps the tmux session alive when you have no
+workspaces open. It disappears automatically when you create a
+workspace, and reappears when you close your last one. If you type in
+it, bay treats it as a regular shell and leaves it alone.
