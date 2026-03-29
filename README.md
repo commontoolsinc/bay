@@ -36,5 +36,5 @@ Then run `bay setup` to create your config and install shell completions.
 
 - **[Tutorial](docs/tutorial.md)** — hands-on walkthrough from install to cleanup
 - **[User Guide](docs/human-guide.md)** — configuration, commands, and daily workflow
-- **[Agent Guide](docs/agent-guide.md)** — reference for AI agents operating inside bay workspaces
+- **[Agent Reference](docs/agent-reference.md)** — comprehensive reference for AI agents operating inside bay workspaces
 - **[Design Doc](docs/design.md)** — architecture, requirements, and design decisions

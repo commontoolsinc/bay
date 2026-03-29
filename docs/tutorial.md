@@ -301,5 +301,5 @@ rm -rf ~/projects/bay-tutorial ~/projects/bay-tutorial-worktrees
 - **[User Guide](human-guide.md)** — full command reference,
   configuration, templates, waiting detection, recovery, and
   troubleshooting.
-- **[Agent Guide](agent-guide.md)** — how AI agents use bay from
-  inside workspaces.
+- **[Agent Reference](agent-reference.md)** — comprehensive reference
+  for AI agents operating inside bay workspaces.

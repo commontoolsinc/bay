@@ -129,6 +129,36 @@ func abbreviateBranch(branch string) string {
 
 const placeholderName = "~"
 
+// bayAgentPreamble is automatically prepended to every agent config file.
+// It gives agents the essential bay commands without requiring a user template.
+const bayAgentPreamble = `# Bay Workspace
+
+You are in bay workspace {workspace_name} ({workspace_id}) in the {dock} dock.
+Working directory: {workspace_path}
+
+## Updating bay
+
+When you create a branch, update bay so it can track your work and
+name your tmux window:
+
+    !bay ws update self --branch <branch-name>
+
+When you open a PR:
+
+    !bay ws update self --pr <number>
+
+When your work is complete:
+
+    !bay ws update self --status done
+
+## Other bay commands
+
+    !bay ws show self              # see workspace details
+    !bay ls                        # see all workspaces across docks
+    !bay win open self --shell     # open a shell window for this workspace
+
+`
+
 // ensureSession creates the tmux session if it doesn't exist.
 // The default window created by new-session is tagged as a placeholder.
 func (e *Engine) ensureSession(name string) error {
@@ -675,25 +705,11 @@ func (e *Engine) generateAgentConfig(dockName, agentName, wsID, wsName, wsPath s
 		}
 	}
 
-	// If no template, nothing to write
-	if dockCfg.AgentConfigTemplate == "" {
-		return nil
-	}
-
-	// Load template
-	templatePath := config.ExpandPath(dockCfg.AgentConfigTemplate)
-	tmplData, err := os.ReadFile(templatePath)
-	if err != nil {
-		return fmt.Errorf("reading template %s: %w", templatePath, err)
-	}
-
-	// Variable substitution
-	content := string(tmplData)
 	if wsName == "" {
 		wsName = wsID
 	}
 
-	// Resolve repo paths from the effective repo, not the dock default
+	// Resolve repo paths from the effective repo
 	dockRepo := ""
 	dockWorktreeDir := ""
 	if effectiveRepo != "" {
@@ -713,13 +729,34 @@ func (e *Engine) generateAgentConfig(dockName, agentName, wsID, wsName, wsPath s
 		"{dock_repo}":         dockRepo,
 		"{dock_worktree_dir}": dockWorktreeDir,
 	}
-	for k, v := range replacements {
-		content = strings.ReplaceAll(content, k, v)
+
+	// Build config content: bay preamble + user template
+	var content strings.Builder
+	content.WriteString(bayAgentPreamble)
+
+	// Load and append user template if configured
+	if dockCfg.AgentConfigTemplate != "" {
+		templatePath := config.ExpandPath(dockCfg.AgentConfigTemplate)
+		tmplData, err := os.ReadFile(templatePath)
+		if err != nil {
+			return fmt.Errorf("reading template %s: %w", templatePath, err)
+		}
+		content.WriteString("\n")
+		content.WriteString(string(tmplData))
 	}
 
-	// Write config file
+	// Variable substitution on the full content
+	result := content.String()
+	for k, v := range replacements {
+		result = strings.ReplaceAll(result, k, v)
+	}
+
+	// Write config file (ensure directory exists — worktree may be mock-created)
+	if err := os.MkdirAll(wsPath, 0o755); err != nil {
+		return fmt.Errorf("creating workspace dir: %w", err)
+	}
 	configPath := filepath.Join(wsPath, agentCfg.ConfigFile)
-	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte(result), 0o644); err != nil {
 		return fmt.Errorf("writing config file: %w", err)
 	}
 

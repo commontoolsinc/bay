@@ -509,9 +509,14 @@ func TestGenerateAgentConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading config: %v", err)
 	}
-	expected := "Workspace: test-ws (ID: w1) in labs"
-	if string(data) != expected {
-		t.Errorf("config = %q, want %q", string(data), expected)
+	content := string(data)
+	// Should contain the bay preamble with substituted values
+	if !strings.Contains(content, "bay workspace test-ws (w1) in the labs dock") {
+		t.Errorf("config missing preamble with substituted values, got:\n%s", content)
+	}
+	// Should contain the user template content
+	if !strings.Contains(content, "Workspace: test-ws (ID: w1) in labs") {
+		t.Errorf("config missing template content, got:\n%s", content)
 	}
 }
 
@@ -533,6 +538,33 @@ func TestGenerateAgentConfig_GitignoreRefused(t *testing.T) {
 	err := eng.generateAgentConfig("labs", "claude", "w1", "test", wsPath, manifest.WorkspaceTypeWorktree, "labs")
 	if err == nil {
 		t.Error("expected error when config file not gitignored")
+	}
+}
+
+func TestGenerateAgentConfig_PreambleWithoutTemplate(t *testing.T) {
+	// Bay should write the preamble even when no template is configured.
+	eng, _ := testEngine(t)
+
+	// labs dock has no agent_config_template by default
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+
+	configPath := filepath.Join(ws.Path, "CLAUDE.local.md")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("config file not written: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "# Bay Workspace") {
+		t.Error("config missing bay preamble")
+	}
+	if !strings.Contains(content, "bay ws update self") {
+		t.Error("config missing bay update instructions")
+	}
+	if !strings.Contains(content, ws.Path) {
+		t.Errorf("config missing workspace path %q", ws.Path)
 	}
 }
 
@@ -596,8 +628,8 @@ func TestGenerateAgentConfig_WorkspaceType(t *testing.T) {
 	eng.generateAgentConfig("labs", "claude", "w1", "test", wsPath, manifest.WorkspaceTypeExternal, "labs")
 
 	data, _ := os.ReadFile(filepath.Join(wsPath, "CLAUDE.local.md"))
-	if string(data) != "type=external" {
-		t.Errorf("config = %q, want type=external", string(data))
+	if !strings.Contains(string(data), "type=external") {
+		t.Errorf("config should contain type=external, got:\n%s", string(data))
 	}
 }
 
@@ -685,8 +717,8 @@ func TestGenerateAgentConfig_UsesWorkspaceRepo(t *testing.T) {
 
 	data, _ := os.ReadFile(filepath.Join(wsPath, "CLAUDE.local.md"))
 	// Should contain the "other" repo path, not the "labs" repo path
-	if string(data) != otherRepoDir {
-		t.Errorf("config = %q, want %q (workspace repo path)", string(data), otherRepoDir)
+	if !strings.Contains(string(data), otherRepoDir) {
+		t.Errorf("config should contain workspace repo path %q, got:\n%s", otherRepoDir, string(data))
 	}
 }
 
