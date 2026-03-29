@@ -332,17 +332,47 @@ func (e *Engine) RepoRemove(name string, force bool) error {
 	if _, exists := e.Config.Repos[name]; !exists {
 		return fmt.Errorf("repo %q not found", name)
 	}
-	// Find docks that reference this repo
+
+	// Find all docks that reference this repo
+	var affectedDocks []string
 	for dockName, dock := range e.Config.Docks {
 		if dock.Repo == name {
-			if !force {
-				return fmt.Errorf("repo %q is used by dock %q (use --force to also remove the dock)", name, dockName)
-			}
-			// Force: close the dock's workspaces and remove the dock
-			_ = e.DockClose(dockName, true)
-			delete(e.Config.Docks, dockName)
+			affectedDocks = append(affectedDocks, dockName)
 		}
 	}
+
+	if len(affectedDocks) > 0 && !force {
+		// Build a detailed message showing what --force would delete
+		m, _ := e.LoadManifest()
+		var details []string
+		for _, dockName := range affectedDocks {
+			detail := fmt.Sprintf("  dock %q", dockName)
+			if m != nil {
+				if ds, ok := m.Docks[dockName]; ok && len(ds.Workspaces) > 0 {
+					var wsNames []string
+					for id, ws := range ds.Workspaces {
+						wsName := id
+						if ws.Name != "" && ws.Name != id {
+							wsName = fmt.Sprintf("%s (%s)", ws.Name, id)
+						}
+						wsNames = append(wsNames, wsName)
+					}
+					detail += fmt.Sprintf(" with %d workspace(s): %s",
+						len(ds.Workspaces), strings.Join(wsNames, ", "))
+				}
+			}
+			details = append(details, detail)
+		}
+		return fmt.Errorf("repo %q is in use. --force would also remove:\n%s",
+			name, strings.Join(details, "\n"))
+	}
+
+	// Force path: close and remove affected docks
+	for _, dockName := range affectedDocks {
+		_ = e.DockClose(dockName, true)
+		delete(e.Config.Docks, dockName)
+	}
+
 	delete(e.Config.Repos, name)
 	if e.ConfigPath != "" {
 		if err := config.Save(e.ConfigPath, e.Config); err != nil {
