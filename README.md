@@ -1,27 +1,29 @@
 # Bay
 
-Multi-session workspace management for AI coding agents.
+Multi-session workspace management across tmux and git worktrees.
 
-Bay manages concurrent workspaces across tmux windows and git worktrees. It handles agent sessions, shell access, and full tmux recovery after reboot — so you can run multiple agents on separate PRs without managing the plumbing by hand.
+Bay manages concurrent workspaces — each with its own git worktree, tmux window, and shell. Run multiple PRs in parallel, open editors and agents alongside each other, and recover everything after a reboot.
 
 ```
 bay repo add myproject ~/projects/myproject
-bay dock new dev --repo myproject --agent claude
+bay dock new dev --repo myproject
 tmux attach -t dev
-bay ws new                      # worktree + agent in a tmux window
-bay ws new --shell              # worktree + shell
-bay win open w1 --shell         # second window into the same workspace
-bay go                          # fuzzy-pick any workspace
+bay ws new                      # new worktree + shell window
+bay ws new --agent claude       # new worktree + agent window
+bay edit                        # open editor for current workspace
+bay shell                       # split a shell pane
+bay go                          # fuzzy-pick any window across docks
 bay recover                     # reconstruct everything after reboot
 ```
 
 ## What it does
 
-- **Workspace lifecycle** — create, close, rename workspaces backed by git worktrees or external directories. Safety checks on close (dirty files, unpushed commits).
-- **Agent config injection** — generates gitignored config files from templates, with per-workspace metadata. Works with Claude Code, Codex, or any terminal agent.
+- **Worktree lifecycle** — create, close, rename workspaces backed by git worktrees or external directories. Safety checks on close (dirty files, unpushed commits). Each workspace is an isolated checkout.
 - **Tmux management** — multiple windows and panes per workspace, automatic naming from branch names, placeholder windows to keep sessions alive, and full recovery after reboot.
-- **Pane monitoring** — background process detects when agents are waiting for input and highlights those windows in the tmux status bar.
-- **Navigation** — `bay go` fuzzy-matches workspace names, branches, and PR numbers with fzf.
+- **Editor integration** — `bay edit` opens your workspace in cursor, VS Code, zed, nvim, or vim. `bay edit --all` for multi-root.
+- **Agent support** — optionally launch AI agents (Claude Code, Codex, etc.) with auto-injected config. Agents are opt-in per workspace.
+- **Navigation** — `bay go` fuzzy-matches workspace names, branches, PR numbers, and window types with fzf.
+- **Status line** — `bay status-line` provides workspace info for tmux status bar composition.
 - **Shell completion** — tab-complete workspace names, dock names, and flag values in bash, zsh, and fish.
 
 ## Install

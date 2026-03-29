@@ -1,9 +1,11 @@
 # Bay — User Guide
 
-Bay manages concurrent workspaces for AI coding agents. It handles tmux
-sessions, git worktrees, agent config injection, and full session
-recovery after reboot — so you can run multiple agents on separate PRs
-without managing the plumbing by hand.
+Bay manages concurrent workspaces built on git worktrees and tmux. Each
+workspace gets its own worktree, tmux window, and shell — so you can
+work on multiple branches simultaneously without `git stash` juggling or
+directory cloning. Bay handles session recovery after reboot, and
+optionally launches AI coding agents inside workspaces when you want
+them.
 
 ## Prerequisites
 
@@ -13,11 +15,11 @@ without managing the plumbing by hand.
   in the background. You can detach and reattach without losing state.
   Bay leans on this heavily.
 
-- **An AI coding agent** — bay works with
+- **An AI coding agent** (optional) — bay works with
   [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview),
   [Codex](https://github.com/openai/codex), or any agent that runs in a
-  terminal. You can also use bay without agents — just for tmux/worktree
-  management with shells.
+  terminal. Agents are opt-in per workspace — bay is useful on its own
+  for worktree + tmux management.
 
 - **git** — for worktree-based workspaces.
 
@@ -51,7 +53,7 @@ installs shell completions, and sets up tmux keybindings.
 
 ```
 bay repo add myproject ~/projects/myproject
-bay dock new dev --repo myproject --agent claude
+bay dock new dev --repo myproject
 tmux attach -t dev
 ```
 
@@ -67,20 +69,28 @@ From inside the dock:
 bay ws new
 ```
 
-This creates a git worktree and opens a new tmux window with your
-agent. The placeholder `~` window disappears automatically.
+This creates a git worktree and opens a new tmux window with a shell.
+The placeholder `~` window disappears automatically.
+
+To launch an agent instead of a shell:
+```
+bay ws new --agent              # uses dock's default agent
+bay ws new --agent codex        # specific agent
+```
 
 ### 4. Do your work
 
-Interact with the agent in the tmux window. When the agent creates a
-branch or opens a PR, it should update bay's tracking:
+Work in the shell, open an editor, run tests — whatever you need. If
+you launched an agent, interact with it in the tmux window.
+
+When you create a branch or open a PR, update bay's tracking:
 
 ```
 bay ws update self --branch fix-auth-header --status active
 bay ws update self --pr 347
 ```
 
-(Your agent template can include instructions to do this automatically.)
+(Agent templates can include instructions to do this automatically.)
 
 ### 5. Check on things
 
@@ -123,8 +133,8 @@ bay repo remove myproject --force    # also removes docks using this repo
 
 A **dock** is a named tmux session that groups related workspaces. You
 might have a `dev` dock for one project and a `ops` dock for another.
-Each dock has defaults: which repo to use, which agent to launch, and
-which template to inject.
+Each dock has defaults: which repo to use, and optionally which agent
+to launch and which template to inject.
 
 When a dock is created, its tmux session starts with a placeholder `~`
 window. This window is automatically cleaned up when you create your
@@ -132,7 +142,8 @@ first workspace, and recreated when you close your last — keeping the
 tmux session alive so you don't have to reattach.
 
 ```
-bay dock new dev --repo myproject --agent claude
+bay dock new dev --repo myproject
+bay dock new dev --repo myproject --agent claude   # set default agent
 bay dock ls
 bay dock close dev
 bay dock close dev --force
@@ -204,6 +215,22 @@ config_file = "AGENTS.local.md"
 filename bay writes the template into — it must be gitignored in your
 repos.
 
+### Editor
+
+Bay resolves your editor from these sources, in order: the `[editor]`
+config section, `$VISUAL`, `$EDITOR`, or by probing for
+cursor/code/zed/nvim/vim on `$PATH`.
+
+```toml
+[editor]
+command = "cursor"
+gui = true           # detach from terminal (default: auto-detected)
+```
+
+`gui = true` means bay launches the editor and returns immediately
+(suitable for VS Code, Cursor, Zed). When `gui` is false or omitted
+for a terminal editor, bay runs it in the foreground.
+
 ### Repos
 
 Managed via `bay repo add` / `bay repo remove`:
@@ -225,11 +252,12 @@ Managed via `bay dock new`:
 ```toml
 [docks.labs]
 repo = "labs"
-agent = "claude"
-agent_args = ["--add-dir", "~/shared-data"]
-agent_config_template = "~/.config/bay/templates/labs.md"
+agent = "claude"                                       # optional
+agent_args = ["--add-dir", "~/shared-data"]            # optional
+agent_config_template = "~/.config/bay/templates/labs.md"  # optional
 ```
 
+`agent` sets the default agent for `bay ws new --agent` (no argument).
 `agent_args` are appended to the agent launch command. Docks without a
 template launch agents with just the repo's own config.
 
@@ -304,7 +332,8 @@ bay repo remove <name> --force              # remove repo + all its docks
 ### Docks
 
 ```
-bay dock new <name> --repo <r> --agent <a>  # create dock + tmux session
+bay dock new <name> --repo <r>              # create dock + tmux session
+bay dock new <name> --repo <r> --agent <a>  # with default agent
 bay dock ls                                 # list docks (current dock if inside one)
 bay dock close <name>                       # close all workspaces + kill session
 bay dock close <name> --force               # skip safety checks
@@ -314,12 +343,12 @@ bay dock recover <name>                     # recover a single dock
 ### Workspaces
 
 ```
-bay ws new [dock]                           # new worktree + agent
-bay ws new [dock] --shell                   # new worktree + shell
+bay ws new [dock]                           # new worktree + shell (default)
+bay ws new [dock] --agent                   # new worktree + dock's default agent
+bay ws new [dock] --agent codex             # new worktree + specific agent
 bay ws new [dock] --name <n>                # with display name
 bay ws new [dock] --repo <r>                # override dock's repo
 bay ws new [dock] --dir <path>              # external workspace
-bay ws new [dock] --agent <a>               # override dock's agent
 bay ws close <name|self>                    # close (safety checks)
 bay ws close <name|self> --force            # skip safety checks
 bay ws show <name|self>                     # detailed view
@@ -351,6 +380,25 @@ bay pane add --agent <a>                    # agent pane
 bay pane add --cmd "..."                    # command pane
 ```
 
+### Editor
+
+```
+bay edit [name|self]                        # open workspace in editor
+bay edit --all                              # multi-root: all workspaces in one editor
+```
+
+Resolves the editor from config `[editor].command`, `$VISUAL`,
+`$EDITOR`, or probes cursor/code/zed/nvim/vim. GUI editors detach;
+terminal editors run in the foreground.
+
+### Shell
+
+```
+bay shell                                   # split pane with shell in current workspace
+bay shell <name>                            # new tmux window with shell
+bay shell <name> --window                   # force new window instead of split
+```
+
 ### Navigation
 
 ```
@@ -358,6 +406,23 @@ bay go                                      # fzf picker of all windows
 bay go <query>                              # fuzzy match name/branch/PR
 bay go --waiting                            # picker filtered to waiting
 bay go --next-waiting                       # cycle to next waiting
+```
+
+The picker shows a type tag per window: `[agent]`, `[shell]`, or
+`[cmd]`.
+
+### Status line
+
+```
+bay status-line <field>                     # output workspace field for tmux
+```
+
+Fields: `name`, `branch`, `pr`, `status`, `dock`, `full`.
+
+Use this in your tmux config to show workspace info in the status bar:
+
+```tmux
+set -g status-right '#(bay status-line full)'
 ```
 
 ### Global
@@ -380,10 +445,10 @@ bay completion bash|zsh|fish                # generate completion script
 ```
 repo myproject (~/projects/myproject)
   dock dev
-    w1  auth          feature/auth  #42  active  claude
-    w2  w2            —                  idle    claude
+    w1  auth          feature/auth  #42  active  [shell]
+    w2  w2            —                  idle    [agent]
   dock staging
-    w1  deploy        release/v2    #87  done    claude
+    w1  deploy        release/v2    #87  done    [shell]
 ```
 
 `bay dock ls` shows just docks (narrows to current dock if inside one):
@@ -454,9 +519,9 @@ bay recover
 ```
 
 This recreates all tmux sessions, windows, and panes from the manifest.
-Worktrees are already on disk (they survive reboot). Bay regenerates
-agent config files, relaunches agents, starts the monitor, and prints
-`tmux attach` commands so you can reconnect.
+Worktrees are already on disk (they survive reboot). Bay relaunches
+shells, regenerates agent config files for agent windows, starts the
+monitor, and prints `tmux attach` commands so you can reconnect.
 
 Recovery is idempotent — you can run it multiple times safely. It
 detects and reuses existing tmux state rather than creating duplicates.
@@ -468,9 +533,9 @@ Same thing: `bay recover`. Closing the terminal detaches tmux — the
 sessions may still be alive. If they are, `bay recover` reconnects to
 them. If they're gone (e.g., after a full reboot), it recreates them.
 
-## Per-repo setup
+## Per-repo setup (agents only)
 
-Each repo you use with bay needs the agent config file in its
+If you use agents, each repo needs the agent config file in its
 `.gitignore`:
 
 ```
