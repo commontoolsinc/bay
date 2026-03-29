@@ -20,7 +20,7 @@ func newEditCmd() *cobra.Command {
 
   bay edit           open current workspace
   bay edit auth-fix  open specific workspace
-  bay edit --all     open all active workspaces
+  bay edit --all     open all workspaces in current dock
 
 Editor resolution order:
   1. [editor].command in config
@@ -37,12 +37,17 @@ Editor resolution order:
 			var paths []string
 
 			if all {
-				paths, err = eng.EditAll()
+				// Scope to current dock
+				dockName, sessionErr := eng.Tmux.CurrentSession()
+				if sessionErr != nil {
+					return fmt.Errorf("--all requires being inside a dock (tmux session)")
+				}
+				paths, err = eng.EditAll(dockName)
 				if err != nil {
 					return err
 				}
 				if len(paths) == 0 {
-					return fmt.Errorf("no active workspaces")
+					return fmt.Errorf("no active workspaces in dock %q", dockName)
 				}
 			} else {
 				target := "self"

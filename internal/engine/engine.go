@@ -1332,18 +1332,20 @@ func (e *Engine) Edit(dockName, wsID string) (string, error) {
 	return ws.Path, nil
 }
 
-// EditAll returns all active workspace paths across all docks.
-func (e *Engine) EditAll() ([]string, error) {
+// EditAll returns all active workspace paths for a single dock.
+func (e *Engine) EditAll(dockName string) ([]string, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return nil, err
 	}
+	dockState, ok := m.Docks[dockName]
+	if !ok {
+		return nil, fmt.Errorf("unknown dock %q", dockName)
+	}
 	var paths []string
-	for _, dockState := range m.Docks {
-		for _, ws := range dockState.Workspaces {
-			if ws.Path != "" {
-				paths = append(paths, ws.Path)
-			}
+	for _, ws := range dockState.Workspaces {
+		if ws.Path != "" {
+			paths = append(paths, ws.Path)
 		}
 	}
 	return paths, nil
