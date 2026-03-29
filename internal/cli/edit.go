@@ -70,8 +70,16 @@ Editor resolution order:
 				return fmt.Errorf("no editor found; set [editor].command in config, or $VISUAL/$EDITOR")
 			}
 
+			// For --all with terminal editors (vim, nvim), open the worktree
+			// parent directory instead of individual paths. The file tree
+			// shows all worktrees as subdirectories.
 			if all && !isGUI && len(paths) > 1 {
-				return fmt.Errorf("--all requires a GUI editor (cursor, code, zed); %s is a terminal editor", editorCmd)
+				dockName, _ := eng.Tmux.CurrentSession()
+				parentDir, err := eng.EditAllParentDir(dockName)
+				if err != nil {
+					return fmt.Errorf("cannot determine worktree directory: %w", err)
+				}
+				paths = []string{parentDir}
 			}
 
 			return launchEditor(editorCmd, isGUI, paths)
