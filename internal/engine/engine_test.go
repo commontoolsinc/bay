@@ -1028,11 +1028,15 @@ func TestRepoRemove_InUse(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error removing repo in use by dock")
 	}
-	if !strings.Contains(err.Error(), "in use") {
-		t.Errorf("error = %q, want 'in use' message", err)
+	inUse, ok := err.(*RepoInUseError)
+	if !ok {
+		t.Fatalf("expected *RepoInUseError, got %T: %v", err, err)
 	}
-	if !strings.Contains(err.Error(), "dock \"labs\"") {
-		t.Errorf("error should list affected dock, got %q", err)
+	if inUse.RepoName != "labs" {
+		t.Errorf("RepoName = %q, want labs", inUse.RepoName)
+	}
+	if len(inUse.AffectedDocks) != 1 || inUse.AffectedDocks[0].Name != "labs" {
+		t.Errorf("AffectedDocks = %v, want [{labs}]", inUse.AffectedDocks)
 	}
 }
 

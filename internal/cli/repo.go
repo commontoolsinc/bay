@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 
+	"github.com/commontoolsinc/bay/internal/engine"
 	"github.com/spf13/cobra"
 )
 
@@ -68,15 +69,11 @@ func newRepoLsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			repos := eng.RepoList()
-			if len(repos) == 0 {
+			if len(eng.Config.Repos) == 0 {
 				fmt.Println("No repos configured.")
 				return nil
 			}
-			for name, repo := range repos {
-				wtDir := repo.EffectiveWorktreeDir()
-				fmt.Printf("%-20s %s (worktrees: %s)\n", name, repo.Path, wtDir)
-			}
+			fmt.Print(FormatRepoTree(eng.Config))
 			return nil
 		},
 	}
@@ -96,6 +93,13 @@ func newRepoRemoveCmd() *cobra.Command {
 				return err
 			}
 			if err := eng.RepoRemove(args[0], force); err != nil {
+				if inUse, ok := err.(*engine.RepoInUseError); ok {
+					fmt.Fprintf(cmd.ErrOrStderr(),
+						"Cannot remove repo %q. Use --force to also remove:\n%s",
+						args[0],
+						FormatSubtreeForRemoval(eng.Config, inUse.RepoName, inUse.AffectedDocks))
+					return fmt.Errorf("repo %q is in use", args[0])
+				}
 				return err
 			}
 			fmt.Printf("Repo %q removed.\n", args[0])

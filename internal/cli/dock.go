@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 
+	"github.com/commontoolsinc/bay/internal/engine"
 	"github.com/spf13/cobra"
 )
 
@@ -63,13 +64,20 @@ func newDockLsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			for _, d := range docks {
-				fmt.Printf("Dock: %s (agent=%s, repo=%s)\n", d.Name, d.Agent, d.Repo)
-				for _, ws := range d.Workspaces {
-					fmt.Printf("  %-5s %-20s %-35s %-6s %s\n",
-						ws.ID, ws.Name, ws.Branch, ws.Status, ws.PR)
+
+			// If inside a dock, show only that dock
+			currentSession, sessionErr := eng.Tmux.CurrentSession()
+			if sessionErr == nil {
+				for _, d := range docks {
+					if d.Name == currentSession {
+						fmt.Print(FormatDockTree([]engine.DockInfo{d}))
+						return nil
+					}
 				}
 			}
+
+			// Otherwise show all docks
+			fmt.Print(FormatDockTree(docks))
 			return nil
 		},
 	}

@@ -326,49 +326,49 @@ func (e *Engine) RepoAdd(name, path, worktreeDir, cloneURL string, force bool) e
 	return nil
 }
 
+// RepoInUseError is returned when a repo cannot be removed because docks reference it.
+// The AffectedDocks field contains DockInfo for each dock that would be removed.
+type RepoInUseError struct {
+	RepoName      string
+	AffectedDocks []DockInfo
+}
+
+func (e *RepoInUseError) Error() string {
+	return fmt.Sprintf("repo %q is in use by %d dock(s)", e.RepoName, len(e.AffectedDocks))
+}
+
 // RepoRemove removes a repo from the configuration.
 // If force is true, also closes and removes any docks that reference this repo.
+// Returns *RepoInUseError if the repo is in use and force is false.
 func (e *Engine) RepoRemove(name string, force bool) error {
 	if _, exists := e.Config.Repos[name]; !exists {
 		return fmt.Errorf("repo %q not found", name)
 	}
 
 	// Find all docks that reference this repo
-	var affectedDocks []string
+	var affectedDockNames []string
 	for dockName, dock := range e.Config.Docks {
 		if dock.Repo == name {
-			affectedDocks = append(affectedDocks, dockName)
+			affectedDockNames = append(affectedDockNames, dockName)
 		}
 	}
 
-	if len(affectedDocks) > 0 && !force {
-		// Build a detailed message showing what --force would delete
-		m, _ := e.LoadManifest()
-		var details []string
-		for _, dockName := range affectedDocks {
-			detail := fmt.Sprintf("  dock %q", dockName)
-			if m != nil {
-				if ds, ok := m.Docks[dockName]; ok && len(ds.Workspaces) > 0 {
-					var wsNames []string
-					for id, ws := range ds.Workspaces {
-						wsName := id
-						if ws.Name != "" && ws.Name != id {
-							wsName = fmt.Sprintf("%s (%s)", ws.Name, id)
-						}
-						wsNames = append(wsNames, wsName)
-					}
-					detail += fmt.Sprintf(" with %d workspace(s): %s",
-						len(ds.Workspaces), strings.Join(wsNames, ", "))
+	if len(affectedDockNames) > 0 && !force {
+		// Build DockInfo for affected docks so the CLI can format them
+		docks, _ := e.List()
+		var affected []DockInfo
+		for _, d := range docks {
+			for _, dockName := range affectedDockNames {
+				if d.Name == dockName {
+					affected = append(affected, d)
 				}
 			}
-			details = append(details, detail)
 		}
-		return fmt.Errorf("repo %q is in use. --force would also remove:\n%s",
-			name, strings.Join(details, "\n"))
+		return &RepoInUseError{RepoName: name, AffectedDocks: affected}
 	}
 
 	// Force path: close and remove affected docks
-	for _, dockName := range affectedDocks {
+	for _, dockName := range affectedDockNames {
 		_ = e.DockClose(dockName, true)
 		delete(e.Config.Docks, dockName)
 	}
