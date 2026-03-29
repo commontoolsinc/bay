@@ -19,6 +19,19 @@ func NewReal() *Real {
 	return &Real{}
 }
 
+func (r *Real) Clone(url, destPath string) error {
+	cmd := exec.Command("git", "clone", url, destPath)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git clone: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func (r *Real) IsGitRepo(path string) bool {
+	cmd := exec.Command("git", "-C", path, "rev-parse", "--git-dir")
+	return cmd.Run() == nil
+}
+
 func (r *Real) CreateWorktree(repoPath, worktreePath string) error {
 	branch, err := r.DefaultBranch(repoPath)
 	if err != nil {

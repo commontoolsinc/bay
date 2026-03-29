@@ -129,6 +129,36 @@ func abbreviateBranch(branch string) string {
 
 const placeholderName = "~"
 
+// bayAgentPreamble is automatically prepended to every agent config file.
+// It gives agents the essential bay commands without requiring a user template.
+const bayAgentPreamble = `# Bay Workspace
+
+You are in bay workspace {workspace_name} ({workspace_id}) in the {dock} dock.
+Working directory: {workspace_path}
+
+## Updating bay
+
+When you create a branch, update bay so it can track your work and
+name your tmux window:
+
+    !bay ws update self --branch <branch-name>
+
+When you open a PR:
+
+    !bay ws update self --pr <number>
+
+When your work is complete:
+
+    !bay ws update self --status done
+
+## Other bay commands
+
+    !bay ws show self              # see workspace details
+    !bay ls                        # see all workspaces across docks
+    !bay win open self --shell     # open a shell window for this workspace
+
+`
+
 // ensureSession creates the tmux session if it doesn't exist.
 // The default window created by new-session is tagged as a placeholder.
 func (e *Engine) ensureSession(name string) error {
@@ -272,7 +302,9 @@ func (e *Engine) DockNew(name, repo, agent, template string) error {
 }
 
 // RepoAdd adds a repo to the configuration.
-func (e *Engine) RepoAdd(name, path, worktreeDir string) error {
+// If cloneURL is non-empty and the path does not exist, the repo is cloned first.
+// If force is false and the path is not a git repo, an error is returned.
+func (e *Engine) RepoAdd(name, path, worktreeDir, cloneURL string, force bool) error {
 	if err := ValidateName(name); err != nil {
 		return err
 	}
@@ -280,18 +312,40 @@ func (e *Engine) RepoAdd(name, path, worktreeDir string) error {
 		return fmt.Errorf("repo %q already exists", name)
 	}
 
-	// Verify path exists
-	expandedPath := config.ExpandPath(path)
-	info, err := os.Stat(expandedPath)
-	if err != nil {
-		return fmt.Errorf("path %q: %w", path, err)
+	// Normalize to absolute path for config storage
+	normalizedPath := config.NormalizePath(path)
+	expandedPath := config.ExpandPath(normalizedPath)
+
+	if cloneURL != "" {
+		// Clone mode: destination must NOT exist
+		if _, err := os.Stat(expandedPath); err == nil {
+			return fmt.Errorf("directory %q already exists — cannot clone into an existing directory", expandedPath)
+		}
+		if err := e.Git.Clone(cloneURL, expandedPath); err != nil {
+			return fmt.Errorf("cloning %s: %w", cloneURL, err)
+		}
+	} else {
+		// Local mode: path must exist
+		info, err := os.Stat(expandedPath)
+		if err != nil {
+			return fmt.Errorf("path %q: %w", expandedPath, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("path %q is not a directory", expandedPath)
+		}
+		// Verify it's a git repo
+		if !force && !e.Git.IsGitRepo(expandedPath) {
+			return fmt.Errorf("path %q is not a git repository (use --force to add anyway)", expandedPath)
+		}
 	}
-	if !info.IsDir() {
-		return fmt.Errorf("path %q is not a directory", path)
+
+	// Normalize worktree dir too if provided
+	if worktreeDir != "" {
+		worktreeDir = config.NormalizePath(worktreeDir)
 	}
 
 	e.Config.Repos[name] = config.RepoConfig{
-		Path:        path,
+		Path:        normalizedPath,
 		WorktreeDir: worktreeDir,
 	}
 	if e.ConfigPath != "" {
@@ -302,17 +356,53 @@ func (e *Engine) RepoAdd(name, path, worktreeDir string) error {
 	return nil
 }
 
+// RepoInUseError is returned when a repo cannot be removed because docks reference it.
+// The AffectedDocks field contains DockInfo for each dock that would be removed.
+type RepoInUseError struct {
+	RepoName      string
+	AffectedDocks []DockInfo
+}
+
+func (e *RepoInUseError) Error() string {
+	return fmt.Sprintf("repo %q is in use by %d dock(s)", e.RepoName, len(e.AffectedDocks))
+}
+
 // RepoRemove removes a repo from the configuration.
-func (e *Engine) RepoRemove(name string) error {
+// If force is true, also closes and removes any docks that reference this repo.
+// Returns *RepoInUseError if the repo is in use and force is false.
+func (e *Engine) RepoRemove(name string, force bool) error {
 	if _, exists := e.Config.Repos[name]; !exists {
 		return fmt.Errorf("repo %q not found", name)
 	}
-	// Check if any dock references this repo
+
+	// Find all docks that reference this repo
+	var affectedDockNames []string
 	for dockName, dock := range e.Config.Docks {
 		if dock.Repo == name {
-			return fmt.Errorf("repo %q is used by dock %q — remove the dock first", name, dockName)
+			affectedDockNames = append(affectedDockNames, dockName)
 		}
 	}
+
+	if len(affectedDockNames) > 0 && !force {
+		// Build DockInfo for affected docks so the CLI can format them
+		docks, _ := e.List()
+		var affected []DockInfo
+		for _, d := range docks {
+			for _, dockName := range affectedDockNames {
+				if d.Name == dockName {
+					affected = append(affected, d)
+				}
+			}
+		}
+		return &RepoInUseError{RepoName: name, AffectedDocks: affected}
+	}
+
+	// Force path: close and remove affected docks
+	for _, dockName := range affectedDockNames {
+		_ = e.DockClose(dockName, true)
+		delete(e.Config.Docks, dockName)
+	}
+
 	delete(e.Config.Repos, name)
 	if e.ConfigPath != "" {
 		if err := config.Save(e.ConfigPath, e.Config); err != nil {
@@ -615,25 +705,11 @@ func (e *Engine) generateAgentConfig(dockName, agentName, wsID, wsName, wsPath s
 		}
 	}
 
-	// If no template, nothing to write
-	if dockCfg.AgentConfigTemplate == "" {
-		return nil
-	}
-
-	// Load template
-	templatePath := config.ExpandPath(dockCfg.AgentConfigTemplate)
-	tmplData, err := os.ReadFile(templatePath)
-	if err != nil {
-		return fmt.Errorf("reading template %s: %w", templatePath, err)
-	}
-
-	// Variable substitution
-	content := string(tmplData)
 	if wsName == "" {
 		wsName = wsID
 	}
 
-	// Resolve repo paths from the effective repo, not the dock default
+	// Resolve repo paths from the effective repo
 	dockRepo := ""
 	dockWorktreeDir := ""
 	if effectiveRepo != "" {
@@ -653,13 +729,34 @@ func (e *Engine) generateAgentConfig(dockName, agentName, wsID, wsName, wsPath s
 		"{dock_repo}":         dockRepo,
 		"{dock_worktree_dir}": dockWorktreeDir,
 	}
-	for k, v := range replacements {
-		content = strings.ReplaceAll(content, k, v)
+
+	// Build config content: bay preamble + user template
+	var content strings.Builder
+	content.WriteString(bayAgentPreamble)
+
+	// Load and append user template if configured
+	if dockCfg.AgentConfigTemplate != "" {
+		templatePath := config.ExpandPath(dockCfg.AgentConfigTemplate)
+		tmplData, err := os.ReadFile(templatePath)
+		if err != nil {
+			return fmt.Errorf("reading template %s: %w", templatePath, err)
+		}
+		content.WriteString("\n")
+		content.WriteString(string(tmplData))
 	}
 
-	// Write config file
+	// Variable substitution on the full content
+	result := content.String()
+	for k, v := range replacements {
+		result = strings.ReplaceAll(result, k, v)
+	}
+
+	// Write config file (ensure directory exists — worktree may be mock-created)
+	if err := os.MkdirAll(wsPath, 0o755); err != nil {
+		return fmt.Errorf("creating workspace dir: %w", err)
+	}
 	configPath := filepath.Join(wsPath, agentCfg.ConfigFile)
-	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte(result), 0o644); err != nil {
 		return fmt.Errorf("writing config file: %w", err)
 	}
 
@@ -736,6 +833,10 @@ func (e *Engine) WsClose(dockName, wsID string, force bool) error {
 					return fmt.Errorf("removing worktree: %w", err)
 				}
 			}
+			// Clean up the worktree parent directory if it's now empty.
+			// os.Remove only succeeds on empty directories.
+			wtDir := repoCfg.EffectiveWorktreeDir()
+			_ = os.Remove(wtDir)
 		}
 	}
 
@@ -1227,6 +1328,9 @@ func (e *Engine) DockClose(name string, force bool) error {
 			}
 		}
 	}
+
+	// Kill the tmux session (placeholders and all)
+	_ = e.Tmux.KillSession(name)
 
 	return nil
 }

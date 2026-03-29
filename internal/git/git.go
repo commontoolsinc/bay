@@ -3,6 +3,10 @@ package git
 
 // Interface defines git operations that bay needs.
 type Interface interface {
+	// Repo operations
+	Clone(url string, destPath string) error
+	IsGitRepo(path string) bool
+
 	// Worktree operations
 	CreateWorktree(repoPath string, worktreePath string) error
 	RemoveWorktree(repoPath string, worktreePath string, force bool) error

@@ -212,3 +212,31 @@ func TestExpandPath(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizePath(t *testing.T) {
+	home, _ := os.UserHomeDir()
+
+	// Absolute path under home → ~/...
+	got := NormalizePath(filepath.Join(home, "projects", "foo"))
+	if got != "~/projects/foo" {
+		t.Errorf("NormalizePath(home/projects/foo) = %q, want ~/projects/foo", got)
+	}
+
+	// Already ~/...  → stays ~/...
+	got = NormalizePath("~/projects/bar")
+	if got != "~/projects/bar" {
+		t.Errorf("NormalizePath(~/projects/bar) = %q, want ~/projects/bar", got)
+	}
+
+	// Absolute path outside home → stays absolute
+	got = NormalizePath("/tmp/repo")
+	if got != "/tmp/repo" {
+		t.Errorf("NormalizePath(/tmp/repo) = %q, want /tmp/repo", got)
+	}
+
+	// Relative path → resolved to absolute
+	got = NormalizePath("relative/path")
+	if !filepath.IsAbs(ExpandPath(got)) {
+		t.Errorf("NormalizePath(relative/path) = %q, should resolve to absolute", got)
+	}
+}

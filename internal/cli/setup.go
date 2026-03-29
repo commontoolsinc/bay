@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/commontoolsinc/bay/internal/config"
+	gitpkg "github.com/commontoolsinc/bay/internal/git"
 	"github.com/spf13/cobra"
 )
 
@@ -32,6 +33,7 @@ func newSetupCmd() *cobra.Command {
 			// Check if config exists
 			if _, err := os.Stat(configPath); err == nil {
 				fmt.Printf("Config already exists at %s\n", configPath)
+				fmt.Println("Overwriting will replace ALL repos, docks, and settings with defaults.")
 				fmt.Print("Overwrite? (y/N) ")
 				answer, _ := reader.ReadString('\n')
 				if strings.TrimSpace(strings.ToLower(answer)) != "y" {
@@ -98,6 +100,14 @@ Do you want to proceed
 				fmt.Printf("Prompts written to %s\n", promptsPath)
 			}
 
+			// Install orchestrator guide
+			guidePath := filepath.Join(configDir, "orchestrator-guide.md")
+			if err := os.WriteFile(guidePath, []byte(orchestratorGuide), 0o644); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not write orchestrator guide: %v\n", err)
+			} else {
+				fmt.Printf("Orchestrator guide written to %s\n", guidePath)
+			}
+
 			// Install shell completions
 			installCompletions(cmd.Root(), reader)
 
@@ -105,9 +115,16 @@ Do you want to proceed
 			installKeybindings(reader, configPath)
 
 			fmt.Println("\nSetup complete. Next steps:")
-			fmt.Println("  1. Edit config to add your repos and docks")
-			fmt.Println("  2. Add CLAUDE.local.md to your repos' .gitignore")
-			fmt.Println("  3. Run: bay dock new <name> --repo <repo> --agent claude")
+			step := 1
+			fmt.Printf("  %d. Add a repo:  bay repo add <name> <path>\n", step)
+			step++
+			if printGitignoreAdvice(configPath, step) {
+				step++
+			}
+			fmt.Printf("  %d. Create a dock:  bay dock new <name> --repo <repo> --agent claude\n", step)
+			fmt.Println()
+			fmt.Println("To teach an orchestrator agent about bay:")
+			fmt.Printf("  claude --add-dir %s\n", configDir)
 
 			return nil
 		},
@@ -286,4 +303,47 @@ func tmuxBindCmd(key, shellCmd string) string {
 		return fmt.Sprintf("bind-key -n %s run-shell '%s'", key, shellCmd)
 	}
 	return fmt.Sprintf("bind-key %s run-shell '%s'", key, shellCmd)
+}
+
+// printGitignoreAdvice checks configured repos and only advises about
+// gitignore entries that are actually missing. Returns true if it printed.
+func printGitignoreAdvice(configPath string, step int) bool {
+	cfg, err := config.Load(configPath)
+	if err != nil || len(cfg.Repos) == 0 {
+		fmt.Printf("  %d. Add CLAUDE.local.md to your repos' .gitignore\n", step)
+		return true
+	}
+
+	// Collect all config filenames from agents
+	configFiles := map[string]bool{}
+	for _, agent := range cfg.Agents {
+		if agent.ConfigFile != "" {
+			configFiles[agent.ConfigFile] = true
+		}
+	}
+	if len(configFiles) == 0 {
+		return false
+	}
+
+	g := gitpkg.NewReal()
+	var missing []string
+	for repoName, repo := range cfg.Repos {
+		repoPath := config.ExpandPath(repo.Path)
+		for file := range configFiles {
+			ignored, err := g.IsIgnored(repoPath, file)
+			if err != nil || !ignored {
+				missing = append(missing, fmt.Sprintf("%s in %s", file, repoName))
+			}
+		}
+	}
+
+	if len(missing) == 0 {
+		return false
+	}
+
+	fmt.Printf("  %d. Add to .gitignore (missing):\n", step)
+	for _, m := range missing {
+		fmt.Printf("     %s\n", m)
+	}
+	return true
 }
