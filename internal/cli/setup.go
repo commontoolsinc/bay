@@ -32,6 +32,7 @@ func newSetupCmd() *cobra.Command {
 			// Check if config exists
 			if _, err := os.Stat(configPath); err == nil {
 				fmt.Printf("Config already exists at %s\n", configPath)
+				fmt.Println("Overwriting will replace ALL repos, docks, and settings with defaults.")
 				fmt.Print("Overwrite? (y/N) ")
 				answer, _ := reader.ReadString('\n')
 				if strings.TrimSpace(strings.ToLower(answer)) != "y" {
