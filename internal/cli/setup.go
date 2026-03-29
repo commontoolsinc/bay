@@ -99,6 +99,14 @@ Do you want to proceed
 				fmt.Printf("Prompts written to %s\n", promptsPath)
 			}
 
+			// Install orchestrator guide
+			guidePath := filepath.Join(configDir, "orchestrator-guide.md")
+			if err := os.WriteFile(guidePath, []byte(orchestratorGuide), 0o644); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not write orchestrator guide: %v\n", err)
+			} else {
+				fmt.Printf("Orchestrator guide written to %s\n", guidePath)
+			}
+
 			// Install shell completions
 			installCompletions(cmd.Root(), reader)
 
@@ -106,9 +114,12 @@ Do you want to proceed
 			installKeybindings(reader, configPath)
 
 			fmt.Println("\nSetup complete. Next steps:")
-			fmt.Println("  1. Edit config to add your repos and docks")
+			fmt.Println("  1. Add a repo:  bay repo add <name> <path>")
 			fmt.Println("  2. Add CLAUDE.local.md to your repos' .gitignore")
-			fmt.Println("  3. Run: bay dock new <name> --repo <repo> --agent claude")
+			fmt.Println("  3. Create a dock:  bay dock new <name> --repo <repo> --agent claude")
+			fmt.Println()
+			fmt.Println("To teach an orchestrator agent about bay:")
+			fmt.Printf("  claude --add-dir %s\n", configDir)
 
 			return nil
 		},
