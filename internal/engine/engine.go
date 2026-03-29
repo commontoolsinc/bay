@@ -1262,6 +1262,9 @@ func (e *Engine) DockClose(name string, force bool) error {
 		}
 	}
 
+	// Kill the tmux session (placeholders and all)
+	_ = e.Tmux.KillSession(name)
+
 	return nil
 }
 
