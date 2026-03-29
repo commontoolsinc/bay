@@ -52,7 +52,18 @@ func newWsNewCmd() *cobra.Command {
 				}
 				opts.Dock = dock
 			}
-			opts.Shell = shell
+
+			// Shell-first default: if neither --agent nor --shell was
+			// explicitly passed, default to shell mode.
+			if !cmd.Flags().Changed("agent") && !cmd.Flags().Changed("shell") {
+				opts.Shell = true
+			} else {
+				opts.Shell = shell
+			}
+
+			// Bare --agent (no value): use dock's default agent.
+			// --agent <name>: use that specific agent.
+			// Both cases: opts.Agent is already set by the flag binding.
 
 			ws, err := eng.WsNew(opts)
 			if err != nil {
@@ -67,8 +78,9 @@ func newWsNewCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Repo, "repo", "", "repo name")
 	cmd.Flags().StringVar(&opts.Dir, "dir", "", "external directory (creates external workspace)")
 	cmd.Flags().StringVar(&opts.Name, "name", "", "display name")
-	cmd.Flags().StringVar(&opts.Agent, "agent", "", "agent type override")
+	cmd.Flags().StringVar(&opts.Agent, "agent", "", "agent type (bare --agent uses dock default)")
 	cmd.Flags().BoolVar(&shell, "shell", false, "open shell instead of agent")
+	cmd.Flags().Lookup("agent").NoOptDefVal = ""
 
 	return cmd
 }

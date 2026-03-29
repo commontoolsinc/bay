@@ -1,14 +1,16 @@
 # Bay — Tutorial
 
-Bay automates the plumbing of running multiple AI coding agents at the
-same time. If you've ever had three PRs in flight with Claude Code or
-Codex, you know the pain: creating git worktrees by hand, opening tmux
-windows, keeping track of which agent is where, and redoing it all
-after a reboot. Bay handles all of that.
+Bay manages multiple git worktrees and tmux windows so you can work on
+several tasks at once without the mess. If you've ever had three PRs in
+flight, you know the pain: creating worktrees by hand, opening tmux
+windows, keeping track of which is where, and redoing it all after a
+reboot. Bay handles all of that — and if you want an AI agent in any of
+those windows, that's one flag away.
 
 This tutorial walks through the full lifecycle in about 10 minutes
 using a throwaway repo. By the end you'll have created workspaces,
-navigated between them, and cleaned everything up.
+opened shells and editors, navigated between them, and cleaned
+everything up.
 
 **You'll need**: bay installed (`go install github.com/commontoolsinc/bay/cmd/bay@latest`),
 tmux (`brew install tmux`), and git. Optionally fzf (`brew install fzf`)
@@ -23,7 +25,7 @@ bay setup
 ```
 
 This creates bay's config file at `~/.config/bay/config.toml` with
-default agent definitions (Claude Code and Codex). It also offers to
+default agent definitions (Claude Code, Codex, and Gemini). It also offers to
 install shell tab completions and tmux keybindings.
 
 Accept the defaults for now — you can change everything later.
@@ -57,15 +59,18 @@ You can also register a repo you've already cloned:
 
 A **dock** is a tmux session that groups workspaces for a project. Think
 of it as a named environment: one dock per project or per workflow.
-Each dock has defaults — which repo to use and which agent to launch —
-so you don't repeat yourself every time you create a workspace.
+Each dock has defaults — which repo to use and which agent to launch
+when one is requested — so you don't repeat yourself.
 
 ```
 bay dock new tutorial --repo tutorial --agent claude
 ```
 
 This creates a tmux session called `tutorial` and saves the dock
-config. You should see:
+config. The `--agent claude` sets the *default* agent for when you
+explicitly ask for one — it doesn't mean every window gets an agent.
+
+You should see:
 ```
 Dock "tutorial" created.
 ```
@@ -89,19 +94,17 @@ workspaces yet. It disappears automatically in the next step.
 ## 5. Create a workspace
 
 A **workspace** is an isolated copy of your repo — a git worktree —
-with its own tmux window. Each workspace gets its own branch, its own
-files, and its own agent session. This is why bay exists: instead of
-switching branches in one checkout, you have multiple independent
-checkouts running in parallel.
+with its own tmux window. Each workspace gets its own branch and its
+own files. This is why bay exists: instead of switching branches in one
+checkout, you have multiple independent checkouts running in parallel.
 
 ```
 bay ws new
 ```
 
 Bay infers the dock from your current tmux session, creates a worktree
-from the repo, opens a new tmux window, and (in a real setup) launches
-your agent. The `~` placeholder disappears because you now have a real
-window.
+from the repo, and opens a new tmux window with a **shell** in it.
+The `~` placeholder disappears because you now have a real window.
 
 ```
 Workspace w1 created in dock tutorial (path: ~/projects/bay-tutorial-worktrees/w1)
@@ -111,7 +114,22 @@ The workspace got the ID `w1` — bay assigns these sequentially per
 dock. The tmux window is also named `w1` for now. That name will
 update automatically when you set a branch.
 
-## 6. See what you have
+You're dropped into a regular shell, cd'd into the worktree. You can
+run git commands, build, test — whatever you'd normally do.
+
+## 6. Open it in your editor
+
+```
+bay edit
+```
+
+This opens the current workspace's worktree in your editor (respects
+`$EDITOR`). If you're in workspace `w1`, it opens
+`~/projects/bay-tutorial-worktrees/w1`.
+
+You can also target a specific workspace: `bay edit w1`.
+
+## 7. See what you have
 
 ```
 bay ls
@@ -122,15 +140,15 @@ This shows the full hierarchy — repos, docks, and workspaces:
 ```
 repo tutorial (~/projects/bay-tutorial)
   dock tutorial
-    w1    w1                   —                        idle    claude
+    w1    w1                   —                        idle    shell
 ```
 
-The workspace is `idle` (no branch yet), using `claude` as the agent.
-The dashes mean no branch and no PR number are set.
+The workspace is `idle` (no branch yet). The dashes mean no branch and
+no PR number are set.
 
-## 7. Update workspace metadata
+## 8. Update workspace metadata
 
-When an agent (or you) creates a branch or opens a PR, bay should know
+When you (or an agent) creates a branch or opens a PR, bay should know
 about it. Bay tracks this metadata separately from git — it's used for
 window naming, navigation, and listing. It doesn't modify git state.
 
@@ -147,17 +165,37 @@ Run `bay ls` again to see the updated metadata:
 ```
 repo tutorial (~/projects/bay-tutorial)
   dock tutorial
-    w1    test-branch          test-branch       #1     active  claude
+    w1    test-branch          test-branch       #1     active  shell
 ```
 
 The status changed from `idle` to `active` automatically because you
 set a branch.
 
-## 8. Open a second window
+## 9. Open a shell in a split pane
+
+Need a quick shell alongside what you're doing? Use `bay shell`:
+
+```
+bay shell
+```
+
+This opens a split pane in the current window, cd'd into the same
+worktree. Great for running tests or git commands while keeping your
+main session visible.
+
+To open a shell as a full new window instead:
+
+```
+bay shell auth-fix
+```
+
+Passing a name creates a new tmux window rather than a split pane.
+
+## 10. Open a second window
 
 A workspace can have multiple **windows** — separate tmux tabs that
-share the same worktree. This is useful when you want an agent in one
-window and a shell in another, both looking at the same code.
+share the same worktree. `bay shell` is the quick way; `bay win open`
+gives you more control:
 
 ```
 bay win open w1 --shell
@@ -167,7 +205,7 @@ The status bar now shows `test-branch` and `test-branch:2`. Both
 windows are in the same worktree directory. Switch between them with
 the normal tmux keys (`Ctrl-b n` for next, `Ctrl-b p` for previous).
 
-## 9. Navigate with bay go
+## 11. Navigate with bay go
 
 As you accumulate workspaces across docks, tmux's built-in navigation
 gets unwieldy. Bay provides fuzzy search:
@@ -177,9 +215,20 @@ bay go
 ```
 
 If you have fzf installed, this opens a picker showing all windows
-across all docks. You can also jump directly: `bay go test-branch`.
+across all docks, with type tags so you can see what's running:
 
-## 10. Inspect a workspace
+```
+  tutorial/test-branch       [shell]
+  tutorial/test-branch:2     [shell]
+  tutorial/test-branch:3     [shell]
+```
+
+Tags include `[agent]`, `[shell]`, and `[cmd]` so you can tell at a
+glance what each window is doing.
+
+You can also jump directly: `bay go test-branch`.
+
+## 12. Inspect a workspace
 
 ```
 bay ws show self
@@ -195,12 +244,13 @@ Workspace: test-branch (w1)
   Branch: test-branch
   PR:     1
   Status: active
-  Windows: 2
+  Windows: 3
     [1] test-branch (tmux: @N, panes: 1)
     [2] test-branch:2 (tmux: @N, panes: 1)
+    [3] test-branch:3 (tmux: @N, panes: 1)
 ```
 
-## 11. Rename a workspace
+## 13. Rename a workspace
 
 Display names default to the abbreviated branch, but you can override:
 
@@ -208,29 +258,45 @@ Display names default to the abbreviated branch, but you can override:
 bay ws rename w1 my-feature
 ```
 
-Both tmux windows update immediately to `my-feature` and
-`my-feature:2`. This name sticks — future branch updates won't
-overwrite it.
+All tmux windows for this workspace update immediately. This name
+sticks — future branch updates won't overwrite it.
 
-## 12. Create a second workspace
+## 14. Launch an agent (opt-in)
+
+Agents are one of the things you can run in a workspace. To create a
+workspace with the dock's default agent:
+
+```
+bay ws new --agent
+```
+
+This creates workspace `w2` with its own worktree and launches the
+agent (in this case, `claude` as set in the dock defaults). You can
+also specify a different agent: `bay ws new --agent codex`.
+
+The agent runs in its own tmux window just like a shell — you can
+switch to it, open additional shell windows alongside it, or use
+`bay edit` to work on the same files in your editor.
+
+## 15. Create a second workspace (shell)
 
 ```
 bay ws new
 ```
 
-Creates `w2` with its own worktree. The status bar now shows three
-windows: `my-feature`, `my-feature:2`, and `w2`. Each workspace is
-completely independent — different worktree, different branch, different
-agent session.
+Creates `w3` with its own worktree and a shell. The status bar now
+shows windows for both `my-feature` and the new workspace. Each is
+completely independent — different worktree, different branch,
+different files.
 
 ```
-Workspace w2 created in dock tutorial (path: ~/projects/bay-tutorial-worktrees/w2)
+Workspace w3 created in dock tutorial (path: ~/projects/bay-tutorial-worktrees/w3)
 ```
 
-## 13. Close the second workspace
+## 16. Close workspaces
 
 ```
-bay ws close w2
+bay ws close w3
 ```
 
 Bay checks for uncommitted changes and unpushed commits before
@@ -238,28 +304,23 @@ removing a worktree. This one is clean, so it closes immediately —
 the worktree is deleted and the tmux window disappears.
 
 If it refused (because you had unsaved work), you'd use
-`bay ws close w2 --force` to override.
+`bay ws close w3 --force` to override.
 
-## 14. Close the first workspace
+Close the remaining workspaces:
 
 ```
+bay ws close w2 --force
 bay ws close w1 --force
 ```
 
-`--force` skips the safety checks. Both windows for `my-feature`
-close.
-
-## 15. The placeholder window
+`--force` skips the safety checks. All windows for each workspace
+close together.
 
 Look at the status bar — there's a `~` window again. When you close
 the last workspace in a dock, bay creates this placeholder to keep the
-tmux session alive. Without it, tmux would destroy the session and
-your terminal would disconnect.
+tmux session alive.
 
-The placeholder disappears automatically the next time you create a
-workspace. If you type in it, bay leaves it alone as a regular shell.
-
-## 16. Tear down the dock
+## 17. Tear down the dock and repo
 
 ```
 bay dock close tutorial
@@ -267,8 +328,6 @@ bay dock close tutorial
 
 This closes all workspaces (there are none), kills the tmux session,
 and you'll be detached back to your regular terminal.
-
-## 17. Remove the repo
 
 ```
 bay repo remove tutorial
@@ -295,6 +354,13 @@ rm -rf ~/projects/bay-tutorial ~/projects/bay-tutorial-worktrees
 ```
 
 ---
+
+## Tips
+
+- **`bay status-line`** — outputs workspace info formatted for your
+  tmux status bar. Add `#(bay status-line)` to your
+  `status-right` in `~/.tmux.conf` to always see which workspace
+  you're in.
 
 ## What's next
 
