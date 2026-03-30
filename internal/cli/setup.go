@@ -264,12 +264,13 @@ func installKeybindings(reader *bufio.Reader, configPath string) {
 		return
 	}
 
-	// Show what we'd add and ask for confirmation
-	fmt.Printf("These keybindings will be added to %s:\n", tmuxConf)
+	// Show what we'd add with plain-English descriptions
+	fmt.Printf("These tmux keybindings will be added to %s:\n\n", tmuxConf)
 	for _, line := range additions {
 		fmt.Printf("  %s\n", line)
+		fmt.Printf("    %s\n\n", describeKeybinding(line))
 	}
-	fmt.Print("\nAdd these keybindings? [Y/n] ")
+	fmt.Print("Add these keybindings? [Y/n] ")
 	answer, _ := reader.ReadString('\n')
 	if strings.TrimSpace(strings.ToLower(answer)) == "n" {
 		return
@@ -297,5 +298,32 @@ func tmuxBindCmd(key, shellCmd string) string {
 		return fmt.Sprintf("bind-key -n %s run-shell '%s'", key, shellCmd)
 	}
 	return fmt.Sprintf("bind-key %s run-shell '%s'", key, shellCmd)
+}
+
+// describeKeybinding returns a plain-English description of a tmux bind-key line.
+func describeKeybinding(line string) string {
+	switch {
+	case strings.Contains(line, "bay go --next-waiting"):
+		key := "Option+w"
+		if strings.Contains(line, "bind-key -n M-") {
+			// Extract the key after M-
+			key = "Option+" + strings.TrimPrefix(
+				strings.Fields(line)[2], "M-")
+		} else if !strings.Contains(line, "-n") {
+			key = "prefix + " + strings.Fields(line)[1]
+		}
+		return fmt.Sprintf("%s: jump to the next agent waiting for input", key)
+	case strings.Contains(line, "bay add-prompt"):
+		key := "prefix + P"
+		if strings.Contains(line, "-n M-") {
+			key = "Option+" + strings.TrimPrefix(
+				strings.Fields(line)[2], "M-")
+		} else if !strings.Contains(line, "-n") {
+			key = "prefix + " + strings.Fields(line)[1]
+		}
+		return fmt.Sprintf("%s: capture current pane text as a waiting-detection pattern", key)
+	default:
+		return ""
+	}
 }
 
