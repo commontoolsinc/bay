@@ -61,23 +61,71 @@ func NewRootCmd(version string) *cobra.Command {
 
 	root.PersistentFlags().StringVar(&cfgPath, "config", "", "config file path (default ~/.config/bay/config.toml)")
 
+	// Define command groups
+	root.AddGroup(
+		&cobra.Group{ID: "workspace", Title: "Workspaces:"},
+		&cobra.Group{ID: "navigation", Title: "Navigation:"},
+		&cobra.Group{ID: "infra", Title: "Infrastructure:"},
+		&cobra.Group{ID: "other", Title: "Other:"},
+	)
+
+	// Workspace commands
+	wsCmd := newWsCmd()
+	wsCmd.GroupID = "workspace"
+	winCmd := newWinCmd()
+	winCmd.GroupID = "workspace"
+	paneCmd := newPaneCmd()
+	paneCmd.GroupID = "workspace"
+	shellCmd := newShellCmd()
+	shellCmd.GroupID = "workspace"
+	editCmd := newEditCmd()
+	editCmd.GroupID = "workspace"
+
+	// Navigation commands
+	goCmd := newGoCmd()
+	goCmd.GroupID = "navigation"
+	lsCmd := newLsCmd()
+	lsCmd.GroupID = "navigation"
+	statusLineCmd := newStatusLineCmd()
+	statusLineCmd.GroupID = "navigation"
+
+	// Infrastructure commands
+	dockCmd := newDockCmd()
+	dockCmd.GroupID = "infra"
+	repoCmd := newRepoCmd()
+	repoCmd.GroupID = "infra"
+	setupCmd := newSetupCmd()
+	setupCmd.GroupID = "infra"
+	recoverCmd := newRecoverCmd()
+	recoverCmd.GroupID = "infra"
+	doctorCmd := newDoctorCmd()
+	doctorCmd.GroupID = "infra"
+	monitorCmd := newMonitorCmd()
+	monitorCmd.GroupID = "infra"
+
+	// Other commands
+	addPromptCmd := newAddPromptCmd()
+	addPromptCmd.GroupID = "other"
+	versionCmd := newVersionCmd(version)
+	versionCmd.GroupID = "other"
+
 	root.AddCommand(
-		newDockCmd(),
-		newRepoCmd(),
-		newWsCmd(),
-		newWinCmd(),
-		newPaneCmd(),
-		newGoCmd(),
-		newLsCmd(),
-		newEditCmd(),
-		newShellCmd(),
-		newStatusLineCmd(),
-		newRecoverCmd(),
-		newDoctorCmd(),
-		newSetupCmd(),
-		newMonitorCmd(),
-		newAddPromptCmd(),
-		newVersionCmd(version),
+		wsCmd,
+		winCmd,
+		paneCmd,
+		shellCmd,
+		editCmd,
+		goCmd,
+		lsCmd,
+		statusLineCmd,
+		dockCmd,
+		repoCmd,
+		setupCmd,
+		recoverCmd,
+		doctorCmd,
+		monitorCmd,
+		addPromptCmd,
+		versionCmd,
 	)
 
 	RegisterCompletion(root)

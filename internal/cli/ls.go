@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/engine"
 	"github.com/spf13/cobra"
 )
 
 func newLsCmd() *cobra.Command {
 	var jsonOutput bool
+	var dirtyOnly bool
 
 	cmd := &cobra.Command{
 		Use:     "ls",
@@ -23,6 +25,10 @@ func newLsCmd() *cobra.Command {
 			docks, err := eng.List()
 			if err != nil {
 				return err
+			}
+
+			if dirtyOnly {
+				docks = filterDirtyWorkspaces(eng, docks)
 			}
 
 			if jsonOutput {
@@ -43,6 +49,37 @@ func newLsCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON")
+	cmd.Flags().BoolVar(&dirtyOnly, "dirty", false, "only show dirty workspaces")
 
 	return cmd
+}
+
+// filterDirtyWorkspaces filters dock info to only include workspaces with
+// uncommitted changes.
+func filterDirtyWorkspaces(eng *engine.Engine, docks []engine.DockInfo) []engine.DockInfo {
+	var result []engine.DockInfo
+	for _, d := range docks {
+		filtered := engine.DockInfo{
+			Name:  d.Name,
+			Agent: d.Agent,
+			Repo:  d.Repo,
+		}
+		for _, ws := range d.Workspaces {
+			if ws.Path == "" {
+				continue
+			}
+			path := config.ExpandPath(ws.Path)
+			dirty, err := eng.Git.IsDirty(path)
+			if err != nil {
+				continue
+			}
+			if dirty {
+				filtered.Workspaces = append(filtered.Workspaces, ws)
+			}
+		}
+		if len(filtered.Workspaces) > 0 {
+			result = append(result, filtered)
+		}
+	}
+	return result
 }

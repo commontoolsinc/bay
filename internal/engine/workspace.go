@@ -12,12 +12,13 @@ import (
 
 // WsNewOptions are options for creating a new workspace.
 type WsNewOptions struct {
-	Dock  string // dock name (required)
-	Repo  string // repo name override (optional, defaults to dock's repo)
-	Dir   string // external directory (makes it external type)
-	Name  string // display name override
-	Agent string // agent override
-	Shell bool   // open shell instead of agent
+	Dock   string // dock name (required)
+	Repo   string // repo name override (optional, defaults to dock's repo)
+	Dir    string // external directory (makes it external type)
+	Name   string // display name override
+	Agent  string // agent override
+	Shell  bool   // open shell instead of agent
+	Branch string // create and checkout this git branch
 }
 
 // WsNew creates a new workspace.
@@ -189,6 +190,20 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		return nil, err
 	}
 
+	// Create git branch if requested
+	if opts.Branch != "" {
+		if err := e.Git.CreateBranch(wsPath, opts.Branch); err != nil {
+			return ws, fmt.Errorf("workspace created but branch creation failed: %w", err)
+		}
+		// Update workspace metadata with branch info
+		branch := opts.Branch
+		if updateErr := e.WsUpdate(dockName, wsID, &branch, nil, nil); updateErr != nil {
+			return ws, fmt.Errorf("workspace created but metadata update failed: %w", updateErr)
+		}
+		// Reload workspace to reflect updates
+		ws, _ = e.WsShow(dockName, wsID)
+	}
+
 	return ws, nil
 }
 
@@ -280,6 +295,51 @@ func (e *Engine) WsClose(dockName, wsID string, force bool) error {
 	// Remove from manifest
 	delete(dockState.Workspaces, wsID)
 	return e.saveManifest(m)
+}
+
+// WsCloseByStatus closes all workspaces with the given status across the specified
+// dock (or all docks if dockName is empty). Clean workspaces are closed; dirty ones
+// are skipped and reported. Returns lists of closed and skipped workspace identifiers.
+func (e *Engine) WsCloseByStatus(dockName, status string, force bool) (closed []string, skipped []string, err error) {
+	if err := ValidateStatus(status); err != nil {
+		return nil, nil, err
+	}
+
+	m, err := e.LoadManifest()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	type target struct {
+		dock string
+		id   string
+	}
+	var targets []target
+
+	for dn, ds := range m.Docks {
+		if dockName != "" && dn != dockName {
+			continue
+		}
+		for wsID, ws := range ds.Workspaces {
+			if string(ws.Status) == status {
+				targets = append(targets, target{dock: dn, id: wsID})
+			}
+		}
+	}
+
+	if len(targets) == 0 {
+		return nil, nil, fmt.Errorf("no workspaces with status %q found", status)
+	}
+
+	for _, t := range targets {
+		label := t.dock + ":" + t.id
+		if closeErr := e.WsClose(t.dock, t.id, force); closeErr != nil {
+			skipped = append(skipped, label+" ("+closeErr.Error()+")")
+		} else {
+			closed = append(closed, label)
+		}
+	}
+	return closed, skipped, nil
 }
 
 // WsUpdate updates workspace metadata.

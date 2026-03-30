@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"os/exec"
 
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/spf13/cobra"
@@ -19,6 +20,31 @@ func newDoctorCmd() *cobra.Command {
 			}
 
 			ok := true
+
+			// Check tmux installed
+			if _, err := exec.LookPath("tmux"); err != nil {
+				fmt.Println("[WARN] tmux not found in PATH")
+				ok = false
+			} else {
+				fmt.Println("[OK] tmux installed")
+			}
+
+			// Check fzf installed (optional)
+			if _, err := exec.LookPath("fzf"); err != nil {
+				fmt.Println("[INFO] fzf not found in PATH (optional, used by bay go)")
+			} else {
+				fmt.Println("[OK] fzf installed")
+			}
+
+			// Check configured editor
+			if eng.Config.Editor.Command != "" {
+				if _, err := exec.LookPath(eng.Config.Editor.Command); err != nil {
+					fmt.Printf("[WARN] configured editor %q not found in PATH\n", eng.Config.Editor.Command)
+					ok = false
+				} else {
+					fmt.Printf("[OK] editor %q available\n", eng.Config.Editor.Command)
+				}
+			}
 
 			// Check config validation
 			errs := eng.Config.Validate()
@@ -68,6 +94,31 @@ func newDoctorCmd() *cobra.Command {
 				} else {
 					fmt.Printf("[OK] dock %q: %s gitignored in %s\n",
 						dockName, agentCfg.ConfigFile, repoPath)
+				}
+			}
+
+			// Check workspace paths in manifest
+			m, loadErr := eng.LoadManifest()
+			if loadErr != nil {
+				fmt.Printf("[WARN] could not load manifest: %v\n", loadErr)
+				ok = false
+			} else {
+				missingCount := 0
+				for dockName, ds := range m.Docks {
+					for wsID, ws := range ds.Workspaces {
+						if ws.Path == "" {
+							continue
+						}
+						wsPath := config.ExpandPath(ws.Path)
+						if _, err := os.Stat(wsPath); err != nil {
+							fmt.Printf("[WARN] workspace %s:%s path missing: %s\n", dockName, wsID, wsPath)
+							missingCount++
+							ok = false
+						}
+					}
+				}
+				if missingCount == 0 {
+					fmt.Println("[OK] all workspace paths exist")
 				}
 			}
 

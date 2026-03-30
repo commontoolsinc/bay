@@ -20,6 +20,9 @@ type Interface interface {
 	IsIgnored(repoPath string, filename string) (bool, error)
 	AddToGitignore(repoPath string, filename string) error
 
+	// Branch operations
+	CreateBranch(path, branchName string) error
+
 	// Default branch
 	DefaultBranch(repoPath string) (string, error)
 }

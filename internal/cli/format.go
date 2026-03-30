@@ -8,26 +8,71 @@ import (
 	"github.com/commontoolsinc/bay/internal/engine"
 )
 
-// formatWorkspaceLine formats a single workspace as a table row.
-func formatWorkspaceLine(ws engine.WorkspaceInfo) string {
-	pr := ""
-	if ws.PR != "" {
-		pr = "#" + ws.PR
-	}
-	branch := ws.Branch
+// workspaceColumns returns the display values for a workspace row.
+func workspaceColumns(ws engine.WorkspaceInfo) (id, name, branch, pr, status, agent, suffix string) {
+	id = ws.ID
+	name = ws.Name
+	branch = ws.Branch
 	if branch == "" {
 		branch = "\u2014"
 	}
-	agent := ws.Agent
+	pr = ""
+	if ws.PR != "" {
+		pr = "#" + ws.PR
+	}
+	status = ws.Status
+	agent = ws.Agent
 	if agent == "" {
 		agent = "\u2014"
 	}
-	waiting := ""
-	if ws.Waiting {
-		waiting = " \u23f3"
+	if ws.Missing {
+		suffix += " [missing]"
 	}
-	return fmt.Sprintf("%-5s %-20s %-30s %-6s %-8s %-8s%s",
-		ws.ID, ws.Name, branch, pr, ws.Status, agent, waiting)
+	if ws.Waiting {
+		suffix += " \u23f3"
+	}
+	return
+}
+
+// columnWidths tracks the maximum width of each column.
+type columnWidths struct {
+	id, name, branch, pr, status, agent int
+}
+
+// update expands widths to accommodate the given values.
+func (c *columnWidths) update(id, name, branch, pr, status, agent string) {
+	if len(id) > c.id {
+		c.id = len(id)
+	}
+	if len(name) > c.name {
+		c.name = len(name)
+	}
+	if len(branch) > c.branch {
+		c.branch = len(branch)
+	}
+	if len(pr) > c.pr {
+		c.pr = len(pr)
+	}
+	if len(status) > c.status {
+		c.status = len(status)
+	}
+	if len(agent) > c.agent {
+		c.agent = len(agent)
+	}
+}
+
+func (c *columnWidths) format(id, name, branch, pr, status, agent, suffix string) string {
+	return fmt.Sprintf("%-*s %-*s %-*s %-*s %-*s %-*s%s",
+		c.id, id, c.name, name, c.branch, branch, c.pr, pr, c.status, status, c.agent, agent, suffix)
+}
+
+// formatWorkspaceLine formats a single workspace as a table row using default widths.
+func formatWorkspaceLine(ws engine.WorkspaceInfo) string {
+	id, name, branch, pr, status, agent, suffix := workspaceColumns(ws)
+	// Use reasonable minimums for single-line formatting
+	w := &columnWidths{id: 3, name: 4, branch: 6, pr: 2, status: 6, agent: 5}
+	w.update(id, name, branch, pr, status, agent)
+	return w.format(id, name, branch, pr, status, agent, suffix)
 }
 
 // FormatFullTree formats the full repo → dock → workspace hierarchy.
@@ -65,6 +110,15 @@ func FormatFullTree(cfg *config.Config, docks []engine.DockInfo) string {
 		}
 	}
 
+	// First pass: compute column widths across all workspaces
+	w := &columnWidths{id: 2, name: 4, branch: 6, pr: 2, status: 6, agent: 5}
+	for _, d := range docks {
+		for _, ws := range d.Workspaces {
+			id, name, branch, pr, status, agent, _ := workspaceColumns(ws)
+			w.update(id, name, branch, pr, status, agent)
+		}
+	}
+
 	for _, repoName := range repoOrder {
 		re := repoMap[repoName]
 		if re.path != "" {
@@ -83,7 +137,8 @@ func FormatFullTree(cfg *config.Config, docks []engine.DockInfo) string {
 				continue
 			}
 			for _, ws := range d.Workspaces {
-				fmt.Fprintf(&b, "    %s\n", formatWorkspaceLine(ws))
+				id, name, branch, pr, status, agent, suffix := workspaceColumns(ws)
+				fmt.Fprintf(&b, "    %s\n", w.format(id, name, branch, pr, status, agent, suffix))
 			}
 		}
 	}
@@ -94,6 +149,16 @@ func FormatFullTree(cfg *config.Config, docks []engine.DockInfo) string {
 // FormatDockTree formats dock → workspace hierarchy for one or more docks.
 func FormatDockTree(docks []engine.DockInfo) string {
 	var b strings.Builder
+
+	// Compute column widths across all docks
+	w := &columnWidths{id: 2, name: 4, branch: 6, pr: 2, status: 6, agent: 5}
+	for _, d := range docks {
+		for _, ws := range d.Workspaces {
+			id, name, branch, pr, status, agent, _ := workspaceColumns(ws)
+			w.update(id, name, branch, pr, status, agent)
+		}
+	}
+
 	for _, d := range docks {
 		meta := ""
 		if d.Repo != "" || d.Agent != "" {
@@ -112,7 +177,8 @@ func FormatDockTree(docks []engine.DockInfo) string {
 			continue
 		}
 		for _, ws := range d.Workspaces {
-			fmt.Fprintf(&b, "  %s\n", formatWorkspaceLine(ws))
+			id, name, branch, pr, status, agent, suffix := workspaceColumns(ws)
+			fmt.Fprintf(&b, "  %s\n", w.format(id, name, branch, pr, status, agent, suffix))
 		}
 	}
 	return b.String()
@@ -142,6 +208,16 @@ func FormatRepoTree(cfg *config.Config) string {
 // for items that would be removed. Used by repo remove's error message.
 func FormatSubtreeForRemoval(cfg *config.Config, repoName string, docks []engine.DockInfo) string {
 	var b strings.Builder
+
+	// Compute column widths
+	w := &columnWidths{id: 2, name: 4, branch: 6, pr: 2, status: 6, agent: 5}
+	for _, d := range docks {
+		for _, ws := range d.Workspaces {
+			id, name, branch, pr, status, agent, _ := workspaceColumns(ws)
+			w.update(id, name, branch, pr, status, agent)
+		}
+	}
+
 	repo, hasRepo := cfg.Repos[repoName]
 	if hasRepo {
 		fmt.Fprintf(&b, "  repo %s (%s)\n", repoName, repo.Path)
@@ -151,7 +227,8 @@ func FormatSubtreeForRemoval(cfg *config.Config, repoName string, docks []engine
 	for _, d := range docks {
 		fmt.Fprintf(&b, "    dock %s\n", d.Name)
 		for _, ws := range d.Workspaces {
-			fmt.Fprintf(&b, "      %s\n", formatWorkspaceLine(ws))
+			id, name, branch, pr, status, agent, suffix := workspaceColumns(ws)
+			fmt.Fprintf(&b, "      %s\n", w.format(id, name, branch, pr, status, agent, suffix))
 		}
 	}
 	return b.String()

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/manifest"
@@ -62,10 +63,12 @@ type WorkspaceInfo struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Type    string `json:"type"`
+	Path    string `json:"path,omitempty"`
 	Branch  string `json:"branch,omitempty"`
 	PR      string `json:"pr,omitempty"`
 	Status  string `json:"status"`
 	Waiting bool   `json:"waiting,omitempty"`
+	Missing bool   `json:"missing,omitempty"`
 	Agent   string `json:"agent,omitempty"`
 }
 
@@ -207,14 +210,18 @@ func (e *Engine) List() ([]DockInfo, error) {
 		}
 		if ds, ok := m.Docks[name]; ok {
 			for id, ws := range ds.Workspaces {
+				wsPath := config.ExpandPath(ws.Path)
+				_, statErr := os.Stat(wsPath)
 				wsInfo := WorkspaceInfo{
-					ID:     id,
-					Name:   ws.Name,
-					Type:   string(ws.Type),
-					Branch: ws.Branch,
-					PR:     ws.PR,
-					Status: string(ws.Status),
-					Agent:  workspaceAgent(ws, dockCfg.Agent),
+					ID:      id,
+					Name:    ws.Name,
+					Type:    string(ws.Type),
+					Path:    ws.Path,
+					Branch:  ws.Branch,
+					PR:      ws.PR,
+					Status:  string(ws.Status),
+					Missing: ws.Path != "" && statErr != nil,
+					Agent:   workspaceAgent(ws, dockCfg.Agent),
 				}
 				// Check waiting status from tmux
 				for _, win := range ws.Windows {
