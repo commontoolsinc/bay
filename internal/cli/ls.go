@@ -44,6 +44,26 @@ func newLsCmd() *cobra.Command {
 			}
 
 			fmt.Print(FormatFullTree(eng.Config, docks))
+
+			// Print advice for stale or missing workspaces
+			hasStale, hasMissing := false, false
+			for _, d := range docks {
+				for _, ws := range d.Workspaces {
+					if ws.Stale {
+						hasStale = true
+					}
+					if ws.Missing {
+						hasMissing = true
+					}
+				}
+			}
+			if hasStale {
+				fmt.Println("\n[stale] = tmux window was closed. Run 'bay recover' to recreate, or 'bay ws close <name>' to remove.")
+			}
+			if hasMissing {
+				fmt.Println("\n[missing] = worktree directory was deleted. Run 'bay ws close <name> --force' to clean up.")
+			}
+
 			return nil
 		},
 	}

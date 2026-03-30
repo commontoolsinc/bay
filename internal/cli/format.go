@@ -28,6 +28,9 @@ func workspaceColumns(ws engine.WorkspaceInfo) (id, name, branch, pr, status, ag
 	if ws.Missing {
 		suffix += " [missing]"
 	}
+	if ws.Stale {
+		suffix += " [stale]"
+	}
 	if ws.Waiting {
 		suffix += " \u23f3"
 	}
