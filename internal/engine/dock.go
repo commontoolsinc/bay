@@ -51,22 +51,22 @@ func (e *Engine) updateWindowNames(ws *manifest.Workspace, displayName string) {
 
 // DockInfo holds summary information about a dock.
 type DockInfo struct {
-	Name       string
-	Agent      string
-	Repo       string
-	Workspaces []WorkspaceInfo
+	Name       string          `json:"name"`
+	Agent      string          `json:"agent,omitempty"`
+	Repo       string          `json:"repo,omitempty"`
+	Workspaces []WorkspaceInfo `json:"workspaces"`
 }
 
 // WorkspaceInfo holds summary information about a workspace.
 type WorkspaceInfo struct {
-	ID      string
-	Name    string
-	Type    string
-	Branch  string
-	PR      string
-	Status  string
-	Waiting bool
-	Agent   string
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Branch  string `json:"branch,omitempty"`
+	PR      string `json:"pr,omitempty"`
+	Status  string `json:"status"`
+	Waiting bool   `json:"waiting,omitempty"`
+	Agent   string `json:"agent,omitempty"`
 }
 
 // DockNew creates a new dock configuration and tmux session.

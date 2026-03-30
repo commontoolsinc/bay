@@ -13,9 +13,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	cfgPath string
-)
+// cfgPath is set by cobra's --config persistent flag binding.
+// Package-level var is required by cobra's StringVar API.
+var cfgPath string
 
 // bayPaths returns the standard paths, respecting the --config flag.
 func bayPaths() config.Paths {

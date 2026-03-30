@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/commontoolsinc/bay/internal/engine"
@@ -113,7 +114,9 @@ func newWsCloseCmd() *cobra.Command {
 }
 
 func newWsShowCmd() *cobra.Command {
-	return &cobra.Command{
+	var jsonOutput bool
+
+	cmd := &cobra.Command{
 		Use:   "show <name|self>",
 		Short: "Show workspace details",
 		Args:  cobra.ExactArgs(1),
@@ -133,6 +136,26 @@ func newWsShowCmd() *cobra.Command {
 				return err
 			}
 
+			if jsonOutput {
+				out := map[string]interface{}{
+					"id":      wsID,
+					"name":    ws.Name,
+					"dock":    dockName,
+					"type":    string(ws.Type),
+					"path":    ws.Path,
+					"branch":  ws.Branch,
+					"pr":      ws.PR,
+					"status":  string(ws.Status),
+					"windows": ws.Windows,
+				}
+				data, err := json.MarshalIndent(out, "", "  ")
+				if err != nil {
+					return err
+				}
+				fmt.Println(string(data))
+				return nil
+			}
+
 			fmt.Printf("Workspace: %s (%s)\n", ws.Name, wsID)
 			fmt.Printf("  Dock:   %s\n", dockName)
 			fmt.Printf("  Type:   %s\n", ws.Type)
@@ -148,6 +171,10 @@ func newWsShowCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON")
+
+	return cmd
 }
 
 func newWsUpdateCmd() *cobra.Command {
