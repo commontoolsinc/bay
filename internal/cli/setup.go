@@ -32,13 +32,53 @@ func newSetupCmd() *cobra.Command {
 			// Check if config exists; write default if not (or if user confirms overwrite)
 			writeConfig := true
 			if _, err := os.Stat(configPath); err == nil {
-				fmt.Printf("Config already exists at %s\n", configPath)
-				fmt.Println("Overwriting will replace ALL repos, docks, and settings with defaults.")
-				fmt.Print("Overwrite? (y/N) ")
-				answer, _ := reader.ReadString('\n')
-				if strings.TrimSpace(strings.ToLower(answer)) != "y" {
-					fmt.Println("Keeping existing config.")
-					writeConfig = false
+				// Load existing config to show what would be lost
+				existingCfg, loadErr := config.Load(configPath)
+				hasContent := loadErr == nil && (len(existingCfg.Repos) > 0 || len(existingCfg.Docks) > 0)
+
+				if hasContent {
+					fmt.Printf("Config exists at %s with:\n", configPath)
+
+					// Show what would be lost using the full tree
+					eng, engErr := newEngine()
+					if engErr == nil {
+						docks, listErr := eng.List()
+						if listErr == nil && len(docks) > 0 {
+							fmt.Print(FormatFullTree(existingCfg, docks))
+						} else {
+							// No manifest data, just show config counts
+							for name := range existingCfg.Repos {
+								fmt.Printf("  repo %s (%s)\n", name, existingCfg.Repos[name].Path)
+							}
+							for name := range existingCfg.Docks {
+								fmt.Printf("  dock %s\n", name)
+							}
+						}
+					} else {
+						for name := range existingCfg.Repos {
+							fmt.Printf("  repo %s (%s)\n", name, existingCfg.Repos[name].Path)
+						}
+						for name := range existingCfg.Docks {
+							fmt.Printf("  dock %s\n", name)
+						}
+					}
+
+					fmt.Println("\nOverwriting will DELETE all of the above and replace with defaults.")
+					fmt.Print("Type 'delete all' to confirm: ")
+					answer, _ := reader.ReadString('\n')
+					if strings.TrimSpace(answer) != "delete all" {
+						fmt.Println("Keeping existing config.")
+						writeConfig = false
+					}
+				} else {
+					// Config exists but is empty/default — simple prompt is fine
+					fmt.Printf("Config already exists at %s (no repos or docks configured)\n", configPath)
+					fmt.Print("Overwrite with defaults? (y/N) ")
+					answer, _ := reader.ReadString('\n')
+					if strings.TrimSpace(strings.ToLower(answer)) != "y" {
+						fmt.Println("Keeping existing config.")
+						writeConfig = false
+					}
 				}
 			}
 
