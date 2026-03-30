@@ -13,7 +13,20 @@ them.
   `brew install tmux` (macOS) or your system package manager. If you're
   new to tmux, the key concept is: tmux keeps terminal sessions alive
   in the background. You can detach and reattach without losing state.
-  Bay leans on this heavily.
+  Bay leans on this heavily. See the
+  [tmux Getting Started guide](https://github.com/tmux/tmux/wiki/Getting-Started)
+  for a full introduction.
+
+  The tmux keys you need with bay:
+
+  | Key | What it does |
+  |-----|-------------|
+  | `Ctrl-b n` | Next window |
+  | `Ctrl-b p` | Previous window |
+  | `Ctrl-b d` | Detach (session keeps running) |
+  | `Ctrl-b z` | Zoom current pane (toggle fullscreen) |
+  | `Option+s` | Split a shell pane (bay keybinding) |
+  | `Option+w` | Jump to next waiting agent (bay keybinding) |
 
 - **An AI coding agent** (optional) — bay works with
   [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview),
