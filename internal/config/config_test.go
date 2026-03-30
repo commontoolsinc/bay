@@ -240,3 +240,37 @@ func TestNormalizePath(t *testing.T) {
 		t.Errorf("NormalizePath(relative/path) = %q, should resolve to absolute", got)
 	}
 }
+
+func TestDefaultPaths(t *testing.T) {
+	p := DefaultPaths()
+
+	if p.ConfigDir == "" {
+		t.Error("ConfigDir is empty")
+	}
+	if p.DataDir == "" {
+		t.Error("DataDir is empty")
+	}
+	if p.ConfigFile == "" {
+		t.Error("ConfigFile is empty")
+	}
+	if p.ManifestFile == "" {
+		t.Error("ManifestFile is empty")
+	}
+	if p.ArchiveFile == "" {
+		t.Error("ArchiveFile is empty")
+	}
+	if p.PatternsFile == "" {
+		t.Error("PatternsFile is empty")
+	}
+	if p.PIDFile == "" {
+		t.Error("PIDFile is empty")
+	}
+	// ManifestFile should be under DataDir
+	if !filepath.HasPrefix(p.ManifestFile, p.DataDir) {
+		t.Errorf("ManifestFile %q not under DataDir %q", p.ManifestFile, p.DataDir)
+	}
+	// ConfigFile should be under ConfigDir
+	if !filepath.HasPrefix(p.ConfigFile, p.ConfigDir) {
+		t.Errorf("ConfigFile %q not under ConfigDir %q", p.ConfigFile, p.ConfigDir)
+	}
+}

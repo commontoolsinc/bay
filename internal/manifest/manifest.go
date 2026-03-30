@@ -79,20 +79,20 @@ func SaveArchive(path string, m *Manifest) error {
 
 // Window represents a tmux window attached to a workspace.
 type Window struct {
-	ID           int    `toml:"id"`
-	TmuxWindowID string `toml:"tmux_window_id,omitempty"`
-	Name         string `toml:"name"`
-	Panes        []Pane `toml:"panes,omitempty"`
+	ID           int    `toml:"id" json:"id"`
+	TmuxWindowID string `toml:"tmux_window_id,omitempty" json:"tmux_window_id,omitempty"`
+	Name         string `toml:"name" json:"name"`
+	Panes        []Pane `toml:"panes,omitempty" json:"panes,omitempty"`
 }
 
 // Pane represents a tmux pane within a window.
 type Pane struct {
-	ID        int      `toml:"id"`
-	Type      PaneType `toml:"type"`
-	Agent     string   `toml:"agent,omitempty"`
-	Command   string   `toml:"command,omitempty"`
-	SplitFrom int      `toml:"split_from,omitempty"`
-	SplitDir  string   `toml:"split_dir,omitempty"`
+	ID        int      `toml:"id" json:"id"`
+	Type      PaneType `toml:"type" json:"type"`
+	Agent     string   `toml:"agent,omitempty" json:"agent,omitempty"`
+	Command   string   `toml:"command,omitempty" json:"command,omitempty"`
+	SplitFrom int      `toml:"split_from,omitempty" json:"split_from,omitempty"`
+	SplitDir  string   `toml:"split_dir,omitempty" json:"split_dir,omitempty"`
 }
 
 // New returns an initialized empty manifest.

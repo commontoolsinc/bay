@@ -13,20 +13,26 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	cfgPath string
-)
+// cfgPath is set by cobra's --config persistent flag binding.
+// Package-level var is required by cobra's StringVar API.
+var cfgPath string
+
+// bayPaths returns the standard paths, respecting the --config flag.
+func bayPaths() config.Paths {
+	p := config.DefaultPaths()
+	if cfgPath != "" {
+		p.ConfigFile = cfgPath
+	}
+	return p
+}
 
 // newEngine creates an Engine from the loaded config and real implementations.
 func newEngine() (*engine.Engine, error) {
-	path := cfgPath
-	if path == "" {
-		path = config.DefaultConfigPath()
-	}
-	cfg, err := config.Load(path)
+	p := bayPaths()
+	cfg, err := config.Load(p.ConfigFile)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("no config file found at %s\nRun 'bay setup' to get started.", path)
+			return nil, fmt.Errorf("no config file found at %s\nRun 'bay setup' to get started.", p.ConfigFile)
 		}
 		return nil, fmt.Errorf("loading config: %w", err)
 	}
@@ -37,14 +43,10 @@ func newEngine() (*engine.Engine, error) {
 		}
 	}
 
-	dataDir := config.DefaultDataDir()
-	manifestPath := dataDir + "/manifest.toml"
-	archivePath := dataDir + "/archive.toml"
-
 	t := tmuxpkg.NewReal()
 	g := gitpkg.NewReal()
 
-	return engine.New(cfg, path, manifestPath, archivePath, t, g), nil
+	return engine.New(cfg, p.ConfigFile, p.ManifestFile, p.ArchiveFile, t, g), nil
 }
 
 // NewRootCmd creates the root bay command.

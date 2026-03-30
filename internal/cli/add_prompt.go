@@ -5,8 +5,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/commontoolsinc/bay/internal/config"
-	tmuxpkg "github.com/commontoolsinc/bay/internal/tmux"
 	"github.com/spf13/cobra"
 )
 
@@ -16,15 +14,18 @@ func newAddPromptCmd() *cobra.Command {
 		Short: "Capture agent-waiting pattern from current pane",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			t := tmuxpkg.NewReal()
+			eng, err := newEngine()
+			if err != nil {
+				return err
+			}
 
 			// Capture current pane content
-			winID, err := t.CurrentWindowID()
+			winID, err := eng.Tmux.CurrentWindowID()
 			if err != nil {
 				return fmt.Errorf("not in a tmux window: %w", err)
 			}
 
-			panes, err := t.ListPanes(winID)
+			panes, err := eng.Tmux.ListPanes(winID)
 			if err != nil {
 				return fmt.Errorf("listing panes: %w", err)
 			}
@@ -33,7 +34,7 @@ func newAddPromptCmd() *cobra.Command {
 			}
 
 			// Capture last 5 lines from first pane
-			content, err := t.CapturePane(panes[0].ID, 5)
+			content, err := eng.Tmux.CapturePane(panes[0].ID, 5)
 			if err != nil {
 				return fmt.Errorf("capturing pane: %w", err)
 			}
@@ -57,7 +58,7 @@ func newAddPromptCmd() *cobra.Command {
 			}
 
 			// Append to prompts file
-			promptsPath := config.DefaultConfigDir() + "/bay-prompts.txt"
+			promptsPath := bayPaths().PatternsFile
 			f, err := os.OpenFile(promptsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 			if err != nil {
 				return fmt.Errorf("opening prompts file: %w", err)
