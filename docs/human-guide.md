@@ -536,21 +536,11 @@ them. If they're gone (e.g., after a full reboot), it recreates them.
 ## Per-repo setup (agents only)
 
 If you use agents, each repo needs the agent config file in its
-`.gitignore`:
+`.gitignore`. `bay repo add` checks this automatically and prints
+the commands you need to run for any missing entries.
 
-```
-# For Claude Code
-echo "CLAUDE.local.md" >> .gitignore
-
-# For Codex
-echo "AGENTS.local.md" >> .gitignore
-
-# For Gemini
-echo "GEMINI.local.md" >> .gitignore
-```
-
-Bay checks this before writing config files and will refuse (with a
-helpful message) if the entry is missing.
+Bay also checks at workspace creation time and will refuse (with a
+clear message) if the entry is missing.
 
 For Codex, also add to `~/.codex/config.toml`:
 
