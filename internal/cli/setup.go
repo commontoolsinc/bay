@@ -172,104 +172,54 @@ Do you want to proceed
 	}
 }
 
-func installCompletions(root *cobra.Command, reader *bufio.Reader) {
+func installCompletions(_ *cobra.Command, _ *bufio.Reader) {
 	fmt.Println()
-	fmt.Print("Install shell completions? [Y/n] ")
-	answer, _ := reader.ReadString('\n')
-	if strings.TrimSpace(strings.ToLower(answer)) == "n" {
-		return
-	}
 
 	shell := os.Getenv("SHELL")
-	home, _ := os.UserHomeDir()
+	var shellName, snippet string
 
 	switch {
 	case strings.HasSuffix(shell, "/zsh"):
-		targets := []string{
-			filepath.Join(home, ".zsh", "completions"),
-			"/usr/local/share/zsh/site-functions",
-		}
-		if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
-			targets = append([]string{filepath.Join(xdg, "zsh", "completions")}, targets...)
-		}
-
-		var target string
-		for _, t := range targets {
-			if _, err := os.Stat(t); err == nil {
-				target = t
-				break
-			}
-		}
-		if target == "" {
-			target = filepath.Join(home, ".zsh", "completions")
-			os.MkdirAll(target, 0o755)
-		}
-
-		dest := filepath.Join(target, "_bay")
-		f, err := os.Create(dest)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "  Warning: could not write %s: %v\n", dest, err)
-			printManualCompletionInstructions()
-			return
-		}
-		root.GenZshCompletion(f)
-		f.Close()
-		fmt.Printf("  Zsh completions written to %s\n", dest)
-		fmt.Println("  Make sure this directory is in your fpath. Add to .zshrc if needed:")
-		fmt.Printf("    fpath=(%s $fpath)\n", target)
-		fmt.Println("    autoload -Uz compinit && compinit")
-
+		shellName = "zsh"
+		snippet = `if command -v bay > /dev/null ; then
+  source <(bay completion zsh)
+fi`
 	case strings.HasSuffix(shell, "/bash"):
-		targets := []string{
-			"/usr/local/etc/bash_completion.d", // macOS + Homebrew
-			"/etc/bash_completion.d",            // Linux
-		}
-		var target string
-		for _, t := range targets {
-			if _, err := os.Stat(t); err == nil {
-				target = t
-				break
-			}
-		}
-		if target != "" {
-			dest := filepath.Join(target, "bay")
-			f, err := os.Create(dest)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "  Warning: could not write %s: %v\n", dest, err)
-				printManualCompletionInstructions()
-				return
-			}
-			root.GenBashCompletion(f)
-			f.Close()
-			fmt.Printf("  Bash completions written to %s\n", dest)
-		} else {
-			printManualCompletionInstructions()
-		}
-
+		shellName = "bash"
+		snippet = `if command -v bay > /dev/null ; then
+  source <(bay completion bash)
+fi`
 	case strings.HasSuffix(shell, "/fish"):
-		target := filepath.Join(home, ".config", "fish", "completions")
-		os.MkdirAll(target, 0o755)
-		dest := filepath.Join(target, "bay.fish")
-		f, err := os.Create(dest)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "  Warning: could not write %s: %v\n", dest, err)
-			printManualCompletionInstructions()
-			return
-		}
-		root.GenFishCompletion(f, true)
-		f.Close()
-		fmt.Printf("  Fish completions written to %s\n", dest)
-
+		shellName = "fish"
+		snippet = `if command -v bay > /dev/null
+  bay completion fish | source
+end`
 	default:
-		printManualCompletionInstructions()
+		fmt.Println("Could not detect shell. Add one of these to your shell rc file:")
+		fmt.Println("  Bash/Zsh:  source <(bay completion bash|zsh)")
+		fmt.Println("  Fish:      bay completion fish | source")
+		return
 	}
+
+	rcFile := shellRCFile(shellName)
+	fmt.Printf("Add this to %s for tab completions:\n\n", rcFile)
+	fmt.Println("  " + strings.ReplaceAll(snippet, "\n", "\n  "))
+	fmt.Println()
 }
 
-func printManualCompletionInstructions() {
-	fmt.Println("  Install completions manually:")
-	fmt.Println("    Bash:  source <(bay completion bash)")
-	fmt.Println("    Zsh:   source <(bay completion zsh)")
-	fmt.Println("    Fish:  bay completion fish | source")
+// shellRCFile returns the conventional rc file path for a shell.
+func shellRCFile(shell string) string {
+	home, _ := os.UserHomeDir()
+	switch shell {
+	case "zsh":
+		return filepath.Join(home, ".zshrc")
+	case "bash":
+		return filepath.Join(home, ".bashrc")
+	case "fish":
+		return filepath.Join(home, ".config", "fish", "config.fish")
+	default:
+		return "your shell rc file"
+	}
 }
 
 func installKeybindings(reader *bufio.Reader, configPath string) {

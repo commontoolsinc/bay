@@ -19,23 +19,17 @@ func RegisterCompletion(root *cobra.Command) {
 		Short: "Generate shell completion scripts",
 		Long: `Generate shell completion scripts for bay.
 
-To load completions:
+Add to your .zshrc or .bashrc:
 
-Bash:
-  $ source <(bay completion bash)
-  # Persist across sessions:
-  $ bay completion bash > /usr/local/etc/bash_completion.d/bay   # macOS + Homebrew
-  $ bay completion bash > /etc/bash_completion.d/bay             # Linux
+  if command -v bay > /dev/null ; then
+    source <(bay completion zsh)    # or bash
+  fi
 
-Zsh:
-  $ source <(bay completion zsh)
-  # Persist across sessions (add before compinit in .zshrc):
-  $ bay completion zsh > "${fpath[1]}/_bay"
+For fish (~/.config/fish/config.fish):
 
-Fish:
-  $ bay completion fish | source
-  # Persist across sessions:
-  $ bay completion fish > ~/.config/fish/completions/bay.fish
+  if command -v bay > /dev/null
+    bay completion fish | source
+  end
 `,
 		Args:      cobra.ExactArgs(1),
 		ValidArgs: []string{"bash", "zsh", "fish"},
