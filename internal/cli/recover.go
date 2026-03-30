@@ -25,7 +25,7 @@ Outside tmux: recovers all docks.`,
 
 			// Inside a dock: recover just that dock
 			if session, sessionErr := eng.Tmux.CurrentSession(); sessionErr == nil {
-				attachCmd, err := eng.DockRecover(session)
+				_, err := eng.DockRecover(session)
 				if err != nil {
 					// Not a bay dock — fall through to full recovery
 					if currentWinID != "" {
@@ -33,7 +33,6 @@ Outside tmux: recovers all docks.`,
 					}
 				} else {
 					fmt.Printf("Recovered dock %q.\n", session)
-					fmt.Printf("  %s\n", attachCmd)
 					if currentWinID != "" {
 						_ = eng.Tmux.SelectWindow(currentWinID)
 					}
