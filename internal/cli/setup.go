@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/commontoolsinc/bay/internal/config"
-	gitpkg "github.com/commontoolsinc/bay/internal/git"
 	"github.com/spf13/cobra"
 )
 
@@ -123,13 +122,8 @@ Do you want to proceed
 			installKeybindings(reader, configPath)
 
 			fmt.Println("\nSetup complete. Next steps:")
-			step := 1
-			fmt.Printf("  %d. Add a repo:  bay repo add <name> <path>\n", step)
-			step++
-			if printGitignoreAdvice(configPath, step) {
-				step++
-			}
-			fmt.Printf("  %d. Create a dock:  bay dock new <name> --repo <repo> --agent claude\n", step)
+			fmt.Println("  1. Add a repo:  bay repo add <name> <path>")
+			fmt.Println("  2. Create a dock:  bay dock new <name> --repo <repo>")
 			fmt.Println()
 			fmt.Println("To teach an orchestrator agent about bay:")
 			fmt.Printf("  claude --add-dir %s\n", configDir)
@@ -313,45 +307,3 @@ func tmuxBindCmd(key, shellCmd string) string {
 	return fmt.Sprintf("bind-key %s run-shell '%s'", key, shellCmd)
 }
 
-// printGitignoreAdvice checks configured repos and only advises about
-// gitignore entries that are actually missing. Returns true if it printed.
-func printGitignoreAdvice(configPath string, step int) bool {
-	cfg, err := config.Load(configPath)
-	if err != nil || len(cfg.Repos) == 0 {
-		fmt.Printf("  %d. Add CLAUDE.local.md to your repos' .gitignore\n", step)
-		return true
-	}
-
-	// Collect all config filenames from agents
-	configFiles := map[string]bool{}
-	for _, agent := range cfg.Agents {
-		if agent.ConfigFile != "" {
-			configFiles[agent.ConfigFile] = true
-		}
-	}
-	if len(configFiles) == 0 {
-		return false
-	}
-
-	g := gitpkg.NewReal()
-	var missing []string
-	for repoName, repo := range cfg.Repos {
-		repoPath := config.ExpandPath(repo.Path)
-		for file := range configFiles {
-			ignored, err := g.IsIgnored(repoPath, file)
-			if err != nil || !ignored {
-				missing = append(missing, fmt.Sprintf("%s in %s", file, repoName))
-			}
-		}
-	}
-
-	if len(missing) == 0 {
-		return false
-	}
-
-	fmt.Printf("  %d. Add to .gitignore (missing):\n", step)
-	for _, m := range missing {
-		fmt.Printf("     %s\n", m)
-	}
-	return true
-}
