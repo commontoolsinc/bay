@@ -64,7 +64,7 @@ func newSetupCmd() *cobra.Command {
 					}
 
 					fmt.Println("\nOverwriting will DELETE all of the above and replace with defaults.")
-					fmt.Print("Type 'delete all' to confirm: ")
+					fmt.Print("Type 'delete all' to confirm, or anything else to keep your config: ")
 					answer, _ := reader.ReadString('\n')
 					if strings.TrimSpace(answer) != "delete all" {
 						fmt.Println("Keeping existing config.")
