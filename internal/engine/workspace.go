@@ -447,27 +447,39 @@ func (e *Engine) ResolveWorkspace(query string) (string, string, error) {
 
 // ResolveSelf resolves the current workspace from CWD and tmux context.
 func (e *Engine) ResolveSelf() (string, string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", "", fmt.Errorf("getting cwd: %w", err)
-	}
-
 	m, err := e.LoadManifest()
 	if err != nil {
 		return "", "", err
 	}
 
-	// Match CWD against workspace paths
-	for dockName, dockState := range m.Docks {
-		for wsID, ws := range dockState.Workspaces {
-			wsPath := config.ExpandPath(ws.Path)
-			if cwd == wsPath || strings.HasPrefix(cwd, wsPath+"/") {
-				return dockName, wsID, nil
+	// First try: match CWD against workspace paths
+	cwd, cwdErr := os.Getwd()
+	if cwdErr == nil {
+		for dockName, dockState := range m.Docks {
+			for wsID, ws := range dockState.Workspaces {
+				wsPath := config.ExpandPath(ws.Path)
+				if cwd == wsPath || strings.HasPrefix(cwd, wsPath+"/") {
+					return dockName, wsID, nil
+				}
 			}
 		}
 	}
 
-	return "", "", fmt.Errorf("current directory %s does not match any workspace", cwd)
+	// Fallback: match current tmux window ID against manifest
+	winID, tmuxErr := e.Tmux.CurrentWindowID()
+	if tmuxErr == nil {
+		for dockName, dockState := range m.Docks {
+			for wsID, ws := range dockState.Workspaces {
+				for _, win := range ws.Windows {
+					if win.TmuxWindowID == winID {
+						return dockName, wsID, nil
+					}
+				}
+			}
+		}
+	}
+
+	return "", "", fmt.Errorf("not in a bay workspace")
 }
 
 // ResolveByWindowID finds the workspace that owns the given tmux window ID.
