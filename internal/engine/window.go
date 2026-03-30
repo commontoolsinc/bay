@@ -53,32 +53,13 @@ func (e *Engine) WinOpen(dockName, wsID string, agent string, shell bool, cmd st
 		_ = e.generateAgentConfig(dockName, effectiveAgent, wsID, ws.Name, ws.Path, ws.Type, ws.Repo)
 	}
 
-	// Determine pane type and launch
-	dockCfg := e.Config.Docks[dockName]
-	var paneType manifest.PaneType
-	var paneAgent string
-	var paneCmd string
-	switch {
-	case shell:
-		paneType = manifest.PaneTypeShell
-	case cmd != "":
-		paneType = manifest.PaneTypeCmd
-		paneCmd = cmd
-		panes, err := e.Tmux.ListPanes(tmuxWinID)
-		if err == nil && len(panes) > 0 {
-			_ = e.Tmux.SendKeys(panes[0].ID, cmd)
-		}
-	case effectiveAgent != "":
-		paneType = manifest.PaneTypeAgent
-		paneAgent = effectiveAgent
-		agentCmd := e.buildAgentCommand(effectiveAgent, dockCfg)
-		panes, err := e.Tmux.ListPanes(tmuxWinID)
-		if err == nil && len(panes) > 0 {
-			_ = e.Tmux.SendKeys(panes[0].ID, agentCmd)
-		}
-	default:
-		paneType = manifest.PaneTypeShell
+	// Launch into the first pane
+	panes, _ := e.Tmux.ListPanes(tmuxWinID)
+	var tmuxPaneID string
+	if len(panes) > 0 {
+		tmuxPaneID = panes[0].ID
 	}
+	paneType, paneAgent, paneCmd := e.launchPaneInTmux(tmuxPaneID, dockName, effectiveAgent, shell, cmd)
 
 	// Add window to manifest
 	win := manifest.Window{

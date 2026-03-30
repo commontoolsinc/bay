@@ -54,8 +54,8 @@ func (e *Engine) RepoAdd(name, path, worktreeDir, cloneURL string, force bool) e
 		Path:        normalizedPath,
 		WorktreeDir: worktreeDir,
 	}
-	if e.ConfigPath != "" {
-		if err := config.Save(e.ConfigPath, e.Config); err != nil {
+	if e.configPath != "" {
+		if err := config.Save(e.configPath, e.Config); err != nil {
 			return fmt.Errorf("saving config: %w", err)
 		}
 	}
@@ -110,8 +110,8 @@ func (e *Engine) RepoRemove(name string, force bool) error {
 	}
 
 	delete(e.Config.Repos, name)
-	if e.ConfigPath != "" {
-		if err := config.Save(e.ConfigPath, e.Config); err != nil {
+	if e.configPath != "" {
+		if err := config.Save(e.configPath, e.Config); err != nil {
 			return fmt.Errorf("saving config: %w", err)
 		}
 	}

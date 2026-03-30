@@ -106,7 +106,7 @@ func TestDockNew(t *testing.T) {
 	}
 
 	// Verify manifest updated
-	m, _ := manifest.Load(eng.ManifestPath)
+	m, _ := manifest.Load(eng.manifestPath)
 	if _, ok := m.Docks["research"]; !ok {
 		t.Error("dock not in manifest")
 	}
@@ -162,7 +162,7 @@ func TestWsNew_Worktree(t *testing.T) {
 	}
 
 	// Verify manifest persisted
-	m, _ := manifest.Load(eng.ManifestPath)
+	m, _ := manifest.Load(eng.manifestPath)
 	if _, ok := m.Docks["labs"].Workspaces["w1"]; !ok {
 		t.Error("workspace not in manifest")
 	}
@@ -243,7 +243,7 @@ func TestWsClose_Worktree(t *testing.T) {
 	}
 
 	// Verify removed from manifest
-	m, _ := manifest.Load(eng.ManifestPath)
+	m, _ := manifest.Load(eng.manifestPath)
 	if _, ok := m.Docks["labs"].Workspaces["w1"]; ok {
 		t.Error("workspace should be removed from manifest")
 	}
@@ -255,7 +255,7 @@ func TestWsClose_Worktree(t *testing.T) {
 	}
 
 	// Verify archived
-	archive, err := manifest.LoadArchive(eng.ArchivePath)
+	archive, err := manifest.LoadArchive(eng.archivePath)
 	if err != nil {
 		t.Fatalf("loading archive: %v", err)
 	}
@@ -443,7 +443,7 @@ func TestDockClose(t *testing.T) {
 		t.Fatalf("DockClose failed: %v", err)
 	}
 
-	m, _ := manifest.Load(eng.ManifestPath)
+	m, _ := manifest.Load(eng.manifestPath)
 	if len(m.Docks["labs"].Workspaces) != 0 {
 		t.Errorf("expected 0 workspaces, got %d", len(m.Docks["labs"].Workspaces))
 	}
@@ -668,15 +668,15 @@ func TestWsClose_DeletedWorktree(t *testing.T) {
 func TestDockNew_SavesConfig(t *testing.T) {
 	// Regression: DockNew modified config in memory but didn't save to disk
 	eng, dir := testEngine(t)
-	eng.ConfigPath = filepath.Join(dir, "config.toml")
+	eng.configPath = filepath.Join(dir, "config.toml")
 
 	// Save initial config so there's a file to overwrite
-	config.Save(eng.ConfigPath, eng.Config)
+	config.Save(eng.configPath, eng.Config)
 
 	eng.DockNew("research", "labs", "claude", "")
 
 	// Reload config from disk
-	loaded, err := config.Load(eng.ConfigPath)
+	loaded, err := config.Load(eng.configPath)
 	if err != nil {
 		t.Fatalf("loading saved config: %v", err)
 	}
@@ -762,14 +762,14 @@ func TestWsNew_RollbackOnManifestFailure(t *testing.T) {
 	badDir := filepath.Join(dir, "readonly")
 	os.MkdirAll(badDir, 0o755)
 	// Write the current manifest content there (so load succeeds)
-	curData, _ := os.ReadFile(eng.ManifestPath)
+	curData, _ := os.ReadFile(eng.manifestPath)
 	badManifest := filepath.Join(badDir, "manifest.toml")
 	os.WriteFile(badManifest, curData, 0o444)
 	// Make dir read-only so lock file cannot be created
 	os.Chmod(badDir, 0o555)
 	defer os.Chmod(badDir, 0o755)
 
-	eng.ManifestPath = badManifest
+	eng.manifestPath = badManifest
 
 	mockTmux := eng.Tmux.(*tmux.Mock)
 	callsBefore := len(mockTmux.Calls)
@@ -993,8 +993,8 @@ func TestWsNew_DuplicateDisplayName(t *testing.T) {
 
 func TestRepoAdd_Local(t *testing.T) {
 	eng, dir := testEngine(t)
-	eng.ConfigPath = filepath.Join(dir, "config.toml")
-	config.Save(eng.ConfigPath, eng.Config)
+	eng.configPath = filepath.Join(dir, "config.toml")
+	config.Save(eng.configPath, eng.Config)
 
 	repoDir := filepath.Join(dir, "new-repo")
 	os.MkdirAll(repoDir, 0o755)
@@ -1017,8 +1017,8 @@ func TestRepoAdd_Local(t *testing.T) {
 
 func TestRepoAdd_CloneURL(t *testing.T) {
 	eng, dir := testEngine(t)
-	eng.ConfigPath = filepath.Join(dir, "config.toml")
-	config.Save(eng.ConfigPath, eng.Config)
+	eng.configPath = filepath.Join(dir, "config.toml")
+	config.Save(eng.configPath, eng.Config)
 
 	destPath := filepath.Join(dir, "cloned-repo")
 	// Path must NOT exist for clone
@@ -1074,8 +1074,8 @@ func TestRepoRemove_InUse(t *testing.T) {
 
 func TestRepoRemove_Force(t *testing.T) {
 	eng, dir := testEngine(t)
-	eng.ConfigPath = filepath.Join(dir, "config.toml")
-	config.Save(eng.ConfigPath, eng.Config)
+	eng.configPath = filepath.Join(dir, "config.toml")
+	config.Save(eng.configPath, eng.Config)
 
 	// labs repo is used by labs dock — force should remove both
 	err := eng.RepoRemove("labs", true)
@@ -1092,8 +1092,8 @@ func TestRepoRemove_Force(t *testing.T) {
 
 func TestRepoAdd_NotGitRepo(t *testing.T) {
 	eng, dir := testEngine(t)
-	eng.ConfigPath = filepath.Join(dir, "config.toml")
-	config.Save(eng.ConfigPath, eng.Config)
+	eng.configPath = filepath.Join(dir, "config.toml")
+	config.Save(eng.configPath, eng.Config)
 
 	// Mock defaults to IsGitRepo=true; override for this test by using
 	// a custom mock that returns false. Instead, we test the real path:

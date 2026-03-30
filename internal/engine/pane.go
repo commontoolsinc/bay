@@ -60,27 +60,9 @@ func (e *Engine) PaneAdd(dockName, wsID string, winID int, agent string, shell b
 		return fmt.Errorf("splitting window: %w", err)
 	}
 
-	// Determine pane type
+	// Launch and determine pane type
 	paneID := manifest.NextPaneID(win)
-	var paneType manifest.PaneType
-	var paneAgent string
-	var paneCmd string
-	switch {
-	case shell:
-		paneType = manifest.PaneTypeShell
-	case cmd != "":
-		paneType = manifest.PaneTypeCmd
-		paneCmd = cmd
-		_ = e.Tmux.SendKeys(newPaneID, cmd)
-	case agent != "":
-		paneType = manifest.PaneTypeAgent
-		paneAgent = agent
-		dockCfg := e.Config.Docks[dockName]
-		agentCmd := e.buildAgentCommand(agent, dockCfg)
-		_ = e.Tmux.SendKeys(newPaneID, agentCmd)
-	default:
-		paneType = manifest.PaneTypeShell
-	}
+	paneType, paneAgent, paneCmd := e.launchPaneInTmux(newPaneID, dockName, agent, shell, cmd)
 
 	pane := manifest.Pane{
 		ID:        paneID,

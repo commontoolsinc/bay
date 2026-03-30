@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -31,27 +30,14 @@ func newMonitorCmd() *cobra.Command {
 }
 
 func newMonitorWithConfig() (*monitor.Monitor, error) {
-	path := cfgPath
-	if path == "" {
-		path = config.DefaultConfigPath()
-	}
-	cfg, err := config.Load(path)
+	p := bayPaths()
+	cfg, err := config.Load(p.ConfigFile)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("no config file found at %s\nRun 'bay setup' to get started.", path)
-		}
 		return nil, err
 	}
 
-	dataDir := config.DefaultDataDir()
-	configDir := config.DefaultConfigDir()
-	pidPath := dataDir + "/monitor.pid"
-	manifestPath := dataDir + "/manifest.toml"
-	patternsPath := configDir + "/bay-prompts.txt"
-	interval := cfg.Monitor.EffectiveInterval()
-
 	t := tmuxpkg.NewReal()
-	return monitor.New(t, manifestPath, patternsPath, pidPath, interval), nil
+	return monitor.New(t, p.ManifestFile, p.PatternsFile, p.PIDFile, cfg.Monitor.EffectiveInterval()), nil
 }
 
 func newMonitorStartCmd() *cobra.Command {
@@ -80,7 +66,7 @@ func newMonitorRunCmd() *cobra.Command {
 			}
 
 			// Write our own PID
-			if err := monitor.WritePIDFile(config.DefaultDataDir()+"/monitor.pid", os.Getpid()); err != nil {
+			if err := monitor.WritePIDFile(bayPaths().PIDFile, os.Getpid()); err != nil {
 				return err
 			}
 

@@ -18,12 +18,12 @@ func newSetupCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			reader := bufio.NewReader(os.Stdin)
 
-			configDir := config.DefaultConfigDir()
-			dataDir := config.DefaultDataDir()
-			configPath := config.DefaultConfigPath()
+			p := bayPaths()
+			configDir := p.ConfigDir
+			configPath := p.ConfigFile
 
 			// Create directories
-			for _, dir := range []string{configDir, dataDir, filepath.Join(configDir, "templates")} {
+			for _, dir := range []string{p.ConfigDir, p.DataDir, filepath.Join(p.ConfigDir, "templates")} {
 				if err := os.MkdirAll(dir, 0o755); err != nil {
 					return fmt.Errorf("creating directory %s: %w", dir, err)
 				}

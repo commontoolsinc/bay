@@ -145,8 +145,8 @@ func registerCompletions(root *cobra.Command) {
 
 // loadManifestForCompletions loads the manifest silently (errors return nil).
 func loadManifestForCompletions() *manifest.Manifest {
-	path := config.DefaultDataDir() + "/manifest.toml"
-	m, err := manifest.Load(path)
+	p := bayPaths()
+	m, err := manifest.Load(p.ManifestFile)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return manifest.New()
@@ -158,8 +158,8 @@ func loadManifestForCompletions() *manifest.Manifest {
 
 // loadConfigForCompletions loads the config silently.
 func loadConfigForCompletions() *config.Config {
-	path := config.DefaultConfigPath()
-	cfg, err := config.Load(path)
+	p := bayPaths()
+	cfg, err := config.Load(p.ConfigFile)
 	if err != nil {
 		return nil
 	}

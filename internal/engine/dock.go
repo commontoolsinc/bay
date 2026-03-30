@@ -110,8 +110,8 @@ func (e *Engine) DockNew(name, repo, agent, template string) error {
 		Agent:               agent,
 		AgentConfigTemplate: template,
 	}
-	if e.ConfigPath != "" {
-		if err := config.Save(e.ConfigPath, e.Config); err != nil {
+	if e.configPath != "" {
+		if err := config.Save(e.configPath, e.Config); err != nil {
 			return fmt.Errorf("saving config: %w", err)
 		}
 	}

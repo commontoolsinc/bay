@@ -149,22 +149,13 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	// Clean up placeholder windows now that a real window exists
 	e.cleanPlaceholders(dockName)
 
-	// Build launch command
-	var paneType manifest.PaneType
-	var paneAgent string
-	if opts.Shell {
-		paneType = manifest.PaneTypeShell
-	} else if agentName != "" {
-		paneType = manifest.PaneTypeAgent
-		paneAgent = agentName
-		cmd := e.buildAgentCommand(agentName, dockCfg)
-		panes, err := e.Tmux.ListPanes(windowID)
-		if err == nil && len(panes) > 0 {
-			_ = e.Tmux.SendKeys(panes[0].ID, cmd)
-		}
-	} else {
-		paneType = manifest.PaneTypeShell
+	// Launch into the first pane
+	panes, _ := e.Tmux.ListPanes(windowID)
+	var tmuxPaneID string
+	if len(panes) > 0 {
+		tmuxPaneID = panes[0].ID
 	}
+	paneType, paneAgent, _ := e.launchPaneInTmux(tmuxPaneID, dockName, agentName, opts.Shell, "")
 
 	// Build workspace
 	ws := &manifest.Workspace{
@@ -271,7 +262,7 @@ func (e *Engine) WsClose(dockName, wsID string, force bool) error {
 	}
 
 	// Move to archive
-	archive, err := manifest.LoadArchive(e.ArchivePath)
+	archive, err := manifest.LoadArchive(e.archivePath)
 	if err != nil {
 		archive = manifest.New()
 	}
@@ -284,7 +275,7 @@ func (e *Engine) WsClose(dockName, wsID string, force bool) error {
 		}
 	}
 	archive.Docks[dockName].Workspaces[wsID] = ws
-	_ = manifest.SaveArchive(e.ArchivePath, archive)
+	_ = manifest.SaveArchive(e.archivePath, archive)
 
 	// Remove from manifest
 	delete(dockState.Workspaces, wsID)
