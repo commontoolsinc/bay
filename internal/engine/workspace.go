@@ -121,9 +121,10 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		}
 	}
 
-	// Always generate agent config if an agent type is available,
-	// even in shell mode — the user may later add an agent pane.
-	if agentName != "" {
+	// Generate agent config if an agent is being launched.
+	// For shell mode, skip — the user isn't using an agent yet. If they
+	// later add an agent pane, config will be generated at that point.
+	if agentName != "" && !opts.Shell {
 		if err := e.generateAgentConfig(dockName, agentName, wsID, displayName, wsPath, wsType, repoName); err != nil {
 			rollbackWorktree()
 			return nil, fmt.Errorf("generating agent config: %w", err)
