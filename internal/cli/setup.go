@@ -224,11 +224,6 @@ func shellRCFile(shell string) string {
 
 func installKeybindings(reader *bufio.Reader, configPath string) {
 	fmt.Println()
-	fmt.Print("Install tmux keybindings? [Y/n] ")
-	answer, _ := reader.ReadString('\n')
-	if strings.TrimSpace(strings.ToLower(answer)) == "n" {
-		return
-	}
 
 	cfg, err := config.Load(configPath)
 	if err != nil {
@@ -265,7 +260,18 @@ func installKeybindings(reader *bufio.Reader, configPath string) {
 	}
 
 	if len(additions) == 0 {
-		fmt.Println("  Tmux keybindings already installed.")
+		fmt.Println("Tmux keybindings already installed.")
+		return
+	}
+
+	// Show what we'd add and ask for confirmation
+	fmt.Printf("These keybindings will be added to %s:\n", tmuxConf)
+	for _, line := range additions {
+		fmt.Printf("  %s\n", line)
+	}
+	fmt.Print("\nAdd these keybindings? [Y/n] ")
+	answer, _ := reader.ReadString('\n')
+	if strings.TrimSpace(strings.ToLower(answer)) == "n" {
 		return
 	}
 
@@ -281,10 +287,7 @@ func installKeybindings(reader *bufio.Reader, configPath string) {
 		f.WriteString(line + "\n")
 	}
 
-	fmt.Printf("  Added to %s:\n", tmuxConf)
-	for _, line := range additions {
-		fmt.Printf("    %s\n", line)
-	}
+	fmt.Println("Added.")
 }
 
 // tmuxBindCmd generates a tmux bind-key command. Keys starting with "M-"
