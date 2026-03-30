@@ -254,11 +254,6 @@ func installKeybindings(reader *bufio.Reader, configPath string) {
 		additions = append(additions, bayNextWaiting)
 	}
 
-	bayAddPrompt := tmuxBindCmd(addPromptKey, "bay add-prompt")
-	if !strings.Contains(content, "bay add-prompt") {
-		additions = append(additions, bayAddPrompt)
-	}
-
 	if len(additions) == 0 {
 		fmt.Println("Tmux keybindings already installed.")
 		return
