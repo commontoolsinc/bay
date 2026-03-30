@@ -69,6 +69,12 @@ func (c *columnWidths) format(id, name, branch, pr, status, agent, suffix string
 		c.id, id, c.name, name, c.branch, branch, c.pr, pr, c.status, status, c.agent, agent, suffix)
 }
 
+func (c *columnWidths) header() string {
+	// Ensure headers fit
+	c.update("ID", "NAME", "BRANCH", "PR", "STATUS", "AGENT")
+	return c.format("ID", "NAME", "BRANCH", "PR", "STATUS", "AGENT", "")
+}
+
 // formatWorkspaceLine formats a single workspace as a table row using default widths.
 func formatWorkspaceLine(ws engine.WorkspaceInfo) string {
 	id, name, branch, pr, status, agent, suffix := workspaceColumns(ws)
@@ -133,11 +139,16 @@ func FormatFullTree(cfg *config.Config, docks []engine.DockInfo) string {
 			fmt.Fprintf(&b, "  (no docks)\n")
 			continue
 		}
+		headerPrinted := false
 		for _, d := range re.docks {
 			fmt.Fprintf(&b, "  dock %s\n", d.Name)
 			if len(d.Workspaces) == 0 {
 				fmt.Fprintf(&b, "    (no workspaces)\n")
 				continue
+			}
+			if !headerPrinted {
+				fmt.Fprintf(&b, "    %s\n", w.header())
+				headerPrinted = true
 			}
 			for _, ws := range d.Workspaces {
 				id, name, branch, pr, status, agent, suffix := workspaceColumns(ws)
@@ -162,6 +173,7 @@ func FormatDockTree(docks []engine.DockInfo) string {
 		}
 	}
 
+	headerPrinted := false
 	for _, d := range docks {
 		meta := ""
 		if d.Repo != "" || d.Agent != "" {
@@ -178,6 +190,10 @@ func FormatDockTree(docks []engine.DockInfo) string {
 		if len(d.Workspaces) == 0 {
 			fmt.Fprintf(&b, "  (no workspaces)\n")
 			continue
+		}
+		if !headerPrinted {
+			fmt.Fprintf(&b, "  %s\n", w.header())
+			headerPrinted = true
 		}
 		for _, ws := range d.Workspaces {
 			id, name, branch, pr, status, agent, suffix := workspaceColumns(ws)
@@ -227,8 +243,13 @@ func FormatSubtreeForRemoval(cfg *config.Config, repoName string, docks []engine
 	} else {
 		fmt.Fprintf(&b, "  repo %s\n", repoName)
 	}
+	headerPrinted := false
 	for _, d := range docks {
 		fmt.Fprintf(&b, "    dock %s\n", d.Name)
+		if len(d.Workspaces) > 0 && !headerPrinted {
+			fmt.Fprintf(&b, "      %s\n", w.header())
+			headerPrinted = true
+		}
 		for _, ws := range d.Workspaces {
 			id, name, branch, pr, status, agent, suffix := workspaceColumns(ws)
 			fmt.Fprintf(&b, "      %s\n", w.format(id, name, branch, pr, status, agent, suffix))
