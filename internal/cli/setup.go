@@ -113,6 +113,7 @@ interval_seconds = 3
 [keybinding]
 add_prompt = "P"
 next_waiting = "M-w"
+shell = "M-s"
 `
 				if err := os.WriteFile(configPath, []byte(defaultConfig), 0o644); err != nil {
 					return fmt.Errorf("writing config: %w", err)
@@ -247,11 +248,21 @@ func installKeybindings(reader *bufio.Reader, configPath string) {
 	existing, _ := os.ReadFile(tmuxConf)
 	content := string(existing)
 
+	shellKey := cfg.Keybind.Shell
+	if shellKey == "" {
+		shellKey = "M-s"
+	}
+
 	var additions []string
 
 	bayNextWaiting := tmuxBindCmd(nextWaitingKey, "bay go --next-waiting")
 	if !strings.Contains(content, "bay go --next-waiting") {
 		additions = append(additions, bayNextWaiting)
+	}
+
+	bayShell := tmuxBindCmd(shellKey, "bay shell")
+	if !strings.Contains(content, "bay shell") {
+		additions = append(additions, bayShell)
 	}
 
 	if len(additions) == 0 {
@@ -308,6 +319,15 @@ func describeKeybinding(line string) string {
 			key = "prefix + " + strings.Fields(line)[1]
 		}
 		return fmt.Sprintf("%s: jump to the next agent waiting for input", key)
+	case strings.Contains(line, "bay shell"):
+		key := "Option+s"
+		if strings.Contains(line, "bind-key -n M-") {
+			key = "Option+" + strings.TrimPrefix(
+				strings.Fields(line)[2], "M-")
+		} else if !strings.Contains(line, "-n") {
+			key = "prefix + " + strings.Fields(line)[1]
+		}
+		return fmt.Sprintf("%s: split a shell pane in the current workspace", key)
 	case strings.Contains(line, "bay add-prompt"):
 		key := "prefix + P"
 		if strings.Contains(line, "-n M-") {

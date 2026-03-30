@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -25,14 +26,15 @@ Outside tmux: recovers all docks.`,
 
 			// Inside a dock: recover just that dock
 			if session, sessionErr := eng.Tmux.CurrentSession(); sessionErr == nil {
-				_, err := eng.DockRecover(session)
+				recovered, err := eng.DockRecover(session)
 				if err != nil {
 					// Not a bay dock — fall through to full recovery
-					if currentWinID != "" {
-						_ = eng.Tmux.SelectWindow(currentWinID)
-					}
 				} else {
-					fmt.Printf("Recovered dock %q.\n", session)
+					if len(recovered) == 0 {
+						fmt.Printf("Dock %q: nothing to recover.\n", session)
+					} else {
+						fmt.Printf("Dock %q: recovered %s\n", session, strings.Join(recovered, ", "))
+					}
 					if currentWinID != "" {
 						_ = eng.Tmux.SelectWindow(currentWinID)
 					}
@@ -42,17 +44,24 @@ Outside tmux: recovers all docks.`,
 			}
 
 			// Outside tmux or not a bay dock: recover all
-			cmds, err := eng.Recover()
+			results, err := eng.Recover()
 			if err != nil {
 				return err
 			}
-			if len(cmds) == 0 {
+			if len(results) == 0 {
 				fmt.Println("Nothing to recover.")
 				return nil
 			}
-			fmt.Println("Recovered. Attach with:")
-			for _, c := range cmds {
-				fmt.Printf("  %s\n", c)
+			for _, r := range results {
+				if len(r.Recovered) == 0 {
+					fmt.Printf("Dock %q: nothing to recover.\n", r.Dock)
+				} else {
+					fmt.Printf("Dock %q: recovered %s\n", r.Dock, strings.Join(r.Recovered, ", "))
+				}
+			}
+			fmt.Println("\nAttach with:")
+			for _, r := range results {
+				fmt.Printf("  %s\n", r.AttachCmd)
 			}
 
 			// Restore focus if we were in tmux

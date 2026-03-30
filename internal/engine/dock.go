@@ -167,33 +167,6 @@ func (e *Engine) DockClose(name string, force bool) error {
 	return nil
 }
 
-// DockRecover recovers a single dock by name.
-func (e *Engine) DockRecover(name string) (string, error) {
-	m, err := e.LoadManifest()
-	if err != nil {
-		return "", err
-	}
-
-	dockState, ok := m.Docks[name]
-	if !ok {
-		return "", fmt.Errorf("unknown dock %q in manifest", name)
-	}
-	dockCfg, hasCfg := e.Config.Docks[name]
-
-	if err := e.ensureSession(name); err != nil {
-		return "", err
-	}
-
-	e.recoverDockWorkspaces(name, dockState, dockCfg, hasCfg)
-	e.cleanPlaceholders(name)
-
-	if err := e.saveManifest(m); err != nil {
-		return "", err
-	}
-
-	return fmt.Sprintf("tmux attach -t %s", name), nil
-}
-
 // List returns all workspaces across all docks with waiting status.
 // Used by both `bay ls` and `bay dock ls`.
 func (e *Engine) List() ([]DockInfo, error) {

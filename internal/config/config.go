@@ -71,6 +71,7 @@ func (m MonitorConfig) EffectiveInterval() int {
 type KeybindingConfig struct {
 	AddPrompt   string `toml:"add_prompt"`
 	NextWaiting string `toml:"next_waiting"`
+	Shell       string `toml:"shell"`
 }
 
 // DefaultConfigDir returns the default config directory.
