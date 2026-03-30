@@ -69,6 +69,7 @@ type WorkspaceInfo struct {
 	Status  string `json:"status"`
 	Waiting bool   `json:"waiting,omitempty"`
 	Missing bool   `json:"missing,omitempty"`
+	Stale   bool   `json:"stale,omitempty"`
 	Agent   string `json:"agent,omitempty"`
 }
 
@@ -223,9 +224,13 @@ func (e *Engine) List() ([]DockInfo, error) {
 					Missing: ws.Path != "" && statErr != nil,
 					Agent:   workspaceAgent(ws, dockCfg.Agent),
 				}
-				// Check waiting status from tmux
+				// Check tmux window state
 				for _, win := range ws.Windows {
 					if win.TmuxWindowID != "" {
+						exists, _ := e.Tmux.WindowExists(win.TmuxWindowID)
+						if !exists {
+							wsInfo.Stale = true
+						}
 						val, err := e.Tmux.GetWindowOption(win.TmuxWindowID, "@bay-waiting")
 						if err == nil && val == "1" {
 							wsInfo.Waiting = true
