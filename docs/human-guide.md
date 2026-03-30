@@ -647,17 +647,28 @@ project_doc_fallback_filenames = ["AGENTS.local.md"]
 
 ## Shell completions
 
-`bay setup` installs shell completions automatically. Tab completion
-covers workspace names and IDs, dock names, repo names, agent types,
-status values, and split directions.
+`bay setup` prints a snippet to add to your shell rc file. Tab
+completion covers workspace names and IDs, dock names, repo names,
+agent types, status values, and split directions.
 
-To regenerate manually:
+Add to your `.zshrc` or `.bashrc`:
 
+```bash
+if command -v bay > /dev/null ; then
+  source <(bay completion zsh)    # or bash
+fi
 ```
-bay completion bash > /usr/local/etc/bash_completion.d/bay
-bay completion zsh > "${fpath[1]}/_bay"
-bay completion fish > ~/.config/fish/completions/bay.fish
+
+For fish, add to `~/.config/fish/config.fish`:
+
+```fish
+if command -v bay > /dev/null
+  bay completion fish | source
+end
 ```
+
+Completions are generated fresh on each shell startup, so they're
+always up to date when bay is updated.
 
 ## Tips and troubleshooting
 
