@@ -1,0 +1,124 @@
+package engine
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/commontoolsinc/bay/internal/config"
+)
+
+// RepoAdd adds a repo to the configuration.
+// If cloneURL is non-empty and the path does not exist, the repo is cloned first.
+// If force is false and the path is not a git repo, an error is returned.
+func (e *Engine) RepoAdd(name, path, worktreeDir, cloneURL string, force bool) error {
+	if err := ValidateName(name); err != nil {
+		return err
+	}
+	if _, exists := e.Config.Repos[name]; exists {
+		return fmt.Errorf("repo %q already exists", name)
+	}
+
+	// Normalize to absolute path for config storage
+	normalizedPath := config.NormalizePath(path)
+	expandedPath := config.ExpandPath(normalizedPath)
+
+	if cloneURL != "" {
+		// Clone mode: destination must NOT exist
+		if _, err := os.Stat(expandedPath); err == nil {
+			return fmt.Errorf("directory %q already exists — cannot clone into an existing directory", expandedPath)
+		}
+		if err := e.Git.Clone(cloneURL, expandedPath); err != nil {
+			return fmt.Errorf("cloning %s: %w", cloneURL, err)
+		}
+	} else {
+		// Local mode: path must exist
+		info, err := os.Stat(expandedPath)
+		if err != nil {
+			return fmt.Errorf("path %q: %w", expandedPath, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("path %q is not a directory", expandedPath)
+		}
+		// Verify it's a git repo
+		if !force && !e.Git.IsGitRepo(expandedPath) {
+			return fmt.Errorf("path %q is not a git repository (use --force to add anyway)", expandedPath)
+		}
+	}
+
+	// Normalize worktree dir too if provided
+	if worktreeDir != "" {
+		worktreeDir = config.NormalizePath(worktreeDir)
+	}
+
+	e.Config.Repos[name] = config.RepoConfig{
+		Path:        normalizedPath,
+		WorktreeDir: worktreeDir,
+	}
+	if e.ConfigPath != "" {
+		if err := config.Save(e.ConfigPath, e.Config); err != nil {
+			return fmt.Errorf("saving config: %w", err)
+		}
+	}
+	return nil
+}
+
+// RepoInUseError is returned when a repo cannot be removed because docks reference it.
+// The AffectedDocks field contains DockInfo for each dock that would be removed.
+type RepoInUseError struct {
+	RepoName      string
+	AffectedDocks []DockInfo
+}
+
+func (e *RepoInUseError) Error() string {
+	return fmt.Sprintf("repo %q is in use by %d dock(s)", e.RepoName, len(e.AffectedDocks))
+}
+
+// RepoRemove removes a repo from the configuration.
+// If force is true, also closes and removes any docks that reference this repo.
+// Returns *RepoInUseError if the repo is in use and force is false.
+func (e *Engine) RepoRemove(name string, force bool) error {
+	if _, exists := e.Config.Repos[name]; !exists {
+		return fmt.Errorf("repo %q not found", name)
+	}
+
+	// Find all docks that reference this repo
+	var affectedDockNames []string
+	for dockName, dock := range e.Config.Docks {
+		if dock.Repo == name {
+			affectedDockNames = append(affectedDockNames, dockName)
+		}
+	}
+
+	if len(affectedDockNames) > 0 && !force {
+		// Build DockInfo for affected docks so the CLI can format them
+		docks, _ := e.List()
+		var affected []DockInfo
+		for _, d := range docks {
+			for _, dockName := range affectedDockNames {
+				if d.Name == dockName {
+					affected = append(affected, d)
+				}
+			}
+		}
+		return &RepoInUseError{RepoName: name, AffectedDocks: affected}
+	}
+
+	// Force path: close and remove affected docks
+	for _, dockName := range affectedDockNames {
+		_ = e.DockClose(dockName, true)
+		delete(e.Config.Docks, dockName)
+	}
+
+	delete(e.Config.Repos, name)
+	if e.ConfigPath != "" {
+		if err := config.Save(e.ConfigPath, e.Config); err != nil {
+			return fmt.Errorf("saving config: %w", err)
+		}
+	}
+	return nil
+}
+
+// RepoList returns all configured repos.
+func (e *Engine) RepoList() map[string]config.RepoConfig {
+	return e.Config.Repos
+}

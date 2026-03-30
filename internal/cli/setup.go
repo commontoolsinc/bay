@@ -29,7 +29,8 @@ func newSetupCmd() *cobra.Command {
 				}
 			}
 
-			// Check if config exists
+			// Check if config exists; write default if not (or if user confirms overwrite)
+			writeConfig := true
 			if _, err := os.Stat(configPath); err == nil {
 				fmt.Printf("Config already exists at %s\n", configPath)
 				fmt.Println("Overwriting will replace ALL repos, docks, and settings with defaults.")
@@ -37,12 +38,11 @@ func newSetupCmd() *cobra.Command {
 				answer, _ := reader.ReadString('\n')
 				if strings.TrimSpace(strings.ToLower(answer)) != "y" {
 					fmt.Println("Keeping existing config.")
-					goto prompts
+					writeConfig = false
 				}
 			}
 
-			// Write default config
-			{
+			if writeConfig {
 				defaultConfig := `# Bay configuration
 # See: bay doctor
 
@@ -80,7 +80,6 @@ next_waiting = "M-w"
 				fmt.Printf("Config written to %s\n", configPath)
 			}
 
-		prompts:
 			// Write default prompts file
 			promptsPath := filepath.Join(configDir, "bay-prompts.txt")
 			if _, err := os.Stat(promptsPath); os.IsNotExist(err) {
