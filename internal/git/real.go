@@ -129,6 +129,14 @@ func (r *Real) AddToGitignore(repoPath, filename string) error {
 	return nil
 }
 
+func (r *Real) CreateBranch(path, branchName string) error {
+	cmd := exec.Command("git", "-C", path, "checkout", "-b", branchName)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git checkout -b: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
 func (r *Real) DefaultBranch(repoPath string) (string, error) {
 	// Try the remote HEAD symref first.
 	cmd := exec.Command("git", "-C", repoPath, "symbolic-ref", "refs/remotes/origin/HEAD")

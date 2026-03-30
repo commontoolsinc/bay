@@ -90,9 +90,10 @@ verification), and monitoring.
    workspaces, windows, and panes. Idempotent — detects and reuses
    existing tmux state. Prints attach commands on completion.
 3. **Agent config generation** — bay generates a gitignored config file
-   in the workspace's CWD from a per-dock template file, injecting
-   workspace metadata. Template is optional — docks without one launch
-   agents with no injected config.
+   in the workspace's CWD containing a standard preamble (workspace
+   identity and essential bay commands) followed by optional per-dock
+   template content. The preamble is always written, even without a
+   user template.
 4. **Manifest tracking** — persistent record of each workspace (id,
    name, type, repo, path, branch, PR, status) and its windows/panes.
 5. **Clean shutdown** — closing a worktree workspace checks for
@@ -175,8 +176,10 @@ They can reference variables: `{workspace_id}`, `{workspace_name}`,
 `{dock_worktree_dir}`. Bay performs variable substitution and writes the
 result to the agent's config filename.
 
-Docks without a template are valid — no config file is generated and
-the agent launches with just the repo's own config.
+Docks without a template are valid — bay still writes the standard
+preamble (workspace identity + essential bay commands) to the agent
+config file, so agents always know how to update bay. The agent
+additionally uses the repo's own config.
 
 **Agent type per workspace**: A dock has a default agent type. Each
 workspace (or window/pane) can override it. The config file written
@@ -317,9 +320,16 @@ the manifest, then finds the window by tmux window ID. Workspace-level
 operations require the explicit `ws` noun. Errors with a clear message
 if CWD doesn't match any workspace.
 
-**Dock session lifecycle**: when the last workspace in a dock is closed
-(and its last window removed), tmux destroys the session automatically.
-`bay ws new` recreates the session on demand. No anchor windows needed.
+**Dock session lifecycle**: bay uses a placeholder window (named `~`)
+to keep tmux sessions alive. When a dock session is created, the
+default tmux window is tagged as a placeholder via the
+`@bay-placeholder` window option. This placeholder is cleaned up
+automatically when the first real workspace window is created. When
+the last workspace in a dock is closed, bay creates a new placeholder
+to prevent tmux from destroying the session. If the user has typed in
+a placeholder window (detected by checking cursor position), bay
+leaves it alone rather than killing it. `bay ws new` reuses the
+existing session if it's still alive.
 
 **Archive**: closed workspaces move to
 `~/.local/share/bay/archive.toml`. Not pruned automatically.

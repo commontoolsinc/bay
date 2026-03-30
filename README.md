@@ -4,6 +4,8 @@ Multi-session workspace management across tmux and git worktrees.
 
 Bay manages concurrent workspaces — each with its own git worktree, tmux window, and shell. Run multiple PRs in parallel, open editors and agents alongside each other, and recover everything after a reboot.
 
+For developers who work on multiple branches simultaneously and use tmux as their terminal multiplexer.
+
 ```
 bay repo add myproject ~/projects/myproject
 bay dock new dev --repo myproject

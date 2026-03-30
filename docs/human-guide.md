@@ -258,8 +258,9 @@ agent_config_template = "~/.config/bay/templates/labs.md"  # optional
 ```
 
 `agent` sets the default agent for `bay ws new --agent` (no argument).
-`agent_args` are appended to the agent launch command. Docks without a
-template launch agents with just the repo's own config.
+`agent_args` are appended to the agent launch command. Bay always writes
+a standard preamble to the agent config file (see [Templates](#templates)
+below), so agents receive bay instructions even without a user template.
 
 ### Monitor and keybindings
 
@@ -274,8 +275,52 @@ next_waiting = "M-w"       # option/alt + w: jump to next waiting agent
 
 ## Templates
 
-Templates inject project context into agent sessions. They're plain
-text files (typically markdown) with variable substitution.
+Every agent config file starts with a **standard preamble** that bay
+always injects. The preamble gives the agent its workspace identity and
+the essential bay commands. User templates are appended after the
+preamble.
+
+### Preamble (always injected)
+
+```markdown
+# Bay Workspace
+
+You are in bay workspace {workspace_name} ({workspace_id}) in the {dock} dock.
+Working directory: {workspace_path}
+
+## Updating bay
+
+When you create a branch, update bay so it can track your work and
+name your tmux window:
+
+    !bay ws update self --branch <branch-name>
+
+When you open a PR:
+
+    !bay ws update self --pr <number>
+
+When your work is complete:
+
+    !bay ws update self --status done
+
+## Other bay commands
+
+    !bay ws show self              # see workspace details
+    !bay ls                        # see all workspaces across docks
+    !bay win open self --shell     # open a shell window for this workspace
+```
+
+This preamble is defined in `internal/engine/agent.go` and cannot be
+overridden. Variables (`{workspace_name}`, `{dock}`, etc.) are
+substituted with the actual values at workspace creation time. If a
+dock has a user template configured, its content follows the preamble
+in the same config file.
+
+### User templates
+
+User templates inject additional project context into agent sessions.
+They're plain text files (typically markdown) with variable
+substitution.
 
 ### Available variables
 
@@ -352,9 +397,11 @@ bay ws new [dock] --dir <path>              # external workspace
 bay ws close <name|self>                    # close (safety checks)
 bay ws close <name|self> --force            # skip safety checks
 bay ws show <name|self>                     # detailed view
+bay ws show <name|self> --json             # machine-readable JSON output
 bay ws update <name|self> --branch <b>      # update metadata
 bay ws update <name|self> --pr <n>
 bay ws update <name|self> --status <s>      # idle, active, done
+# At least one of --branch, --pr, or --status is required.
 bay ws rename <name|self> <new-name>        # permanent rename
 ```
 
@@ -399,6 +446,20 @@ bay shell <name>                            # new tmux window with shell
 bay shell <name> --window                   # force new window instead of split
 ```
 
+> **When to use which:**
+>
+> - `bay shell` -- quick split pane in the current window. This is the
+>   most common way to get a shell alongside what you're doing.
+> - `bay shell <name>` -- new tmux window for a different workspace.
+>   Use this when you want to jump to another workspace's directory in
+>   a full window.
+> - `bay pane add --shell` -- same effect as `bay shell`, but lets you
+>   control split direction with `--split h` (horizontal) or
+>   `--split v` (vertical).
+> - `bay win open <workspace> --shell` -- same effect as
+>   `bay shell <name>`, but more explicit. Use it when you want a new
+>   window for a workspace you specify by name or ID.
+
 ### Navigation
 
 ```
@@ -429,6 +490,7 @@ set -g status-right '#(bay status-line full)'
 
 ```
 bay ls                                      # full repo/dock/workspace tree
+bay ls --json                               # machine-readable JSON output
 bay recover                                 # reconstruct after reboot
 bay doctor                                  # health checks
 bay setup                                   # first-time setup
@@ -464,6 +526,18 @@ dock dev (repo=myproject, agent=claude)
 ```
 myproject  ~/projects/myproject  (worktrees: ~/projects/myproject-worktrees)
   docks: dev, staging
+```
+
+## Machine-readable output
+
+Both `bay ls` and `bay ws show` accept a `--json` flag for scripting
+and orchestration. The JSON output includes the same information as the
+human-readable view but in a structured format suitable for piping to
+`jq` or consuming from other tools.
+
+```
+bay ls --json | jq '.[] | .workspaces[] | select(.waiting)'
+bay ws show auth-fix --json | jq '.branch'
 ```
 
 ## Waiting detection
@@ -532,6 +606,29 @@ Panes with live foreground processes are left alone.
 Same thing: `bay recover`. Closing the terminal detaches tmux — the
 sessions may still be alive. If they are, `bay recover` reconnects to
 them. If they're gone (e.g., after a full reboot), it recreates them.
+
+## Cross-repo workspaces
+
+A dock has a default repo, but you can override it per workspace with
+`--repo`. This lets you work on PRs across two repos in a single dock.
+
+```
+# Register both repos
+bay repo add frontend ~/projects/frontend
+bay repo add backend ~/projects/backend
+
+# Create a dock with a default repo
+bay dock new feature-work --repo frontend --agent claude
+
+# Create workspaces in different repos within the same dock
+bay ws new feature-work --name ui-changes          # uses frontend (dock default)
+bay ws new feature-work --name api-changes --repo backend   # overrides to backend
+```
+
+Both workspaces live in the same tmux session, so you can switch
+between them with `bay go`, see them side by side in `bay ls`, and
+close them independently. Each workspace gets its own worktree from
+its respective repo.
 
 ## Per-repo setup (agents only)
 

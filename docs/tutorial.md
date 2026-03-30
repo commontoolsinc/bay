@@ -84,6 +84,12 @@ your terminal to it:
 tmux attach -t tutorial
 ```
 
+If you're new to tmux, the
+[official Getting Started guide](https://github.com/tmux/tmux/wiki/Getting-Started)
+covers the basics — windows, panes, and key bindings. Bay handles most
+tmux operations for you, but knowing `Ctrl-b n` (next window) and
+`Ctrl-b p` (previous window) is useful.
+
 You're now inside the `tutorial` tmux session. Look at the status bar
 at the bottom — you'll see a single window named `~`. That's a
 **placeholder** that keeps the session alive while you have no
@@ -151,6 +157,11 @@ no PR number are set.
 When you (or an agent) creates a branch or opens a PR, bay should know
 about it. Bay tracks this metadata separately from git — it's used for
 window naming, navigation, and listing. It doesn't modify git state.
+
+Why not read this from git automatically? PR numbers don't exist in git
+at all (they're a GitHub concept), agents need to report status
+information that git doesn't track (like "done"), and auto-reading
+branches from all worktrees on every `bay ls` invocation would be slow.
 
 ```
 bay ws update self --branch test-branch --pr 1
@@ -361,6 +372,20 @@ rm -rf ~/projects/bay-tutorial ~/projects/bay-tutorial-worktrees
   tmux status bar. Add `#(bay status-line)` to your
   `status-right` in `~/.tmux.conf` to always see which workspace
   you're in.
+
+## Bonus: cross-repo workspaces
+
+A dock has a default repo, but you can create workspaces from different
+repos in the same dock using `--repo`:
+
+```
+bay repo add backend ~/projects/backend
+bay ws new tutorial --name api-work --repo backend
+```
+
+This creates a worktree from the `backend` repo inside the `tutorial`
+dock. Both workspaces appear in the same tmux session and `bay ls`
+output. This is handy when a feature spans multiple repositories.
 
 ## What's next
 

@@ -53,6 +53,7 @@ Fish:
 		},
 	}
 
+	completionCmd.GroupID = "other"
 	root.AddCommand(completionCmd)
 
 	// Register dynamic completions for all subcommands.

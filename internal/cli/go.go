@@ -24,6 +24,12 @@ func newGoCmd() *cobra.Command {
 				return err
 			}
 
+			// Early tmux detection: bail out if not running inside tmux
+			if _, tmuxErr := eng.Tmux.CurrentSession(); tmuxErr != nil {
+				fmt.Println("bay go requires tmux — use bay ls to see workspaces")
+				return nil
+			}
+
 			m, err := eng.LoadManifest()
 			if err != nil {
 				return err

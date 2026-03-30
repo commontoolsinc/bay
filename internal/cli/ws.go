@@ -81,6 +81,7 @@ func newWsNewCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Name, "name", "", "display name")
 	cmd.Flags().StringVar(&opts.Agent, "agent", "", "agent type (bare --agent uses dock default)")
 	cmd.Flags().BoolVar(&shell, "shell", false, "open shell instead of agent")
+	cmd.Flags().StringVar(&opts.Branch, "branch", "", "create and checkout a git branch in the worktree")
 	cmd.Flags().Lookup("agent").NoOptDefVal = ""
 
 	return cmd
@@ -88,15 +89,47 @@ func newWsNewCmd() *cobra.Command {
 
 func newWsCloseCmd() *cobra.Command {
 	var force bool
+	var status string
 
 	cmd := &cobra.Command{
-		Use:   "close <name|self>",
+		Use:   "close [name|self]",
 		Short: "Close a workspace and all its windows",
-		Args:  cobra.ExactArgs(1),
+		Long: `Close a workspace and all its windows.
+
+When --status is given, all workspaces with that status are closed.
+Clean workspaces are closed; dirty ones are skipped unless --force is used.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
 				return err
+			}
+
+			if status != "" {
+				// Batch close by status
+				dockName := ""
+				sess, tmuxErr := eng.Tmux.CurrentSession()
+				if tmuxErr == nil {
+					if _, ok := eng.Config.Docks[sess]; ok {
+						dockName = sess
+					}
+				}
+
+				closed, skipped, closeErr := eng.WsCloseByStatus(dockName, status, force)
+				for _, c := range closed {
+					fmt.Printf("Closed %s\n", c)
+				}
+				for _, s := range skipped {
+					fmt.Printf("Skipped %s\n", s)
+				}
+				if len(skipped) > 0 && !force {
+					fmt.Println("\nUse --force to close dirty workspaces.")
+				}
+				return closeErr
+			}
+
+			if len(args) == 0 {
+				return fmt.Errorf("workspace name required (or use --status to batch close)")
 			}
 
 			dockName, wsID, err := resolveTarget(eng, args[0])
@@ -109,6 +142,7 @@ func newWsCloseCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&force, "force", false, "force close even if dirty")
+	cmd.Flags().StringVar(&status, "status", "", "close all workspaces with this status (idle|active|done)")
 
 	return cmd
 }
@@ -182,9 +216,13 @@ func newWsUpdateCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "update <name|self>",
-		Short: "Update workspace metadata",
+		Short: "Update workspace metadata (at least one of --branch, --pr, or --status is required)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if !cmd.Flags().Changed("branch") && !cmd.Flags().Changed("pr") && !cmd.Flags().Changed("status") {
+				return fmt.Errorf("at least one of --branch, --pr, or --status is required")
+			}
+
 			eng, err := newEngine()
 			if err != nil {
 				return err

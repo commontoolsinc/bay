@@ -176,6 +176,12 @@ func (m *Mock) AddToGitignore(repoPath, filename string) error {
 	return nil
 }
 
+func (m *Mock) CreateBranch(path, branchName string) error {
+	m.record("CreateBranch", path, branchName)
+	m.repo(path).branch = branchName
+	return nil
+}
+
 func (m *Mock) DefaultBranch(repoPath string) (string, error) {
 	m.record("DefaultBranch", repoPath)
 	r := m.repo(repoPath)
