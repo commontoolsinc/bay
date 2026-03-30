@@ -12,9 +12,12 @@ using a throwaway repo. By the end you'll have created workspaces,
 opened shells and editors, navigated between them, and cleaned
 everything up.
 
-**You'll need**: bay installed (`go install github.com/commontoolsinc/bay/cmd/bay@latest`),
-tmux (`brew install tmux`), and git. Optionally fzf (`brew install fzf`)
-for the fuzzy picker.
+**You'll need:**
+
+- **bay** — `go install github.com/commontoolsinc/bay/cmd/bay@latest`
+- **tmux** — `brew install tmux`
+- **git**
+- **fzf** (optional) — `brew install fzf` for the fuzzy picker
 
 ---
 
