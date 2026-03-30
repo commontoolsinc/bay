@@ -9,14 +9,21 @@ import (
 	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
+// RecoverResult holds the results of a recovery operation.
+type RecoverResult struct {
+	Dock      string
+	Recovered []string // workspace names that had windows recreated
+	AttachCmd string
+}
+
 // Recover reconstructs all tmux state from the manifest after reboot.
-func (e *Engine) Recover() ([]string, error) {
+func (e *Engine) Recover() ([]RecoverResult, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return nil, err
 	}
 
-	var attachCmds []string
+	var results []RecoverResult
 
 	for dockName, dockState := range m.Docks {
 		dockCfg, hasCfg := e.Config.Docks[dockName]
@@ -25,10 +32,14 @@ func (e *Engine) Recover() ([]string, error) {
 			return nil, err
 		}
 
-		e.recoverDockWorkspaces(dockName, dockState, dockCfg, hasCfg)
+		recovered := e.recoverDockWorkspaces(dockName, dockState, dockCfg, hasCfg)
 		e.cleanPlaceholders(dockName)
 
-		attachCmds = append(attachCmds, fmt.Sprintf("tmux attach -t %s", dockName))
+		results = append(results, RecoverResult{
+			Dock:      dockName,
+			Recovered: recovered,
+			AttachCmd: fmt.Sprintf("tmux attach -t %s", dockName),
+		})
 	}
 
 	// Save updated manifest (with new tmux IDs)
@@ -36,11 +47,41 @@ func (e *Engine) Recover() ([]string, error) {
 		return nil, err
 	}
 
-	return attachCmds, nil
+	return results, nil
+}
+
+// DockRecover recovers a single dock by name.
+// Returns the names of workspaces that were recovered.
+func (e *Engine) DockRecover(name string) ([]string, error) {
+	m, err := e.LoadManifest()
+	if err != nil {
+		return nil, err
+	}
+
+	dockState, ok := m.Docks[name]
+	if !ok {
+		return nil, fmt.Errorf("unknown dock %q in manifest", name)
+	}
+	dockCfg, hasCfg := e.Config.Docks[name]
+
+	if err := e.ensureSession(name); err != nil {
+		return nil, err
+	}
+
+	recovered := e.recoverDockWorkspaces(name, dockState, dockCfg, hasCfg)
+	e.cleanPlaceholders(name)
+
+	if err := e.saveManifest(m); err != nil {
+		return nil, err
+	}
+
+	return recovered, nil
 }
 
 // recoverDockWorkspaces handles recovery for all workspaces in a dock.
-func (e *Engine) recoverDockWorkspaces(dockName string, dockState *manifest.DockState, dockCfg config.DockConfig, hasCfg bool) {
+// Returns the names of workspaces that were recovered (had windows recreated).
+func (e *Engine) recoverDockWorkspaces(dockName string, dockState *manifest.DockState, dockCfg config.DockConfig, hasCfg bool) []string {
+	var recovered []string
 	for wsID, ws := range dockState.Workspaces {
 		// Verify workspace path exists
 		if _, err := os.Stat(ws.Path); err != nil {
@@ -56,6 +97,7 @@ func (e *Engine) recoverDockWorkspaces(dockName string, dockState *manifest.Dock
 			_ = e.generateAgentConfig(dockName, agentName, wsID, ws.Name, ws.Path, ws.Type, ws.Repo)
 		}
 
+		wsRecovered := false
 		for i, win := range ws.Windows {
 			// Check if window still exists
 			windowExists := false
@@ -73,11 +115,10 @@ func (e *Engine) recoverDockWorkspaces(dockName string, dockState *manifest.Dock
 			}
 
 			if windowExists {
-				// Window exists — reconcile panes. Check if any
-				// manifest panes are missing and recreate them.
 				e.reconcileWindowPanes(ws.Windows[i].TmuxWindowID, win, ws.Path, dockCfg, hasCfg)
 			} else {
-				// Create new window
+				wsRecovered = true
+
 				newID, err := e.Tmux.NewWindow(dockName, win.Name, ws.Path)
 				if err != nil {
 					continue
@@ -85,10 +126,8 @@ func (e *Engine) recoverDockWorkspaces(dockName string, dockState *manifest.Dock
 				ws.Windows[i].TmuxWindowID = newID
 				_ = e.Tmux.SetWindowOption(newID, "remain-on-exit", "on")
 
-				// Recreate all panes — these are freshly created, always launch
 				for j, pane := range win.Panes {
 					if j == 0 {
-						// First pane already exists in new window
 						e.recoverPaneLaunch(pane, newID, "", dockCfg, hasCfg, true)
 						continue
 					}
@@ -104,7 +143,15 @@ func (e *Engine) recoverDockWorkspaces(dockName string, dockState *manifest.Dock
 				}
 			}
 		}
+		if wsRecovered {
+			name := ws.Name
+			if name == "" {
+				name = wsID
+			}
+			recovered = append(recovered, name)
+		}
 	}
+	return recovered
 }
 
 // reconcileWindowPanes checks an existing window's panes against the manifest
@@ -118,13 +165,10 @@ func (e *Engine) reconcileWindowPanes(tmuxWindowID string, win manifest.Window, 
 	manifestPaneCount := len(win.Panes)
 	tmuxPaneCount := len(tmuxPanes)
 
-	// If tmux has at least as many panes as the manifest, assume they're present.
-	// If tmux has fewer, recreate the missing ones.
 	if tmuxPaneCount >= manifestPaneCount {
 		return
 	}
 
-	// Recreate missing panes (those beyond what tmux currently has)
 	for j := tmuxPaneCount; j < manifestPaneCount; j++ {
 		pane := win.Panes[j]
 		dir := pane.SplitDir
@@ -144,12 +188,10 @@ func (e *Engine) reconcileWindowPanes(tmuxWindowID string, win manifest.Window, 
 // that have a live foreground process to avoid corrupting running agents.
 // When newlyCreated is true (pane just created by bay), always launches.
 func (e *Engine) recoverPaneLaunch(pane manifest.Pane, windowID string, tmuxPaneID string, dockCfg config.DockConfig, hasCfg bool, newlyCreated bool) {
-	// Determine the target pane ID
 	var targetPaneID string
 	if tmuxPaneID != "" {
 		targetPaneID = tmuxPaneID
 	} else if windowID != "" {
-		// First pane: look it up from the window
 		panes, err := e.Tmux.ListPanes(windowID)
 		if err != nil || len(panes) == 0 {
 			return
@@ -159,16 +201,12 @@ func (e *Engine) recoverPaneLaunch(pane manifest.Pane, windowID string, tmuxPane
 		return
 	}
 
-	// For panes in existing windows (not freshly created by recovery),
-	// skip launch if a foreground process is already running.
-	// Freshly created panes always have a shell PID, which is expected —
-	// we need to launch into them.
 	if !newlyCreated {
 		pid, err := e.Tmux.GetPanePID(targetPaneID)
 		if err == nil && pid > 0 {
 			if proc, findErr := os.FindProcess(pid); findErr == nil {
 				if proc.Signal(syscall.Signal(0)) == nil {
-					return // pane has a live process, skip
+					return
 				}
 			}
 		}

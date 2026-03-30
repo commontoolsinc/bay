@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/commontoolsinc/bay/internal/engine"
 	"github.com/spf13/cobra"
@@ -114,12 +115,16 @@ func newDockRecoverCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			attachCmd, err := eng.DockRecover(args[0])
+			recovered, err := eng.DockRecover(args[0])
 			if err != nil {
 				return err
 			}
-			fmt.Println("Recovered. Attach with:")
-			fmt.Printf("  %s\n", attachCmd)
+			if len(recovered) == 0 {
+				fmt.Printf("Dock %q: nothing to recover.\n", args[0])
+			} else {
+				fmt.Printf("Dock %q: recovered %s\n", args[0], strings.Join(recovered, ", "))
+			}
+			fmt.Printf("Attach with: tmux attach -t %s\n", args[0])
 			return nil
 		},
 	}
