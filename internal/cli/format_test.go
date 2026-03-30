@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -183,4 +184,61 @@ func TestFormatWorkspaceLine_Waiting(t *testing.T) {
 	if !strings.Contains(line, "\u23f3") {
 		t.Error("missing waiting indicator")
 	}
+}
+
+func TestDockInfo_JSONTags(t *testing.T) {
+	docks := testDocks()
+	data, err := json.Marshal(docks)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+	s := string(data)
+
+	// Verify JSON keys use snake_case from tags, not Go field names
+	if !strings.Contains(s, `"name"`) {
+		t.Error("JSON missing 'name' key")
+	}
+	if !strings.Contains(s, `"workspaces"`) {
+		t.Error("JSON missing 'workspaces' key")
+	}
+	if !strings.Contains(s, `"id"`) {
+		t.Error("JSON missing 'id' key for workspace")
+	}
+
+	// Verify omitempty works — empty PR should not appear
+	if strings.Contains(s, `"pr":""`) {
+		t.Error("empty PR should be omitted from JSON")
+	}
+}
+
+func TestDockInfo_JSONRoundTrip(t *testing.T) {
+	docks := testDocks()
+	data, err := json.MarshalIndent(docks, "", "  ")
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+
+	var parsed []engine.DockInfo
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+
+	if len(parsed) != len(docks) {
+		t.Fatalf("expected %d docks, got %d", len(docks), len(parsed))
+	}
+	// Find dev dock
+	for _, d := range parsed {
+		if d.Name == "dev" {
+			if len(d.Workspaces) != 2 {
+				t.Errorf("dev dock: expected 2 workspaces, got %d", len(d.Workspaces))
+			}
+			for _, ws := range d.Workspaces {
+				if ws.ID == "w1" && ws.Name != "auth" {
+					t.Errorf("w1 name = %q, want auth", ws.Name)
+				}
+			}
+			return
+		}
+	}
+	t.Error("dev dock not found in parsed JSON")
 }
