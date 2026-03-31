@@ -126,6 +126,7 @@ func NewRootCmd(version string) *cobra.Command {
 		monitorCmd,
 		addPromptCmd,
 		versionCmd,
+		newClosePaneCmd(), // hidden, for keybinding
 	)
 
 	RegisterCompletion(root)

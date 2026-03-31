@@ -15,9 +15,8 @@ type Config struct {
 	Agents  map[string]AgentConfig  `toml:"agents"`
 	Repos   map[string]RepoConfig   `toml:"repos"`
 	Docks   map[string]DockConfig   `toml:"docks"`
-	Editor  EditorConfig            `toml:"editor"`
-	Monitor MonitorConfig           `toml:"monitor"`
-	Keybind KeybindingConfig        `toml:"keybinding"`
+	Editor  EditorConfig  `toml:"editor"`
+	Monitor MonitorConfig `toml:"monitor"`
 }
 
 // EditorConfig configures the editor launched by `bay edit`.
@@ -67,12 +66,6 @@ func (m MonitorConfig) EffectiveInterval() int {
 	return m.IntervalSeconds
 }
 
-// KeybindingConfig configures tmux keybindings.
-type KeybindingConfig struct {
-	AddPrompt   string `toml:"add_prompt"`
-	NextWaiting string `toml:"next_waiting"`
-	Shell       string `toml:"shell"`
-}
 
 // DefaultConfigDir returns the default config directory.
 func DefaultConfigDir() string {

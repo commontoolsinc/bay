@@ -39,14 +39,12 @@ func newSetupCmd() *cobra.Command {
 				if hasContent {
 					fmt.Printf("Config exists at %s with:\n", configPath)
 
-					// Show what would be lost using the full tree
 					eng, engErr := newEngine()
 					if engErr == nil {
 						docks, listErr := eng.List()
 						if listErr == nil && len(docks) > 0 {
 							fmt.Print(FormatFullTree(existingCfg, docks))
 						} else {
-							// No manifest data, just show config counts
 							for name := range existingCfg.Repos {
 								fmt.Printf("  repo %s (%s)\n", name, existingCfg.Repos[name].Path)
 							}
@@ -71,7 +69,6 @@ func newSetupCmd() *cobra.Command {
 						writeConfig = false
 					}
 				} else {
-					// Config exists but is empty/default — simple prompt is fine
 					fmt.Printf("Config already exists at %s (no repos or docks configured)\n", configPath)
 					fmt.Print("Overwrite with defaults? (y/N) ")
 					answer, _ := reader.ReadString('\n')
@@ -109,11 +106,6 @@ config_file = "GEMINI.local.md"
 
 [monitor]
 interval_seconds = 3
-
-[keybinding]
-add_prompt = "P"
-next_waiting = "M-w"
-shell = "M-s"
 `
 				if err := os.WriteFile(configPath, []byte(defaultConfig), 0o644); err != nil {
 					return fmt.Errorf("writing config: %w", err)
@@ -159,7 +151,7 @@ Do you want to proceed
 			installCompletions(cmd.Root(), reader)
 
 			// Install tmux keybindings
-			installKeybindings(reader, configPath)
+			installKeybindings(reader)
 
 			// Configure editor
 			configureEditor(reader, configPath)
@@ -211,7 +203,6 @@ end`
 	fmt.Println()
 }
 
-// shellRCFile returns the conventional rc file path for a shell.
 func shellRCFile(shell string) string {
 	home, _ := os.UserHomeDir()
 	switch shell {
@@ -226,58 +217,52 @@ func shellRCFile(shell string) string {
 	}
 }
 
-func installKeybindings(reader *bufio.Reader, configPath string) {
+// bayKeybindings defines all bay tmux keybindings.
+var bayKeybindings = []struct {
+	key  string
+	cmd  string
+	desc string
+}{
+	{"M-w", "bay close-pane", "Option+w: close current pane (or window if only pane)"},
+	{"M-s", "bay shell", "Option+s: split a shell pane in the current workspace"},
+	{"M-g", "bay go", "Option+g: fuzzy-pick any workspace window"},
+	{"M-a", "bay go --next-waiting", "Option+a: jump to the next agent waiting for input"},
+}
+
+func installKeybindings(reader *bufio.Reader) {
 	fmt.Println()
-
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "  Warning: could not load config: %v\n", err)
-		return
-	}
-
-	nextWaitingKey := cfg.Keybind.NextWaiting
-	if nextWaitingKey == "" {
-		nextWaitingKey = "M-w"
-	}
-	addPromptKey := cfg.Keybind.AddPrompt
-	if addPromptKey == "" {
-		addPromptKey = "P"
-	}
 
 	home, _ := os.UserHomeDir()
 	tmuxConf := filepath.Join(home, ".tmux.conf")
 
-	// Read existing tmux.conf
 	existing, _ := os.ReadFile(tmuxConf)
 	content := string(existing)
 
-	shellKey := cfg.Keybind.Shell
-	if shellKey == "" {
-		shellKey = "M-s"
+	// Build the full bay keybindings block
+	var lines []string
+	for _, kb := range bayKeybindings {
+		line := fmt.Sprintf("bind-key -n %s run-shell '%s'", kb.key, kb.cmd)
+		lines = append(lines, line)
 	}
 
-	var additions []string
-
-	bayNextWaiting := tmuxBindCmd(nextWaitingKey, "bay go --next-waiting")
-	if !strings.Contains(content, "bay go --next-waiting") {
-		additions = append(additions, bayNextWaiting)
+	// Check if all bindings are already present
+	allPresent := true
+	for _, kb := range bayKeybindings {
+		if !strings.Contains(content, kb.cmd) {
+			allPresent = false
+			break
+		}
 	}
-
-	bayShell := tmuxBindCmd(shellKey, "bay shell")
-	if !strings.Contains(content, "bay shell") {
-		additions = append(additions, bayShell)
-	}
-
-	if len(additions) == 0 {
-		fmt.Println("Tmux keybindings already installed.")
+	if allPresent {
+		fmt.Println("Tmux keybindings already up to date.")
 		return
 	}
 
-	// Show what we'd add with plain-English descriptions
+	// Show what we'll add
 	fmt.Printf("These tmux keybindings will be added to %s:\n\n", tmuxConf)
-	for _, line := range additions {
-		fmt.Printf("  %s\n", line)
-		fmt.Printf("    %s\n\n", describeKeybinding(line))
+	for i, kb := range bayKeybindings {
+		fmt.Printf("  %s\n", lines[i])
+		fmt.Printf("    %s\n\n", kb.desc)
 	}
 	fmt.Print("Add these keybindings? [Y/n] ")
 	answer, _ := reader.ReadString('\n')
@@ -285,81 +270,61 @@ func installKeybindings(reader *bufio.Reader, configPath string) {
 		return
 	}
 
-	f, err := os.OpenFile(tmuxConf, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "  Warning: could not write %s: %v\n", tmuxConf, err)
-		return
+	// Remove any existing bay keybinding block
+	if idx := strings.Index(content, "\n# Bay keybindings"); idx >= 0 {
+		// Find the end of the bay block (next blank line or non-bind line)
+		rest := content[idx+1:]
+		endIdx := len(rest)
+		inBlock := false
+		for i, line := range strings.Split(rest, "\n") {
+			if i == 0 {
+				inBlock = true
+				continue
+			}
+			trimmed := strings.TrimSpace(line)
+			if inBlock && trimmed != "" && !strings.HasPrefix(trimmed, "bind-key") && !strings.HasPrefix(trimmed, "#") {
+				endIdx = strings.Index(rest, line)
+				break
+			}
+			if inBlock && trimmed == "" {
+				endIdx = strings.Index(rest, line)
+				break
+			}
+		}
+		content = content[:idx] + content[idx+1+endIdx:]
 	}
-	defer f.Close()
 
-	f.WriteString("\n# Bay keybindings\n")
-	for _, line := range additions {
-		f.WriteString(line + "\n")
+	// Write the new block
+	block := "\n# Bay keybindings\n"
+	for _, line := range lines {
+		block += line + "\n"
+	}
+
+	if err := os.WriteFile(tmuxConf, []byte(content+block), 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not write %s: %v\n", tmuxConf, err)
+		return
 	}
 
 	fmt.Println("Added.")
 }
 
-// tmuxBindCmd generates a tmux bind-key command. Keys starting with "M-"
-// use bind-key -n (no prefix required); others use plain bind-key (prefix required).
-func tmuxBindCmd(key, shellCmd string) string {
-	if strings.HasPrefix(key, "M-") {
-		return fmt.Sprintf("bind-key -n %s run-shell '%s'", key, shellCmd)
-	}
-	return fmt.Sprintf("bind-key %s run-shell '%s'", key, shellCmd)
-}
-
-// describeKeybinding returns a plain-English description of a tmux bind-key line.
-func describeKeybinding(line string) string {
-	switch {
-	case strings.Contains(line, "bay go --next-waiting"):
-		key := "Option+w"
-		if strings.Contains(line, "bind-key -n M-") {
-			// Extract the key after M-
-			key = "Option+" + strings.TrimPrefix(
-				strings.Fields(line)[2], "M-")
-		} else if !strings.Contains(line, "-n") {
-			key = "prefix + " + strings.Fields(line)[1]
-		}
-		return fmt.Sprintf("%s: jump to the next agent waiting for input", key)
-	case strings.Contains(line, "bay shell"):
-		key := "Option+s"
-		if strings.Contains(line, "bind-key -n M-") {
-			key = "Option+" + strings.TrimPrefix(
-				strings.Fields(line)[2], "M-")
-		} else if !strings.Contains(line, "-n") {
-			key = "prefix + " + strings.Fields(line)[1]
-		}
-		return fmt.Sprintf("%s: split a shell pane in the current workspace", key)
-	case strings.Contains(line, "bay add-prompt"):
-		key := "prefix + P"
-		if strings.Contains(line, "-n M-") {
-			key = "Option+" + strings.TrimPrefix(
-				strings.Fields(line)[2], "M-")
-		} else if !strings.Contains(line, "-n") {
-			key = "prefix + " + strings.Fields(line)[1]
-		}
-		return fmt.Sprintf("%s: capture current pane text as a waiting-detection pattern", key)
-	default:
-		return ""
-	}
-}
-
 func configureEditor(reader *bufio.Reader, configPath string) {
 	fmt.Println()
 
-	// Show current editor resolution
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return
 	}
 	current, _ := resolveEditor(cfg)
+
 	if current != "" {
-		fmt.Printf("Current editor: %s\n", current)
+		fmt.Printf("Set default editor for 'bay edit' (common options: cursor, code, zed, nvim, vim)\n")
+		fmt.Printf("Editor [%s]: ", current)
+	} else {
+		fmt.Println("Set default editor for 'bay edit' (common options: cursor, code, zed, nvim, vim)")
+		fmt.Print("Editor: ")
 	}
 
-	fmt.Println("Set default editor for 'bay edit' (common options: cursor, code, zed, nvim, vim)")
-	fmt.Print("Editor [blank to keep current]: ")
 	answer, _ := reader.ReadString('\n')
 	answer = strings.TrimSpace(answer)
 
@@ -374,4 +339,3 @@ func configureEditor(reader *bufio.Reader, configPath string) {
 	}
 	fmt.Printf("Editor set to %q\n", answer)
 }
-
