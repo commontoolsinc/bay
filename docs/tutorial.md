@@ -132,9 +132,14 @@ run git commands, build, test — whatever you'd normally do.
 bay edit
 ```
 
-This opens the current workspace's worktree in your editor (respects
-`$EDITOR`). If you're in workspace `w1`, it opens
-`~/projects/bay-tutorial-worktrees/w1`.
+This opens the current workspace's worktree in your editor. Bay
+auto-detects cursor, VS Code, zed, nvim, or vim — or you can set
+one explicitly:
+
+```
+bay edit --set cursor       # save preference
+bay edit --show             # see which editor would be used
+```
 
 You can also target a specific workspace: `bay edit w1`.
 
@@ -149,11 +154,14 @@ This shows the full hierarchy — repos, docks, and workspaces:
 ```
 repo tutorial (~/projects/bay-tutorial)
   dock tutorial
-    w1    w1                   —                        idle    shell
+    ID NAME BRANCH PR STATUS AGENT
+    w1 w1   —         idle   shell
 ```
 
-The workspace is `idle` (no branch yet). The dashes mean no branch and
-no PR number are set.
+The column headers make the layout clear: `w1` is both the ID and the
+display name (they match until you set a branch). The workspace is
+`idle` (no branch yet), and `shell` shows it's running a shell, not
+an agent.
 
 ## 8. Update workspace metadata
 
@@ -179,7 +187,8 @@ Run `bay ls` again to see the updated metadata:
 ```
 repo tutorial (~/projects/bay-tutorial)
   dock tutorial
-    w1    test-branch          test-branch       #1     active  shell
+    ID NAME        BRANCH      PR STATUS AGENT
+    w1 test-branch test-branch #1 active shell
 ```
 
 The status changed from `idle` to `active` automatically because you
