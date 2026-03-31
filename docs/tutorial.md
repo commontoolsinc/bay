@@ -163,36 +163,40 @@ display name (they match until you set a branch). The workspace is
 `idle` (no branch yet), and `shell` shows it's running a shell, not
 an agent.
 
-## 8. Update workspace metadata
+## 8. Create a branch
 
-When you (or an agent) creates a branch or opens a PR, bay should know
-about it. Bay tracks this metadata separately from git — it's used for
-window naming, navigation, and listing. It doesn't modify git state.
-
-Why not read this from git automatically? PR numbers don't exist in git
-at all (they're a GitHub concept), agents need to report status
-information that git doesn't track (like "done"), and auto-reading
-branches from all worktrees on every `bay ls` invocation would be slow.
+Bay automatically detects your git branch. Create one in the
+worktree:
 
 ```
-bay ws update self --branch test-branch --pr 1
+git checkout -b test-branch
 ```
 
-`self` means "the workspace I'm currently in." Look at the tmux status
-bar — the window name changed from `w1` to `test-branch` (bay
-auto-abbreviates branch names, stripping prefixes like `feature/`).
+Now look at the tmux status bar — the window name changed from `w1`
+to `test-branch`. Bay detected the new branch and updated the name
+automatically (stripping prefixes like `feature/`).
 
-Run `bay ls` again to see the updated metadata:
+Run `bay ls` to confirm:
 
 ```
 repo tutorial (~/projects/bay-tutorial)
   dock tutorial
     ID NAME        BRANCH      PR STATUS AGENT
-    w1 test-branch test-branch #1 active shell
+    w1 test-branch test-branch    active shell
 ```
 
-The status changed from `idle` to `active` automatically because you
-set a branch.
+The status changed from `idle` to `active` automatically because a
+branch appeared. No `bay ws update` needed — bay reads the branch
+from git directly.
+
+You can still manually set a PR number or status:
+
+```
+bay ws update self --pr 1
+bay ws update self --status done
+```
+
+PR numbers and status aren't in git, so those stay manual.
 
 ## 9. Open a shell in a split pane
 
