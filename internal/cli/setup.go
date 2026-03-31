@@ -161,6 +161,9 @@ Do you want to proceed
 			// Install tmux keybindings
 			installKeybindings(reader, configPath)
 
+			// Configure editor
+			configureEditor(reader, configPath)
+
 			fmt.Println("\nSetup complete. Next steps:")
 			fmt.Println("  1. Add a repo:  bay repo add <name> <path>")
 			fmt.Println("  2. Create a dock:  bay dock new <name> --repo <repo>")
@@ -340,5 +343,35 @@ func describeKeybinding(line string) string {
 	default:
 		return ""
 	}
+}
+
+func configureEditor(reader *bufio.Reader, configPath string) {
+	fmt.Println()
+
+	// Show current editor resolution
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return
+	}
+	current, _ := resolveEditor(cfg)
+	if current != "" {
+		fmt.Printf("Current editor: %s\n", current)
+	}
+
+	fmt.Println("Set default editor for 'bay edit' (common options: cursor, code, zed, nvim, vim)")
+	fmt.Print("Editor [blank to keep current]: ")
+	answer, _ := reader.ReadString('\n')
+	answer = strings.TrimSpace(answer)
+
+	if answer == "" {
+		return
+	}
+
+	cfg.Editor.Command = answer
+	if err := config.Save(configPath, cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not save editor setting: %v\n", err)
+		return
+	}
+	fmt.Printf("Editor set to %q\n", answer)
 }
 
