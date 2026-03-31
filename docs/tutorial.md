@@ -213,10 +213,11 @@ main session visible.
 To open a shell as a full new window instead:
 
 ```
-bay shell auth-fix
+bay shell test-branch
 ```
 
-Passing a name creates a new tmux window rather than a split pane.
+Passing a workspace name creates a new tmux window rather than a
+split pane.
 
 ## 10. Open a second window
 
