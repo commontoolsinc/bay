@@ -78,17 +78,22 @@ Use these commands to create, monitor, and manage workspaces.
     # After reboot
     bay recover
 
+## Automatic branch detection
+
+Bay automatically detects git branches in each workspace. When a branch
+is created or changed, bay updates the workspace name and tmux window
+title. No manual `bay ws update --branch` is needed.
+
+PR numbers and status must still be set manually:
+
+    bay ws update <name> --pr <number>
+    bay ws update <name> --status done
+
 ## Workspace agents
 
 When an agent is launched in a workspace (via --agent), it automatically
-receives bay instructions in its config file. Agents can update their
-own metadata:
-
-    !bay ws update self --branch <branch> --pr <number>
-    !bay ws update self --status done
-
-You do not need to teach workspace agents about bay — it happens
-automatically.
+receives bay instructions in its config file. You do not need to teach
+workspace agents about bay — it happens automatically.
 
 ## Machine-readable output
 

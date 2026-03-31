@@ -17,14 +17,12 @@ const bayAgentPreamble = `# Bay Workspace
 You are in bay workspace {workspace_name} ({workspace_id}) in the {dock} dock.
 Working directory: {workspace_path}
 
+Bay automatically detects your git branch and updates tmux window
+names. You do not need to tell bay about branches.
+
 ## Updating bay
 
-When you create a branch, update bay so it can track your work and
-name your tmux window:
-
-    !bay ws update self --branch <branch-name>
-
-When you open a PR:
+When you open a PR, tell bay the number:
 
     !bay ws update self --pr <number>
 

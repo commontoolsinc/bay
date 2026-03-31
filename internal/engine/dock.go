@@ -168,8 +168,10 @@ func (e *Engine) DockClose(name string, force bool) error {
 }
 
 // List returns all workspaces across all docks with waiting status.
-// Used by both `bay ls` and `bay dock ls`.
+// Syncs git state (branches) before building the output.
 func (e *Engine) List() ([]DockInfo, error) {
+	e.SyncAllGitState()
+
 	m, err := e.LoadManifest()
 	if err != nil {
 		return nil, err
