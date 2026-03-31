@@ -1,6 +1,10 @@
 package engine
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/commontoolsinc/bay/internal/config"
+)
 
 // Edit returns the workspace path for opening in an editor.
 func (e *Engine) Edit(dockName, wsID string) (string, error) {
@@ -46,4 +50,15 @@ func (e *Engine) EditAllParentDir(dockName string) (string, error) {
 		return "", fmt.Errorf("unknown repo %q", dockCfg.Repo)
 	}
 	return repoCfg.EffectiveWorktreeDir(), nil
+}
+
+// SetEditor sets the editor command in the config and saves.
+func (e *Engine) SetEditor(command string) error {
+	e.Config.Editor.Command = command
+	if e.configPath != "" {
+		if err := config.Save(e.configPath, e.Config); err != nil {
+			return fmt.Errorf("saving config: %w", err)
+		}
+	}
+	return nil
 }

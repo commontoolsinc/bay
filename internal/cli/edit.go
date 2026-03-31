@@ -12,18 +12,20 @@ import (
 
 func newEditCmd() *cobra.Command {
 	var all bool
+	var setEditor string
 
 	cmd := &cobra.Command{
 		Use:   "edit [name|self]",
 		Short: "Open workspace in editor",
 		Long: `Open a workspace directory in your editor.
 
-  bay edit           open current workspace
-  bay edit auth-fix  open specific workspace
-  bay edit --all     open all workspaces in current dock
+  bay edit              open current workspace
+  bay edit auth-fix     open specific workspace
+  bay edit --all        open all workspaces in current dock
+  bay edit --set cursor set your default editor
 
 Editor resolution order:
-  1. [editor].command in config
+  1. [editor].command in config (set with --set)
   2. $VISUAL
   3. $EDITOR
   4. Probe: cursor, code, zed, nvim, vim`,
@@ -32,6 +34,15 @@ Editor resolution order:
 			eng, err := newEngine()
 			if err != nil {
 				return err
+			}
+
+			// Handle --set: save editor preference and return
+			if setEditor != "" {
+				if err := eng.SetEditor(setEditor); err != nil {
+					return err
+				}
+				fmt.Printf("Editor set to %q\n", setEditor)
+				return nil
 			}
 
 			var paths []string
@@ -87,6 +98,7 @@ Editor resolution order:
 	}
 
 	cmd.Flags().BoolVar(&all, "all", false, "open all active workspaces")
+	cmd.Flags().StringVar(&setEditor, "set", "", "set default editor (e.g., cursor, code, nvim)")
 
 	return cmd
 }
