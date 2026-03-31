@@ -43,11 +43,9 @@ func (e *Engine) WinOpen(dockName, wsID string, agent string, shell bool, cmd st
 	// Clean up placeholder windows now that a real window exists
 	e.cleanPlaceholders(dockName)
 
-	// Determine the effective agent and generate its config if needed
+	// Determine the effective agent. Shell-first: only launch an agent
+	// if explicitly requested via the agent parameter.
 	effectiveAgent := agent
-	if effectiveAgent == "" && !shell && cmd == "" {
-		effectiveAgent = e.Config.Docks[dockName].Agent
-	}
 	if effectiveAgent != "" && !shell {
 		// Generate agent config file for this agent type (may differ from workspace creation agent)
 		_ = e.generateAgentConfig(dockName, effectiveAgent, wsID, ws.Name, ws.Path, ws.Type, ws.Repo)
