@@ -172,8 +172,8 @@ worktree:
 git checkout -b test-branch
 ```
 
-Now look at the tmux status bar — the window name changed from `w1`
-to `test-branch`. Bay detected the new branch and updated the name
+Now look at the tmux window tab at the bottom — the name changed from
+`w1` to `test-branch`. Bay detected the new branch and updated it
 automatically (stripping prefixes like `feature/`).
 
 Run `bay ls` to confirm:
