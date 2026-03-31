@@ -226,7 +226,7 @@ share the same worktree. `bay shell` is the quick way; `bay win open`
 gives you more control:
 
 ```
-bay win open w1 --shell
+bay win open
 ```
 
 The status bar now shows `test-branch` and `test-branch:2`. Both
