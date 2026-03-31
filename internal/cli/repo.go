@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/engine"
@@ -17,6 +18,7 @@ func newRepoCmd() *cobra.Command {
 	cmd.AddCommand(
 		newRepoAddCmd(),
 		newRepoLsCmd(),
+		newRepoShowCmd(),
 		newRepoRemoveCmd(),
 	)
 
@@ -79,6 +81,72 @@ func newRepoLsCmd() *cobra.Command {
 				return nil
 			}
 			fmt.Print(FormatRepoTree(eng.Config))
+			return nil
+		},
+	}
+}
+
+func newRepoShowCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "show <name>",
+		Short: "Show repo details",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine()
+			if err != nil {
+				return err
+			}
+
+			name := args[0]
+			repo, ok := eng.Config.Repos[name]
+			if !ok {
+				return fmt.Errorf("repo %q not found", name)
+			}
+
+			repoPath := config.ExpandPath(repo.Path)
+			fmt.Printf("Repo: %s\n", name)
+			fmt.Printf("  path:         %s\n", repo.Path)
+			fmt.Printf("  worktree_dir: %s\n", repo.EffectiveWorktreeDir())
+
+			// Gitignore status for each agent
+			fmt.Println("  gitignore:")
+			for agentName, agent := range eng.Config.Agents {
+				if agent.ConfigFile == "" {
+					continue
+				}
+				ignored, gitErr := eng.Git.IsIgnored(repoPath, agent.ConfigFile)
+				status := "\u2717" // ✗
+				if gitErr == nil && ignored {
+					status = "\u2713" // ✓
+				}
+				fmt.Printf("    %s %s (%s)\n", status, agent.ConfigFile, agentName)
+			}
+
+			// Docks using this repo
+			var dockNames []string
+			for dockName, dock := range eng.Config.Docks {
+				if dock.Repo == name {
+					dockNames = append(dockNames, dockName)
+				}
+			}
+			if len(dockNames) > 0 {
+				fmt.Printf("  docks: %s\n", strings.Join(dockNames, ", "))
+			} else {
+				fmt.Println("  docks: (none)")
+			}
+
+			// Active worktree count
+			m, _ := eng.LoadManifest()
+			wsCount := 0
+			if m != nil {
+				for _, dockName := range dockNames {
+					if ds, ok := m.Docks[dockName]; ok {
+						wsCount += len(ds.Workspaces)
+					}
+				}
+			}
+			fmt.Printf("  active worktrees: %d\n", wsCount)
+
 			return nil
 		},
 	}
