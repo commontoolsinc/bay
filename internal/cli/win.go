@@ -28,16 +28,20 @@ func newWinOpenCmd() *cobra.Command {
 	var shell bool
 
 	cmd := &cobra.Command{
-		Use:   "open <workspace>",
-		Short: "Add a window to an existing workspace",
-		Args:  cobra.ExactArgs(1),
+		Use:   "open [workspace]",
+		Short: "Add a window to a workspace (default: current)",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
 				return err
 			}
 
-			dockName, wsID, err := resolveTarget(eng, args[0])
+			target := "self"
+			if len(args) > 0 {
+				target = args[0]
+			}
+			dockName, wsID, err := resolveTarget(eng, target)
 			if err != nil {
 				return err
 			}
