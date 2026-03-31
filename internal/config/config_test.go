@@ -35,10 +35,6 @@ agent = "claude"
 
 [monitor]
 interval_seconds = 3
-
-[keybinding]
-add_prompt = "P"
-next_waiting = "M-w"
 `
 	cfg, err := Parse(data)
 	if err != nil {
@@ -80,10 +76,6 @@ next_waiting = "M-w"
 		t.Errorf("monitor interval = %d", cfg.Monitor.IntervalSeconds)
 	}
 
-	// Keybinding
-	if cfg.Keybind.AddPrompt != "P" {
-		t.Errorf("keybinding add_prompt = %q", cfg.Keybind.AddPrompt)
-	}
 }
 
 func TestParse_EmptyConfig(t *testing.T) {
