@@ -15,6 +15,7 @@ type Entry struct {
 	DockName     string
 	WsID         string
 	WsName       string
+	WindowName   string // tmux window name (e.g., "test-branch:2")
 	Branch       string
 	PR           string
 	Status       manifest.WorkspaceStatus
@@ -66,6 +67,7 @@ func CollectEntries(m *manifest.Manifest, tc tmux.Interface) []Entry {
 					DockName:     dockName,
 					WsID:         wsID,
 					WsName:       ws.Name,
+					WindowName:   win.Name,
 					Branch:       ws.Branch,
 					PR:           ws.PR,
 					Status:       ws.Status,
@@ -89,6 +91,7 @@ func FuzzyMatch(entries []Entry, query string) []Entry {
 	var matched []Entry
 	for _, e := range entries {
 		if strings.Contains(strings.ToLower(e.WsName), q) ||
+			strings.Contains(strings.ToLower(e.WindowName), q) ||
 			strings.Contains(strings.ToLower(e.Branch), q) ||
 			strings.Contains(strings.ToLower(e.PR), q) ||
 			strings.Contains(strings.ToLower(e.DockName), q) ||
@@ -159,8 +162,13 @@ func FormatEntry(e Entry) string {
 	if e.Waiting {
 		waiting = "  WAITING"
 	}
+	// Use WindowName if it differs from WsName (e.g., "test-branch:2")
+	displayName := e.WsName
+	if e.WindowName != "" && e.WindowName != e.WsName {
+		displayName = e.WindowName
+	}
 	return fmt.Sprintf("%s  %s  %s  %s  %s  %s%s%s",
-		e.DockName, e.WsID, e.WsName, e.Branch, pr, string(e.Status), tag, waiting)
+		e.DockName, e.WsID, displayName, e.Branch, pr, string(e.Status), tag, waiting)
 }
 
 // FormatEntries formats all entries with aligned columns.

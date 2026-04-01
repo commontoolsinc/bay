@@ -151,16 +151,20 @@ func newWsShowCmd() *cobra.Command {
 	var jsonOutput bool
 
 	cmd := &cobra.Command{
-		Use:   "show <name|self>",
-		Short: "Show workspace details",
-		Args:  cobra.ExactArgs(1),
+		Use:   "show [name|self]",
+		Short: "Show workspace details (default: current)",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
 				return err
 			}
 
-			dockName, wsID, err := resolveTarget(eng, args[0])
+			target := "self"
+			if len(args) > 0 {
+				target = args[0]
+			}
+			dockName, wsID, err := resolveTarget(eng, target)
 			if err != nil {
 				return err
 			}
