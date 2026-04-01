@@ -75,3 +75,26 @@ func (e *Engine) SyncAllGitState() {
 		_ = e.saveManifest(m)
 	}
 }
+
+// SyncManifestPanes trims a window's pane list to match the actual tmux pane count.
+func (e *Engine) SyncManifestPanes(dockName, wsID string, winID, actualCount int) {
+	_ = e.withManifest(func(m *manifest.Manifest) error {
+		ds, ok := m.Docks[dockName]
+		if !ok {
+			return nil
+		}
+		ws, ok := ds.Workspaces[wsID]
+		if !ok {
+			return nil
+		}
+		for i := range ws.Windows {
+			if ws.Windows[i].ID == winID {
+				if len(ws.Windows[i].Panes) > actualCount {
+					ws.Windows[i].Panes = ws.Windows[i].Panes[:actualCount]
+				}
+				return nil
+			}
+		}
+		return nil
+	})
+}
