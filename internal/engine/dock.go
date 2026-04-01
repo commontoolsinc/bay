@@ -161,8 +161,12 @@ func (e *Engine) DockClose(name string, force bool) error {
 		}
 	}
 
-	// Kill the tmux session (placeholders and all)
-	_ = e.Tmux.KillSession(name)
+	// Kill the tmux session — but not if we're running inside it,
+	// since that would kill our own process mid-operation.
+	currentSession, err := e.Tmux.CurrentSession()
+	if err != nil || currentSession != name {
+		_ = e.Tmux.KillSession(name)
+	}
 
 	return nil
 }
