@@ -79,23 +79,20 @@ func newGoCmd() *cobra.Command {
 }
 
 func fzfPick(entries []nav.Entry, eng *engine.Engine) error {
-	// Build input lines — 1:1 with entries slice by index
-	var lines []string
-	for _, e := range entries {
-		lines = append(lines, nav.FormatEntry(e))
-	}
-	input := strings.Join(lines, "\n")
+	// Build aligned lines — 1:1 with entries slice by index
+	formatted := nav.FormatEntries(entries)
+	lines := strings.Split(strings.TrimRight(formatted, "\n"), "\n")
 
 	// Try fzf
 	fzfPath, err := exec.LookPath("fzf")
 	if err != nil {
 		// No fzf, just print
-		fmt.Println(nav.FormatEntries(entries))
+		fmt.Println(formatted)
 		return nil
 	}
 
 	fzfCmd := exec.Command(fzfPath, "--ansi", "--no-sort")
-	fzfCmd.Stdin = strings.NewReader(input)
+	fzfCmd.Stdin = strings.NewReader(formatted)
 	fzfCmd.Stderr = os.Stderr
 
 	out, err := fzfCmd.Output()
