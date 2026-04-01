@@ -103,9 +103,20 @@ func (e *Engine) RepoRemove(name string, force bool) error {
 		return &RepoInUseError{RepoName: name, AffectedDocks: affected}
 	}
 
-	// Force path: close and remove affected docks
+	// Force path: close workspaces in affected docks (but don't kill
+	// sessions yet — we need to save config first, and killing a session
+	// we're inside would terminate this process).
 	for _, dockName := range affectedDockNames {
-		_ = e.DockClose(dockName, true)
+		// Close workspaces only — DockClose also kills the session,
+		// so we inline the workspace-closing part here.
+		m, _ := e.LoadManifest()
+		if m != nil {
+			if ds, ok := m.Docks[dockName]; ok {
+				for wsID := range ds.Workspaces {
+					_ = e.WsClose(dockName, wsID, true)
+				}
+			}
+		}
 		delete(e.Config.Docks, dockName)
 	}
 
@@ -115,6 +126,12 @@ func (e *Engine) RepoRemove(name string, force bool) error {
 			return fmt.Errorf("saving config: %w", err)
 		}
 	}
+
+	// Now kill the tmux sessions (safe — config is saved)
+	for _, dockName := range affectedDockNames {
+		_ = e.Tmux.KillSession(dockName)
+	}
+
 	return nil
 }
 
