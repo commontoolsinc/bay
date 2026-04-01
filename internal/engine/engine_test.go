@@ -1298,3 +1298,389 @@ func TestPlaceholder_CleanedOnRecovery(t *testing.T) {
 		}
 	}
 }
+
+// --- syncWorkspaceGitState tests ---
+
+func TestSyncWorkspaceGitState_UpdatesBranch(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	// Set mock branch
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetBranch(ws.Path, "feature/sync-test")
+
+	// SyncAll should pick up the branch
+	eng.SyncAll()
+
+	ws, _ = eng.WsShow("labs", "w1")
+	if ws.Branch != "feature/sync-test" {
+		t.Errorf("branch = %q, want feature/sync-test", ws.Branch)
+	}
+}
+
+func TestSyncWorkspaceGitState_BranchChangeUpdatesNameAndStatus(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	if ws.Status != manifest.WorkspaceStatusIdle {
+		t.Fatalf("initial status = %q, want idle", ws.Status)
+	}
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetBranch(ws.Path, "feature/my-feature")
+
+	eng.SyncAll()
+
+	ws, _ = eng.WsShow("labs", "w1")
+	if ws.Name != "my-feature" {
+		t.Errorf("name = %q, want my-feature", ws.Name)
+	}
+	if ws.Status != manifest.WorkspaceStatusActive {
+		t.Errorf("status = %q, want active", ws.Status)
+	}
+}
+
+func TestSyncWorkspaceGitState_EmptyBranchNoOverwrite(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	// First, set a real branch via WsUpdate
+	branch := "feature/existing"
+	eng.WsUpdate("labs", "w1", &branch, nil, nil)
+
+	// Now mock returns empty branch (detached HEAD)
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetBranch(ws.Path, "")
+
+	eng.SyncAll()
+
+	ws, _ = eng.WsShow("labs", "w1")
+	if ws.Branch != "feature/existing" {
+		t.Errorf("branch = %q, want feature/existing (empty should not overwrite)", ws.Branch)
+	}
+}
+
+func TestSyncWorkspaceGitState_NameOverriddenNotChanged(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	// Manually rename to set NameOverridden
+	eng.WsRename("labs", "w1", "custom-name")
+
+	// Now set a git branch
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetBranch(ws.Path, "feature/something-else")
+
+	eng.SyncAll()
+
+	ws, _ = eng.WsShow("labs", "w1")
+	if ws.Name != "custom-name" {
+		t.Errorf("name = %q, want custom-name (NameOverridden should prevent change)", ws.Name)
+	}
+	// Branch should still be updated even if name is overridden
+	if ws.Branch != "feature/something-else" {
+		t.Errorf("branch = %q, want feature/something-else", ws.Branch)
+	}
+}
+
+// --- syncWorkspaceTmuxState tests ---
+
+func TestSyncWorkspaceTmuxState_RemovesDeadWindows(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+
+	// Open a second window
+	eng.WinOpen("labs", "w1", "", true, "")
+	ws, _ = eng.WsShow("labs", "w1")
+	if len(ws.Windows) != 2 {
+		t.Fatalf("expected 2 windows, got %d", len(ws.Windows))
+	}
+
+	// Kill the second window in tmux (simulating user closing it externally)
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.KillWindow(ws.Windows[1].TmuxWindowID)
+
+	// SyncAll should remove the dead window from manifest
+	eng.SyncAll()
+
+	ws, _ = eng.WsShow("labs", "w1")
+	if len(ws.Windows) != 1 {
+		t.Errorf("expected 1 window after sync, got %d", len(ws.Windows))
+	}
+}
+
+func TestSyncWorkspaceTmuxState_TrimsPanes(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+
+	// Add a second pane
+	eng.PaneAdd("labs", "w1", 1, "", true, "", "h")
+	ws, _ = eng.WsShow("labs", "w1")
+	if len(ws.Windows[0].Panes) != 2 {
+		t.Fatalf("expected 2 panes, got %d", len(ws.Windows[0].Panes))
+	}
+
+	// Kill one tmux pane so tmux has fewer than manifest
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	winID := ws.Windows[0].TmuxWindowID
+	panes, _ := mockTmux.ListPanes(winID)
+	if len(panes) < 2 {
+		t.Fatalf("expected 2 tmux panes, got %d", len(panes))
+	}
+	mockTmux.KillPane(panes[1].ID)
+
+	// SyncAll should trim manifest panes to match tmux
+	eng.SyncAll()
+
+	ws, _ = eng.WsShow("labs", "w1")
+	if len(ws.Windows[0].Panes) != 1 {
+		t.Errorf("expected 1 pane after sync, got %d", len(ws.Windows[0].Panes))
+	}
+}
+
+// --- SyncManifestPanes test ---
+
+func TestSyncManifestPanes_TrimsToCount(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+
+	// Add extra panes to manifest
+	eng.PaneAdd("labs", "w1", 1, "", true, "", "h")
+	eng.PaneAdd("labs", "w1", 1, "", true, "", "v")
+
+	ws, _ = eng.WsShow("labs", "w1")
+	if len(ws.Windows[0].Panes) != 3 {
+		t.Fatalf("expected 3 panes, got %d", len(ws.Windows[0].Panes))
+	}
+
+	// Trim to 1 pane
+	eng.SyncManifestPanes("labs", "w1", 1, 1)
+
+	ws, _ = eng.WsShow("labs", "w1")
+	if len(ws.Windows[0].Panes) != 1 {
+		t.Errorf("expected 1 pane after SyncManifestPanes, got %d", len(ws.Windows[0].Panes))
+	}
+}
+
+// --- ResolveSelf with tmux window ID fallback ---
+
+func TestResolveSelf_TmuxWindowIDFallback(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+
+	// Set current tmux window ID to match the workspace's window
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	winID := ws.Windows[0].TmuxWindowID
+	mockTmux.SetCurrentWindowID(winID)
+
+	// Change CWD to something that does NOT match any workspace path
+	origDir, _ := os.Getwd()
+	tmpDir := t.TempDir()
+	os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
+	dockName, wsID, err := eng.ResolveSelf()
+	if err != nil {
+		t.Fatalf("ResolveSelf failed: %v", err)
+	}
+	if dockName != "labs" {
+		t.Errorf("dock = %q, want labs", dockName)
+	}
+	if wsID != "w1" {
+		t.Errorf("wsID = %q, want w1", wsID)
+	}
+}
+
+// --- ResolveByWindowID tests ---
+
+func TestResolveByWindowID_Found(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+
+	winID := ws.Windows[0].TmuxWindowID
+	dockName, wsID, foundWs, err := eng.ResolveByWindowID(winID)
+	if err != nil {
+		t.Fatalf("ResolveByWindowID failed: %v", err)
+	}
+	if dockName != "labs" {
+		t.Errorf("dock = %q, want labs", dockName)
+	}
+	if wsID != "w1" {
+		t.Errorf("wsID = %q, want w1", wsID)
+	}
+	if foundWs == nil {
+		t.Error("returned workspace is nil")
+	}
+}
+
+func TestResolveByWindowID_NotFound(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	_, _, _, err := eng.ResolveByWindowID("@999")
+	if err == nil {
+		t.Error("expected error for non-existent window ID")
+	}
+	if !strings.Contains(err.Error(), "no workspace found") {
+		t.Errorf("error = %q, want 'no workspace found' message", err)
+	}
+}
+
+// --- WsCloseByStatus tests ---
+
+func TestWsCloseByStatus_ClosesDone(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	eng.WsNew(WsNewOptions{Dock: "labs"})
+	eng.WsNew(WsNewOptions{Dock: "labs"})
+
+	// Mark w1 as done
+	doneStatus := "done"
+	eng.WsUpdate("labs", "w1", nil, nil, &doneStatus)
+
+	closed, skipped, err := eng.WsCloseByStatus("labs", "done", true)
+	if err != nil {
+		t.Fatalf("WsCloseByStatus failed: %v", err)
+	}
+
+	if len(closed) != 1 {
+		t.Errorf("expected 1 closed, got %d: %v", len(closed), closed)
+	}
+	if len(skipped) != 0 {
+		t.Errorf("expected 0 skipped, got %d: %v", len(skipped), skipped)
+	}
+
+	// w1 should be gone, w2 should remain
+	m, _ := manifest.Load(eng.manifestPath)
+	if _, ok := m.Docks["labs"].Workspaces["w1"]; ok {
+		t.Error("w1 should be closed")
+	}
+	if _, ok := m.Docks["labs"].Workspaces["w2"]; !ok {
+		t.Error("w2 should still exist")
+	}
+}
+
+func TestWsCloseByStatus_SkipsNonDone(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	eng.WsNew(WsNewOptions{Dock: "labs"})
+	eng.WsNew(WsNewOptions{Dock: "labs"})
+
+	// Mark w1 as active (not done)
+	activeStatus := "active"
+	eng.WsUpdate("labs", "w1", nil, nil, &activeStatus)
+
+	// Mark w2 as idle (not done)
+	// w2 is already idle by default, no need to update
+
+	_, _, err := eng.WsCloseByStatus("labs", "done", true)
+	if err == nil {
+		t.Error("expected error when no workspaces match status")
+	}
+	if !strings.Contains(err.Error(), "no workspaces with status") {
+		t.Errorf("error = %q, want 'no workspaces with status' message", err)
+	}
+
+	// Both workspaces should still exist
+	m, _ := manifest.Load(eng.manifestPath)
+	if _, ok := m.Docks["labs"].Workspaces["w1"]; !ok {
+		t.Error("w1 should still exist")
+	}
+	if _, ok := m.Docks["labs"].Workspaces["w2"]; !ok {
+		t.Error("w2 should still exist")
+	}
+}
+
+// --- WsNew with --branch ---
+
+func TestWsNew_WithBranch(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Branch: "feature/new-branch"})
+	if err != nil {
+		t.Fatalf("WsNew with branch failed: %v", err)
+	}
+
+	// Verify git.CreateBranch was called
+	mockGit := eng.Git.(*git.Mock)
+	calls := mockGit.Calls("CreateBranch")
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 CreateBranch call, got %d", len(calls))
+	}
+	if calls[0].Args[1] != "feature/new-branch" {
+		t.Errorf("CreateBranch branch = %q, want feature/new-branch", calls[0].Args[1])
+	}
+
+	// Verify workspace has branch and abbreviated name
+	if ws.Branch != "feature/new-branch" {
+		t.Errorf("branch = %q, want feature/new-branch", ws.Branch)
+	}
+	if ws.Name != "new-branch" {
+		t.Errorf("name = %q, want new-branch (abbreviated)", ws.Name)
+	}
+}
+
+// --- SetEditor test ---
+
+func TestSetEditor(t *testing.T) {
+	eng, dir := testEngine(t)
+	eng.configPath = filepath.Join(dir, "config.toml")
+	config.Save(eng.configPath, eng.Config)
+
+	err := eng.SetEditor("nvim")
+	if err != nil {
+		t.Fatalf("SetEditor failed: %v", err)
+	}
+
+	if eng.Config.Editor.Command != "nvim" {
+		t.Errorf("editor command = %q, want nvim", eng.Config.Editor.Command)
+	}
+
+	// Verify persisted to disk
+	loaded, err := config.Load(eng.configPath)
+	if err != nil {
+		t.Fatalf("loading saved config: %v", err)
+	}
+	if loaded.Editor.Command != "nvim" {
+		t.Errorf("persisted editor command = %q, want nvim", loaded.Editor.Command)
+	}
+}

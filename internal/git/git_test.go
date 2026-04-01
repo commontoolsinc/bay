@@ -210,6 +210,33 @@ func TestMock_CallTracking(t *testing.T) {
 	}
 }
 
+func TestMock_CreateBranch(t *testing.T) {
+	m := NewMock()
+
+	err := m.CreateBranch("/repo", "feature/new-thing")
+	if err != nil {
+		t.Fatalf("CreateBranch failed: %v", err)
+	}
+
+	// Verify the call was recorded
+	calls := m.Calls("CreateBranch")
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 CreateBranch call, got %d", len(calls))
+	}
+	if calls[0].Args[0] != "/repo" || calls[0].Args[1] != "feature/new-thing" {
+		t.Errorf("unexpected call args: %v", calls[0].Args)
+	}
+
+	// Verify the mock updated the branch state
+	branch, err := m.CurrentBranch("/repo")
+	if err != nil {
+		t.Fatalf("CurrentBranch failed: %v", err)
+	}
+	if branch != "feature/new-thing" {
+		t.Errorf("branch = %q, want feature/new-thing", branch)
+	}
+}
+
 func TestMock_CreateWorktree_DuplicateError(t *testing.T) {
 	m := NewMock()
 	m.SetDefaultBranch("/repo", "main")
