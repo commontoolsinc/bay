@@ -420,7 +420,7 @@ func (e *Engine) WsRename(dockName, wsID, newName string) error {
 // WsShow returns detailed information about a workspace.
 // Syncs git state before returning.
 func (e *Engine) WsShow(dockName, wsID string) (*manifest.Workspace, error) {
-	e.SyncAllGitState()
+	e.SyncAll()
 
 	m, err := e.LoadManifest()
 	if err != nil {
