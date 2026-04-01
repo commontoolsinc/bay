@@ -103,20 +103,16 @@ func (e *Engine) RepoRemove(name string, force bool) error {
 		return &RepoInUseError{RepoName: name, AffectedDocks: affected}
 	}
 
-	// Force path: close workspaces in affected docks (but don't kill
-	// sessions yet — we need to save config first, and killing a session
-	// we're inside would terminate this process).
+	// Force path: close all workspaces in affected docks.
+	// DockClose handles workspace iteration, manifest saves, and
+	// session kills. But killing a session we're inside would
+	// terminate us before we save config. So we split the work:
+	// 1. Close workspaces (DockCloseWorkspaces — no session kill)
+	// 2. Save config
+	// 3. Kill sessions
+
 	for _, dockName := range affectedDockNames {
-		// Close workspaces only — DockClose also kills the session,
-		// so we inline the workspace-closing part here.
-		m, _ := e.LoadManifest()
-		if m != nil {
-			if ds, ok := m.Docks[dockName]; ok {
-				for wsID := range ds.Workspaces {
-					_ = e.WsClose(dockName, wsID, true)
-				}
-			}
-		}
+		e.DockCloseWorkspaces(dockName, true)
 		delete(e.Config.Docks, dockName)
 	}
 
