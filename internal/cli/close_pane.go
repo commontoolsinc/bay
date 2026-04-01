@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"github.com/commontoolsinc/bay/internal/engine"
 	"github.com/spf13/cobra"
 )
 
@@ -25,43 +26,70 @@ func newClosePaneCmd() *cobra.Command {
 				return err
 			}
 
+			// Resolve workspace context for manifest updates
+			dockName, wsID, resolveErr := eng.ResolveSelf()
+
 			if len(panes) > 1 {
-				// Multiple panes: kill the active one
+				// Multiple panes: kill the active one and update manifest
 				for _, p := range panes {
 					if p.Active {
-						return eng.Tmux.KillPane(p.ID)
+						_ = eng.Tmux.KillPane(p.ID)
+						// Remove the pane from the manifest if we know the workspace
+						if resolveErr == nil {
+							syncPaneCount(eng, dockName, wsID, winID)
+						}
+						return nil
 					}
 				}
 				// Fallback: kill last pane
-				return eng.Tmux.KillPane(panes[len(panes)-1].ID)
-			}
-
-			// Single pane: close the window via bay
-			dockName, wsID, err := eng.ResolveSelf()
-			if err != nil {
-				// Not a bay window — just kill the tmux pane
-				if len(panes) > 0 {
-					return eng.Tmux.KillPane(panes[0].ID)
+				_ = eng.Tmux.KillPane(panes[len(panes)-1].ID)
+				if resolveErr == nil {
+					syncPaneCount(eng, dockName, wsID, winID)
 				}
 				return nil
 			}
 
-			ws, err := eng.WsShow(dockName, wsID)
-			if err != nil {
-				return err
-			}
-
-			for _, w := range ws.Windows {
-				if w.TmuxWindowID == winID {
-					return eng.WinClose(dockName, wsID, w.ID)
+			// Single pane: close the window via bay
+			if resolveErr == nil {
+				ws, err := eng.WsShow(dockName, wsID)
+				if err == nil {
+					for _, w := range ws.Windows {
+						if w.TmuxWindowID == winID {
+							return eng.WinClose(dockName, wsID, w.ID)
+						}
+					}
 				}
 			}
 
-			// Fallback
+			// Not a bay window — just kill the tmux pane
 			if len(panes) > 0 {
 				return eng.Tmux.KillPane(panes[0].ID)
 			}
 			return nil
 		},
+	}
+}
+
+// syncPaneCount reconciles the manifest's pane list with the actual
+// tmux pane count after a pane is closed.
+func syncPaneCount(eng *engine.Engine, dockName, wsID, tmuxWinID string) {
+	ws, err := eng.WsShow(dockName, wsID)
+	if err != nil {
+		return
+	}
+
+	for _, w := range ws.Windows {
+		if w.TmuxWindowID == tmuxWinID {
+			// Count actual tmux panes
+			tmuxPanes, err := eng.Tmux.ListPanes(tmuxWinID)
+			if err != nil {
+				return
+			}
+			// If manifest has more panes than tmux, trim from the end
+			if len(w.Panes) > len(tmuxPanes) {
+				eng.SyncManifestPanes(dockName, wsID, w.ID, len(tmuxPanes))
+			}
+			return
+		}
 	}
 }
