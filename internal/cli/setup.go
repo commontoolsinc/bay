@@ -259,10 +259,57 @@ func installKeybindings(reader *bufio.Reader) {
 		return
 	}
 
+	// Check for conflicting non-bay bindings
+	// Strip out the bay block to check only user bindings
+	userContent := content
+	if idx := strings.Index(userContent, "\n# Bay keybindings"); idx >= 0 {
+		rest := userContent[idx+1:]
+		endIdx := len(rest)
+		for i, line := range strings.Split(rest, "\n") {
+			if i == 0 {
+				continue
+			}
+			trimmed := strings.TrimSpace(line)
+			if trimmed != "" && !strings.HasPrefix(trimmed, "bind") && !strings.HasPrefix(trimmed, "#") {
+				endIdx = strings.Index(rest, line)
+				break
+			}
+			if trimmed == "" && i > 1 {
+				endIdx = strings.Index(rest, line)
+				break
+			}
+		}
+		userContent = userContent[:idx] + userContent[idx+1+endIdx:]
+	}
+
+	var conflicts []string
+	for _, kb := range bayKeybindings {
+		// Look for bind-key -n <key> in non-bay content
+		pattern := "bind-key -n " + kb.key + " "
+		altPattern := "bind -n " + kb.key + " "
+		if strings.Contains(userContent, pattern) || strings.Contains(userContent, altPattern) {
+			conflicts = append(conflicts, kb.key)
+		}
+	}
+
+	if len(conflicts) > 0 {
+		fmt.Printf("Warning: these keys are already bound in %s: %s\n", tmuxConf, strings.Join(conflicts, ", "))
+		fmt.Println("Bay will add its bindings, but yours will take precedence if they appear later in the file.")
+		fmt.Println("Consider removing the conflicting bindings or choosing different keys.")
+		fmt.Println()
+	}
+
 	// Show what we'll add
 	fmt.Printf("These tmux keybindings will be added to %s:\n\n", tmuxConf)
 	for i, kb := range bayKeybindings {
-		fmt.Printf("  %s\n", lines[i])
+		conflict := ""
+		for _, c := range conflicts {
+			if c == kb.key {
+				conflict = " (conflicts with existing binding)"
+				break
+			}
+		}
+		fmt.Printf("  %s%s\n", lines[i], conflict)
 		fmt.Printf("    %s\n\n", kb.desc)
 	}
 	fmt.Print("Add these keybindings? [Y/n] ")
