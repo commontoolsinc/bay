@@ -31,6 +31,16 @@ func (e *Engine) WinOpen(dockName, wsID string, agent string, shell bool, cmd st
 		winName = fmt.Sprintf("%s:%d", ws.Name, winID)
 	}
 
+	// Determine the effective agent. Shell-first: only launch an agent
+	// if explicitly requested via the agent parameter.
+	effectiveAgent := agent
+	if effectiveAgent != "" && !shell {
+		// Generate agent config file for this agent type (may differ from workspace creation agent)
+		if err := e.generateAgentConfig(dockName, effectiveAgent, wsID, ws.Name, ws.Path, ws.Type, ws.Repo); err != nil {
+			return fmt.Errorf("generating agent config: %w", err)
+		}
+	}
+
 	// Create tmux window
 	tmuxWinID, err := e.Tmux.NewWindow(dockName, winName, ws.Path)
 	if err != nil {
@@ -42,14 +52,6 @@ func (e *Engine) WinOpen(dockName, wsID string, agent string, shell bool, cmd st
 
 	// Clean up placeholder windows now that a real window exists
 	e.cleanPlaceholders(dockName)
-
-	// Determine the effective agent. Shell-first: only launch an agent
-	// if explicitly requested via the agent parameter.
-	effectiveAgent := agent
-	if effectiveAgent != "" && !shell {
-		// Generate agent config file for this agent type (may differ from workspace creation agent)
-		_ = e.generateAgentConfig(dockName, effectiveAgent, wsID, ws.Name, ws.Path, ws.Type, ws.Repo)
-	}
 
 	// Launch into the first pane
 	panes, _ := e.Tmux.ListPanes(tmuxWinID)
@@ -144,9 +146,16 @@ func (e *Engine) WinRestart(dockName, wsID string, winID int) error {
 	dockCfg := e.Config.Docks[dockName]
 
 	// Regenerate agent config for each agent type used in this window
+	seenAgents := map[string]bool{}
 	for _, pane := range win.Panes {
 		if pane.Type == manifest.PaneTypeAgent && pane.Agent != "" {
-			_ = e.generateAgentConfig(dockName, pane.Agent, wsID, ws.Name, ws.Path, ws.Type, ws.Repo)
+			if seenAgents[pane.Agent] {
+				continue
+			}
+			seenAgents[pane.Agent] = true
+			if err := e.generateAgentConfig(dockName, pane.Agent, wsID, ws.Name, ws.Path, ws.Type, ws.Repo); err != nil {
+				return fmt.Errorf("generating agent config for %s: %w", pane.Agent, err)
+			}
 		}
 	}
 
@@ -156,7 +165,7 @@ func (e *Engine) WinRestart(dockName, wsID string, winID int) error {
 	}
 	tmuxPanes, err := e.Tmux.ListPanes(win.TmuxWindowID)
 	if err != nil {
-		return nil
+		return fmt.Errorf("listing panes: %w", err)
 	}
 
 	for i, pane := range win.Panes {

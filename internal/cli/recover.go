@@ -27,7 +27,7 @@ Outside tmux: recovers all docks.`,
 			// Inside a dock: recover just that dock
 			if session, sessionErr := eng.Tmux.CurrentSession(); sessionErr == nil {
 				recovered, err := eng.DockRecover(session)
-				if err != nil {
+				if err != nil && len(recovered) == 0 {
 					// Not a bay dock — fall through to full recovery
 				} else {
 					if len(recovered) == 0 {
@@ -39,16 +39,16 @@ Outside tmux: recovers all docks.`,
 						_ = eng.Tmux.SelectWindow(currentWinID)
 					}
 					startMonitor()
-					return nil
+					return err
 				}
 			}
 
 			// Outside tmux or not a bay dock: recover all
 			results, err := eng.Recover()
-			if err != nil {
-				return err
-			}
 			if len(results) == 0 {
+				if err != nil {
+					return err
+				}
 				fmt.Println("Nothing to recover.")
 				return nil
 			}
@@ -70,7 +70,7 @@ Outside tmux: recovers all docks.`,
 			}
 
 			startMonitor()
-			return nil
+			return err
 		},
 	}
 }

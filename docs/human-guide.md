@@ -26,7 +26,8 @@ them.
   | `Ctrl-b d` | Detach (session keeps running) |
   | `Ctrl-b z` | Zoom current pane (toggle fullscreen) |
   | `Option+s` | Split a shell pane (bay keybinding) |
-  | `Option+w` | Jump to next waiting agent (bay keybinding) |
+  | `Option+w` | Close current pane, or the window if only one pane remains (bay keybinding) |
+  | `Option+a` | Jump to next waiting agent (bay keybinding) |
 
 - **An AI coding agent** (optional) — bay works with
   [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview),
@@ -112,7 +113,9 @@ bay ls
 ```
 
 Shows the full hierarchy: repos, docks, and workspaces with status,
-branch, PR, and agent.
+branch, PR, and configured agent. The `AGENT` column shows the
+workspace's configured agent: the dock default unless the workspace was
+created with an explicit `--agent` override.
 
 ### 6. Clean up
 
@@ -421,8 +424,8 @@ bay ws rename <name|self> <new-name>        # permanent rename
 ### Windows
 
 ```
-bay win open <workspace>                    # add window (dock default agent)
-bay win open <workspace> --shell            # add shell window
+bay win open <workspace>                    # add shell window
+bay win open <workspace> --shell            # same as above, explicit
 bay win open <workspace> --agent <a>        # add window with specific agent
 bay win open <workspace> --cmd "..."        # add window running a command
 bay win close [self|workspace]              # close window (not workspace)

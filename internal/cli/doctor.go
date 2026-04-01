@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 
 	"github.com/commontoolsinc/bay/internal/config"
+	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/spf13/cobra"
 )
 
@@ -120,6 +123,31 @@ func newDoctorCmd() *cobra.Command {
 				if missingCount == 0 {
 					fmt.Println("[OK] all workspace paths exist")
 				}
+
+				manifestWarnings := checkManifestConsistency(m, eng.Config)
+				if len(manifestWarnings) > 0 {
+					for _, warning := range manifestWarnings {
+						fmt.Printf("[WARN] manifest: %s\n", warning)
+					}
+					ok = false
+				} else {
+					fmt.Println("[OK] manifest consistent")
+				}
+			}
+
+			// Check tmux keybindings
+			tmuxConfPath := tmuxConfPath()
+			if data, err := os.ReadFile(tmuxConfPath); err != nil {
+				fmt.Printf("[WARN] tmux keybindings not installed (%s not readable)\n", tmuxConfPath)
+				ok = false
+			} else {
+				missing := missingKeybindings(string(data))
+				if len(missing) > 0 {
+					fmt.Printf("[WARN] tmux keybindings missing: %s\n", strings.Join(missing, ", "))
+					ok = false
+				} else {
+					fmt.Println("[OK] tmux keybindings installed")
+				}
 			}
 
 			// Check monitor
@@ -146,4 +174,70 @@ func newDoctorCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func missingKeybindings(content string) []string {
+	var missing []string
+	for _, line := range tmuxKeybindingLines() {
+		if !strings.Contains(content, line) {
+			missing = append(missing, line)
+		}
+	}
+	return missing
+}
+
+func tmuxKeybindingLines() []string {
+	var lines []string
+	for _, kb := range bayKeybindings {
+		lines = append(lines, fmt.Sprintf("bind-key -n %s %s '%s'", kb.key, kb.tmuxVerb, kb.cmd))
+	}
+	return lines
+}
+
+func tmuxConfPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".tmux.conf")
+}
+
+func checkManifestConsistency(m *manifest.Manifest, cfg *config.Config) []string {
+	var warnings []string
+
+	for dockName, ds := range m.Docks {
+		seenNames := map[string]string{}
+		for wsID, ws := range ds.Workspaces {
+			if ws.Name != "" {
+				if other, ok := seenNames[ws.Name]; ok {
+					warnings = append(warnings, fmt.Sprintf("dock %s has duplicate workspace name %q (%s, %s)", dockName, ws.Name, other, wsID))
+				} else {
+					seenNames[ws.Name] = wsID
+				}
+			}
+			if ws.AgentOverride != "" {
+				if _, ok := cfg.Agents[ws.AgentOverride]; !ok {
+					warnings = append(warnings, fmt.Sprintf("workspace %s:%s references unknown agent override %q", dockName, wsID, ws.AgentOverride))
+				}
+			}
+
+			seenWindowIDs := map[int]bool{}
+			for _, win := range ws.Windows {
+				if seenWindowIDs[win.ID] {
+					warnings = append(warnings, fmt.Sprintf("workspace %s:%s has duplicate window id %d", dockName, wsID, win.ID))
+				}
+				seenWindowIDs[win.ID] = true
+				if len(win.Panes) == 0 {
+					warnings = append(warnings, fmt.Sprintf("workspace %s:%s window %d has no panes", dockName, wsID, win.ID))
+					continue
+				}
+				seenPaneIDs := map[int]bool{}
+				for _, pane := range win.Panes {
+					if seenPaneIDs[pane.ID] {
+						warnings = append(warnings, fmt.Sprintf("workspace %s:%s window %d has duplicate pane id %d", dockName, wsID, win.ID, pane.ID))
+					}
+					seenPaneIDs[pane.ID] = true
+				}
+			}
+		}
+	}
+
+	return warnings
 }

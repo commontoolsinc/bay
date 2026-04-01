@@ -155,13 +155,14 @@ This shows the full hierarchy — repos, docks, and workspaces:
 repo tutorial (~/projects/bay-tutorial)
   dock tutorial
     ID NAME BRANCH PR STATUS AGENT
-    w1 w1   —         idle   shell
+    w1 w1   —         idle   claude
 ```
 
 The column headers make the layout clear: `w1` is both the ID and the
 display name (they match until you set a branch). The workspace is
-`idle` (no branch yet), and `shell` shows it's running a shell, not
-an agent.
+`idle` (no branch yet). `AGENT` shows the workspace's configured agent,
+which defaults to the dock's agent even if the current window is just a
+shell.
 
 ## 8. Create a branch
 
@@ -182,7 +183,7 @@ Run `bay ls` to confirm:
 repo tutorial (~/projects/bay-tutorial)
   dock tutorial
     ID NAME        BRANCH      PR STATUS AGENT
-    w1 test-branch test-branch    active shell
+    w1 test-branch test-branch    active claude
 ```
 
 The status changed from `idle` to `active` automatically because a

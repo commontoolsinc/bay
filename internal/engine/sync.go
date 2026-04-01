@@ -68,9 +68,6 @@ func (e *Engine) SyncAll() {
 			if e.syncWorkspaceGitState(ws) {
 				changed = true
 			}
-			if e.syncWorkspaceTmuxState(ws) {
-				changed = true
-			}
 		}
 	}
 
