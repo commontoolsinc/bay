@@ -68,12 +68,42 @@ func (e *Engine) SyncAll() {
 			if e.syncWorkspaceGitState(ws) {
 				changed = true
 			}
+			if e.syncWorkspacePaneIDs(ws) {
+				changed = true
+			}
 		}
 	}
 
 	if changed {
 		_ = e.saveManifest(m)
 	}
+}
+
+// syncWorkspacePaneIDs fills in missing tmux pane IDs for tracked panes
+// when the window still exists and the manifest pane order matches tmux.
+func (e *Engine) syncWorkspacePaneIDs(ws *manifest.Workspace) bool {
+	changed := false
+	for winIdx := range ws.Windows {
+		win := &ws.Windows[winIdx]
+		if win.TmuxWindowID == "" {
+			continue
+		}
+		exists, err := e.Tmux.WindowExists(win.TmuxWindowID)
+		if err != nil || !exists {
+			continue
+		}
+		tmuxPanes, err := e.Tmux.ListPanes(win.TmuxWindowID)
+		if err != nil {
+			continue
+		}
+		for paneIdx := range win.Panes {
+			if win.Panes[paneIdx].TmuxPaneID == "" && paneIdx < len(tmuxPanes) {
+				win.Panes[paneIdx].TmuxPaneID = tmuxPanes[paneIdx].ID
+				changed = true
+			}
+		}
+	}
+	return changed
 }
 
 // syncWorkspaceTmuxState reconciles the manifest's window and pane lists

@@ -154,6 +154,9 @@ func TestWsNew_Worktree(t *testing.T) {
 	if ws.Windows[0].Panes[0].Type != manifest.PaneTypeAgent {
 		t.Errorf("pane type = %q, want agent", ws.Windows[0].Panes[0].Type)
 	}
+	if ws.Windows[0].Panes[0].TmuxPaneID == "" {
+		t.Error("expected first pane to record tmux pane ID")
+	}
 
 	// Verify worktree was created
 	mockGit := eng.Git.(*git.Mock)
@@ -174,6 +177,30 @@ func TestWsNew_Worktree(t *testing.T) {
 	}
 	if ws2.Name != "w2" {
 		t.Errorf("second workspace name = %q, want w2", ws2.Name)
+	}
+}
+
+func TestPaneAdd_PersistsTmuxPaneID(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+
+	if err := eng.PaneAdd("labs", "w1", 1, "codex", false, "", "v"); err != nil {
+		t.Fatalf("PaneAdd failed: %v", err)
+	}
+
+	ws, err = eng.WsShow("labs", "w1")
+	if err != nil {
+		t.Fatalf("WsShow failed: %v", err)
+	}
+	if len(ws.Windows[0].Panes) != 2 {
+		t.Fatalf("panes = %d, want 2", len(ws.Windows[0].Panes))
+	}
+	if ws.Windows[0].Panes[1].TmuxPaneID == "" {
+		t.Fatal("expected added pane to record tmux pane ID")
 	}
 }
 
@@ -1448,6 +1475,77 @@ func TestSyncWorkspaceGitState_NameOverriddenNotChanged(t *testing.T) {
 	// Branch should still be updated even if name is overridden
 	if ws.Branch != "feature/something-else" {
 		t.Errorf("branch = %q, want feature/something-else", ws.Branch)
+	}
+}
+
+func TestCurrentContext_ResolvesWorkspaceWindowAndPane(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	if err := eng.PaneAdd("labs", "w1", 1, "codex", false, "", "v"); err != nil {
+		t.Fatalf("PaneAdd failed: %v", err)
+	}
+	ws, err = eng.WsShow("labs", "w1")
+	if err != nil {
+		t.Fatalf("WsShow failed: %v", err)
+	}
+
+	if err := os.Chdir(ws.Path); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir("/")
+	})
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.SetCurrentSession("labs")
+	mockTmux.SetCurrentWindowID(ws.Windows[0].TmuxWindowID)
+	mockTmux.SetCurrentPaneID(ws.Windows[0].Panes[1].TmuxPaneID)
+
+	ctx, err := eng.CurrentContext()
+	if err != nil {
+		t.Fatalf("CurrentContext failed: %v", err)
+	}
+	if ctx.Repo != "labs" || ctx.Dock != "labs" || ctx.WorkspaceID != "w1" {
+		t.Fatalf("unexpected context: %#v", ctx)
+	}
+	if ctx.WindowID != 1 {
+		t.Fatalf("window = %d, want 1", ctx.WindowID)
+	}
+	if ctx.PaneID != 2 {
+		t.Fatalf("pane = %d, want 2", ctx.PaneID)
+	}
+}
+
+func TestCurrentContext_OutsideTmuxStillResolvesRepoAndWorkspace(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	if err := os.MkdirAll(ws.Path, 0o755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	if err := os.Chdir(ws.Path); err != nil {
+		t.Fatalf("Chdir failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir("/")
+	})
+
+	ctx, err := eng.CurrentContext()
+	if err != nil {
+		t.Fatalf("CurrentContext failed: %v", err)
+	}
+	if ctx.Repo != "labs" || ctx.WorkspaceID != "w1" {
+		t.Fatalf("unexpected context: %#v", ctx)
+	}
+	if ctx.WindowID != 0 || ctx.PaneID != 0 {
+		t.Fatalf("window/pane should be omitted outside tmux: %#v", ctx)
 	}
 }
 

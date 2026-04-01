@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -9,19 +10,25 @@ import (
 	"github.com/commontoolsinc/bay/internal/engine"
 )
 
+var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+func stripANSI(s string) string {
+	return ansiRE.ReplaceAllString(s, "")
+}
+
 func testConfig() *config.Config {
 	return &config.Config{
 		Agents: map[string]config.AgentConfig{
 			"claude": {Command: "claude", ConfigFile: "CLAUDE.local.md"},
+			"codex":  {Command: "codex", ConfigFile: "AGENTS.local.md"},
 		},
 		Repos: map[string]config.RepoConfig{
-			"myproject": {Path: "~/projects/myproject"},
-			"other":     {Path: "~/projects/other"},
+			"bay":   {Path: "~/projects/bay"},
+			"other": {Path: "~/projects/other"},
 		},
 		Docks: map[string]config.DockConfig{
-			"dev":     {Repo: "myproject", Agent: "claude"},
-			"staging": {Repo: "myproject", Agent: "claude"},
-			"ops":     {Repo: "other", Agent: "claude"},
+			"api": {Repo: "bay", Agent: "claude"},
+			"ops": {Repo: "other"},
 		},
 	}
 }
@@ -29,277 +36,213 @@ func testConfig() *config.Config {
 func testDocks() []engine.DockInfo {
 	return []engine.DockInfo{
 		{
-			Name: "dev", Agent: "claude", Repo: "myproject",
+			Name: "api",
+			Repo: "bay",
 			Workspaces: []engine.WorkspaceInfo{
-				{ID: "w1", Name: "auth", Branch: "feature/auth", PR: "42", Status: "active", Agent: "claude"},
-				{ID: "w2", Name: "w2", Status: "idle", Agent: "claude"},
+				{
+					ID:     "w1",
+					Name:   "auth-fix",
+					Type:   "worktree",
+					Path:   "~/projects/bay-wt/w1",
+					Branch: "fix/login",
+					Status: "active",
+					Windows: []engine.WindowInfo{
+						{
+							ID:           1,
+							Name:         "editor",
+							TmuxWindowID: "@12",
+							Panes: []engine.PaneInfo{
+								{ID: 1, TmuxPaneID: "%21", Type: "shell", Status: "ok"},
+								{ID: 2, TmuxPaneID: "%22", Type: "agent", Agent: "codex", Status: "ok"},
+							},
+							Status: "ok",
+						},
+						{
+							ID:           2,
+							Name:         "tests",
+							TmuxWindowID: "@13",
+							Panes: []engine.PaneInfo{
+								{ID: 1, TmuxPaneID: "%23", Type: "cmd", Command: "npm test --watch=false", Status: "ok"},
+							},
+							Status: "ok",
+						},
+					},
+					SyncStatus: "ok",
+				},
+				{
+					ID:          "w2",
+					Name:        "cleanup",
+					Type:        "worktree",
+					Path:        "~/projects/bay-wt/w2",
+					Branch:      "cleanup",
+					Status:      "idle",
+					WindowCount: 1,
+					SyncStatus:  "stale",
+					Windows: []engine.WindowInfo{
+						{
+							ID:           1,
+							Name:         "main",
+							TmuxWindowID: "@14",
+							Status:       "stale",
+							Panes: []engine.PaneInfo{
+								{ID: 1, TmuxPaneID: "%24", Type: "shell", Status: "stale"},
+							},
+						},
+					},
+				},
 			},
 		},
 		{
-			Name: "staging", Agent: "claude", Repo: "myproject",
+			Name: "ops",
+			Repo: "other",
 			Workspaces: []engine.WorkspaceInfo{
-				{ID: "w1", Name: "deploy", Branch: "release/v2", PR: "87", Status: "done", Agent: "claude"},
+				{
+					ID:          "w1",
+					Name:        "deploy",
+					Type:        "external",
+					Path:        "~/projects/other/deploy",
+					Branch:      "main",
+					Status:      "done",
+					WindowCount: 0,
+					SyncStatus:  "missing",
+				},
 			},
 		},
-		{
-			Name: "ops", Agent: "claude", Repo: "other",
-			Workspaces: []engine.WorkspaceInfo{},
-		},
 	}
 }
 
-func TestFormatFullTree(t *testing.T) {
-	out := FormatFullTree(testConfig(), testDocks())
-
-	// Should have repo headers
-	if !strings.Contains(out, "repo myproject") {
-		t.Error("missing repo myproject header")
+func TestBuildListView_DefaultIncludesRepos(t *testing.T) {
+	view := BuildListView(testConfig(), testDocks(), ListViewOptions{})
+	if len(view.Repos) != 2 {
+		t.Fatalf("repos = %d, want 2", len(view.Repos))
 	}
-	if !strings.Contains(out, "repo other") {
-		t.Error("missing repo other header")
-	}
-
-	// Docks indented under repos
-	if !strings.Contains(out, "  dock dev") {
-		t.Error("missing dock dev under myproject")
-	}
-	if !strings.Contains(out, "  dock staging") {
-		t.Error("missing dock staging under myproject")
-	}
-	if !strings.Contains(out, "  dock ops") {
-		t.Error("missing dock ops under other")
-	}
-
-	// Workspaces indented under docks
-	if !strings.Contains(out, "    w1") {
-		t.Error("missing workspace w1")
-	}
-	if !strings.Contains(out, "auth") {
-		t.Error("missing workspace name auth")
-	}
-	if !strings.Contains(out, "#42") {
-		t.Error("missing PR #42")
-	}
-
-	// Empty dock shows message
-	if !strings.Contains(out, "(no workspaces)") {
-		t.Error("missing (no workspaces) for empty dock")
+	if view.Focus.Kind != FocusAll {
+		t.Fatalf("focus = %q, want %q", view.Focus.Kind, FocusAll)
 	}
 }
 
-func TestFormatDockTree(t *testing.T) {
-	docks := testDocks()
-	out := FormatDockTree(docks[:1]) // just dev
+func TestBuildListView_DockFocusStopsAtWorkspacesByDefault(t *testing.T) {
+	view := BuildListView(testConfig(), testDocks(), ListViewOptions{
+		Focus: ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
+	})
+	out := stripANSI(FormatListView(view, false))
 
-	if !strings.Contains(out, "dock dev (repo=myproject, agent=claude)") {
-		t.Errorf("missing dock header, got:\n%s", out)
+	if !strings.Contains(out, "DOCK api") {
+		t.Fatalf("dock focus output missing dock header:\n%s", out)
 	}
-	if !strings.Contains(out, "  w1") {
-		t.Error("missing workspace under dock")
+	if !strings.Contains(out, "WS auth-fix") || !strings.Contains(out, "WS cleanup") {
+		t.Fatalf("dock focus output missing workspaces:\n%s", out)
+	}
+	if strings.Contains(out, "PANE ") || strings.Contains(out, "WIN ") {
+		t.Fatalf("dock focus default should not recurse into windows/panes:\n%s", out)
 	}
 }
 
-func TestFormatDockTree_AllDocks(t *testing.T) {
-	out := FormatDockTree(testDocks())
+func TestBuildListView_WorkspaceFocusShowsFullTree(t *testing.T) {
+	view := BuildListView(testConfig(), testDocks(), ListViewOptions{
+		Focus: ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "w1"},
+	})
+	out := stripANSI(FormatListView(view, false))
 
-	if strings.Count(out, "dock ") != 3 {
-		t.Errorf("expected 3 dock headers, got:\n%s", out)
-	}
-}
-
-func TestFormatRepoTree(t *testing.T) {
-	out := FormatRepoTree(testConfig())
-
-	if !strings.Contains(out, "myproject") {
-		t.Error("missing myproject")
-	}
-	if !strings.Contains(out, "docks: ") {
-		t.Error("missing docks line")
-	}
-	if !strings.Contains(out, "dev") {
-		t.Error("missing dev dock reference")
-	}
-}
-
-func TestFormatSubtreeForRemoval(t *testing.T) {
-	cfg := testConfig()
-	docks := testDocks()[:2] // dev and staging (both use myproject)
-
-	out := FormatSubtreeForRemoval(cfg, "myproject", docks)
-
-	if !strings.Contains(out, "repo myproject") {
-		t.Error("missing repo header")
-	}
-	if !strings.Contains(out, "dock dev") {
-		t.Error("missing dock dev")
-	}
-	if !strings.Contains(out, "dock staging") {
-		t.Error("missing dock staging")
-	}
-	// Deeper indentation for workspaces
-	if !strings.Contains(out, "      w1") {
-		t.Error("missing workspace at correct indentation")
-	}
-}
-
-func TestFormatWorkspaceLine(t *testing.T) {
-	ws := engine.WorkspaceInfo{
-		ID: "w1", Name: "auth", Branch: "feature/auth",
-		PR: "42", Status: "active", Agent: "claude",
-	}
-	line := formatWorkspaceLine(ws)
-
-	if !strings.Contains(line, "w1") {
-		t.Error("missing ID")
-	}
-	if !strings.Contains(line, "auth") {
-		t.Error("missing name")
-	}
-	if !strings.Contains(line, "#42") {
-		t.Error("missing PR")
-	}
-	if !strings.Contains(line, "claude") {
-		t.Error("missing agent")
-	}
-}
-
-func TestFormatWorkspaceLine_EmptyFields(t *testing.T) {
-	ws := engine.WorkspaceInfo{
-		ID: "w1", Name: "w1", Status: "idle",
-	}
-	line := formatWorkspaceLine(ws)
-
-	// Empty branch and agent should show em-dash
-	if strings.Count(line, "\u2014") != 2 {
-		t.Errorf("expected 2 em-dashes for empty branch and agent, got: %q", line)
-	}
-}
-
-func TestFormatWorkspaceLine_Waiting(t *testing.T) {
-	ws := engine.WorkspaceInfo{
-		ID: "w1", Name: "test", Status: "active", Waiting: true,
-	}
-	line := formatWorkspaceLine(ws)
-
-	if !strings.Contains(line, "\u23f3") {
-		t.Error("missing waiting indicator")
-	}
-}
-
-func TestFormatFullTree_ColumnHeaders(t *testing.T) {
-	out := FormatFullTree(testConfig(), testDocks())
-
-	// Column headers should appear in the output
-	for _, header := range []string{"ID", "NAME", "BRANCH", "PR", "STATUS", "AGENT"} {
-		if !strings.Contains(out, header) {
-			t.Errorf("FormatFullTree missing column header %q in output:\n%s", header, out)
+	for _, want := range []string{
+		"REPO bay",
+		"DOCK api",
+		"WS auth-fix",
+		"WIN 1",
+		"PANE 2",
+		"kind=agent",
+		"agent=codex",
+		"kind=cmd",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("workspace focus output missing %q:\n%s", want, out)
 		}
 	}
 }
 
-func TestFormatDockTree_ColumnHeaders(t *testing.T) {
-	out := FormatDockTree(testDocks()[:1]) // just dev, which has workspaces
+func TestFormatListView_LongShowsTmuxIDs(t *testing.T) {
+	view := BuildListView(testConfig(), testDocks(), ListViewOptions{
+		Focus: ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "w1"},
+	})
+	out := stripANSI(FormatListView(view, true))
 
-	// Column headers should appear in the output
-	for _, header := range []string{"ID", "NAME", "BRANCH", "PR", "STATUS", "AGENT"} {
-		if !strings.Contains(out, header) {
-			t.Errorf("FormatDockTree missing column header %q in output:\n%s", header, out)
+	for _, want := range []string{"tmux=@12", "tmux=%22"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("long output missing %q:\n%s", want, out)
 		}
 	}
 }
 
-func TestFormatWorkspaceLine_Stale(t *testing.T) {
-	ws := engine.WorkspaceInfo{
-		ID: "w1", Name: "stale-ws", Branch: "feature/stale",
-		Status: "active", Agent: "claude", Stale: true,
-	}
-	line := formatWorkspaceLine(ws)
+func TestFormatListView_SuppressesSyncOKAndShowsStale(t *testing.T) {
+	view := BuildListView(testConfig(), testDocks(), ListViewOptions{
+		Focus: ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
+	})
+	out := stripANSI(FormatListView(view, false))
 
-	if !strings.Contains(line, "[stale]") {
-		t.Errorf("expected [stale] indicator in output, got: %q", line)
+	if strings.Contains(out, "sync=ok") {
+		t.Fatalf("sync=ok should be suppressed:\n%s", out)
+	}
+	if !strings.Contains(out, "sync=stale") {
+		t.Fatalf("stale sync state should be shown:\n%s", out)
 	}
 }
 
-func TestFormatWorkspaceLine_Missing(t *testing.T) {
-	ws := engine.WorkspaceInfo{
-		ID: "w1", Name: "missing-ws", Branch: "feature/missing",
-		Status: "active", Agent: "claude", Missing: true,
+func TestFormatWorkspaceShow_IncludesDefaultAgentAndPanes(t *testing.T) {
+	ws := &engine.WorkspaceInfo{
+		ID:           "w1",
+		Name:         "auth-fix",
+		Type:         "worktree",
+		Path:         "~/projects/bay-wt/w1",
+		Branch:       "fix/login",
+		Status:       "active",
+		DefaultAgent: "codex",
+		SyncStatus:   "ok",
+		Windows: []engine.WindowInfo{
+			{
+				ID:     1,
+				Name:   "editor",
+				Status: "ok",
+				Panes: []engine.PaneInfo{
+					{ID: 1, Type: "shell", Status: "ok"},
+					{ID: 2, Type: "agent", Agent: "codex", Status: "ok"},
+				},
+			},
+		},
 	}
-	line := formatWorkspaceLine(ws)
 
-	if !strings.Contains(line, "[missing]") {
-		t.Errorf("expected [missing] indicator in output, got: %q", line)
+	out := stripANSI(FormatWorkspaceShow("bay", "api", ws, false))
+	for _, want := range []string{
+		"Workspace: auth-fix (w1)",
+		"Repo: bay",
+		"Dock: api",
+		"Default Agent: codex",
+		"PANE 2",
+		"kind=agent",
+		"agent=codex",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("workspace show missing %q:\n%s", want, out)
+		}
 	}
 }
 
-func TestFormatWorkspaceLine_StaleAndMissing(t *testing.T) {
-	ws := engine.WorkspaceInfo{
-		ID: "w1", Name: "bad-ws", Status: "active",
-		Agent: "claude", Missing: true, Stale: true,
+func TestFormatListRows_DenormalizesPaneRows(t *testing.T) {
+	view := BuildListView(testConfig(), testDocks(), ListViewOptions{
+		Focus:     ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "w1"},
+		Recursive: true,
+	})
+	rows := ListRows(view)
+	if len(rows) != 3 {
+		t.Fatalf("rows = %d, want 3", len(rows))
 	}
-	line := formatWorkspaceLine(ws)
-
-	if !strings.Contains(line, "[missing]") {
-		t.Errorf("expected [missing] indicator, got: %q", line)
-	}
-	if !strings.Contains(line, "[stale]") {
-		t.Errorf("expected [stale] indicator, got: %q", line)
-	}
-}
-
-func TestDockInfo_JSONTags(t *testing.T) {
-	docks := testDocks()
-	data, err := json.Marshal(docks)
-	if err != nil {
-		t.Fatalf("json.Marshal failed: %v", err)
-	}
-	s := string(data)
-
-	// Verify JSON keys use snake_case from tags, not Go field names
-	if !strings.Contains(s, `"name"`) {
-		t.Error("JSON missing 'name' key")
-	}
-	if !strings.Contains(s, `"workspaces"`) {
-		t.Error("JSON missing 'workspaces' key")
-	}
-	if !strings.Contains(s, `"id"`) {
-		t.Error("JSON missing 'id' key for workspace")
-	}
-
-	// Verify omitempty works — empty PR should not appear
-	if strings.Contains(s, `"pr":""`) {
-		t.Error("empty PR should be omitted from JSON")
-	}
-}
-
-func TestDockInfo_JSONRoundTrip(t *testing.T) {
-	docks := testDocks()
-	data, err := json.MarshalIndent(docks, "", "  ")
+	data, err := json.Marshal(rows)
 	if err != nil {
 		t.Fatalf("Marshal failed: %v", err)
 	}
-
-	var parsed []engine.DockInfo
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		t.Fatalf("Unmarshal failed: %v", err)
-	}
-
-	if len(parsed) != len(docks) {
-		t.Fatalf("expected %d docks, got %d", len(docks), len(parsed))
-	}
-	// Find dev dock
-	for _, d := range parsed {
-		if d.Name == "dev" {
-			if len(d.Workspaces) != 2 {
-				t.Errorf("dev dock: expected 2 workspaces, got %d", len(d.Workspaces))
-			}
-			for _, ws := range d.Workspaces {
-				if ws.ID == "w1" && ws.Name != "auth" {
-					t.Errorf("w1 name = %q, want auth", ws.Name)
-				}
-			}
-			return
+	s := string(data)
+	for _, want := range []string{`"pane_type":"agent"`, `"pane_agent":"codex"`, `"window_id":2`} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("rows JSON missing %q:\n%s", want, s)
 		}
 	}
-	t.Error("dev dock not found in parsed JSON")
 }

@@ -52,9 +52,9 @@ func newEngine() (*engine.Engine, error) {
 // NewRootCmd creates the root bay command.
 func NewRootCmd(version string) *cobra.Command {
 	root := &cobra.Command{
-		Use:   "bay",
-		Short: "Multi-session workspace management for tmux and git worktrees",
-		Long:  "Bay manages concurrent workspaces across tmux windows and git worktrees.",
+		Use:           "bay",
+		Short:         "Multi-session workspace management for tmux and git worktrees",
+		Long:          "Bay manages concurrent workspaces across tmux windows and git worktrees.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -86,6 +86,8 @@ func NewRootCmd(version string) *cobra.Command {
 	goCmd.GroupID = "navigation"
 	lsCmd := newLsCmd()
 	lsCmd.GroupID = "navigation"
+	pwdCmd := newPwdCmd()
+	pwdCmd.GroupID = "navigation"
 	statusLineCmd := newStatusLineCmd()
 	statusLineCmd.GroupID = "navigation"
 
@@ -117,6 +119,7 @@ func NewRootCmd(version string) *cobra.Command {
 		editCmd,
 		goCmd,
 		lsCmd,
+		pwdCmd,
 		statusLineCmd,
 		dockCmd,
 		repoCmd,
@@ -126,7 +129,7 @@ func NewRootCmd(version string) *cobra.Command {
 		monitorCmd,
 		addPromptCmd,
 		versionCmd,
-		newClosePaneCmd(),   // hidden, for keybinding
+		newClosePaneCmd(),  // hidden, for keybinding
 		newAgentGuideCmd(), // hidden, for skill
 	)
 

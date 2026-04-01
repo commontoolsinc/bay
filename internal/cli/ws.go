@@ -173,18 +173,29 @@ func newWsShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			wsInfo, err := eng.WorkspaceInfo(dockName, wsID)
+			if err != nil {
+				return err
+			}
+			wsInfo.DefaultAgent = ws.AgentOverride
+			if wsInfo.DefaultAgent == "" {
+				wsInfo.DefaultAgent = eng.Config.Docks[dockName].Agent
+			}
 
 			if jsonOutput {
 				out := map[string]interface{}{
-					"id":      wsID,
-					"name":    ws.Name,
-					"dock":    dockName,
-					"type":    string(ws.Type),
-					"path":    ws.Path,
-					"branch":  ws.Branch,
-					"pr":      ws.PR,
-					"status":  string(ws.Status),
-					"windows": ws.Windows,
+					"id":            wsID,
+					"name":          wsInfo.Name,
+					"repo":          ws.Repo,
+					"dock":          dockName,
+					"type":          wsInfo.Type,
+					"path":          wsInfo.Path,
+					"branch":        wsInfo.Branch,
+					"pr":            wsInfo.PR,
+					"status":        wsInfo.Status,
+					"sync_status":   wsInfo.SyncStatus,
+					"default_agent": wsInfo.DefaultAgent,
+					"windows":       wsInfo.Windows,
 				}
 				data, err := json.MarshalIndent(out, "", "  ")
 				if err != nil {
@@ -194,18 +205,7 @@ func newWsShowCmd() *cobra.Command {
 				return nil
 			}
 
-			fmt.Printf("Workspace: %s (%s)\n", ws.Name, wsID)
-			fmt.Printf("  Dock:   %s\n", dockName)
-			fmt.Printf("  Type:   %s\n", ws.Type)
-			fmt.Printf("  Path:   %s\n", ws.Path)
-			fmt.Printf("  Branch: %s\n", ws.Branch)
-			fmt.Printf("  PR:     %s\n", ws.PR)
-			fmt.Printf("  Status: %s\n", ws.Status)
-			fmt.Printf("  Windows: %d\n", len(ws.Windows))
-			for _, w := range ws.Windows {
-				fmt.Printf("    [%d] %s (tmux: %s, panes: %d)\n",
-					w.ID, w.Name, w.TmuxWindowID, len(w.Panes))
-			}
+			fmt.Print(FormatWorkspaceShow(ws.Repo, dockName, wsInfo, false))
 			return nil
 		},
 	}

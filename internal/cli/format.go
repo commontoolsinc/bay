@@ -2,220 +2,390 @@ package cli
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/engine"
 )
 
-// workspaceColumns returns the display values for a workspace row.
-func workspaceColumns(ws engine.WorkspaceInfo) (id, name, branch, pr, status, agent, suffix string) {
-	id = ws.ID
-	name = ws.Name
-	branch = ws.Branch
-	if branch == "" {
-		branch = "\u2014"
-	}
-	pr = ""
-	if ws.PR != "" {
-		pr = "#" + ws.PR
-	}
-	status = ws.Status
-	agent = ws.Agent
-	if agent == "" {
-		agent = "\u2014"
-	}
-	if ws.Missing {
-		suffix += " [missing]"
-	}
-	if ws.Stale {
-		suffix += " [stale]"
-	}
-	if ws.Waiting {
-		suffix += " \u23f3"
-	}
-	return
+type FocusKind string
+
+const (
+	FocusAll       FocusKind = "all"
+	FocusRepo      FocusKind = "repo"
+	FocusDock      FocusKind = "dock"
+	FocusWorkspace FocusKind = "workspace"
+)
+
+type ListFocus struct {
+	Kind        FocusKind `json:"kind"`
+	Repo        string    `json:"repo,omitempty"`
+	Dock        string    `json:"dock,omitempty"`
+	WorkspaceID string    `json:"workspace_id,omitempty"`
 }
 
-// columnWidths tracks the maximum width of each column.
-type columnWidths struct {
-	id, name, branch, pr, status, agent int
+type ListViewOptions struct {
+	Focus     ListFocus
+	Recursive bool
 }
 
-// update expands widths to accommodate the given values.
-func (c *columnWidths) update(id, name, branch, pr, status, agent string) {
-	if len(id) > c.id {
-		c.id = len(id)
-	}
-	if len(name) > c.name {
-		c.name = len(name)
-	}
-	if len(branch) > c.branch {
-		c.branch = len(branch)
-	}
-	if len(pr) > c.pr {
-		c.pr = len(pr)
-	}
-	if len(status) > c.status {
-		c.status = len(status)
-	}
-	if len(agent) > c.agent {
-		c.agent = len(agent)
-	}
+type RepoInfo struct {
+	Name  string            `json:"name"`
+	Path  string            `json:"path,omitempty"`
+	Docks []engine.DockInfo `json:"docks"`
 }
 
-func (c *columnWidths) format(id, name, branch, pr, status, agent, suffix string) string {
-	return fmt.Sprintf("%-*s %-*s %-*s %-*s %-*s %-*s%s",
-		c.id, id, c.name, name, c.branch, branch, c.pr, pr, c.status, status, c.agent, agent, suffix)
+type ListView struct {
+	Focus     ListFocus  `json:"focus"`
+	Recursive bool       `json:"recursive"`
+	Repos     []RepoInfo `json:"repos"`
 }
 
-func (c *columnWidths) header() string {
-	// Ensure headers fit
-	c.update("ID", "NAME", "BRANCH", "PR", "STATUS", "AGENT")
-	return c.format("ID", "NAME", "BRANCH", "PR", "STATUS", "AGENT", "")
+type ListRow struct {
+	Repo                string `json:"repo"`
+	Dock                string `json:"dock,omitempty"`
+	WorkspaceID         string `json:"workspace_id,omitempty"`
+	WorkspaceName       string `json:"workspace_name,omitempty"`
+	WorkspaceBranch     string `json:"workspace_branch,omitempty"`
+	WorkspaceStatus     string `json:"workspace_status,omitempty"`
+	WorkspaceSyncStatus string `json:"workspace_sync_status,omitempty"`
+	WindowID            int    `json:"window_id,omitempty"`
+	WindowName          string `json:"window_name,omitempty"`
+	WindowTmuxID        string `json:"window_tmux_id,omitempty"`
+	WindowStatus        string `json:"window_status,omitempty"`
+	PaneID              int    `json:"pane_id,omitempty"`
+	PaneTmuxID          string `json:"pane_tmux_id,omitempty"`
+	PaneType            string `json:"pane_type,omitempty"`
+	PaneAgent           string `json:"pane_agent,omitempty"`
+	PaneCommand         string `json:"pane_command,omitempty"`
+	PaneStatus          string `json:"pane_status,omitempty"`
 }
 
-// formatWorkspaceLine formats a single workspace as a table row using default widths.
-func formatWorkspaceLine(ws engine.WorkspaceInfo) string {
-	id, name, branch, pr, status, agent, suffix := workspaceColumns(ws)
-	// Use reasonable minimums for single-line formatting
-	w := &columnWidths{id: 3, name: 4, branch: 6, pr: 2, status: 6, agent: 5}
-	w.update(id, name, branch, pr, status, agent)
-	return w.format(id, name, branch, pr, status, agent, suffix)
+func BuildListView(cfg *config.Config, docks []engine.DockInfo, opts ListViewOptions) ListView {
+	focus := opts.Focus
+	if focus.Kind == "" {
+		focus.Kind = FocusAll
+	}
+	recursive := opts.Recursive || focus.Kind == FocusWorkspace
+
+	dockMap := map[string]engine.DockInfo{}
+	for _, dock := range docks {
+		dockMap[dock.Name] = dock
+	}
+
+	repoNames := make([]string, 0, len(cfg.Repos))
+	for name := range cfg.Repos {
+		repoNames = append(repoNames, name)
+	}
+	sort.Strings(repoNames)
+
+	view := ListView{Focus: focus, Recursive: recursive}
+
+	for _, repoName := range repoNames {
+		if (focus.Kind == FocusRepo || focus.Kind == FocusDock || focus.Kind == FocusWorkspace) && focus.Repo != "" && focus.Repo != repoName {
+			continue
+		}
+		repoCfg := cfg.Repos[repoName]
+		repoInfo := RepoInfo{Name: repoName, Path: repoCfg.Path}
+
+		dockNames := make([]string, 0, len(cfg.Docks))
+		for dockName, dockCfg := range cfg.Docks {
+			if dockCfg.Repo == repoName {
+				dockNames = append(dockNames, dockName)
+			}
+		}
+		sort.Strings(dockNames)
+
+		for _, dockName := range dockNames {
+			if focus.Kind == FocusDock && focus.Dock != dockName {
+				continue
+			}
+			dock, ok := dockMap[dockName]
+			if !ok {
+				dock = engine.DockInfo{Name: dockName, Repo: repoName}
+			}
+			filtered := dock
+			filtered.Workspaces = nil
+
+			for _, ws := range dock.Workspaces {
+				if focus.Kind == FocusWorkspace && focus.WorkspaceID != ws.ID {
+					continue
+				}
+				filtered.Workspaces = append(filtered.Workspaces, trimWorkspace(ws, recursive))
+			}
+
+			if focus.Kind == FocusWorkspace && len(filtered.Workspaces) == 0 {
+				continue
+			}
+			repoInfo.Docks = append(repoInfo.Docks, filtered)
+		}
+
+		if focus.Kind == FocusRepo && len(repoInfo.Docks) == 0 {
+			continue
+		}
+		if focus.Kind == FocusAll && len(repoInfo.Docks) == 0 {
+			repoInfo.Docks = []engine.DockInfo{}
+		}
+		if len(repoInfo.Docks) > 0 || focus.Kind == FocusAll || focus.Kind == FocusRepo {
+			view.Repos = append(view.Repos, repoInfo)
+		}
+	}
+
+	return view
+}
+
+func trimWorkspace(ws engine.WorkspaceInfo, recursive bool) engine.WorkspaceInfo {
+	if recursive {
+		ws.WindowCount = len(ws.Windows)
+		return ws
+	}
+	ws.WindowCount = len(ws.Windows)
+	ws.Windows = nil
+	return ws
+}
+
+func ListRows(view ListView) []ListRow {
+	var rows []ListRow
+	for _, repo := range view.Repos {
+		for _, dock := range repo.Docks {
+			for _, ws := range dock.Workspaces {
+				if len(ws.Windows) == 0 {
+					rows = append(rows, ListRow{
+						Repo:                repo.Name,
+						Dock:                dock.Name,
+						WorkspaceID:         ws.ID,
+						WorkspaceName:       ws.Name,
+						WorkspaceBranch:     ws.Branch,
+						WorkspaceStatus:     ws.Status,
+						WorkspaceSyncStatus: ws.SyncStatus,
+					})
+					continue
+				}
+				for _, win := range ws.Windows {
+					if len(win.Panes) == 0 {
+						rows = append(rows, ListRow{
+							Repo:                repo.Name,
+							Dock:                dock.Name,
+							WorkspaceID:         ws.ID,
+							WorkspaceName:       ws.Name,
+							WorkspaceBranch:     ws.Branch,
+							WorkspaceStatus:     ws.Status,
+							WorkspaceSyncStatus: ws.SyncStatus,
+							WindowID:            win.ID,
+							WindowName:          win.Name,
+							WindowTmuxID:        win.TmuxWindowID,
+							WindowStatus:        win.Status,
+						})
+						continue
+					}
+					for _, pane := range win.Panes {
+						rows = append(rows, ListRow{
+							Repo:                repo.Name,
+							Dock:                dock.Name,
+							WorkspaceID:         ws.ID,
+							WorkspaceName:       ws.Name,
+							WorkspaceBranch:     ws.Branch,
+							WorkspaceStatus:     ws.Status,
+							WorkspaceSyncStatus: ws.SyncStatus,
+							WindowID:            win.ID,
+							WindowName:          win.Name,
+							WindowTmuxID:        win.TmuxWindowID,
+							WindowStatus:        win.Status,
+							PaneID:              pane.ID,
+							PaneTmuxID:          pane.TmuxPaneID,
+							PaneType:            pane.Type,
+							PaneAgent:           pane.Agent,
+							PaneCommand:         pane.Command,
+							PaneStatus:          pane.Status,
+						})
+					}
+				}
+			}
+		}
+	}
+	return rows
+}
+
+func dim(s string) string {
+	return "\x1b[2m" + s + "\x1b[0m"
+}
+
+func kv(key, value string) string {
+	return dim(key+"=") + value
+}
+
+func truncateCommand(cmd string) string {
+	if len(cmd) <= 32 {
+		return cmd
+	}
+	return cmd[:29] + "..."
+}
+
+func appendMeta(parts []string, key, value string) []string {
+	if value == "" {
+		return parts
+	}
+	return append(parts, kv(key, value))
+}
+
+func syncSuffix(sync string) []string {
+	if sync == "" || sync == "ok" {
+		return nil
+	}
+	return []string{kv("sync", sync)}
+}
+
+func workspaceMeta(ws engine.WorkspaceInfo, showCounts bool) string {
+	var parts []string
+	parts = appendMeta(parts, "id", ws.ID)
+	parts = appendMeta(parts, "branch", ws.Branch)
+	if ws.Status != "" && ws.Status != "idle" {
+		parts = appendMeta(parts, "status", ws.Status)
+	}
+	if showCounts {
+		parts = append(parts, kv("windows", fmt.Sprintf("%d", ws.WindowCount)))
+	}
+	parts = append(parts, syncSuffix(ws.SyncStatus)...)
+	return strings.Join(parts, " ")
+}
+
+func windowMeta(win engine.WindowInfo, long bool) string {
+	var parts []string
+	parts = appendMeta(parts, "title", win.Name)
+	if long {
+		parts = appendMeta(parts, "tmux", win.TmuxWindowID)
+	}
+	parts = append(parts, syncSuffix(win.Status)...)
+	return strings.Join(parts, " ")
+}
+
+func paneMeta(pane engine.PaneInfo, long bool) string {
+	var parts []string
+	parts = appendMeta(parts, "kind", pane.Type)
+	if pane.Type == "agent" {
+		parts = appendMeta(parts, "agent", pane.Agent)
+	}
+	if pane.Type == "cmd" {
+		parts = appendMeta(parts, "command", truncateCommand(pane.Command))
+	}
+	if long {
+		parts = appendMeta(parts, "tmux", pane.TmuxPaneID)
+	}
+	parts = append(parts, syncSuffix(pane.Status)...)
+	return strings.Join(parts, " ")
+}
+
+func writeIndentedLine(b *strings.Builder, indent int, prefix string, meta string) {
+	b.WriteString(strings.Repeat("  ", indent))
+	b.WriteString(prefix)
+	if meta != "" {
+		b.WriteString(" ")
+		b.WriteString(meta)
+	}
+	b.WriteString("\n")
+}
+
+func FormatListView(view ListView, long bool) string {
+	var b strings.Builder
+	for _, repo := range view.Repos {
+		writeIndentedLine(&b, 0, "REPO "+repo.Name, "")
+		if len(repo.Docks) == 0 {
+			writeIndentedLine(&b, 1, "(no docks)", "")
+			continue
+		}
+		for _, dock := range repo.Docks {
+			writeIndentedLine(&b, 1, "DOCK "+dock.Name, "")
+			if len(dock.Workspaces) == 0 {
+				writeIndentedLine(&b, 2, "(no workspaces)", "")
+				continue
+			}
+			showChildren := view.Recursive || view.Focus.Kind == FocusWorkspace
+			for _, ws := range dock.Workspaces {
+				writeIndentedLine(&b, 2, "WS "+ws.Name, workspaceMeta(ws, !showChildren))
+				if !showChildren {
+					continue
+				}
+				for _, win := range ws.Windows {
+					writeIndentedLine(&b, 3, fmt.Sprintf("WIN %d", win.ID), windowMeta(win, long))
+					for _, pane := range win.Panes {
+						writeIndentedLine(&b, 4, fmt.Sprintf("PANE %d", pane.ID), paneMeta(pane, long))
+					}
+				}
+			}
+		}
+	}
+	return b.String()
+}
+
+func FormatWorkspaceShow(repoName, dockName string, ws *engine.WorkspaceInfo, long bool) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Workspace: %s (%s)\n", ws.Name, ws.ID)
+	fmt.Fprintf(&b, "Repo: %s\n", repoName)
+	fmt.Fprintf(&b, "Dock: %s\n", dockName)
+	fmt.Fprintf(&b, "Type: %s\n", ws.Type)
+	fmt.Fprintf(&b, "Path: %s\n", ws.Path)
+	fmt.Fprintf(&b, "Branch: %s\n", ws.Branch)
+	fmt.Fprintf(&b, "PR: %s\n", ws.PR)
+	fmt.Fprintf(&b, "Status: %s\n", ws.Status)
+	if ws.DefaultAgent != "" {
+		fmt.Fprintf(&b, "Default Agent: %s\n", ws.DefaultAgent)
+	}
+	if ws.SyncStatus != "" && ws.SyncStatus != "ok" {
+		fmt.Fprintf(&b, "Sync: %s\n", ws.SyncStatus)
+	}
+	for _, win := range ws.Windows {
+		writeIndentedLine(&b, 0, fmt.Sprintf("WIN %d", win.ID), windowMeta(win, long))
+		for _, pane := range win.Panes {
+			writeIndentedLine(&b, 1, fmt.Sprintf("PANE %d", pane.ID), paneMeta(pane, long))
+		}
+	}
+	return b.String()
 }
 
 // FormatFullTree formats the full repo → dock → workspace hierarchy.
 func FormatFullTree(cfg *config.Config, docks []engine.DockInfo) string {
-	var b strings.Builder
-
-	// Group docks by repo
-	type repoEntry struct {
-		name  string
-		path  string
-		docks []engine.DockInfo
-	}
-
-	repoMap := map[string]*repoEntry{}
-	var repoOrder []string
-
-	// Initialize repos from config
-	for name, repo := range cfg.Repos {
-		repoMap[name] = &repoEntry{name: name, path: repo.Path}
-		repoOrder = append(repoOrder, name)
-	}
-
-	// Assign docks to repos
-	for _, d := range docks {
-		if re, ok := repoMap[d.Repo]; ok {
-			re.docks = append(re.docks, d)
-		} else {
-			// Dock with no repo or unknown repo — show under a synthetic entry
-			key := "(no repo)"
-			if _, ok := repoMap[key]; !ok {
-				repoMap[key] = &repoEntry{name: key}
-				repoOrder = append(repoOrder, key)
-			}
-			repoMap[key].docks = append(repoMap[key].docks, d)
-		}
-	}
-
-	// First pass: compute column widths across all workspaces
-	w := &columnWidths{id: 2, name: 4, branch: 6, pr: 2, status: 6, agent: 5}
-	for _, d := range docks {
-		for _, ws := range d.Workspaces {
-			id, name, branch, pr, status, agent, _ := workspaceColumns(ws)
-			w.update(id, name, branch, pr, status, agent)
-		}
-	}
-
-	for _, repoName := range repoOrder {
-		re := repoMap[repoName]
-		if re.path != "" {
-			fmt.Fprintf(&b, "repo %s (%s)\n", re.name, re.path)
-		} else {
-			fmt.Fprintf(&b, "repo %s\n", re.name)
-		}
-		if len(re.docks) == 0 {
-			fmt.Fprintf(&b, "  (no docks)\n")
-			continue
-		}
-		headerPrinted := false
-		for _, d := range re.docks {
-			fmt.Fprintf(&b, "  dock %s\n", d.Name)
-			if len(d.Workspaces) == 0 {
-				fmt.Fprintf(&b, "    (no workspaces)\n")
-				continue
-			}
-			if !headerPrinted {
-				fmt.Fprintf(&b, "    %s\n", w.header())
-				headerPrinted = true
-			}
-			for _, ws := range d.Workspaces {
-				id, name, branch, pr, status, agent, suffix := workspaceColumns(ws)
-				fmt.Fprintf(&b, "    %s\n", w.format(id, name, branch, pr, status, agent, suffix))
-			}
-		}
-	}
-
-	return b.String()
+	return FormatListView(BuildListView(cfg, docks, ListViewOptions{}), false)
 }
 
 // FormatDockTree formats dock → workspace hierarchy for one or more docks.
 func FormatDockTree(docks []engine.DockInfo) string {
-	var b strings.Builder
-
-	// Compute column widths across all docks
-	w := &columnWidths{id: 2, name: 4, branch: 6, pr: 2, status: 6, agent: 5}
-	for _, d := range docks {
-		for _, ws := range d.Workspaces {
-			id, name, branch, pr, status, agent, _ := workspaceColumns(ws)
-			w.update(id, name, branch, pr, status, agent)
+	cfg := &config.Config{
+		Repos: map[string]config.RepoConfig{},
+		Docks: map[string]config.DockConfig{},
+	}
+	for _, dock := range docks {
+		cfg.Docks[dock.Name] = config.DockConfig{Repo: dock.Repo, Agent: dock.Agent}
+		if dock.Repo != "" {
+			cfg.Repos[dock.Repo] = config.RepoConfig{}
 		}
 	}
-
-	headerPrinted := false
-	for _, d := range docks {
-		meta := ""
-		if d.Repo != "" || d.Agent != "" {
-			var parts []string
-			if d.Repo != "" {
-				parts = append(parts, "repo="+d.Repo)
-			}
-			if d.Agent != "" {
-				parts = append(parts, "agent="+d.Agent)
-			}
-			meta = " (" + strings.Join(parts, ", ") + ")"
-		}
-		fmt.Fprintf(&b, "dock %s%s\n", d.Name, meta)
-		if len(d.Workspaces) == 0 {
-			fmt.Fprintf(&b, "  (no workspaces)\n")
-			continue
-		}
-		if !headerPrinted {
-			fmt.Fprintf(&b, "  %s\n", w.header())
-			headerPrinted = true
-		}
-		for _, ws := range d.Workspaces {
-			id, name, branch, pr, status, agent, suffix := workspaceColumns(ws)
-			fmt.Fprintf(&b, "  %s\n", w.format(id, name, branch, pr, status, agent, suffix))
-		}
+	focus := ListFocus{Kind: FocusAll}
+	if len(docks) == 1 {
+		focus = ListFocus{Kind: FocusDock, Repo: docks[0].Repo, Dock: docks[0].Name}
 	}
-	return b.String()
+	return FormatListView(BuildListView(cfg, docks, ListViewOptions{Focus: focus}), false)
 }
 
 // FormatRepoTree formats repo → docks summary.
 func FormatRepoTree(cfg *config.Config) string {
 	var b strings.Builder
-	for name, repo := range cfg.Repos {
+	repoNames := make([]string, 0, len(cfg.Repos))
+	for name := range cfg.Repos {
+		repoNames = append(repoNames, name)
+	}
+	sort.Strings(repoNames)
+	for _, name := range repoNames {
+		repo := cfg.Repos[name]
 		wtDir := repo.EffectiveWorktreeDir()
 		fmt.Fprintf(&b, "%s  %s  (worktrees: %s)\n", name, repo.Path, wtDir)
-		// Find docks that use this repo
 		var dockNames []string
 		for dockName, dock := range cfg.Docks {
 			if dock.Repo == name {
 				dockNames = append(dockNames, dockName)
 			}
 		}
+		sort.Strings(dockNames)
 		if len(dockNames) > 0 {
 			fmt.Fprintf(&b, "  docks: %s\n", strings.Join(dockNames, ", "))
 		}
@@ -226,34 +396,17 @@ func FormatRepoTree(cfg *config.Config) string {
 // FormatSubtreeForRemoval formats the repo → dock → workspace hierarchy
 // for items that would be removed. Used by repo remove's error message.
 func FormatSubtreeForRemoval(cfg *config.Config, repoName string, docks []engine.DockInfo) string {
-	var b strings.Builder
+	view := BuildListView(cfg, docks, ListViewOptions{
+		Focus: ListFocus{Kind: FocusRepo, Repo: repoName},
+	})
+	return indentBlock(FormatListView(view, false), 1)
+}
 
-	// Compute column widths
-	w := &columnWidths{id: 2, name: 4, branch: 6, pr: 2, status: 6, agent: 5}
-	for _, d := range docks {
-		for _, ws := range d.Workspaces {
-			id, name, branch, pr, status, agent, _ := workspaceColumns(ws)
-			w.update(id, name, branch, pr, status, agent)
-		}
+func indentBlock(s string, depth int) string {
+	prefix := strings.Repeat("  ", depth)
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	for i, line := range lines {
+		lines[i] = prefix + line
 	}
-
-	repo, hasRepo := cfg.Repos[repoName]
-	if hasRepo {
-		fmt.Fprintf(&b, "  repo %s (%s)\n", repoName, repo.Path)
-	} else {
-		fmt.Fprintf(&b, "  repo %s\n", repoName)
-	}
-	headerPrinted := false
-	for _, d := range docks {
-		fmt.Fprintf(&b, "    dock %s\n", d.Name)
-		if len(d.Workspaces) > 0 && !headerPrinted {
-			fmt.Fprintf(&b, "      %s\n", w.header())
-			headerPrinted = true
-		}
-		for _, ws := range d.Workspaces {
-			id, name, branch, pr, status, agent, suffix := workspaceColumns(ws)
-			fmt.Fprintf(&b, "      %s\n", w.format(id, name, branch, pr, status, agent, suffix))
-		}
-	}
-	return b.String()
+	return strings.Join(lines, "\n") + "\n"
 }

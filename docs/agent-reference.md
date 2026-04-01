@@ -58,6 +58,7 @@ matching CWD against known workspace paths. For window-level commands
 the tmux window ID to identify which window.
 
 Commands an agent inside a workspace typically uses:
+- `bay pwd` — confirm bay context and what `self` means here
 - `bay ws update self` — report branch, PR, or status changes
 - `bay ws show self` — check own workspace metadata
 - `bay ls` — see what other workspaces are doing
@@ -84,16 +85,15 @@ Important invariants:
   it.
 - Git branch is auto-read from the filesystem and kept in sync by bay.
   PR and status are manual metadata.
-- In `bay ls`, the `AGENT` field means configured workspace agent:
-  workspace override when the workspace was created with `--agent NAME`,
-  otherwise the dock default. It does not mean the currently running
-  pane type.
+- `bay ls` is structural. Workspace rows show branch and sync state;
+  pane rows show live pane kind plus pane agent for agent panes.
 - Missing bay-managed tmux windows/panes are expected to be recoverable.
 
 ## Parsing and output
 
 Prefer JSON output for any automation:
 
+- `bay pwd --json`
 - `bay ls --json`
 - `bay ws show <name|self> --json`
 
@@ -103,41 +103,85 @@ as a stable parse contract.
 
 ### JSON: `bay ls --json`
 
-Returns a JSON array of dock objects:
+Returns a tree object:
 
 ```json
-[
-  {
-    "name": "labs",
-    "agent": "claude",
+{
+  "focus": {
+    "kind": "workspace",
     "repo": "labs",
-    "workspaces": [
-      {
-        "id": "w1",
-        "name": "auth-fix",
-        "type": "worktree",
-        "path": "~/projects/labs-worktrees/w1",
-        "branch": "feature/auth-fix",
-        "pr": "347",
-        "status": "active",
-        "waiting": true,
-        "missing": false,
-        "stale": false,
-        "agent": "codex"
-      }
-    ]
-  }
-]
+    "dock": "labs",
+    "workspace_id": "w1"
+  },
+  "recursive": true,
+  "repos": [
+    {
+      "name": "labs",
+      "path": "~/projects/labs",
+      "docks": [
+        {
+          "name": "labs",
+          "repo": "labs",
+          "workspaces": [
+            {
+              "id": "w1",
+              "name": "auth-fix",
+              "type": "worktree",
+              "path": "~/projects/labs-worktrees/w1",
+              "branch": "feature/auth-fix",
+              "status": "active",
+              "sync_status": "ok",
+              "window_count": 2,
+              "windows": [
+                {
+                  "id": 1,
+                  "name": "editor",
+                  "tmux_window_id": "@12",
+                  "status": "ok",
+                  "panes": [
+                    {
+                      "id": 2,
+                      "tmux_pane_id": "%22",
+                      "type": "agent",
+                      "agent": "codex",
+                      "status": "ok"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
 ```
 
 Field semantics:
 
-- `dock.agent` is the dock default agent.
-- `workspace.agent` is the configured workspace agent.
-- `waiting` means at least one managed window in the workspace is marked
-  waiting by the monitor.
-- `missing` means the workspace path is missing on disk.
-- `stale` means bay-managed tmux state is missing and recoverable.
+- `focus` is the object bay inferred from cwd and tmux.
+- `recursive` tells you whether descendants are expanded.
+- `sync_status` is `ok`, `stale`, or `missing`.
+- pane `type` is `agent`, `shell`, or `cmd`.
+
+Use `bay ls --json --rows` when denormalized rows are easier to filter.
+
+### JSON: `bay pwd --json`
+
+Returns the current bay context:
+
+```json
+{
+  "repo": "labs",
+  "dock": "labs",
+  "workspace_id": "w1",
+  "workspace": "auth-fix",
+  "window_id": 1,
+  "pane_id": 2,
+  "path": "~/projects/labs-worktrees/w1"
+}
+```
 
 ### JSON: `bay ws show <name|self> --json`
 
@@ -147,25 +191,28 @@ Returns a JSON object:
 {
   "id": "w1",
   "name": "auth-fix",
+  "repo": "labs",
   "dock": "labs",
   "type": "worktree",
   "path": "...",
   "branch": "feature/auth-fix",
   "pr": "347",
   "status": "active",
+  "sync_status": "ok",
+  "default_agent": "codex",
   "windows": [
     {
       "id": 1,
       "tmux_window_id": "@12",
-      "name": "auth-fix",
+      "name": "editor",
+      "status": "ok",
       "panes": [
         {
-          "id": 1,
+          "id": 2,
+          "tmux_pane_id": "%22",
           "type": "agent",
           "agent": "codex",
-          "command": "",
-          "split_from": 0,
-          "split_dir": ""
+          "status": "ok"
         }
       ]
     }
@@ -178,8 +225,7 @@ Pane semantics:
 - `type` is `agent`, `shell`, or `cmd`.
 - `agent` is the configured agent type for agent panes.
 - `command` is the recorded shell command for `cmd` panes.
-- `split_from` and `split_dir` are bay-managed layout metadata for
-  recovery.
+- `status` is the pane sync state.
 
 Fields may be omitted when empty.
 
@@ -190,6 +236,7 @@ These defaults are important for agent behavior:
 | Command | Default target when omitted |
 |---------|-----------------------------|
 | `bay ws new [dock]` | current tmux session name, if it is a bay dock |
+| `bay pwd` | current bay context |
 | `bay ws show [name|self]` | `self` |
 | `bay win open [workspace]` | `self` |
 | `bay win close [self|workspace]` | `self` |

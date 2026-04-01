@@ -11,12 +11,15 @@ import (
 
 func newLsCmd() *cobra.Command {
 	var jsonOutput bool
+	var rowsOutput bool
 	var dirtyOnly bool
+	var recursive bool
+	var longOutput bool
 
 	cmd := &cobra.Command{
 		Use:     "ls",
 		Aliases: []string{"list"},
-		Short:   "List all repos, docks, and workspaces",
+		Short:   "Browse the Bay hierarchy",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
@@ -31,11 +34,17 @@ func newLsCmd() *cobra.Command {
 				docks = filterDirtyWorkspaces(eng, docks)
 			}
 
+			view := BuildListView(eng.Config, docks, ListViewOptions{
+				Focus:     inferListFocus(eng),
+				Recursive: recursive,
+			})
+
 			if jsonOutput {
-				if docks == nil {
-					docks = []engine.DockInfo{}
+				var payload interface{} = view
+				if rowsOutput {
+					payload = ListRows(view)
 				}
-				data, err := json.MarshalIndent(docks, "", "  ")
+				data, err := json.MarshalIndent(payload, "", "  ")
 				if err != nil {
 					return err
 				}
@@ -43,16 +52,16 @@ func newLsCmd() *cobra.Command {
 				return nil
 			}
 
-			fmt.Print(FormatFullTree(eng.Config, docks))
+			fmt.Print(FormatListView(view, longOutput))
 
 			// Print advice for stale or missing workspaces
 			hasStale, hasMissing := false, false
 			for _, d := range docks {
 				for _, ws := range d.Workspaces {
-					if ws.Stale {
+					if ws.SyncStatus == "stale" {
 						hasStale = true
 					}
-					if ws.Missing {
+					if ws.SyncStatus == "missing" {
 						hasMissing = true
 					}
 				}
@@ -69,7 +78,10 @@ func newLsCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON")
+	cmd.Flags().BoolVar(&rowsOutput, "rows", false, "output JSON as denormalized rows")
 	cmd.Flags().BoolVar(&dirtyOnly, "dirty", false, "only show dirty workspaces")
+	cmd.Flags().BoolVarP(&recursive, "recursive", "R", false, "show full descendant tree from the current focus")
+	cmd.Flags().BoolVarP(&longOutput, "long", "l", false, "show extended details such as tmux IDs")
 
 	return cmd
 }
@@ -102,4 +114,21 @@ func filterDirtyWorkspaces(eng *engine.Engine, docks []engine.DockInfo) []engine
 		}
 	}
 	return result
+}
+
+func inferListFocus(eng *engine.Engine) ListFocus {
+	ctx, err := eng.CurrentContext()
+	if err != nil {
+		return ListFocus{Kind: FocusAll}
+	}
+	switch {
+	case ctx.WorkspaceID != "":
+		return ListFocus{Kind: FocusWorkspace, Repo: ctx.Repo, Dock: ctx.Dock, WorkspaceID: ctx.WorkspaceID}
+	case ctx.Dock != "":
+		return ListFocus{Kind: FocusDock, Repo: ctx.Repo, Dock: ctx.Dock}
+	case ctx.Repo != "":
+		return ListFocus{Kind: FocusRepo, Repo: ctx.Repo}
+	default:
+		return ListFocus{Kind: FocusAll}
+	}
 }

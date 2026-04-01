@@ -35,6 +35,7 @@ type Interface interface {
 	// Current context
 	CurrentSession() (string, error)
 	CurrentWindowID() (string, error)
+	CurrentPaneID() (string, error)
 }
 
 // Session represents a tmux session.
