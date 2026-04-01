@@ -139,13 +139,8 @@ Do you want to proceed
 				fmt.Printf("Prompts written to %s\n", promptsPath)
 			}
 
-			// Install orchestrator guide
-			guidePath := filepath.Join(configDir, "orchestrator-guide.md")
-			if err := os.WriteFile(guidePath, []byte(orchestratorGuide), 0o644); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not write orchestrator guide: %v\n", err)
-			} else {
-				fmt.Printf("Orchestrator guide written to %s\n", guidePath)
-			}
+			// Install Claude Code skill
+			installBaySkill()
 
 			// Install shell completions
 			installCompletions(cmd.Root(), reader)
@@ -159,9 +154,6 @@ Do you want to proceed
 			fmt.Println("\nSetup complete. Next steps:")
 			fmt.Println("  1. Add a repo:  bay repo add <name> <path>")
 			fmt.Println("  2. Create a dock:  bay dock new <name> --repo <repo>")
-			fmt.Println()
-			fmt.Println("To teach an orchestrator agent about bay:")
-			fmt.Printf("  claude --add-dir %s\n", configDir)
 
 			return nil
 		},
@@ -386,4 +378,33 @@ func configureEditor(reader *bufio.Reader, configPath string) {
 		return
 	}
 	fmt.Printf("Editor set to %q\n", answer)
+}
+
+const baySkillContent = `---
+name: bay
+description: Bay workspace management — git worktrees and tmux windows. Use when creating, managing, or navigating workspaces, docks, or repos.
+---
+
+!` + "`bay agent-guide`" + `
+`
+
+func installBaySkill() {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+
+	skillDir := filepath.Join(home, ".claude", "skills", "bay")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not create skill directory: %v\n", err)
+		return
+	}
+
+	skillPath := filepath.Join(skillDir, "SKILL.md")
+	if err := os.WriteFile(skillPath, []byte(baySkillContent), 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not write skill file: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Claude Code skill installed at %s\n", skillPath)
 }

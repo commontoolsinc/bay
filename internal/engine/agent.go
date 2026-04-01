@@ -35,6 +35,7 @@ When your work is complete:
     !bay ws show self              # see workspace details
     !bay ls                        # see all workspaces across docks
     !bay win open self --shell     # open a shell window for this workspace
+    !bay agent-guide               # full bay command reference
 
 `
 
