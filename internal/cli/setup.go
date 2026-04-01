@@ -246,10 +246,10 @@ func installKeybindings(reader *bufio.Reader) {
 		lines = append(lines, line)
 	}
 
-	// Check if all bindings are already present
+	// Check if all bindings are present with the correct format
 	allPresent := true
-	for _, kb := range bayKeybindings {
-		if !strings.Contains(content, kb.cmd) {
+	for _, line := range lines {
+		if !strings.Contains(content, line) {
 			allPresent = false
 			break
 		}
