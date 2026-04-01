@@ -88,16 +88,16 @@ func newWsNewCmd() *cobra.Command {
 }
 
 func newWsCloseCmd() *cobra.Command {
-	var force bool
-	var status string
+	var force, done bool
 
 	cmd := &cobra.Command{
 		Use:   "close [name|self]",
 		Short: "Close a workspace and all its windows",
 		Long: `Close a workspace and all its windows.
 
-When --status is given, all workspaces with that status are closed.
-Clean workspaces are closed; dirty ones are skipped unless --force is used.`,
+  bay ws close w1          close a specific workspace
+  bay ws close self        close the current workspace
+  bay ws close --done      close all workspaces with status "done"`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -105,8 +105,8 @@ Clean workspaces are closed; dirty ones are skipped unless --force is used.`,
 				return err
 			}
 
-			if status != "" {
-				// Batch close by status
+			if done {
+				// Batch close all done workspaces
 				dockName := ""
 				sess, tmuxErr := eng.Tmux.CurrentSession()
 				if tmuxErr == nil {
@@ -115,7 +115,7 @@ Clean workspaces are closed; dirty ones are skipped unless --force is used.`,
 					}
 				}
 
-				closed, skipped, closeErr := eng.WsCloseByStatus(dockName, status, force)
+				closed, skipped, closeErr := eng.WsCloseByStatus(dockName, "done", force)
 				for _, c := range closed {
 					fmt.Printf("Closed %s\n", c)
 				}
@@ -129,7 +129,7 @@ Clean workspaces are closed; dirty ones are skipped unless --force is used.`,
 			}
 
 			if len(args) == 0 {
-				return fmt.Errorf("workspace name required (or use --status to batch close)")
+				return fmt.Errorf("specify a workspace to close (bay ws close <name>) or use --done to close all finished workspaces")
 			}
 
 			dockName, wsID, err := resolveTarget(eng, args[0])
@@ -142,7 +142,7 @@ Clean workspaces are closed; dirty ones are skipped unless --force is used.`,
 	}
 
 	cmd.Flags().BoolVar(&force, "force", false, "force close even if dirty")
-	cmd.Flags().StringVar(&status, "status", "", "close all workspaces with this status (idle|active|done)")
+	cmd.Flags().BoolVar(&done, "done", false, "close all workspaces with status done")
 
 	return cmd
 }
