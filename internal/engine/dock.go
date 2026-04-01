@@ -134,7 +134,28 @@ func (e *Engine) DockNew(name, repo, agent, template string) error {
 	})
 }
 
-// DockClose closes all workspaces in a dock.
+// DockCloseWorkspaces closes all workspaces in a dock but does not
+// kill the tmux session. Used by RepoRemove which needs to save
+// config before killing sessions.
+func (e *Engine) DockCloseWorkspaces(name string, force bool) {
+	m, err := e.LoadManifest()
+	if err != nil {
+		return
+	}
+	dockState, ok := m.Docks[name]
+	if !ok {
+		return
+	}
+	var wsIDs []string
+	for wsID := range dockState.Workspaces {
+		wsIDs = append(wsIDs, wsID)
+	}
+	for _, wsID := range wsIDs {
+		_ = e.WsClose(name, wsID, force)
+	}
+}
+
+// DockClose closes all workspaces in a dock and kills the tmux session.
 func (e *Engine) DockClose(name string, force bool) error {
 	m, err := e.LoadManifest()
 	if err != nil {
