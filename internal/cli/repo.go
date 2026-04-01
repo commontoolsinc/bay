@@ -165,6 +165,13 @@ func newRepoRemoveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			// Save repo path before removal (config is gone after)
+			var repoPath string
+			if repo, ok := eng.Config.Repos[args[0]]; ok {
+				repoPath = config.ExpandPath(repo.Path)
+			}
+
 			if err := eng.RepoRemove(args[0], force); err != nil {
 				if inUse, ok := err.(*engine.RepoInUseError); ok {
 					fmt.Fprintf(cmd.ErrOrStderr(),
@@ -175,7 +182,10 @@ func newRepoRemoveCmd() *cobra.Command {
 				}
 				return err
 			}
-			fmt.Printf("Repo %q removed.\n", args[0])
+			fmt.Printf("Repo %q removed from bay.\n", args[0])
+			if repoPath != "" {
+				fmt.Printf("The repo directory is still on disk at %s\n", repoPath)
+			}
 			return nil
 		},
 	}
