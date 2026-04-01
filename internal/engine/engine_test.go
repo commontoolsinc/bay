@@ -1164,6 +1164,54 @@ func TestWsClose_CleansEmptyWorktreeDir(t *testing.T) {
 	_ = dir
 }
 
+func TestList_UsesDockDefaultAgentForShellWorkspace(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+
+	docks, err := eng.List()
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+
+	if len(docks) != 1 || len(docks[0].Workspaces) != 1 {
+		t.Fatalf("unexpected dock/workspace count: %#v", docks)
+	}
+	if docks[0].Workspaces[0].Agent != "claude" {
+		t.Errorf("agent = %q, want dock default claude", docks[0].Workspaces[0].Agent)
+	}
+}
+
+func TestList_PreservesWorkspaceAgentOverrideAfterPrimaryWindowClosed(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Agent: "codex"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	if err := eng.WinOpen("labs", "w1", "", true, ""); err != nil {
+		t.Fatalf("WinOpen failed: %v", err)
+	}
+	if err := eng.WinClose("labs", "w1", 1); err != nil {
+		t.Fatalf("WinClose failed: %v", err)
+	}
+
+	docks, err := eng.List()
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+
+	if len(docks) != 1 || len(docks[0].Workspaces) != 1 {
+		t.Fatalf("unexpected dock/workspace count: %#v", docks)
+	}
+	if docks[0].Workspaces[0].Agent != "codex" {
+		t.Errorf("agent = %q, want workspace override codex", docks[0].Workspaces[0].Agent)
+	}
+}
+
 func TestWsClose_KeepsNonEmptyWorktreeDir(t *testing.T) {
 	eng, _ := testEngine(t)
 
@@ -1403,9 +1451,9 @@ func TestSyncWorkspaceGitState_NameOverriddenNotChanged(t *testing.T) {
 	}
 }
 
-// --- syncWorkspaceTmuxState tests ---
+// --- non-destructive tmux state sync tests ---
 
-func TestSyncWorkspaceTmuxState_RemovesDeadWindows(t *testing.T) {
+func TestSyncAll_PreservesDeadWindows(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
@@ -1424,16 +1472,207 @@ func TestSyncWorkspaceTmuxState_RemovesDeadWindows(t *testing.T) {
 	mockTmux := eng.Tmux.(*tmux.Mock)
 	mockTmux.KillWindow(ws.Windows[1].TmuxWindowID)
 
-	// SyncAll should remove the dead window from manifest
+	// SyncAll should preserve the dead window for recovery
 	eng.SyncAll()
 
 	ws, _ = eng.WsShow("labs", "w1")
-	if len(ws.Windows) != 1 {
-		t.Errorf("expected 1 window after sync, got %d", len(ws.Windows))
+	if len(ws.Windows) != 2 {
+		t.Errorf("expected 2 windows after sync, got %d", len(ws.Windows))
 	}
 }
 
-func TestSyncWorkspaceTmuxState_TrimsPanes(t *testing.T) {
+func TestList_PreservesDeadWindowsForRecovery(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	if err := eng.WinOpen("labs", "w1", "", true, ""); err != nil {
+		t.Fatalf("WinOpen failed: %v", err)
+	}
+	ws, _ = eng.WsShow("labs", "w1")
+	if len(ws.Windows) != 2 {
+		t.Fatalf("expected 2 windows, got %d", len(ws.Windows))
+	}
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if err := mockTmux.KillWindow(ws.Windows[1].TmuxWindowID); err != nil {
+		t.Fatalf("KillWindow failed: %v", err)
+	}
+
+	docks, err := eng.List()
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	if len(docks) != 1 || len(docks[0].Workspaces) != 1 {
+		t.Fatalf("unexpected dock/workspace count: %#v", docks)
+	}
+	if !docks[0].Workspaces[0].Stale {
+		t.Fatal("workspace should be marked stale")
+	}
+
+	ws, _ = eng.WsShow("labs", "w1")
+	if len(ws.Windows) != 2 {
+		t.Fatalf("manifest lost dead window; windows = %d, want 2", len(ws.Windows))
+	}
+
+	os.MkdirAll(ws.Path, 0o755)
+	if _, err := eng.Recover(); err != nil {
+		t.Fatalf("Recover failed: %v", err)
+	}
+
+	ws, _ = eng.WsShow("labs", "w1")
+	if len(ws.Windows) != 2 {
+		t.Fatalf("workspace windows after recover = %d, want 2", len(ws.Windows))
+	}
+	exists, _ := mockTmux.WindowExists(ws.Windows[1].TmuxWindowID)
+	if !exists {
+		t.Error("dead window should be recreated during recovery")
+	}
+}
+
+func TestWinOpen_AgentConfigFailureDoesNotCreateWindow(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetGlobalIgnored(false)
+
+	err = eng.WinOpen("labs", "w1", "claude", false, "")
+	if err == nil {
+		t.Fatal("expected WinOpen to fail when agent config cannot be generated")
+	}
+
+	ws, _ := eng.WsShow("labs", "w1")
+	if len(ws.Windows) != 1 {
+		t.Fatalf("windows = %d, want 1 after failed WinOpen", len(ws.Windows))
+	}
+}
+
+func TestPaneAdd_AgentConfigFailureDoesNotCreatePane(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetGlobalIgnored(false)
+
+	err = eng.PaneAdd("labs", "w1", 1, "claude", false, "", "h")
+	if err == nil {
+		t.Fatal("expected PaneAdd to fail when agent config cannot be generated")
+	}
+
+	ws, _ := eng.WsShow("labs", "w1")
+	if len(ws.Windows[0].Panes) != 1 {
+		t.Fatalf("panes = %d, want 1 after failed PaneAdd", len(ws.Windows[0].Panes))
+	}
+}
+
+func TestRecover_ReturnsAgentConfigErrors(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Agent: "codex"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetGlobalIgnored(false)
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.Reset()
+
+	_, err = eng.Recover()
+	if err == nil {
+		t.Fatal("expected Recover to return agent config error")
+	}
+}
+
+func TestWsClose_RemoveWorktreeFailurePreservesWorkspaceState(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	if err := eng.WinOpen("labs", "w1", "", true, ""); err != nil {
+		t.Fatalf("WinOpen failed: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	repoPath := config.ExpandPath(eng.Config.Repos["labs"].Path)
+	mockGit := eng.Git.(*git.Mock)
+	if err := mockGit.RemoveWorktree(repoPath, ws.Path, true); err != nil {
+		t.Fatalf("preparing RemoveWorktree failure: %v", err)
+	}
+
+	err = eng.WsClose("labs", "w1", false)
+	if err == nil {
+		t.Fatal("expected WsClose to fail when RemoveWorktree fails")
+	}
+
+	stillThere, showErr := eng.WsShow("labs", "w1")
+	if showErr != nil {
+		t.Fatalf("workspace should remain in manifest after failed close: %v", showErr)
+	}
+	if len(stillThere.Windows) != 2 {
+		t.Fatalf("windows = %d, want 2 after failed close", len(stillThere.Windows))
+	}
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	for _, win := range stillThere.Windows {
+		exists, _ := mockTmux.WindowExists(win.TmuxWindowID)
+		if !exists {
+			t.Fatalf("window %s should still exist after failed close", win.TmuxWindowID)
+		}
+	}
+}
+
+func TestRepoRemove_ForceRemovesManifestDock(t *testing.T) {
+	eng, dir := testEngine(t)
+	eng.configPath = filepath.Join(dir, "config.toml")
+	if err := config.Save(eng.configPath, eng.Config); err != nil {
+		t.Fatalf("saving config: %v", err)
+	}
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	if err := eng.RepoRemove("labs", true); err != nil {
+		t.Fatalf("RepoRemove failed: %v", err)
+	}
+
+	m, err := manifest.Load(eng.manifestPath)
+	if err != nil {
+		t.Fatalf("loading manifest: %v", err)
+	}
+	if _, ok := m.Docks["labs"]; ok {
+		t.Fatal("dock labs should be removed from manifest")
+	}
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.Reset()
+	if _, err := eng.Recover(); err != nil {
+		t.Fatalf("Recover failed: %v", err)
+	}
+	has, _ := mockTmux.HasSession("labs")
+	if has {
+		t.Error("recover should not recreate force-removed dock")
+	}
+}
+
+func TestSyncAll_PreservesMissingManagedPanes(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
@@ -1457,12 +1696,12 @@ func TestSyncWorkspaceTmuxState_TrimsPanes(t *testing.T) {
 	}
 	mockTmux.KillPane(panes[1].ID)
 
-	// SyncAll should trim manifest panes to match tmux
+	// SyncAll should preserve the manifest pane list for recovery
 	eng.SyncAll()
 
 	ws, _ = eng.WsShow("labs", "w1")
-	if len(ws.Windows[0].Panes) != 1 {
-		t.Errorf("expected 1 pane after sync, got %d", len(ws.Windows[0].Panes))
+	if len(ws.Windows[0].Panes) != 2 {
+		t.Errorf("expected 2 panes after sync, got %d", len(ws.Windows[0].Panes))
 	}
 }
 

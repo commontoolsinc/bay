@@ -37,6 +37,12 @@ func (e *Engine) PaneAdd(dockName, wsID string, winID int, agent string, shell b
 		splitDir = "v"
 	}
 
+	if agent != "" && !shell {
+		if err := e.generateAgentConfig(dockName, agent, wsID, ws.Name, ws.Path, ws.Type, ws.Repo); err != nil {
+			return fmt.Errorf("generating agent config: %w", err)
+		}
+	}
+
 	// Determine the actual split parent: the currently active tmux pane.
 	// Match it against manifest panes by position in the tmux pane list.
 	splitFrom := 0

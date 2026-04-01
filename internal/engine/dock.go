@@ -8,13 +8,11 @@ import (
 	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
-// workspaceAgent returns the effective agent for a workspace:
-// the first pane's agent if set, otherwise the dock's default.
-func workspaceAgent(ws *manifest.Workspace, dockAgent string) string {
-	if len(ws.Windows) > 0 && len(ws.Windows[0].Panes) > 0 {
-		if a := ws.Windows[0].Panes[0].Agent; a != "" {
-			return a
-		}
+// configuredWorkspaceAgent returns the configured workspace agent:
+// a workspace-specific override when present, otherwise the dock default.
+func configuredWorkspaceAgent(ws *manifest.Workspace, dockAgent string) string {
+	if ws.AgentOverride != "" {
+		return ws.AgentOverride
 	}
 	return dockAgent
 }
@@ -218,7 +216,7 @@ func (e *Engine) List() ([]DockInfo, error) {
 					PR:      ws.PR,
 					Status:  string(ws.Status),
 					Missing: ws.Path != "" && statErr != nil,
-					Agent:   workspaceAgent(ws, dockCfg.Agent),
+					Agent:   configuredWorkspaceAgent(ws, dockCfg.Agent),
 				}
 				// Check tmux window state
 				for _, win := range ws.Windows {

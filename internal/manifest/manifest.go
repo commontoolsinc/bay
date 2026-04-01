@@ -59,6 +59,7 @@ type Workspace struct {
 	Name           string          `toml:"name"`
 	Type           WorkspaceType   `toml:"type"`
 	Repo           string          `toml:"repo,omitempty"`
+	AgentOverride  string          `toml:"agent_override,omitempty"`
 	Path           string          `toml:"path,omitempty"`
 	Branch         string          `toml:"branch,omitempty"`
 	PR             string          `toml:"pr,omitempty"`

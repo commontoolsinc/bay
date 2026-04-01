@@ -66,6 +66,137 @@ Commands an agent inside a workspace typically uses:
 Everything else — creating workspaces, opening additional windows,
 navigation, recovery — is typically run from outside.
 
+## Operational model
+
+Bay is a coordination layer over:
+
+- git worktree lifecycle
+- tmux session/window/pane lifecycle
+- workspace metadata (branch, PR, status, names)
+- recovery after tmux or host restart
+
+Use bay when you want durable managed state. Do not manually recreate
+bay-managed windows after a reboot; use `bay recover`.
+
+Important invariants:
+
+- A **workspace** is the durable unit. Windows and panes are views onto
+  it.
+- Git branch is auto-read from the filesystem and kept in sync by bay.
+  PR and status are manual metadata.
+- In `bay ls`, the `AGENT` field means configured workspace agent:
+  workspace override when the workspace was created with `--agent NAME`,
+  otherwise the dock default. It does not mean the currently running
+  pane type.
+- Missing bay-managed tmux windows/panes are expected to be recoverable.
+
+## Parsing and output
+
+Prefer JSON output for any automation:
+
+- `bay ls --json`
+- `bay ws show <name|self> --json`
+
+Treat the normal human-formatted output of commands like `bay ls`,
+`bay ws show`, `bay repo ls`, and `bay dock ls` as display output, not
+as a stable parse contract.
+
+### JSON: `bay ls --json`
+
+Returns a JSON array of dock objects:
+
+```json
+[
+  {
+    "name": "labs",
+    "agent": "claude",
+    "repo": "labs",
+    "workspaces": [
+      {
+        "id": "w1",
+        "name": "auth-fix",
+        "type": "worktree",
+        "path": "~/projects/labs-worktrees/w1",
+        "branch": "feature/auth-fix",
+        "pr": "347",
+        "status": "active",
+        "waiting": true,
+        "missing": false,
+        "stale": false,
+        "agent": "codex"
+      }
+    ]
+  }
+]
+```
+
+Field semantics:
+
+- `dock.agent` is the dock default agent.
+- `workspace.agent` is the configured workspace agent.
+- `waiting` means at least one managed window in the workspace is marked
+  waiting by the monitor.
+- `missing` means the workspace path is missing on disk.
+- `stale` means bay-managed tmux state is missing and recoverable.
+
+### JSON: `bay ws show <name|self> --json`
+
+Returns a JSON object:
+
+```json
+{
+  "id": "w1",
+  "name": "auth-fix",
+  "dock": "labs",
+  "type": "worktree",
+  "path": "...",
+  "branch": "feature/auth-fix",
+  "pr": "347",
+  "status": "active",
+  "windows": [
+    {
+      "id": 1,
+      "tmux_window_id": "@12",
+      "name": "auth-fix",
+      "panes": [
+        {
+          "id": 1,
+          "type": "agent",
+          "agent": "codex",
+          "command": "",
+          "split_from": 0,
+          "split_dir": ""
+        }
+      ]
+    }
+  ]
+}
+```
+
+Pane semantics:
+
+- `type` is `agent`, `shell`, or `cmd`.
+- `agent` is the configured agent type for agent panes.
+- `command` is the recorded shell command for `cmd` panes.
+- `split_from` and `split_dir` are bay-managed layout metadata for
+  recovery.
+
+Fields may be omitted when empty.
+
+## Default target rules
+
+These defaults are important for agent behavior:
+
+| Command | Default target when omitted |
+|---------|-----------------------------|
+| `bay ws new [dock]` | current tmux session name, if it is a bay dock |
+| `bay ws show [name|self]` | `self` |
+| `bay win open [workspace]` | `self` |
+| `bay win close [self|workspace]` | `self` |
+| `bay win restart [self|workspace]` | `self` |
+| `bay edit [name|self]` | `self` |
+| `bay shell` | current workspace, split pane |
+
 ## Commands
 
 Commands use explicit nouns: `ws` (workspace), `win` (window), `dock`.
@@ -111,10 +242,12 @@ bay ws close self --force
 #### `bay ws show <name|self>`
 
 Show detailed information: paths, branch, PR, status, windows, panes.
+Use `--json` if you need stable machine-readable output.
 
 ```
 bay ws show self
 bay ws show labs:w3
+bay ws show self --json
 ```
 
 #### `bay ws update <name|self> [--branch NAME] [--pr NUMBER] [--status STATUS]`
@@ -150,9 +283,8 @@ bay ws rename self mem-refactor
 
 #### `bay win open <workspace> [--agent TYPE|--shell|--cmd "..."]`
 
-Add a new window to an existing workspace. Defaults to launching the
-dock's default agent. Use `--shell` for a plain shell or `--cmd` for
-a specific command.
+Add a new window to an existing workspace. Defaults to a plain shell.
+Use `--agent` to launch an agent or `--cmd` for a specific command.
 
 ```
 bay win open mem-refactor --shell        # shell window alongside agent
@@ -220,22 +352,20 @@ bay go --next-waiting
 Show all workspaces and windows across all docks, with waiting status.
 
 ```
-Dock: labs
-  w3  mem-refactor  claude  feature/refactor-memory-access  #234  active  ⏳
-  w4  w4            claude  —                                —    idle
-Dock: research
-  w1  perf-study    claude  —                                —    idle
+bay ls
+bay ls --json
 ```
 
-Safe to run from anywhere. The `⏳` indicator means the monitor has
-detected the agent is waiting for input.
+Safe to run from anywhere. Prefer `--json` for automation. The human
+output is intended for display and may change.
 
 #### `bay recover`
 
 Reconstruct all docks, workspaces, windows, and panes after a reboot.
 Recreates tmux sessions and windows, regenerates agent configs,
 relaunches agents, starts the monitor, and prints attach commands.
-Idempotent.
+Idempotent. Recovery can partially succeed and still return an error,
+for example if some agent configs could not be regenerated.
 
 #### `bay doctor`
 
@@ -272,8 +402,9 @@ Use `--force` to override.
 bay ws new labs --name auth-fix
 ```
 
-Creates a worktree workspace with a fresh checkout. The agent starts
-automatically in a new tmux window.
+Creates a worktree workspace with a fresh checkout. By default the
+workspace starts in a shell. Pass `--agent` to launch the dock's
+default agent, or `--agent NAME` for a specific agent.
 
 ### Track progress from inside
 

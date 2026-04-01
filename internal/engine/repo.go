@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/commontoolsinc/bay/internal/config"
+	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
 // RepoAdd adds a repo to the configuration.
@@ -120,6 +121,17 @@ func (e *Engine) RepoRemove(name string, force bool) error {
 	if e.configPath != "" {
 		if err := config.Save(e.configPath, e.Config); err != nil {
 			return fmt.Errorf("saving config: %w", err)
+		}
+	}
+
+	if len(affectedDockNames) > 0 {
+		if err := e.withManifest(func(m *manifest.Manifest) error {
+			for _, dockName := range affectedDockNames {
+				delete(m.Docks, dockName)
+			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("saving manifest: %w", err)
 		}
 	}
 

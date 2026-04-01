@@ -161,11 +161,12 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 
 	// Build workspace
 	ws := &manifest.Workspace{
-		Name:   displayName,
-		Type:   wsType,
-		Repo:   repoName,
-		Path:   wsPath,
-		Status: manifest.WorkspaceStatusIdle,
+		Name:          displayName,
+		Type:          wsType,
+		Repo:          repoName,
+		AgentOverride: opts.Agent,
+		Path:          wsPath,
+		Status:        manifest.WorkspaceStatusIdle,
 		Windows: []manifest.Window{
 			{
 				ID:           1,
@@ -257,9 +258,6 @@ func (e *Engine) WsClose(dockName, wsID string, force bool) error {
 		}
 	}
 
-	// Clean up agent config files — use the actual agent from the workspace's panes
-	e.cleanupAgentConfig(dockName, ws)
-
 	// Remove worktree if applicable
 	if ws.Type == manifest.WorkspaceTypeWorktree && ws.Repo != "" {
 		repoCfg, ok := e.Config.Repos[ws.Repo]
@@ -267,6 +265,11 @@ func (e *Engine) WsClose(dockName, wsID string, force bool) error {
 			repoPath := config.ExpandPath(repoCfg.Path)
 			if err := e.Git.RemoveWorktree(repoPath, ws.Path, force); err != nil {
 				if !force {
+					dockCfg, hasCfg := e.Config.Docks[dockName]
+					e.recoverDockWorkspaces(dockName, &manifest.DockState{
+						Workspaces: map[string]*manifest.Workspace{wsID: ws},
+					}, dockCfg, hasCfg)
+					_ = e.saveManifest(m)
 					return fmt.Errorf("removing worktree: %w", err)
 				}
 			}
@@ -276,6 +279,9 @@ func (e *Engine) WsClose(dockName, wsID string, force bool) error {
 			_ = os.Remove(wtDir)
 		}
 	}
+
+	// Clean up agent config files after successful close work.
+	e.cleanupAgentConfig(dockName, ws)
 
 	// Move to archive
 	archive, err := manifest.LoadArchive(e.archivePath)
@@ -291,7 +297,9 @@ func (e *Engine) WsClose(dockName, wsID string, force bool) error {
 		}
 	}
 	archive.Docks[dockName].Workspaces[wsID] = ws
-	_ = manifest.SaveArchive(e.archivePath, archive)
+	if err := manifest.SaveArchive(e.archivePath, archive); err != nil {
+		return fmt.Errorf("saving archive: %w", err)
+	}
 
 	// Remove from manifest
 	delete(dockState.Workspaces, wsID)
