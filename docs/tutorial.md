@@ -348,24 +348,26 @@ Look at the status bar — there's a `~` window again. When you close
 the last workspace in a dock, bay creates this placeholder to keep the
 tmux session alive.
 
-## 17. Tear down the dock and repo
+## 17. Tear down everything
 
 ```
-bay dock close tutorial
+bay repo remove tutorial --force
 ```
 
-This closes all workspaces (there are none), kills the tmux session,
-and you'll be detached back to your regular terminal.
+This closes all workspaces, removes the dock, removes the repo from
+config, and kills the tmux session. You'll be detached back to your
+regular terminal.
 
 ```
-bay repo remove tutorial
+Repo "tutorial" removed from bay.
+The repo directory is still on disk at /Users/you/projects/bay-tutorial
 ```
 
-Removes the repo from bay's config. Since the dock is already gone,
-this succeeds cleanly.
+Bay leaves the cloned repo on disk — it's your code. Clean it up
+manually if you're done with it:
 
 ```
-Repo "tutorial" removed.
+rm -rf ~/projects/bay-tutorial
 ```
 
 ## 18. Verify everything is clean
@@ -375,11 +377,6 @@ bay ls
 ```
 
 Should show nothing (or just your other projects if you have any).
-
-Optionally delete the cloned files:
-```
-rm -rf ~/projects/bay-tutorial ~/projects/bay-tutorial-worktrees
-```
 
 ---
 
