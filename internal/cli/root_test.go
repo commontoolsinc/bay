@@ -10,11 +10,12 @@ func TestNewRootCmd(t *testing.T) {
 		t.Errorf("root command use = %q, want bay", root.Use)
 	}
 
-	// Verify all subcommands are registered
+	// Verify all subcommands are registered (including hidden ones)
 	expected := map[string]bool{
 		"dock": false, "repo": false, "ws": false, "win": false, "pane": false,
 		"go": false, "ls": false, "recover": false, "doctor": false,
 		"setup": false, "monitor": false, "add-prompt": false, "version": false,
+		"shell": false, "edit": false, "status-line": false, "close-pane": false,
 	}
 	for _, cmd := range root.Commands() {
 		if _, ok := expected[cmd.Name()]; ok {
@@ -24,6 +25,16 @@ func TestNewRootCmd(t *testing.T) {
 	for name, found := range expected {
 		if !found {
 			t.Errorf("subcommand %q not registered", name)
+		}
+	}
+
+	// Verify close-pane is hidden
+	for _, cmd := range root.Commands() {
+		if cmd.Name() == "close-pane" {
+			if !cmd.Hidden {
+				t.Error("close-pane should be hidden")
+			}
+			break
 		}
 	}
 }

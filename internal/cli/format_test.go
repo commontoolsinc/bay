@@ -186,6 +186,67 @@ func TestFormatWorkspaceLine_Waiting(t *testing.T) {
 	}
 }
 
+func TestFormatFullTree_ColumnHeaders(t *testing.T) {
+	out := FormatFullTree(testConfig(), testDocks())
+
+	// Column headers should appear in the output
+	for _, header := range []string{"ID", "NAME", "BRANCH", "PR", "STATUS", "AGENT"} {
+		if !strings.Contains(out, header) {
+			t.Errorf("FormatFullTree missing column header %q in output:\n%s", header, out)
+		}
+	}
+}
+
+func TestFormatDockTree_ColumnHeaders(t *testing.T) {
+	out := FormatDockTree(testDocks()[:1]) // just dev, which has workspaces
+
+	// Column headers should appear in the output
+	for _, header := range []string{"ID", "NAME", "BRANCH", "PR", "STATUS", "AGENT"} {
+		if !strings.Contains(out, header) {
+			t.Errorf("FormatDockTree missing column header %q in output:\n%s", header, out)
+		}
+	}
+}
+
+func TestFormatWorkspaceLine_Stale(t *testing.T) {
+	ws := engine.WorkspaceInfo{
+		ID: "w1", Name: "stale-ws", Branch: "feature/stale",
+		Status: "active", Agent: "claude", Stale: true,
+	}
+	line := formatWorkspaceLine(ws)
+
+	if !strings.Contains(line, "[stale]") {
+		t.Errorf("expected [stale] indicator in output, got: %q", line)
+	}
+}
+
+func TestFormatWorkspaceLine_Missing(t *testing.T) {
+	ws := engine.WorkspaceInfo{
+		ID: "w1", Name: "missing-ws", Branch: "feature/missing",
+		Status: "active", Agent: "claude", Missing: true,
+	}
+	line := formatWorkspaceLine(ws)
+
+	if !strings.Contains(line, "[missing]") {
+		t.Errorf("expected [missing] indicator in output, got: %q", line)
+	}
+}
+
+func TestFormatWorkspaceLine_StaleAndMissing(t *testing.T) {
+	ws := engine.WorkspaceInfo{
+		ID: "w1", Name: "bad-ws", Status: "active",
+		Agent: "claude", Missing: true, Stale: true,
+	}
+	line := formatWorkspaceLine(ws)
+
+	if !strings.Contains(line, "[missing]") {
+		t.Errorf("expected [missing] indicator, got: %q", line)
+	}
+	if !strings.Contains(line, "[stale]") {
+		t.Errorf("expected [stale] indicator, got: %q", line)
+	}
+}
+
 func TestDockInfo_JSONTags(t *testing.T) {
 	docks := testDocks()
 	data, err := json.Marshal(docks)

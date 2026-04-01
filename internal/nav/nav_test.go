@@ -454,6 +454,94 @@ func TestFormatEntries(t *testing.T) {
 	}
 }
 
+func TestCollectEntries_WindowName(t *testing.T) {
+	m := buildTestManifest()
+	tc := buildTestTmux(map[string]bool{})
+
+	entries := CollectEntries(m, tc)
+
+	// Build a map for easier lookup.
+	byTmux := make(map[string]Entry)
+	for _, e := range entries {
+		byTmux[e.TmuxWindowID] = e
+	}
+
+	// labs:w1 window @1 has Name="main" in the manifest.
+	e1 := byTmux["@1"]
+	if e1.WindowName != "main" {
+		t.Errorf("@1 WindowName: got %q, want %q", e1.WindowName, "main")
+	}
+
+	// labs:w1 window @2 has Name="test" in the manifest.
+	e2 := byTmux["@2"]
+	if e2.WindowName != "test" {
+		t.Errorf("@2 WindowName: got %q, want %q", e2.WindowName, "test")
+	}
+
+	// core:w1 window @4 has Name="main".
+	e4 := byTmux["@4"]
+	if e4.WindowName != "main" {
+		t.Errorf("@4 WindowName: got %q, want %q", e4.WindowName, "main")
+	}
+}
+
+func TestFuzzyMatch_ByWindowName(t *testing.T) {
+	entries := []Entry{
+		{WsName: "mem-refactor", WindowName: "mem-refactor", Branch: "feature/mem", DockName: "labs"},
+		{WsName: "fix-auth", WindowName: "fix-auth:2", Branch: "bugfix/auth", DockName: "core"},
+		{WsName: "nav-feature", WindowName: "nav-feature", Branch: "feature/nav", DockName: "labs"},
+	}
+
+	// Query that only matches the WindowName suffix ":2"
+	result := FuzzyMatch(entries, "auth:2")
+	if len(result) != 1 {
+		t.Fatalf("expected 1 match for 'auth:2', got %d", len(result))
+	}
+	if result[0].WindowName != "fix-auth:2" {
+		t.Errorf("expected WindowName fix-auth:2, got %q", result[0].WindowName)
+	}
+}
+
+func TestFormatEntry_WindowName(t *testing.T) {
+	// When WindowName differs from WsName (secondary window), FormatEntry
+	// should display the WindowName (which includes the ":2" suffix).
+	e := Entry{
+		DockName:     "labs",
+		WsID:         "w1",
+		WsName:       "mem-refactor",
+		WindowName:   "mem-refactor:2",
+		Branch:       "feature/refactor-memory-access",
+		PR:           "234",
+		Status:       manifest.WorkspaceStatusActive,
+		TmuxWindowID: "@2",
+	}
+
+	s := FormatEntry(e)
+	if !strings.Contains(s, "mem-refactor:2") {
+		t.Errorf("FormatEntry should show WindowName with ':2' suffix for secondary windows: %q", s)
+	}
+
+	// When WindowName matches WsName, the display should use WsName (no suffix).
+	e2 := Entry{
+		DockName:     "labs",
+		WsID:         "w1",
+		WsName:       "mem-refactor",
+		WindowName:   "mem-refactor",
+		Branch:       "feature/refactor-memory-access",
+		PR:           "234",
+		Status:       manifest.WorkspaceStatusActive,
+		TmuxWindowID: "@1",
+	}
+
+	s2 := FormatEntry(e2)
+	if strings.Contains(s2, "mem-refactor:2") {
+		t.Errorf("FormatEntry should not show ':2' suffix when WindowName matches WsName: %q", s2)
+	}
+	if !strings.Contains(s2, "mem-refactor") {
+		t.Errorf("FormatEntry should show WsName when WindowName matches: %q", s2)
+	}
+}
+
 func TestFormatEntries_Empty(t *testing.T) {
 	s := FormatEntries(nil)
 	if s != "" {
