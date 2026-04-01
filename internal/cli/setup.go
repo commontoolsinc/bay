@@ -219,14 +219,15 @@ func shellRCFile(shell string) string {
 
 // bayKeybindings defines all bay tmux keybindings.
 var bayKeybindings = []struct {
-	key  string
-	cmd  string
-	desc string
+	key      string
+	cmd      string
+	desc     string
+	tmuxVerb string // "run-shell" or "display-popup -E" (for interactive commands)
 }{
-	{"M-w", "bay close-pane", "Option+w: close current pane (or window if only pane)"},
-	{"M-s", "bay shell", "Option+s: split a shell pane in the current workspace"},
-	{"M-g", "bay go", "Option+g: fuzzy-pick any workspace window"},
-	{"M-a", "bay go --next-waiting", "Option+a: jump to the next agent waiting for input"},
+	{"M-w", "bay close-pane", "Option+w: close current pane (or window if only pane)", "run-shell"},
+	{"M-s", "bay shell", "Option+s: split a shell pane in the current workspace", "run-shell"},
+	{"M-g", "bay go", "Option+g: fuzzy-pick any workspace window", "display-popup -E"},
+	{"M-a", "bay go --next-waiting", "Option+a: jump to the next agent waiting for input", "run-shell"},
 }
 
 func installKeybindings(reader *bufio.Reader) {
@@ -241,7 +242,7 @@ func installKeybindings(reader *bufio.Reader) {
 	// Build the full bay keybindings block
 	var lines []string
 	for _, kb := range bayKeybindings {
-		line := fmt.Sprintf("bind-key -n %s run-shell '%s'", kb.key, kb.cmd)
+		line := fmt.Sprintf("bind-key -n %s %s '%s'", kb.key, kb.tmuxVerb, kb.cmd)
 		lines = append(lines, line)
 	}
 
