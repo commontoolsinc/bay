@@ -36,17 +36,19 @@ type Mock struct {
 	Calls []Call
 
 	sessions map[string]bool
-	windows  map[string]*mockWindow  // keyed by window ID
-	panes    map[string]*mockPane    // keyed by pane ID
+	windows  map[string]*mockWindow // keyed by window ID
+	panes    map[string]*mockPane   // keyed by pane ID
 
 	windowCounter int
 	paneCounter   int
 	pidCounter    int
 
-	currentSession  string
-	currentWindowID string
+	currentSession     string
+	currentWindowID    string
+	currentPaneID      string
 	currentSessionSet  bool
 	currentWindowIDSet bool
+	currentPaneIDSet   bool
 }
 
 // NewMock creates a new Mock with initialized state.
@@ -380,6 +382,14 @@ func (m *Mock) CurrentWindowID() (string, error) {
 	return m.currentWindowID, nil
 }
 
+func (m *Mock) CurrentPaneID() (string, error) {
+	m.record("CurrentPaneID")
+	if !m.currentPaneIDSet {
+		return "", fmt.Errorf("not in a tmux pane")
+	}
+	return m.currentPaneID, nil
+}
+
 // --- Mock helpers (not part of Interface) ---
 
 // SetCurrentSession sets the value returned by CurrentSession.
@@ -392,6 +402,12 @@ func (m *Mock) SetCurrentSession(name string) {
 func (m *Mock) SetCurrentWindowID(id string) {
 	m.currentWindowID = id
 	m.currentWindowIDSet = true
+}
+
+// SetCurrentPaneID sets the value returned by CurrentPaneID.
+func (m *Mock) SetCurrentPaneID(id string) {
+	m.currentPaneID = id
+	m.currentPaneIDSet = true
 }
 
 // SetCaptureContent sets the content that CapturePane will return for a pane.
@@ -412,6 +428,7 @@ func (m *Mock) Reset() {
 	m.pidCounter = 0
 	m.currentSessionSet = false
 	m.currentWindowIDSet = false
+	m.currentPaneIDSet = false
 }
 
 // HasSessionCalled returns true if NewSession was called with the given name

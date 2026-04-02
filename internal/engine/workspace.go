@@ -174,9 +174,10 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 				Name:         windowName,
 				Panes: []manifest.Pane{
 					{
-						ID:    1,
-						Type:  paneType,
-						Agent: paneAgent,
+						ID:         1,
+						TmuxPaneID: tmuxPaneID,
+						Type:       paneType,
+						Agent:      paneAgent,
 					},
 				},
 			},

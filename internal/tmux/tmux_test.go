@@ -441,6 +441,26 @@ func TestCurrentWindowID_NotSet(t *testing.T) {
 	}
 }
 
+func TestCurrentPaneID(t *testing.T) {
+	m := NewMock()
+	m.SetCurrentPaneID("%7")
+	id, err := m.CurrentPaneID()
+	if err != nil {
+		t.Fatalf("CurrentPaneID: %v", err)
+	}
+	if id != "%7" {
+		t.Errorf("expected %%7, got %q", id)
+	}
+}
+
+func TestCurrentPaneID_NotSet(t *testing.T) {
+	m := NewMock()
+	_, err := m.CurrentPaneID()
+	if err == nil {
+		t.Error("expected error when current pane ID not set")
+	}
+}
+
 // --- Call tracking tests ---
 
 func TestCallTracking(t *testing.T) {

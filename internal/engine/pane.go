@@ -71,12 +71,13 @@ func (e *Engine) PaneAdd(dockName, wsID string, winID int, agent string, shell b
 	paneType, paneAgent, paneCmd := e.launchPaneInTmux(newPaneID, dockName, agent, shell, cmd)
 
 	pane := manifest.Pane{
-		ID:        paneID,
-		Type:      paneType,
-		Agent:     paneAgent,
-		Command:   paneCmd,
-		SplitFrom: splitFrom,
-		SplitDir:  splitDir,
+		ID:         paneID,
+		TmuxPaneID: newPaneID,
+		Type:       paneType,
+		Agent:      paneAgent,
+		Command:    paneCmd,
+		SplitFrom:  splitFrom,
+		SplitDir:   splitDir,
 	}
 	win.Panes = append(win.Panes, pane)
 

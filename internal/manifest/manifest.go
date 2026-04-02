@@ -88,12 +88,13 @@ type Window struct {
 
 // Pane represents a tmux pane within a window.
 type Pane struct {
-	ID        int      `toml:"id" json:"id"`
-	Type      PaneType `toml:"type" json:"type"`
-	Agent     string   `toml:"agent,omitempty" json:"agent,omitempty"`
-	Command   string   `toml:"command,omitempty" json:"command,omitempty"`
-	SplitFrom int      `toml:"split_from,omitempty" json:"split_from,omitempty"`
-	SplitDir  string   `toml:"split_dir,omitempty" json:"split_dir,omitempty"`
+	ID         int      `toml:"id" json:"id"`
+	TmuxPaneID string   `toml:"tmux_pane_id,omitempty" json:"tmux_pane_id,omitempty"`
+	Type       PaneType `toml:"type" json:"type"`
+	Agent      string   `toml:"agent,omitempty" json:"agent,omitempty"`
+	Command    string   `toml:"command,omitempty" json:"command,omitempty"`
+	SplitFrom  int      `toml:"split_from,omitempty" json:"split_from,omitempty"`
+	SplitDir   string   `toml:"split_dir,omitempty" json:"split_dir,omitempty"`
 }
 
 // New returns an initialized empty manifest.
@@ -477,7 +478,6 @@ func (m *Manifest) RemovePane(dock, wsID string, windowID, paneID int) error {
 	ws.Windows[idx] = *win
 	return nil
 }
-
 
 // WorkspaceRef is a reference to a workspace within its dock.
 type WorkspaceRef struct {

@@ -6,8 +6,8 @@ recover, and safely close concurrent workspaces without manually
 managing git worktrees or tmux state.
 
 If you need machine-readable state, prefer JSON output. Treat the normal
-human-formatted output of commands like `bay ls` and `bay ws show` as
-display-only and not stable for parsing.
+human-formatted output of commands like `bay pwd`, `bay ls`, and
+`bay ws show` as display-only and not stable for parsing.
 
 ## Core model
 
@@ -45,9 +45,9 @@ pane
   not call `bay ws update --branch` unless they are deliberately
   overriding metadata.
 - PR and status are manual metadata. Agents should update these.
-- In `bay ls`, the `AGENT` field means configured workspace agent:
-  workspace override if one exists, otherwise dock default. It does not
-  mean the currently running pane type.
+- `bay ls` is structural. Workspace rows show branch and sync state;
+  pane rows show live pane kind (`agent`, `shell`, `cmd`) plus pane
+  agent for agent panes.
 - Missing tmux windows and panes are intended to be recoverable with
   `bay recover`.
 
@@ -59,6 +59,8 @@ deliberately, not accidentally.
 - `bay ws new [dock]`
   If `dock` is omitted, bay infers it from the current tmux session.
   This only works inside a bay dock.
+- `bay pwd`
+  Resolves the current bay context from cwd and tmux.
 - `bay ws show [name|self]`
   Defaults to `self`.
 - `bay win open [workspace]`
@@ -91,6 +93,7 @@ window of that workspace.
 Inside a workspace:
 
 ```sh
+bay pwd
 bay ws show self
 bay ws update self --pr <number>
 bay ws update self --status done
@@ -124,42 +127,86 @@ text output.
 
 ### `bay ls --json`
 
-Returns a JSON array of dock objects:
+Returns a tree object:
 
 ```json
-[
-  {
-    "name": "labs",
-    "agent": "claude",
+{
+  "focus": {
+    "kind": "workspace",
     "repo": "labs",
-    "workspaces": [
-      {
-        "id": "w1",
-        "name": "auth-fix",
-        "type": "worktree",
-        "path": "~/projects/labs-worktrees/w1",
-        "branch": "feature/auth-fix",
-        "pr": "347",
-        "status": "active",
-        "waiting": true,
-        "missing": false,
-        "stale": false,
-        "agent": "codex"
-      }
-    ]
-  }
-]
+    "dock": "labs",
+    "workspace_id": "w1"
+  },
+  "recursive": true,
+  "repos": [
+    {
+      "name": "labs",
+      "path": "~/projects/labs",
+      "docks": [
+        {
+          "name": "labs",
+          "repo": "labs",
+          "workspaces": [
+            {
+              "id": "w1",
+              "name": "auth-fix",
+              "type": "worktree",
+              "path": "~/projects/labs-worktrees/w1",
+              "branch": "feature/auth-fix",
+              "status": "active",
+              "sync_status": "ok",
+              "window_count": 2,
+              "windows": [
+                {
+                  "id": 1,
+                  "name": "editor",
+                  "tmux_window_id": "@12",
+                  "status": "ok",
+                  "panes": [
+                    {
+                      "id": 2,
+                      "tmux_pane_id": "%22",
+                      "type": "agent",
+                      "agent": "codex",
+                      "status": "ok"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
 ```
 
 Field semantics:
 
-- `dock.agent`: dock default agent
-- `workspace.agent`: configured workspace agent
-- `waiting`: a managed window in the workspace is marked waiting
-- `missing`: workspace path does not exist on disk
-- `stale`: bay-managed tmux state is missing and can be recovered
+- `focus`: the object bay inferred from cwd and tmux
+- `recursive`: whether descendants are expanded
+- `sync_status`: `ok`, `stale`, or `missing`
+- pane `type`: `agent`, `shell`, or `cmd`
 
-Omitted fields may be absent when empty because JSON uses `omitempty`.
+Use `bay ls --json --rows` when a denormalized row stream is easier to
+filter than the tree.
+
+### `bay pwd --json`
+
+Returns the currently resolved bay context:
+
+```json
+{
+  "repo": "labs",
+  "dock": "labs",
+  "workspace_id": "w1",
+  "workspace": "auth-fix",
+  "window_id": 1,
+  "pane_id": 2,
+  "path": "~/projects/labs-worktrees/w1"
+}
+```
 
 ### `bay ws show <name|self> --json`
 
@@ -169,25 +216,28 @@ Returns a JSON object:
 {
   "id": "w1",
   "name": "auth-fix",
+  "repo": "labs",
   "dock": "labs",
   "type": "worktree",
   "path": "...",
   "branch": "feature/auth-fix",
   "pr": "347",
   "status": "active",
+  "sync_status": "ok",
+  "default_agent": "codex",
   "windows": [
     {
       "id": 1,
       "tmux_window_id": "@12",
-      "name": "auth-fix",
+      "name": "editor",
+      "status": "ok",
       "panes": [
         {
-          "id": 1,
+          "id": 2,
+          "tmux_pane_id": "%22",
           "type": "agent",
           "agent": "codex",
-          "command": "",
-          "split_from": 0,
-          "split_dir": ""
+          "status": "ok"
         }
       ]
     }
@@ -200,7 +250,7 @@ Pane fields:
 - `type`: `agent`, `shell`, or `cmd`
 - `agent`: agent type for agent panes
 - `command`: recorded command for `cmd` panes
-- `split_from` and `split_dir`: bay-managed layout metadata
+- `status`: pane sync state
 
 ## Safety and error behavior
 
@@ -216,11 +266,12 @@ Pane fields:
 
 ## Recommended agent workflow
 
-1. Use `bay ls --json` to discover current state across docks.
-2. Use `bay ws show self --json` inside a workspace when you need your
-   current window and pane layout.
-3. Use `bay ws update self --pr ...` and `bay ws update self --status done`
+1. Use `bay pwd --json` to orient from inside a workspace or pane.
+2. Use `bay ls --json` to discover current state across docks.
+3. Use `bay ws show self --json` inside a workspace when you need your
+   current window and pane layout plus workspace defaults.
+4. Use `bay ws update self --pr ...` and `bay ws update self --status done`
    for manual metadata.
-4. Use `bay recover` after tmux or server loss instead of trying to
+5. Use `bay recover` after tmux or server loss instead of trying to
    reconstruct windows manually.
-5. Parse JSON, not display output.
+6. Parse JSON, not display output.

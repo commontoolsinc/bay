@@ -13,9 +13,10 @@ func TestNewRootCmd(t *testing.T) {
 	// Verify all subcommands are registered (including hidden ones)
 	expected := map[string]bool{
 		"dock": false, "repo": false, "ws": false, "win": false, "pane": false,
-		"go": false, "ls": false, "recover": false, "doctor": false,
+		"go": false, "ls": false, "pwd": false, "recover": false, "doctor": false,
 		"setup": false, "monitor": false, "add-prompt": false, "version": false,
 		"shell": false, "edit": false, "status-line": false, "close-pane": false,
+		"agent-guide": false,
 	}
 	for _, cmd := range root.Commands() {
 		if _, ok := expected[cmd.Name()]; ok {

@@ -276,3 +276,11 @@ func (r *Real) CurrentWindowID() (string, error) {
 	}
 	return strings.TrimSpace(out), nil
 }
+
+func (r *Real) CurrentPaneID() (string, error) {
+	out, err := run("display-message", "-p", "#{pane_id}")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}

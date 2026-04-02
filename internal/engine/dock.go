@@ -56,19 +56,42 @@ type DockInfo struct {
 	Workspaces []WorkspaceInfo `json:"workspaces"`
 }
 
+// WindowInfo holds runtime information about a tracked tmux window.
+type WindowInfo struct {
+	ID           int        `json:"id"`
+	Name         string     `json:"name"`
+	TmuxWindowID string     `json:"tmux_window_id,omitempty"`
+	Status       string     `json:"status"`
+	Panes        []PaneInfo `json:"panes,omitempty"`
+}
+
+// PaneInfo holds runtime information about a tracked tmux pane.
+type PaneInfo struct {
+	ID         int    `json:"id"`
+	TmuxPaneID string `json:"tmux_pane_id,omitempty"`
+	Type       string `json:"type"`
+	Agent      string `json:"agent,omitempty"`
+	Command    string `json:"command,omitempty"`
+	Status     string `json:"status"`
+}
+
 // WorkspaceInfo holds summary information about a workspace.
 type WorkspaceInfo struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Type    string `json:"type"`
-	Path    string `json:"path,omitempty"`
-	Branch  string `json:"branch,omitempty"`
-	PR      string `json:"pr,omitempty"`
-	Status  string `json:"status"`
-	Waiting bool   `json:"waiting,omitempty"`
-	Missing bool   `json:"missing,omitempty"`
-	Stale   bool   `json:"stale,omitempty"`
-	Agent   string `json:"agent,omitempty"`
+	ID           string       `json:"id"`
+	Name         string       `json:"name"`
+	Type         string       `json:"type"`
+	Path         string       `json:"path,omitempty"`
+	Branch       string       `json:"branch,omitempty"`
+	PR           string       `json:"pr,omitempty"`
+	Status       string       `json:"status"`
+	Waiting      bool         `json:"waiting,omitempty"`
+	Missing      bool         `json:"missing,omitempty"`
+	Stale        bool         `json:"stale,omitempty"`
+	Agent        string       `json:"agent,omitempty"`
+	DefaultAgent string       `json:"default_agent,omitempty"`
+	SyncStatus   string       `json:"sync_status"`
+	WindowCount  int          `json:"window_count"`
+	Windows      []WindowInfo `json:"windows,omitempty"`
 }
 
 // DockNew creates a new dock configuration and tmux session.
@@ -208,28 +231,94 @@ func (e *Engine) List() ([]DockInfo, error) {
 				wsPath := config.ExpandPath(ws.Path)
 				_, statErr := os.Stat(wsPath)
 				wsInfo := WorkspaceInfo{
-					ID:      id,
-					Name:    ws.Name,
-					Type:    string(ws.Type),
-					Path:    ws.Path,
-					Branch:  ws.Branch,
-					PR:      ws.PR,
-					Status:  string(ws.Status),
-					Missing: ws.Path != "" && statErr != nil,
-					Agent:   configuredWorkspaceAgent(ws, dockCfg.Agent),
+					ID:           id,
+					Name:         ws.Name,
+					Type:         string(ws.Type),
+					Path:         ws.Path,
+					Branch:       ws.Branch,
+					PR:           ws.PR,
+					Status:       string(ws.Status),
+					Missing:      ws.Path != "" && statErr != nil,
+					Agent:        configuredWorkspaceAgent(ws, dockCfg.Agent),
+					DefaultAgent: configuredWorkspaceAgent(ws, dockCfg.Agent),
+					SyncStatus:   "ok",
+					WindowCount:  len(ws.Windows),
 				}
-				// Check tmux window state
+
+				if wsInfo.Missing {
+					wsInfo.SyncStatus = "missing"
+				}
+
 				for _, win := range ws.Windows {
+					winInfo := WindowInfo{
+						ID:           win.ID,
+						Name:         win.Name,
+						TmuxWindowID: win.TmuxWindowID,
+						Status:       "ok",
+					}
+
+					var livePaneIDs map[string]bool
 					if win.TmuxWindowID != "" {
 						exists, _ := e.Tmux.WindowExists(win.TmuxWindowID)
 						if !exists {
+							winInfo.Status = "stale"
 							wsInfo.Stale = true
-						}
-						val, err := e.Tmux.GetWindowOption(win.TmuxWindowID, "@bay-waiting")
-						if err == nil && val == "1" {
-							wsInfo.Waiting = true
+						} else {
+							tmuxPanes, err := e.Tmux.ListPanes(win.TmuxWindowID)
+							if err == nil {
+								livePaneIDs = make(map[string]bool, len(tmuxPanes))
+								for _, tmuxPane := range tmuxPanes {
+									livePaneIDs[tmuxPane.ID] = true
+								}
+							}
+							val, err := e.Tmux.GetWindowOption(win.TmuxWindowID, "@bay-waiting")
+							if err == nil && val == "1" {
+								wsInfo.Waiting = true
+							}
 						}
 					}
+
+					for paneIdx, pane := range win.Panes {
+						paneInfo := PaneInfo{
+							ID:         pane.ID,
+							TmuxPaneID: pane.TmuxPaneID,
+							Type:       string(pane.Type),
+							Agent:      pane.Agent,
+							Command:    pane.Command,
+							Status:     "ok",
+						}
+
+						if winInfo.Status == "stale" {
+							paneInfo.Status = "stale"
+						} else if paneInfo.TmuxPaneID != "" {
+							if livePaneIDs != nil && !livePaneIDs[paneInfo.TmuxPaneID] {
+								paneInfo.Status = "stale"
+								winInfo.Status = "stale"
+								wsInfo.Stale = true
+							}
+						} else if win.TmuxWindowID != "" {
+							tmuxPanes, err := e.Tmux.ListPanes(win.TmuxWindowID)
+							if err == nil && paneIdx >= len(tmuxPanes) {
+								paneInfo.Status = "stale"
+								winInfo.Status = "stale"
+								wsInfo.Stale = true
+							}
+						}
+
+						winInfo.Panes = append(winInfo.Panes, paneInfo)
+					}
+
+					if winInfo.Status == "stale" {
+						wsInfo.Stale = true
+					}
+					wsInfo.Windows = append(wsInfo.Windows, winInfo)
+				}
+
+				if wsInfo.Missing {
+					wsInfo.Stale = false
+				}
+				if wsInfo.SyncStatus == "ok" && wsInfo.Stale {
+					wsInfo.SyncStatus = "stale"
 				}
 				info.Workspaces = append(info.Workspaces, wsInfo)
 			}
@@ -237,4 +326,24 @@ func (e *Engine) List() ([]DockInfo, error) {
 		docks = append(docks, info)
 	}
 	return docks, nil
+}
+
+// WorkspaceInfo returns the tree/runtime view for a single workspace.
+func (e *Engine) WorkspaceInfo(dockName, wsID string) (*WorkspaceInfo, error) {
+	docks, err := e.List()
+	if err != nil {
+		return nil, err
+	}
+	for _, dock := range docks {
+		if dock.Name != dockName {
+			continue
+		}
+		for _, ws := range dock.Workspaces {
+			if ws.ID == wsID {
+				return &ws, nil
+			}
+		}
+		return nil, fmt.Errorf("workspace %s not found in dock %s", wsID, dockName)
+	}
+	return nil, fmt.Errorf("unknown dock %q", dockName)
 }

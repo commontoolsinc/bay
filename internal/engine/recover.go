@@ -133,7 +133,7 @@ func (e *Engine) recoverDockWorkspaces(dockName string, dockState *manifest.Dock
 			}
 
 			if windowExists {
-				e.reconcileWindowPanes(ws.Windows[i].TmuxWindowID, win, ws.Path, dockCfg, hasCfg, failedAgents)
+				e.reconcileWindowPanes(ws.Windows[i].TmuxWindowID, &ws.Windows[i], ws.Path, dockCfg, hasCfg, failedAgents)
 			} else {
 				wsRecovered = true
 				newID, err := e.Tmux.NewWindow(dockName, win.Name, ws.Path)
@@ -145,7 +145,12 @@ func (e *Engine) recoverDockWorkspaces(dockName string, dockState *manifest.Dock
 
 				for j, pane := range win.Panes {
 					if j == 0 {
+						ws.Windows[i].Panes[j].TmuxPaneID = ""
 						e.recoverPaneLaunch(pane, newID, "", dockCfg, hasCfg, true, failedAgents)
+						panes, err := e.Tmux.ListPanes(newID)
+						if err == nil && len(panes) > 0 {
+							ws.Windows[i].Panes[j].TmuxPaneID = panes[0].ID
+						}
 						continue
 					}
 					dir := pane.SplitDir
@@ -156,6 +161,7 @@ func (e *Engine) recoverDockWorkspaces(dockName string, dockState *manifest.Dock
 					if err != nil {
 						continue
 					}
+					ws.Windows[i].Panes[j].TmuxPaneID = newPaneID
 					e.recoverPaneLaunch(pane, "", newPaneID, dockCfg, hasCfg, true, failedAgents)
 				}
 			}
@@ -173,10 +179,16 @@ func (e *Engine) recoverDockWorkspaces(dockName string, dockState *manifest.Dock
 
 // reconcileWindowPanes checks an existing window's panes against the manifest
 // and repairs missing ones. Panes with live foreground processes are skipped.
-func (e *Engine) reconcileWindowPanes(tmuxWindowID string, win manifest.Window, wsPath string, dockCfg config.DockConfig, hasCfg bool, failedAgents map[string]bool) {
+func (e *Engine) reconcileWindowPanes(tmuxWindowID string, win *manifest.Window, wsPath string, dockCfg config.DockConfig, hasCfg bool, failedAgents map[string]bool) {
 	tmuxPanes, err := e.Tmux.ListPanes(tmuxWindowID)
 	if err != nil {
 		return
+	}
+
+	for i := range win.Panes {
+		if i < len(tmuxPanes) {
+			win.Panes[i].TmuxPaneID = tmuxPanes[i].ID
+		}
 	}
 
 	manifestPaneCount := len(win.Panes)
@@ -196,6 +208,7 @@ func (e *Engine) reconcileWindowPanes(tmuxWindowID string, win manifest.Window, 
 		if err != nil {
 			continue
 		}
+		win.Panes[j].TmuxPaneID = newPaneID
 		e.recoverPaneLaunch(pane, "", newPaneID, dockCfg, hasCfg, true, failedAgents)
 	}
 }

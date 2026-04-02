@@ -68,10 +68,11 @@ func (e *Engine) WinOpen(dockName, wsID string, agent string, shell bool, cmd st
 		Name:         winName,
 		Panes: []manifest.Pane{
 			{
-				ID:      1,
-				Type:    paneType,
-				Agent:   paneAgent,
-				Command: paneCmd,
+				ID:         1,
+				TmuxPaneID: tmuxPaneID,
+				Type:       paneType,
+				Agent:      paneAgent,
+				Command:    paneCmd,
 			},
 		},
 	}
