@@ -35,7 +35,7 @@ func newLsCmd() *cobra.Command {
 			}
 
 			view := BuildListView(eng.Config, docks, ListViewOptions{
-				Focus:     inferListFocus(eng),
+				Focus:     resolveListFocus(eng, dirtyOnly),
 				Recursive: recursive,
 			})
 
@@ -114,6 +114,14 @@ func filterDirtyWorkspaces(eng *engine.Engine, docks []engine.DockInfo) []engine
 		}
 	}
 	return result
+}
+
+func resolveListFocus(eng *engine.Engine, dirtyOnly bool) ListFocus {
+	if dirtyOnly {
+		return ListFocus{Kind: FocusAll}
+	}
+
+	return inferListFocus(eng)
 }
 
 func inferListFocus(eng *engine.Engine) ListFocus {

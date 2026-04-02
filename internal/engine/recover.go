@@ -185,6 +185,12 @@ func (e *Engine) reconcileWindowPanes(tmuxWindowID string, win *manifest.Window,
 		return
 	}
 
+	for i := range win.Panes {
+		if i < len(tmuxPanes) {
+			win.Panes[i].TmuxPaneID = tmuxPanes[i].ID
+		}
+	}
+
 	manifestPaneCount := len(win.Panes)
 	tmuxPaneCount := len(tmuxPanes)
 

@@ -16,6 +16,7 @@ func TestNewRootCmd(t *testing.T) {
 		"go": false, "ls": false, "pwd": false, "recover": false, "doctor": false,
 		"setup": false, "monitor": false, "add-prompt": false, "version": false,
 		"shell": false, "edit": false, "status-line": false, "close-pane": false,
+		"agent-guide": false,
 	}
 	for _, cmd := range root.Commands() {
 		if _, ok := expected[cmd.Name()]; ok {

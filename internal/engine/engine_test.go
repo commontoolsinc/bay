@@ -1515,6 +1515,9 @@ func TestCurrentContext_ResolvesWorkspaceWindowAndPane(t *testing.T) {
 	if ctx.WindowID != 1 {
 		t.Fatalf("window = %d, want 1", ctx.WindowID)
 	}
+	if ctx.Window != ws.Windows[0].Name {
+		t.Fatalf("window = %q, want %q", ctx.Window, ws.Windows[0].Name)
+	}
 	if ctx.PaneID != 2 {
 		t.Fatalf("pane = %d, want 2", ctx.PaneID)
 	}
@@ -1691,6 +1694,59 @@ func TestRecover_ReturnsAgentConfigErrors(t *testing.T) {
 	_, err = eng.Recover()
 	if err == nil {
 		t.Fatal("expected Recover to return agent config error")
+	}
+}
+
+func TestRecover_FindWindowByNameRefreshesPaneIDs(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	if err := eng.PaneAdd("labs", "w1", 1, "codex", false, "", "v"); err != nil {
+		t.Fatalf("PaneAdd failed: %v", err)
+	}
+	if err := os.MkdirAll(ws.Path, 0o755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+
+	ws, err = eng.WsShow("labs", "w1")
+	if err != nil {
+		t.Fatalf("WsShow failed: %v", err)
+	}
+	oldWindowID := ws.Windows[0].TmuxWindowID
+	oldPaneID := ws.Windows[0].Panes[1].TmuxPaneID
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if err := mockTmux.KillWindow(oldWindowID); err != nil {
+		t.Fatalf("KillWindow failed: %v", err)
+	}
+	foundWindowID, err := mockTmux.NewWindow("labs", ws.Windows[0].Name, ws.Path)
+	if err != nil {
+		t.Fatalf("NewWindow failed: %v", err)
+	}
+	foundPaneID, err := mockTmux.SplitWindow(foundWindowID, "v", ws.Path)
+	if err != nil {
+		t.Fatalf("SplitWindow failed: %v", err)
+	}
+
+	if _, err := eng.Recover(); err != nil {
+		t.Fatalf("Recover failed: %v", err)
+	}
+
+	ws, err = eng.WsShow("labs", "w1")
+	if err != nil {
+		t.Fatalf("WsShow failed: %v", err)
+	}
+	if ws.Windows[0].TmuxWindowID != foundWindowID {
+		t.Fatalf("window id = %q, want %q", ws.Windows[0].TmuxWindowID, foundWindowID)
+	}
+	if ws.Windows[0].Panes[1].TmuxPaneID != foundPaneID {
+		t.Fatalf("pane id = %q, want %q", ws.Windows[0].Panes[1].TmuxPaneID, foundPaneID)
+	}
+	if ws.Windows[0].Panes[1].TmuxPaneID == oldPaneID {
+		t.Fatalf("pane id was not refreshed from stale value %q", oldPaneID)
 	}
 }
 

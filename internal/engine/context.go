@@ -15,6 +15,7 @@ type Context struct {
 	Dock        string `json:"dock,omitempty"`
 	WorkspaceID string `json:"workspace_id,omitempty"`
 	Workspace   string `json:"workspace,omitempty"`
+	Window      string `json:"window,omitempty"`
 	WindowID    int    `json:"window_id,omitempty"`
 	PaneID      int    `json:"pane_id,omitempty"`
 	Path        string `json:"path,omitempty"`
@@ -43,7 +44,6 @@ func (e *Engine) CurrentContext() (*Context, error) {
 	currentWindowID, _ := e.Tmux.CurrentWindowID()
 	currentPaneID, _ := e.Tmux.CurrentPaneID()
 
-	var wsFound bool
 	for dockName, dockState := range m.Docks {
 		for wsID, ws := range dockState.Workspaces {
 			wsPath := config.ExpandPath(ws.Path)
@@ -58,9 +58,9 @@ func (e *Engine) CurrentContext() (*Context, error) {
 				if ctx.Repo == "" {
 					ctx.Repo = e.Config.Docks[dockName].Repo
 				}
-				wsFound = true
 				for _, win := range ws.Windows {
 					if win.TmuxWindowID == currentWindowID {
+						ctx.Window = win.Name
 						ctx.WindowID = win.ID
 						for _, pane := range win.Panes {
 							if pane.TmuxPaneID == currentPaneID {
@@ -86,6 +86,7 @@ func (e *Engine) CurrentContext() (*Context, error) {
 					ctx.Dock = dockName
 					ctx.WorkspaceID = wsID
 					ctx.Workspace = ws.Name
+					ctx.Window = win.Name
 					ctx.WindowID = win.ID
 					ctx.Repo = ws.Repo
 					if ctx.Repo == "" {
@@ -114,13 +115,16 @@ func (e *Engine) CurrentContext() (*Context, error) {
 
 	for repoName, repoCfg := range e.Config.Repos {
 		repoPath := config.ExpandPath(repoCfg.Path)
+		if resolved, err := filepath.EvalSymlinks(repoPath); err == nil {
+			repoPath = resolved
+		}
 		if cwd != "" && (cwd == repoPath || strings.HasPrefix(cwd, repoPath+"/")) {
 			ctx.Repo = repoName
 			return ctx, nil
 		}
 	}
 
-	if wsFound || ctx.Repo != "" || ctx.Dock != "" {
+	if ctx.Repo != "" || ctx.Dock != "" {
 		return ctx, nil
 	}
 	return ctx, fmt.Errorf("not in a bay context")

@@ -50,6 +50,7 @@ type ListRow struct {
 	WorkspaceBranch     string `json:"workspace_branch,omitempty"`
 	WorkspaceStatus     string `json:"workspace_status,omitempty"`
 	WorkspaceSyncStatus string `json:"workspace_sync_status,omitempty"`
+	WorkspaceWaiting    bool   `json:"workspace_waiting,omitempty"`
 	WindowID            int    `json:"window_id,omitempty"`
 	WindowName          string `json:"window_name,omitempty"`
 	WindowTmuxID        string `json:"window_tmux_id,omitempty"`
@@ -73,6 +74,7 @@ func BuildListView(cfg *config.Config, docks []engine.DockInfo, opts ListViewOpt
 	for _, dock := range docks {
 		dockMap[dock.Name] = dock
 	}
+	assignedDocks := map[string]bool{}
 
 	repoNames := make([]string, 0, len(cfg.Repos))
 	for name := range cfg.Repos {
@@ -98,9 +100,10 @@ func BuildListView(cfg *config.Config, docks []engine.DockInfo, opts ListViewOpt
 		sort.Strings(dockNames)
 
 		for _, dockName := range dockNames {
-			if focus.Kind == FocusDock && focus.Dock != dockName {
+			if (focus.Kind == FocusDock || focus.Kind == FocusWorkspace) && focus.Dock != "" && focus.Dock != dockName {
 				continue
 			}
+			assignedDocks[dockName] = true
 			dock, ok := dockMap[dockName]
 			if !ok {
 				dock = engine.DockInfo{Name: dockName, Repo: repoName}
@@ -109,7 +112,7 @@ func BuildListView(cfg *config.Config, docks []engine.DockInfo, opts ListViewOpt
 			filtered.Workspaces = nil
 
 			for _, ws := range dock.Workspaces {
-				if focus.Kind == FocusWorkspace && focus.WorkspaceID != ws.ID {
+				if focus.Kind == FocusWorkspace && focus.WorkspaceID != "" && focus.WorkspaceID != ws.ID {
 					continue
 				}
 				filtered.Workspaces = append(filtered.Workspaces, trimWorkspace(ws, recursive))
@@ -130,6 +133,45 @@ func BuildListView(cfg *config.Config, docks []engine.DockInfo, opts ListViewOpt
 		if len(repoInfo.Docks) > 0 || focus.Kind == FocusAll || focus.Kind == FocusRepo {
 			view.Repos = append(view.Repos, repoInfo)
 		}
+	}
+
+	orphanRepo := RepoInfo{Name: "(no repo)"}
+	orphanNames := make([]string, 0)
+	for dockName, dock := range cfg.Docks {
+		if assignedDocks[dockName] {
+			continue
+		}
+		if dock.Repo != "" {
+			if _, ok := cfg.Repos[dock.Repo]; ok {
+				continue
+			}
+		}
+		orphanNames = append(orphanNames, dockName)
+	}
+	sort.Strings(orphanNames)
+	for _, dockName := range orphanNames {
+		if (focus.Kind == FocusDock || focus.Kind == FocusWorkspace) && focus.Dock != "" && focus.Dock != dockName {
+			continue
+		}
+		dock, ok := dockMap[dockName]
+		if !ok {
+			dock = engine.DockInfo{Name: dockName}
+		}
+		filtered := dock
+		filtered.Workspaces = nil
+		for _, ws := range dock.Workspaces {
+			if focus.Kind == FocusWorkspace && focus.WorkspaceID != "" && focus.WorkspaceID != ws.ID {
+				continue
+			}
+			filtered.Workspaces = append(filtered.Workspaces, trimWorkspace(ws, recursive))
+		}
+		if focus.Kind == FocusWorkspace && len(filtered.Workspaces) == 0 {
+			continue
+		}
+		orphanRepo.Docks = append(orphanRepo.Docks, filtered)
+	}
+	if len(orphanRepo.Docks) > 0 {
+		view.Repos = append(view.Repos, orphanRepo)
 	}
 
 	return view
@@ -159,6 +201,7 @@ func ListRows(view ListView) []ListRow {
 						WorkspaceBranch:     ws.Branch,
 						WorkspaceStatus:     ws.Status,
 						WorkspaceSyncStatus: ws.SyncStatus,
+						WorkspaceWaiting:    ws.Waiting,
 					})
 					continue
 				}
@@ -172,6 +215,7 @@ func ListRows(view ListView) []ListRow {
 							WorkspaceBranch:     ws.Branch,
 							WorkspaceStatus:     ws.Status,
 							WorkspaceSyncStatus: ws.SyncStatus,
+							WorkspaceWaiting:    ws.Waiting,
 							WindowID:            win.ID,
 							WindowName:          win.Name,
 							WindowTmuxID:        win.TmuxWindowID,
@@ -188,6 +232,7 @@ func ListRows(view ListView) []ListRow {
 							WorkspaceBranch:     ws.Branch,
 							WorkspaceStatus:     ws.Status,
 							WorkspaceSyncStatus: ws.SyncStatus,
+							WorkspaceWaiting:    ws.Waiting,
 							WindowID:            win.ID,
 							WindowName:          win.Name,
 							WindowTmuxID:        win.TmuxWindowID,
@@ -213,6 +258,14 @@ func dim(s string) string {
 
 func kv(key, value string) string {
 	return dim(key+"=") + value
+}
+
+func labelValue(label, value string) string {
+	return dim(label) + " " + value
+}
+
+func dimmedSeparator(sep string) string {
+	return dim(sep)
 }
 
 func truncateCommand(cmd string) string {
@@ -247,6 +300,9 @@ func workspaceMeta(ws engine.WorkspaceInfo, showCounts bool) string {
 		parts = append(parts, kv("windows", fmt.Sprintf("%d", ws.WindowCount)))
 	}
 	parts = append(parts, syncSuffix(ws.SyncStatus)...)
+	if ws.Waiting {
+		parts = append(parts, "⏳")
+	}
 	return strings.Join(parts, " ")
 }
 
@@ -289,27 +345,27 @@ func writeIndentedLine(b *strings.Builder, indent int, prefix string, meta strin
 func FormatListView(view ListView, long bool) string {
 	var b strings.Builder
 	for _, repo := range view.Repos {
-		writeIndentedLine(&b, 0, "REPO "+repo.Name, "")
+		writeIndentedLine(&b, 0, labelValue("repo", repo.Name), "")
 		if len(repo.Docks) == 0 {
 			writeIndentedLine(&b, 1, "(no docks)", "")
 			continue
 		}
 		for _, dock := range repo.Docks {
-			writeIndentedLine(&b, 1, "DOCK "+dock.Name, "")
+			writeIndentedLine(&b, 1, labelValue("dock", dock.Name), "")
 			if len(dock.Workspaces) == 0 {
 				writeIndentedLine(&b, 2, "(no workspaces)", "")
 				continue
 			}
 			showChildren := view.Recursive || view.Focus.Kind == FocusWorkspace
 			for _, ws := range dock.Workspaces {
-				writeIndentedLine(&b, 2, "WS "+ws.Name, workspaceMeta(ws, !showChildren))
+				writeIndentedLine(&b, 2, labelValue("workspace", ws.Name), workspaceMeta(ws, !showChildren))
 				if !showChildren {
 					continue
 				}
 				for _, win := range ws.Windows {
-					writeIndentedLine(&b, 3, fmt.Sprintf("WIN %d", win.ID), windowMeta(win, long))
+					writeIndentedLine(&b, 3, labelValue("window", fmt.Sprintf("%d", win.ID)), windowMeta(win, long))
 					for _, pane := range win.Panes {
-						writeIndentedLine(&b, 4, fmt.Sprintf("PANE %d", pane.ID), paneMeta(pane, long))
+						writeIndentedLine(&b, 4, labelValue("pane", fmt.Sprintf("%d", pane.ID)), paneMeta(pane, long))
 					}
 				}
 			}
@@ -320,24 +376,24 @@ func FormatListView(view ListView, long bool) string {
 
 func FormatWorkspaceShow(repoName, dockName string, ws *engine.WorkspaceInfo, long bool) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Workspace: %s (%s)\n", ws.Name, ws.ID)
-	fmt.Fprintf(&b, "Repo: %s\n", repoName)
-	fmt.Fprintf(&b, "Dock: %s\n", dockName)
-	fmt.Fprintf(&b, "Type: %s\n", ws.Type)
-	fmt.Fprintf(&b, "Path: %s\n", ws.Path)
-	fmt.Fprintf(&b, "Branch: %s\n", ws.Branch)
-	fmt.Fprintf(&b, "PR: %s\n", ws.PR)
-	fmt.Fprintf(&b, "Status: %s\n", ws.Status)
+	fmt.Fprintf(&b, "%s (%s)\n", labelValue("workspace", ws.Name), ws.ID)
+	fmt.Fprintf(&b, "%s\n", labelValue("repo", repoName))
+	fmt.Fprintf(&b, "%s\n", labelValue("dock", dockName))
+	fmt.Fprintf(&b, "%s\n", labelValue("type", ws.Type))
+	fmt.Fprintf(&b, "%s\n", labelValue("path", ws.Path))
+	fmt.Fprintf(&b, "%s\n", labelValue("branch", ws.Branch))
+	fmt.Fprintf(&b, "%s\n", labelValue("pr", ws.PR))
+	fmt.Fprintf(&b, "%s\n", labelValue("status", ws.Status))
 	if ws.DefaultAgent != "" {
-		fmt.Fprintf(&b, "Default Agent: %s\n", ws.DefaultAgent)
+		fmt.Fprintf(&b, "%s\n", labelValue("default agent", ws.DefaultAgent))
 	}
 	if ws.SyncStatus != "" && ws.SyncStatus != "ok" {
-		fmt.Fprintf(&b, "Sync: %s\n", ws.SyncStatus)
+		fmt.Fprintf(&b, "%s\n", labelValue("sync", ws.SyncStatus))
 	}
 	for _, win := range ws.Windows {
-		writeIndentedLine(&b, 0, fmt.Sprintf("WIN %d", win.ID), windowMeta(win, long))
+		writeIndentedLine(&b, 0, labelValue("window", fmt.Sprintf("%d", win.ID)), windowMeta(win, long))
 		for _, pane := range win.Panes {
-			writeIndentedLine(&b, 1, fmt.Sprintf("PANE %d", pane.ID), paneMeta(pane, long))
+			writeIndentedLine(&b, 1, labelValue("pane", fmt.Sprintf("%d", pane.ID)), paneMeta(pane, long))
 		}
 	}
 	return b.String()
