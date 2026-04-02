@@ -184,7 +184,7 @@ func TestBuildListView_WorkspaceFocusRestrictsToDock(t *testing.T) {
 	})
 	out := stripANSI(FormatListView(view, false))
 
-	if strings.Contains(out, "WS landing") {
+	if strings.Contains(out, "workspace landing") {
 		t.Fatalf("workspace focus should not include matching workspace ids from other docks:\n%s", out)
 	}
 }

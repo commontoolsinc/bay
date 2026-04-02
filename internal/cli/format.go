@@ -141,6 +141,9 @@ func BuildListView(cfg *config.Config, docks []engine.DockInfo, opts ListViewOpt
 		if assignedDocks[dockName] {
 			continue
 		}
+		if focus.Kind == FocusRepo {
+			continue
+		}
 		if dock.Repo != "" {
 			if _, ok := cfg.Repos[dock.Repo]; ok {
 				continue
