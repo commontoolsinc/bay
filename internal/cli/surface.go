@@ -113,7 +113,7 @@ func newSurfaceCloseCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "close [workspace]",
-		Short: "Close a surface",
+		Short: "Close a surface (or current tmux pane if not bay-managed)",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -125,9 +125,14 @@ func newSurfaceCloseCmd() *cobra.Command {
 			if len(args) > 0 {
 				target = args[0]
 			}
-			dockName, wsName, sName, err := resolveSurfaceTarget(eng, target, surfaceName)
-			if err != nil {
-				return err
+			dockName, wsName, sName, resolveErr := resolveSurfaceTarget(eng, target, surfaceName)
+			if resolveErr != nil {
+				// Not in a bay workspace — just kill the active tmux pane.
+				paneID, tmuxErr := eng.Tmux.CurrentPaneID()
+				if tmuxErr != nil {
+					return resolveErr // return original error
+				}
+				return eng.Tmux.KillPane(paneID)
 			}
 
 			return eng.SurfaceClose(dockName, wsName, sName)

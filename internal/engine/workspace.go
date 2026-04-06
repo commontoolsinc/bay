@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -54,6 +53,16 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		repoName = dockCfg.Repo
 	}
 
+	// Determine display name early — it's also used for the worktree directory.
+	displayName := opts.Name
+	if displayName == "" {
+		if opts.Branch != "" {
+			displayName = abbreviateBranch(opts.Branch)
+		} else {
+			displayName = nextWorkspaceName(dock)
+		}
+	}
+
 	if opts.Dir != "" {
 		// External workspace.
 		wsType = manifest.WorkspaceTypeExternal
@@ -73,14 +82,8 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		}
 		worktreeAttrs = &manifest.WorktreeAttrs{Repo: repoName}
 
-		// Use workspace name or a unique timestamp-based name for the worktree directory.
-		// Timestamp ensures no collisions even after workspaces are removed.
 		wtDir := repoCfg.EffectiveWorktreeDir()
-		dirName := opts.Name
-		if dirName == "" {
-			dirName = "ws-" + strconv.FormatInt(time.Now().UnixMilli(), 36)
-		}
-		wsPath = filepath.Join(wtDir, dirName)
+		wsPath = filepath.Join(wtDir, displayName)
 
 		if err := os.MkdirAll(wtDir, 0o755); err != nil {
 			return nil, fmt.Errorf("creating worktree dir: %w", err)
@@ -89,16 +92,6 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		repoPath := config.ExpandPath(repoCfg.Path)
 		if err := e.Git.CreateWorktree(repoPath, wsPath); err != nil {
 			return nil, fmt.Errorf("creating worktree: %w", err)
-		}
-	}
-
-	// Determine display name.
-	displayName := opts.Name
-	if displayName == "" {
-		if opts.Branch != "" {
-			displayName = abbreviateBranch(opts.Branch)
-		} else {
-			displayName = nextWorkspaceName(dock)
 		}
 	}
 	if err := ValidateName(displayName); err != nil {
