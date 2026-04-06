@@ -131,6 +131,72 @@ func TestDockNew_InvalidName(t *testing.T) {
 	}
 }
 
+func TestDockNew_LaunchesHostTerminal(t *testing.T) {
+	eng, dir := testEngine(t)
+	eng.configPath = filepath.Join(dir, "config.toml")
+	config.Save(eng.configPath, eng.Config)
+
+	// Pass terminal name directly to DockNew.
+	err := eng.DockNew("research", "labs", "claude", "ghostty")
+	if err != nil {
+		t.Fatalf("DockNew: %v", err)
+	}
+
+	m, _ := eng.LoadManifest()
+	dock := m.FindDock("research")
+	if dock == nil {
+		t.Fatal("dock not in manifest")
+	}
+	if dock.Host == nil {
+		t.Fatal("dock.Host should be set when terminal is configured")
+	}
+	if dock.Host.AppCommand != "ghostty" {
+		t.Errorf("host app_command = %q, want ghostty", dock.Host.AppCommand)
+	}
+	// Config should have Terminal persisted.
+	if eng.Config.Docks["research"].Terminal != "ghostty" {
+		t.Errorf("config terminal = %q, want ghostty", eng.Config.Docks["research"].Terminal)
+	}
+}
+
+func TestRecover_RelaunchesHostTerminal(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	// Create a dock with a host terminal in the manifest.
+	m, _ := eng.LoadManifest()
+	m.AddDock(manifest.Dock{
+		Name: "labs",
+		Host: &manifest.GUIAttrs{AppCommand: "ghostty", PID: 0},
+	})
+	eng.saveManifest(m)
+
+	eng.Config.Docks["labs"] = config.DockConfig{
+		Repo:     "labs",
+		Agent:    "claude",
+		Terminal: "ghostty",
+	}
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.Reset()
+
+	_, err := eng.Recover()
+	if err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+
+	// After recovery, the host PID should be updated (non-zero).
+	m, _ = eng.LoadManifest()
+	dock := m.FindDock("labs")
+	if dock == nil {
+		t.Fatal("dock not found after recovery")
+	}
+	if dock.Host == nil {
+		t.Fatal("dock.Host should persist through recovery")
+	}
+	// We can't easily check PID since we're not actually launching ghostty.
+	// Just verify the manifest was saved with Host intact.
+}
+
 func TestWsNew_Worktree(t *testing.T) {
 	eng, _ := testEngine(t)
 

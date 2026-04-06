@@ -26,7 +26,7 @@ func newDockCmd() *cobra.Command {
 }
 
 func newDockNewCmd() *cobra.Command {
-	var repo, agent, template string
+	var repo, agent, terminal string
 
 	cmd := &cobra.Command{
 		Use:   "new <name>",
@@ -37,7 +37,7 @@ func newDockNewCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := eng.DockNew(args[0], repo, agent, template); err != nil {
+			if err := eng.DockNew(args[0], repo, agent, terminal); err != nil {
 				return err
 			}
 			fmt.Printf("Dock %q created.\n", args[0])
@@ -47,7 +47,7 @@ func newDockNewCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&repo, "repo", "", "default repo for workspaces")
 	cmd.Flags().StringVar(&agent, "agent", "", "default agent type")
-	cmd.Flags().StringVar(&template, "template", "", "agent config template path")
+	cmd.Flags().StringVar(&terminal, "terminal", "", "host terminal app (e.g. ghostty, iterm2)")
 
 	return cmd
 }

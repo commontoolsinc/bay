@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"os"
+	"os/exec"
 
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/manifest"
@@ -45,7 +46,7 @@ type WorkspaceInfo struct {
 }
 
 // DockNew creates a new dock configuration and tmux session.
-func (e *Engine) DockNew(name, repo, agent, template string) error {
+func (e *Engine) DockNew(name, repo, agent, terminal string) error {
 	if err := ValidateName(name); err != nil {
 		return err
 	}
@@ -77,8 +78,9 @@ func (e *Engine) DockNew(name, repo, agent, template string) error {
 	}
 
 	e.Config.Docks[name] = config.DockConfig{
-		Repo:  repo,
-		Agent: agent,
+		Repo:     repo,
+		Agent:    agent,
+		Terminal: terminal,
 	}
 	if e.configPath != "" {
 		if err := config.Save(e.configPath, e.Config); err != nil {
@@ -86,12 +88,34 @@ func (e *Engine) DockNew(name, repo, agent, template string) error {
 		}
 	}
 
+	// Record host terminal if configured.
+	var host *manifest.GUIAttrs
+	if terminal != "" {
+		host = &manifest.GUIAttrs{AppCommand: terminal}
+		// Attempt to launch the terminal. Best-effort — don't fail dock creation.
+		if pid, err := launchTerminal(terminal, name); err == nil {
+			host.PID = pid
+		}
+	}
+
 	return e.withManifest(func(m *manifest.Manifest) error {
 		if m.FindDock(name) == nil {
-			return m.AddDock(manifest.Dock{Name: name})
+			return m.AddDock(manifest.Dock{Name: name, Host: host})
 		}
 		return nil
 	})
+}
+
+// launchTerminal launches a terminal app attached to a tmux session.
+// Returns the PID of the launched process.
+func launchTerminal(terminal, session string) (int, error) {
+	cmd := exec.Command(terminal, "-e", "tmux", "attach", "-t", session)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		return 0, err
+	}
+	return cmd.Process.Pid, nil
 }
 
 // DockCloseWorkspaces closes all workspaces in a dock.
