@@ -512,9 +512,12 @@ workspaces as needed.
 
 - Phase 5e: setup/doctor updates (remove stale fields, add agent/repo checks) — PR #63
 
+- Phase 2a: editor surfaces (GUI surfaces, liveness probing, focus) — PR #64
+
 **Next:**
+- Phase 2b: dock host terminal
+- Phase 2c: bay-focus Swift helper
 - Phase 5d: documentation rewrite
-- Phase 2: GUI integration (editor surfaces, dock host terminal)
 
 ## What's NOT in scope
 

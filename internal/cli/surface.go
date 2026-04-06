@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/commontoolsinc/bay/internal/engine"
@@ -322,6 +323,11 @@ func surfaceCycle(eng *engine.Engine, forward bool) error {
 
 // focusSurface switches tmux focus to a surface's pane.
 func focusSurface(eng *engine.Engine, entry *nav.SurfaceEntry) error {
+	// GUI surface: launch the editor CLI to activate its window.
+	if entry.AppCommand != "" {
+		return focusGUISurface(entry)
+	}
+	// Tmux surface: select window + pane.
 	if entry.WindowID != "" {
 		if err := eng.Tmux.SelectWindow(entry.WindowID); err != nil {
 			return err
@@ -331,6 +337,20 @@ func focusSurface(eng *engine.Engine, entry *nav.SurfaceEntry) error {
 		return eng.Tmux.SelectPane(entry.PaneID)
 	}
 	return nil
+}
+
+// focusGUISurface activates a GUI application by re-running its CLI command.
+// Editors like cursor and code reuse their existing window when launched
+// on an already-open path.
+func focusGUISurface(entry *nav.SurfaceEntry) error {
+	args := strings.Fields(entry.AppCommand)
+	if len(args) == 0 {
+		return nil
+	}
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Start()
 }
 
 // pickSurface shows the built-in picker for surface selection.

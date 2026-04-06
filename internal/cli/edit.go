@@ -109,7 +109,25 @@ Editor resolution order:
 				paths = []string{parentDir}
 			}
 
-			return launchEditor(editorCmd, isGUI, paths)
+			pid, launchErr := launchEditor(editorCmd, isGUI, paths)
+			if launchErr != nil {
+				return launchErr
+			}
+
+			// For GUI editors, create a surface so the editor appears in bay go.
+			if isGUI && !all && pid > 0 {
+				target := "self"
+				if len(args) > 0 {
+					target = args[0]
+				}
+				dockName, wsName, resolveErr := resolveTarget(eng, target)
+				if resolveErr == nil {
+					appCmd := editorCmd + " " + paths[0]
+					_ = eng.SurfaceAddGUI(dockName, wsName, "editor", appCmd, pid)
+				}
+			}
+
+			return nil
 		},
 	}
 
@@ -179,7 +197,8 @@ func baseCommand(cmd string) string {
 }
 
 // launchEditor launches the editor with the given paths.
-func launchEditor(editorCmd string, isGUI bool, paths []string) error {
+// Returns the PID for GUI editors (0 for terminal editors).
+func launchEditor(editorCmd string, isGUI bool, paths []string) (int, error) {
 	args := append(strings.Fields(editorCmd), paths...)
 	c := exec.Command(args[0], args[1:]...)
 
@@ -187,12 +206,15 @@ func launchEditor(editorCmd string, isGUI bool, paths []string) error {
 		// GUI editors: detach, don't wait
 		c.Stdout = os.Stdout
 		c.Stderr = os.Stderr
-		return c.Start()
+		if err := c.Start(); err != nil {
+			return 0, err
+		}
+		return c.Process.Pid, nil
 	}
 
 	// Terminal editors: attach to terminal
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
-	return c.Run()
+	return 0, c.Run()
 }

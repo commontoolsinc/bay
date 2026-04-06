@@ -432,11 +432,35 @@ func buildSurfaceWorkspace() *manifest.Workspace {
 	cmd := "npm test"
 	return &manifest.Workspace{
 		Name: "auth-fix",
+		Path: "/projects/auth-fix",
 		Surfaces: []manifest.Surface{
 			{ID: 1, Name: "agent", Type: manifest.SurfaceTypeAgent, Backend: manifest.SurfaceBackendTmux, Agent: &agent, Tmux: &manifest.TmuxAttrs{PaneID: "%1", WindowID: "@1", LayoutGroup: 1}},
 			{ID: 2, Name: "shell", Type: manifest.SurfaceTypeShell, Backend: manifest.SurfaceBackendTmux, Tmux: &manifest.TmuxAttrs{PaneID: "%2", WindowID: "@1", LayoutGroup: 1}},
 			{ID: 3, Name: "tests", Type: manifest.SurfaceTypeCmd, Backend: manifest.SurfaceBackendTmux, Command: &cmd, Tmux: &manifest.TmuxAttrs{PaneID: "%3", WindowID: "@2", LayoutGroup: 2}},
+			{ID: 4, Name: "editor", Type: manifest.SurfaceTypeEditor, Backend: manifest.SurfaceBackendGUI, GUI: &manifest.GUIAttrs{AppCommand: "cursor", PID: 99999}},
 		},
+	}
+}
+
+func TestCollectSurfaces_IncludesGUI(t *testing.T) {
+	ws := buildSurfaceWorkspace()
+	mock := tmux.NewMock()
+
+	entries := CollectSurfaces(ws, mock, "")
+
+	if len(entries) != 4 {
+		t.Fatalf("expected 4 surface entries (3 tmux + 1 gui), got %d", len(entries))
+	}
+
+	gui := entries[3]
+	if gui.Name != "editor" || gui.Type != "editor" {
+		t.Errorf("gui entry: name=%q type=%q", gui.Name, gui.Type)
+	}
+	if gui.AppCommand != "cursor" {
+		t.Errorf("gui entry: app_command=%q, want cursor", gui.AppCommand)
+	}
+	if gui.PaneID != "" || gui.WindowID != "" {
+		t.Error("gui entry should have no tmux IDs")
 	}
 }
 
@@ -446,8 +470,8 @@ func TestCollectSurfaces(t *testing.T) {
 
 	entries := CollectSurfaces(ws, mock, "%2")
 
-	if len(entries) != 3 {
-		t.Fatalf("expected 3 surface entries, got %d", len(entries))
+	if len(entries) != 4 {
+		t.Fatalf("expected 4 surface entries, got %d", len(entries))
 	}
 	if entries[0].Name != "agent" || entries[0].Type != "agent" {
 		t.Errorf("entry 0: name=%q type=%q", entries[0].Name, entries[0].Type)
@@ -490,7 +514,11 @@ func TestNextSurface(t *testing.T) {
 func TestNextSurface_WrapsAround(t *testing.T) {
 	ws := buildSurfaceWorkspace()
 	mock := tmux.NewMock()
-	entries := CollectSurfaces(ws, mock, "%3") // current = tests (index 2, last)
+	// Current = editor (index 3, last). Next should wrap to agent (index 0).
+	// Editor is GUI so we mark current by absence — set a non-matching pane
+	// and manually mark the entry.
+	entries := CollectSurfaces(ws, mock, "")
+	entries[3].Current = true
 
 	next := NextSurface(entries)
 	if next == nil {
@@ -524,8 +552,8 @@ func TestPrevSurface_WrapsAround(t *testing.T) {
 	if prev == nil {
 		t.Fatal("expected non-nil")
 	}
-	if prev.Name != "tests" {
-		t.Errorf("prev before first should wrap to tests, got %q", prev.Name)
+	if prev.Name != "editor" {
+		t.Errorf("prev before first should wrap to editor (last), got %q", prev.Name)
 	}
 }
 
@@ -547,8 +575,12 @@ func TestSurfaceByIndex(t *testing.T) {
 		t.Error("index 0 should be nil (1-based)")
 	}
 	s = SurfaceByIndex(entries, 4)
+	if s == nil || s.Name != "editor" {
+		t.Errorf("index 4 should be editor, got %v", s)
+	}
+	s = SurfaceByIndex(entries, 5)
 	if s != nil {
-		t.Error("index 4 should be nil (out of range)")
+		t.Error("index 5 should be nil (out of range)")
 	}
 }
 

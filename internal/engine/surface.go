@@ -99,6 +99,40 @@ func (e *Engine) SurfaceAdd(dockName, wsName string, surfaceType manifest.Surfac
 	return e.saveManifest(m)
 }
 
+// SurfaceAddGUI adds a GUI application surface (e.g., an editor) to a workspace.
+// Unlike SurfaceAdd, no tmux operations are performed.
+func (e *Engine) SurfaceAddGUI(dockName, wsName, name, appCommand string, pid int) error {
+	m, err := e.LoadManifest()
+	if err != nil {
+		return err
+	}
+
+	dock := m.FindDock(dockName)
+	if dock == nil {
+		return fmt.Errorf("unknown dock %q", dockName)
+	}
+	ws := dock.FindWorkspace(wsName)
+	if ws == nil {
+		return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
+	}
+
+	surface := manifest.Surface{
+		Name:    uniqueSurfaceName(ws, name),
+		Type:    manifest.SurfaceTypeEditor,
+		Backend: manifest.SurfaceBackendGUI,
+		GUI: &manifest.GUIAttrs{
+			AppCommand: appCommand,
+			PID:        pid,
+		},
+	}
+
+	if _, err := ws.AddSurface(surface); err != nil {
+		return err
+	}
+
+	return e.saveManifest(m)
+}
+
 // SurfaceClose removes a surface from a workspace.
 func (e *Engine) SurfaceClose(dockName, wsName, surfaceName string) error {
 	m, err := e.LoadManifest()
