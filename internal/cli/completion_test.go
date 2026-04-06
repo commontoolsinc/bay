@@ -24,7 +24,6 @@ func TestFindCmd(t *testing.T) {
 		{"dock", false},
 		{"dock new", false},
 		{"go", false},
-		{"pane add", false},
 		{"nonexistent", true},
 		{"ws nonexistent", true},
 	}
@@ -42,7 +41,6 @@ func TestCompletionsRegistered(t *testing.T) {
 	// These commands should have ValidArgsFunction set
 	withCompletions := []string{
 		"ws close", "ws show", "ws update", "ws rename",
-		"win open", "win close", "win restart",
 		"dock close", "dock recover",
 		"go",
 		"ws new",
@@ -65,17 +63,19 @@ func TestWorkspaceCompletions(t *testing.T) {
 	manifestPath := filepath.Join(dir, "manifest.toml")
 
 	m := manifest.New()
-	m.Docks["labs"] = &manifest.DockState{
-		Workspaces: map[string]*manifest.Workspace{
-			"w1": {
-				Name:   "mem-refactor",
-				Branch: "feature/refactor-memory",
-				PR:     "234",
-				Status: manifest.WorkspaceStatusActive,
-			},
-			"w2": {
-				Name:   "w2",
-				Status: manifest.WorkspaceStatusIdle,
+	m.Docks = []manifest.Dock{
+		{
+			Name: "labs",
+			Workspaces: []manifest.Workspace{
+				{
+					Name:     "mem-refactor",
+					Status:   manifest.WorkspaceStatusActive,
+					Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "feature/refactor-memory", PR: "234"},
+				},
+				{
+					Name:   "w2",
+					Status: manifest.WorkspaceStatusIdle,
+				},
 			},
 		},
 	}
@@ -86,7 +86,7 @@ func TestWorkspaceCompletions(t *testing.T) {
 	os.Setenv("XDG_DATA_HOME", dir)
 	defer os.Setenv("XDG_DATA_HOME", origXDG)
 
-	// Rename manifest.toml → bay/manifest.toml
+	// Copy to bay/manifest.toml (where DefaultPaths looks)
 	bayDir := filepath.Join(dir, "bay")
 	os.MkdirAll(bayDir, 0o755)
 	data, _ := os.ReadFile(manifestPath)
@@ -99,7 +99,7 @@ func TestWorkspaceCompletions(t *testing.T) {
 		t.Errorf("directive = %d, want ShellCompDirectiveNoFileComp(%d)", directive, cobra.ShellCompDirectiveNoFileComp)
 	}
 
-	// Should contain workspace IDs, names, branches, PRs, self
+	// Should contain workspace names, qualified names, and "self"
 	hasValue := func(prefix string) bool {
 		for _, c := range completions {
 			if strings.HasPrefix(c, prefix) {
@@ -109,15 +109,13 @@ func TestWorkspaceCompletions(t *testing.T) {
 		return false
 	}
 
-	// Should include IDs, names, qualified IDs, and "self"
-	for _, expected := range []string{"w1", "w2", "mem-refactor", "self", "labs:w1"} {
+	for _, expected := range []string{"mem-refactor", "w2", "self", "labs:mem-refactor"} {
 		if !hasValue(expected) {
 			t.Errorf("completions missing %q, got: %v", expected, completions)
 		}
 	}
 
-	// Branch/PR should NOT be in workspace completions (ResolveWorkspace can't resolve them).
-	// They appear only in goCompletions for fuzzy matching.
+	// Branch/PR should NOT be in workspace completions.
 	for _, notExpected := range []string{"feature/refactor-memory", "#234"} {
 		if hasValue(notExpected) {
 			t.Errorf("workspace completions should not include %q (only in goCompletions)", notExpected)

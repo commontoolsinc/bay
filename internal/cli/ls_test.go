@@ -88,7 +88,7 @@ func TestInferListFocus_WorkspaceContext(t *testing.T) {
 	})
 
 	focus := inferListFocus(eng)
-	if focus.Kind != FocusWorkspace || focus.Dock != "labs" || focus.Repo != "labs" || focus.WorkspaceID != "w1" {
+	if focus.Kind != FocusWorkspace || focus.Dock != "labs" || focus.Repo != "labs" || focus.WorkspaceID != ws.Name {
 		t.Fatalf("unexpected focus: %#v", focus)
 	}
 }

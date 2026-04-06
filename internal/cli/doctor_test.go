@@ -23,27 +23,30 @@ func TestCheckManifestConsistency(t *testing.T) {
 		},
 	}
 	m := manifest.New()
-	m.Docks["labs"] = &manifest.DockState{
-		Workspaces: map[string]*manifest.Workspace{
-			"w1": {
-				Name:          "dup",
-				AgentOverride: "missing-agent",
-				Windows: []manifest.Window{
-					{ID: 1, Panes: []manifest.Pane{{ID: 1}, {ID: 1}}},
-					{ID: 1},
+	agentName := "missing-agent"
+	m.Docks = []manifest.Dock{
+		{
+			Name: "labs",
+			Workspaces: []manifest.Workspace{
+				{
+					Name: "dup",
+					Surfaces: []manifest.Surface{
+						{ID: 1, Name: "s1", Type: manifest.SurfaceTypeAgent, Backend: manifest.SurfaceBackendTmux, Agent: &agentName, Tmux: &manifest.TmuxAttrs{}},
+						{ID: 1, Name: "s1", Type: manifest.SurfaceTypeShell, Backend: manifest.SurfaceBackendTmux, Tmux: &manifest.TmuxAttrs{}},
+					},
 				},
-			},
-			"w2": {
-				Name: "dup",
-				Windows: []manifest.Window{
-					{ID: 2, Panes: []manifest.Pane{{ID: 1}}},
+				{
+					Name: "dup",
+					Surfaces: []manifest.Surface{
+						{ID: 2, Name: "s2", Type: manifest.SurfaceTypeShell, Backend: manifest.SurfaceBackendTmux, Tmux: &manifest.TmuxAttrs{}},
+					},
 				},
 			},
 		},
 	}
 
 	warnings := checkManifestConsistency(m, cfg)
-	if len(warnings) < 4 {
-		t.Fatalf("warnings = %v, want multiple consistency warnings", warnings)
+	if len(warnings) < 3 {
+		t.Fatalf("warnings = %v, want at least 3 consistency warnings (dup ws name, dup surface id, dup surface name)", warnings)
 	}
 }

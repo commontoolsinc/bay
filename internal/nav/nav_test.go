@@ -11,38 +11,39 @@ import (
 // buildTestManifest creates a manifest with two docks and several workspaces.
 func buildTestManifest() *manifest.Manifest {
 	m := manifest.New()
-	m.Docks["labs"] = &manifest.DockState{
-		Workspaces: map[string]*manifest.Workspace{
-			"w1": {
-				Name:   "mem-refactor",
-				Branch: "feature/refactor-memory-access",
-				PR:     "234",
-				Status: manifest.WorkspaceStatusActive,
-				Windows: []manifest.Window{
-					{ID: 1, TmuxWindowID: "@1", Name: "main"},
-					{ID: 2, TmuxWindowID: "@2", Name: "test"},
+	m.Docks = []manifest.Dock{
+		{
+			Name: "labs",
+			Workspaces: []manifest.Workspace{
+				{
+					Name:     "mem-refactor",
+					Status:   manifest.WorkspaceStatusActive,
+					Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "feature/refactor-memory-access", PR: "234"},
+					Surfaces: []manifest.Surface{
+						{ID: 1, Name: "agent", Type: manifest.SurfaceTypeAgent, Backend: manifest.SurfaceBackendTmux, Tmux: &manifest.TmuxAttrs{WindowID: "@1", PaneID: "%1", LayoutGroup: 1}},
+						{ID: 2, Name: "shell", Type: manifest.SurfaceTypeShell, Backend: manifest.SurfaceBackendTmux, Tmux: &manifest.TmuxAttrs{WindowID: "@1", PaneID: "%2", LayoutGroup: 1}},
+					},
 				},
-			},
-			"w2": {
-				Name:   "fix-auth",
-				Branch: "bugfix/auth-timeout",
-				PR:     "567",
-				Status: manifest.WorkspaceStatusIdle,
-				Windows: []manifest.Window{
-					{ID: 1, TmuxWindowID: "@3", Name: "main"},
+				{
+					Name:     "fix-auth",
+					Status:   manifest.WorkspaceStatusIdle,
+					Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "bugfix/auth-timeout", PR: "567"},
+					Surfaces: []manifest.Surface{
+						{ID: 1, Name: "agent", Type: manifest.SurfaceTypeAgent, Backend: manifest.SurfaceBackendTmux, Tmux: &manifest.TmuxAttrs{WindowID: "@3", PaneID: "%5", LayoutGroup: 1}},
+					},
 				},
 			},
 		},
-	}
-	m.Docks["core"] = &manifest.DockState{
-		Workspaces: map[string]*manifest.Workspace{
-			"w1": {
-				Name:   "nav-feature",
-				Branch: "feature/nav-support",
-				PR:     "",
-				Status: manifest.WorkspaceStatusActive,
-				Windows: []manifest.Window{
-					{ID: 1, TmuxWindowID: "@4", Name: "main"},
+		{
+			Name: "core",
+			Workspaces: []manifest.Workspace{
+				{
+					Name:     "nav-feature",
+					Status:   manifest.WorkspaceStatusActive,
+					Worktree: &manifest.WorktreeAttrs{Repo: "core", Branch: "feature/nav-support"},
+					Surfaces: []manifest.Surface{
+						{ID: 1, Name: "agent", Type: manifest.SurfaceTypeAgent, Backend: manifest.SurfaceBackendTmux, Tmux: &manifest.TmuxAttrs{WindowID: "@4", PaneID: "%7", LayoutGroup: 1}},
+					},
 				},
 			},
 		},
@@ -53,104 +54,71 @@ func buildTestManifest() *manifest.Manifest {
 // buildTestTmux creates a tmux mock with windows and waiting options set.
 func buildTestTmux(waitingWindows map[string]bool) *tmux.Mock {
 	mock := tmux.NewMock()
-	// Create sessions and windows so GetWindowOption can work.
 	mock.NewSession("bay")
-	// We need to create windows in the mock so they exist.
-	// The mock auto-assigns IDs, but we need specific IDs.
-	// Instead, we'll pre-register windows by creating them and setting options.
-	// However the mock auto-assigns @1, @2, etc. Let's work with that.
-	// Actually, the mock auto-generates IDs. We need the test manifest to use
-	// the IDs that the mock generates. Let's create a simpler approach:
-	// We'll create a custom mock that returns specified values.
+	w1, _ := mock.NewWindow("bay", "main", "/tmp")
+	w3, _ := mock.NewWindow("bay", "main", "/tmp")
+	w4, _ := mock.NewWindow("bay", "main", "/tmp")
 
-	// For simplicity, let's use the existing mock but create the right number
-	// of windows and set options on them. The mock will assign @1, @2, @3, @4.
-	w1, _ := mock.NewWindow("bay", "main", "/tmp")   // @1
-	w2, _ := mock.NewWindow("bay", "test", "/tmp")    // @2
-	w3, _ := mock.NewWindow("bay", "main", "/tmp")    // @3
-	w4, _ := mock.NewWindow("bay", "main", "/tmp")    // @4
-
-	// Set waiting options on specified windows.
-	ids := []string{w1, w2, w3, w4}
+	ids := []string{w1, w3, w4}
 	for _, id := range ids {
 		if waitingWindows[id] {
 			mock.SetWindowOption(id, "@bay-waiting", "1")
 		}
 	}
 
-	// Clear the call log so tests only see nav-related calls.
 	mock.Calls = nil
-
 	return mock
 }
 
 func TestCollectEntries(t *testing.T) {
 	m := buildTestManifest()
-	tc := buildTestTmux(map[string]bool{"@2": true, "@3": true})
+	tc := buildTestTmux(map[string]bool{"@1": true, "@3": true})
 
 	entries := CollectEntries(m, tc)
 
-	// We expect 4 entries: one per window.
-	// labs:w1 has 2 windows (@1, @2), labs:w2 has 1 (@3), core:w1 has 1 (@4).
-	if len(entries) != 4 {
-		t.Fatalf("expected 4 entries, got %d", len(entries))
+	// We expect 3 entries: one per workspace.
+	// labs has 2 workspaces, core has 1.
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(entries))
 	}
 
 	// Build a map for easier lookup.
-	byTmux := make(map[string]Entry)
+	byName := make(map[string]Entry)
 	for _, e := range entries {
-		byTmux[e.TmuxWindowID] = e
+		byName[e.WsName] = e
 	}
 
-	// Check labs:w1 window @1 (not waiting).
-	e1 := byTmux["@1"]
+	// Check labs:mem-refactor
+	e1 := byName["mem-refactor"]
 	if e1.DockName != "labs" {
-		t.Errorf("@1 DockName: got %q, want %q", e1.DockName, "labs")
-	}
-	if e1.WsID != "w1" {
-		t.Errorf("@1 WsID: got %q, want %q", e1.WsID, "w1")
-	}
-	if e1.WsName != "mem-refactor" {
-		t.Errorf("@1 WsName: got %q, want %q", e1.WsName, "mem-refactor")
+		t.Errorf("mem-refactor DockName: got %q, want %q", e1.DockName, "labs")
 	}
 	if e1.Branch != "feature/refactor-memory-access" {
-		t.Errorf("@1 Branch: got %q, want %q", e1.Branch, "feature/refactor-memory-access")
+		t.Errorf("mem-refactor Branch: got %q, want %q", e1.Branch, "feature/refactor-memory-access")
 	}
 	if e1.PR != "234" {
-		t.Errorf("@1 PR: got %q, want %q", e1.PR, "234")
+		t.Errorf("mem-refactor PR: got %q, want %q", e1.PR, "234")
 	}
 	if e1.Status != manifest.WorkspaceStatusActive {
-		t.Errorf("@1 Status: got %q, want %q", e1.Status, manifest.WorkspaceStatusActive)
+		t.Errorf("mem-refactor Status: got %q, want %q", e1.Status, manifest.WorkspaceStatusActive)
 	}
-	if e1.Waiting {
-		t.Error("@1 should not be waiting")
+	if e1.SurfaceCount != 2 {
+		t.Errorf("mem-refactor SurfaceCount: got %d, want 2", e1.SurfaceCount)
 	}
 
-	// Check labs:w1 window @2 (waiting).
-	e2 := byTmux["@2"]
+	// Check labs:fix-auth (waiting)
+	e2 := byName["fix-auth"]
 	if !e2.Waiting {
-		t.Error("@2 should be waiting")
+		t.Error("fix-auth should be waiting (window @3)")
 	}
-	if e2.WsName != "mem-refactor" {
-		t.Errorf("@2 WsName: got %q, want %q", e2.WsName, "mem-refactor")
-	}
-
-	// Check labs:w2 window @3 (waiting).
-	e3 := byTmux["@3"]
-	if !e3.Waiting {
-		t.Error("@3 should be waiting")
-	}
-	if e3.WsName != "fix-auth" {
-		t.Errorf("@3 WsName: got %q, want %q", e3.WsName, "fix-auth")
+	if e2.WsName != "fix-auth" {
+		t.Errorf("fix-auth WsName: got %q, want %q", e2.WsName, "fix-auth")
 	}
 
-	// Check core:w1 window @4 (not waiting).
-	e4 := byTmux["@4"]
-	if e4.Waiting {
-		t.Error("@4 should not be waiting")
-	}
-	if e4.DockName != "core" {
-		t.Errorf("@4 DockName: got %q, want %q", e4.DockName, "core")
+	// Check core:nav-feature
+	e3 := byName["nav-feature"]
+	if e3.DockName != "core" {
+		t.Errorf("nav-feature DockName: got %q, want %q", e3.DockName, "core")
 	}
 }
 
@@ -378,7 +346,6 @@ func TestNextWaiting_UnknownCurrent(t *testing.T) {
 func TestFormatEntry(t *testing.T) {
 	e := Entry{
 		DockName:     "labs",
-		WsID:         "w3",
 		WsName:       "mem-refactor",
 		Branch:       "feature/refactor-memory-access",
 		PR:           "234",
@@ -389,8 +356,7 @@ func TestFormatEntry(t *testing.T) {
 
 	s := FormatEntry(e)
 
-	// Check that all key fields appear in the output.
-	for _, want := range []string{"labs", "w3", "mem-refactor", "feature/refactor-memory-access", "#234", "active"} {
+	for _, want := range []string{"labs", "mem-refactor", "feature/refactor-memory-access", "#234", "active"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("FormatEntry missing %q in output: %q", want, s)
 		}
@@ -400,7 +366,6 @@ func TestFormatEntry(t *testing.T) {
 func TestFormatEntry_NoPR(t *testing.T) {
 	e := Entry{
 		DockName:     "core",
-		WsID:         "w1",
 		WsName:       "nav-feature",
 		Branch:       "feature/nav",
 		PR:           "",
@@ -418,7 +383,6 @@ func TestFormatEntry_NoPR(t *testing.T) {
 func TestFormatEntry_Waiting(t *testing.T) {
 	e := Entry{
 		DockName:     "labs",
-		WsID:         "w1",
 		WsName:       "fix-auth",
 		Branch:       "bugfix/auth",
 		PR:           "567",
@@ -435,8 +399,8 @@ func TestFormatEntry_Waiting(t *testing.T) {
 
 func TestFormatEntries(t *testing.T) {
 	entries := []Entry{
-		{DockName: "labs", WsID: "w3", WsName: "mem-refactor", Branch: "feature/refactor-memory-access", PR: "234", Status: manifest.WorkspaceStatusActive, TmuxWindowID: "@1"},
-		{DockName: "core", WsID: "w1", WsName: "nav", Branch: "feature/nav", PR: "", Status: manifest.WorkspaceStatusIdle, TmuxWindowID: "@4"},
+		{DockName: "labs", WsName: "mem-refactor", Branch: "feature/refactor-memory-access", PR: "234", Status: manifest.WorkspaceStatusActive, TmuxWindowID: "@1"},
+		{DockName: "core", WsName: "nav", Branch: "feature/nav", PR: "", Status: manifest.WorkspaceStatusIdle, TmuxWindowID: "@4"},
 	}
 
 	s := FormatEntries(entries)
@@ -451,94 +415,6 @@ func TestFormatEntries(t *testing.T) {
 	if len(lines[0]) != len(lines[1]) {
 		t.Errorf("lines should be aligned to same length:\n  %q (%d)\n  %q (%d)",
 			lines[0], len(lines[0]), lines[1], len(lines[1]))
-	}
-}
-
-func TestCollectEntries_WindowName(t *testing.T) {
-	m := buildTestManifest()
-	tc := buildTestTmux(map[string]bool{})
-
-	entries := CollectEntries(m, tc)
-
-	// Build a map for easier lookup.
-	byTmux := make(map[string]Entry)
-	for _, e := range entries {
-		byTmux[e.TmuxWindowID] = e
-	}
-
-	// labs:w1 window @1 has Name="main" in the manifest.
-	e1 := byTmux["@1"]
-	if e1.WindowName != "main" {
-		t.Errorf("@1 WindowName: got %q, want %q", e1.WindowName, "main")
-	}
-
-	// labs:w1 window @2 has Name="test" in the manifest.
-	e2 := byTmux["@2"]
-	if e2.WindowName != "test" {
-		t.Errorf("@2 WindowName: got %q, want %q", e2.WindowName, "test")
-	}
-
-	// core:w1 window @4 has Name="main".
-	e4 := byTmux["@4"]
-	if e4.WindowName != "main" {
-		t.Errorf("@4 WindowName: got %q, want %q", e4.WindowName, "main")
-	}
-}
-
-func TestFuzzyMatch_ByWindowName(t *testing.T) {
-	entries := []Entry{
-		{WsName: "mem-refactor", WindowName: "mem-refactor", Branch: "feature/mem", DockName: "labs"},
-		{WsName: "fix-auth", WindowName: "fix-auth:2", Branch: "bugfix/auth", DockName: "core"},
-		{WsName: "nav-feature", WindowName: "nav-feature", Branch: "feature/nav", DockName: "labs"},
-	}
-
-	// Query that only matches the WindowName suffix ":2"
-	result := FuzzyMatch(entries, "auth:2")
-	if len(result) != 1 {
-		t.Fatalf("expected 1 match for 'auth:2', got %d", len(result))
-	}
-	if result[0].WindowName != "fix-auth:2" {
-		t.Errorf("expected WindowName fix-auth:2, got %q", result[0].WindowName)
-	}
-}
-
-func TestFormatEntry_WindowName(t *testing.T) {
-	// When WindowName differs from WsName (secondary window), FormatEntry
-	// should display the WindowName (which includes the ":2" suffix).
-	e := Entry{
-		DockName:     "labs",
-		WsID:         "w1",
-		WsName:       "mem-refactor",
-		WindowName:   "mem-refactor:2",
-		Branch:       "feature/refactor-memory-access",
-		PR:           "234",
-		Status:       manifest.WorkspaceStatusActive,
-		TmuxWindowID: "@2",
-	}
-
-	s := FormatEntry(e)
-	if !strings.Contains(s, "mem-refactor:2") {
-		t.Errorf("FormatEntry should show WindowName with ':2' suffix for secondary windows: %q", s)
-	}
-
-	// When WindowName matches WsName, the display should use WsName (no suffix).
-	e2 := Entry{
-		DockName:     "labs",
-		WsID:         "w1",
-		WsName:       "mem-refactor",
-		WindowName:   "mem-refactor",
-		Branch:       "feature/refactor-memory-access",
-		PR:           "234",
-		Status:       manifest.WorkspaceStatusActive,
-		TmuxWindowID: "@1",
-	}
-
-	s2 := FormatEntry(e2)
-	if strings.Contains(s2, "mem-refactor:2") {
-		t.Errorf("FormatEntry should not show ':2' suffix when WindowName matches WsName: %q", s2)
-	}
-	if !strings.Contains(s2, "mem-refactor") {
-		t.Errorf("FormatEntry should show WsName when WindowName matches: %q", s2)
 	}
 }
 
