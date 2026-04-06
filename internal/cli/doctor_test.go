@@ -48,9 +48,6 @@ func TestDefaultConfigHasNoRemovedFields(t *testing.T) {
 			t.Errorf("agent %q has empty command", name)
 		}
 	}
-	// Verify the config string doesn't reference removed fields.
-	// This is a compile-time-equivalent check — if someone adds config_file
-	// or agent_config_template back, this test catches it.
 	for name, agent := range cfg.Agents {
 		if agent.ProjectFile == "" && agent.Command == "claude" {
 			t.Errorf("agent %q should have project_file set", name)

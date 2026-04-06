@@ -215,13 +215,13 @@ func dockCompletions() func(cmd *cobra.Command, args []string, toComplete string
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
 
-		cfg := loadConfigForCompletions()
-		if cfg == nil {
+		m := loadManifestForCompletions()
+		if m == nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
 
 		var completions []string
-		for name, dock := range cfg.Docks {
+		for _, dock := range m.Docks {
 			var parts []string
 			if dock.Repo != "" {
 				parts = append(parts, "repo="+dock.Repo)
@@ -231,9 +231,9 @@ func dockCompletions() func(cmd *cobra.Command, args []string, toComplete string
 			}
 			desc := strings.Join(parts, " ")
 			if desc != "" {
-				completions = append(completions, name+"\t"+desc)
+				completions = append(completions, dock.Name+"\t"+desc)
 			} else {
-				completions = append(completions, name)
+				completions = append(completions, dock.Name)
 			}
 		}
 		return completions, cobra.ShellCompDirectiveNoFileComp
@@ -307,15 +307,15 @@ func repoCompletionsFunc() func(cmd *cobra.Command, args []string, toComplete st
 	}
 }
 
-// repoCompletions returns repo names from config.
+// repoCompletions returns repo names from manifest.
 func repoCompletions(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	cfg := loadConfigForCompletions()
-	if cfg == nil {
+	m := loadManifestForCompletions()
+	if m == nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 	var completions []string
-	for name, repo := range cfg.Repos {
-		completions = append(completions, name+"\t"+repo.Path)
+	for _, repo := range m.Repos {
+		completions = append(completions, repo.Name+"\t"+repo.Path)
 	}
 	return completions, cobra.ShellCompDirectiveNoFileComp
 }

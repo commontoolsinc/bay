@@ -13,7 +13,7 @@ import (
 )
 
 // CurrentVersion is the manifest schema version.
-const CurrentVersion = 1
+const CurrentVersion = 2
 
 // WorkspaceType constants.
 const (
@@ -47,16 +47,35 @@ type WorkspaceStatus string
 type SurfaceType string
 type SurfaceBackend string
 
+// Repo represents a managed git repository.
+type Repo struct {
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	WorktreeDir string `json:"worktree_dir,omitempty"`
+}
+
+// EffectiveWorktreeDir returns the worktree directory, defaulting to {path}-worktrees.
+func (r Repo) EffectiveWorktreeDir() string {
+	if r.WorktreeDir != "" {
+		return expandPath(r.WorktreeDir)
+	}
+	return expandPath(r.Path) + "-worktrees"
+}
+
 // Manifest is the top-level structure persisted as JSON.
 type Manifest struct {
 	Version int    `json:"version"`
+	Repos   []Repo `json:"repos"`
 	Docks   []Dock `json:"docks"`
 }
 
 // Dock represents a tmux session and its associated terminal window.
 type Dock struct {
-	Name       string      `json:"name"`       // unique; matches config key and tmux session name
-	Host       *GUIAttrs   `json:"host,omitempty"` // terminal window hosting this dock's tmux session; nil if unmanaged
+	Name       string      `json:"name"`                  // unique; matches config key and tmux session name
+	Repo       string      `json:"repo,omitempty"`        // default repo for workspaces
+	Agent      string      `json:"agent,omitempty"`       // default agent
+	AgentArgs  []string    `json:"agent_args,omitempty"`  // agent args
+	Host       *GUIAttrs   `json:"host,omitempty"`        // terminal window hosting this dock's tmux session; nil if unmanaged
 	Workspaces []Workspace `json:"workspaces"`
 }
 
@@ -121,6 +140,7 @@ type GUIAttrs struct {
 func New() *Manifest {
 	return &Manifest{
 		Version: CurrentVersion,
+		Repos:   []Repo{},
 		Docks:   []Dock{},
 	}
 }
@@ -132,6 +152,9 @@ func Parse(data []byte) (*Manifest, error) {
 	var m Manifest
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, fmt.Errorf("parsing manifest: %w", err)
+	}
+	if m.Repos == nil {
+		m.Repos = []Repo{}
 	}
 	if m.Docks == nil {
 		m.Docks = []Dock{}
@@ -277,6 +300,38 @@ func AllWorkspaces(m *Manifest) []WorkspaceRef {
 type WorkspaceRef struct {
 	Dock      string
 	Workspace *Workspace
+}
+
+// --- Repo operations ---
+
+// FindRepo returns a pointer to the repo with the given name, or nil.
+func (m *Manifest) FindRepo(name string) *Repo {
+	for i := range m.Repos {
+		if m.Repos[i].Name == name {
+			return &m.Repos[i]
+		}
+	}
+	return nil
+}
+
+// AddRepo adds a repo. Returns an error if a repo with the same name exists.
+func (m *Manifest) AddRepo(r Repo) error {
+	if m.FindRepo(r.Name) != nil {
+		return fmt.Errorf("repo %q already exists", r.Name)
+	}
+	m.Repos = append(m.Repos, r)
+	return nil
+}
+
+// RemoveRepo removes a repo by name.
+func (m *Manifest) RemoveRepo(name string) error {
+	for i := range m.Repos {
+		if m.Repos[i].Name == name {
+			m.Repos = append(m.Repos[:i], m.Repos[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("repo %q not found", name)
 }
 
 // --- Dock operations ---
@@ -479,6 +534,18 @@ func (s *Surface) Validate() []string {
 }
 
 // --- Private helpers ---
+
+// expandPath expands ~ to the user's home directory.
+func expandPath(path string) string {
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return path
+		}
+		return filepath.Join(home, path[2:])
+	}
+	return path
+}
 
 func lockFile(path string) (func(), error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)

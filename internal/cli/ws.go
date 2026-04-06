@@ -57,7 +57,8 @@ func newWsNewCmd() *cobra.Command {
 				// Try: infer dock from current tmux session.
 				dock, tmuxErr := eng.Tmux.CurrentSession()
 				if tmuxErr == nil {
-					if _, ok := eng.Config.Docks[dock]; ok {
+					m, _ := eng.LoadManifest()
+					if m != nil && m.FindDock(dock) != nil {
 						opts.Dock = dock
 					}
 				}
@@ -129,7 +130,8 @@ func newWsCloseCmd() *cobra.Command {
 				dockName := ""
 				sess, tmuxErr := eng.Tmux.CurrentSession()
 				if tmuxErr == nil {
-					if _, ok := eng.Config.Docks[sess]; ok {
+					m, _ := eng.LoadManifest()
+					if m != nil && m.FindDock(sess) != nil {
 						dockName = sess
 					}
 				}
@@ -193,17 +195,23 @@ func newWsShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if wsInfo.DefaultAgent == "" {
-				wsInfo.DefaultAgent = eng.Config.Docks[dockName].Agent
-			}
-
 			repoName := ""
 			ws, wsErr := eng.WsShow(dockName, wsID)
 			if wsErr == nil && ws.Worktree != nil {
 				repoName = ws.Worktree.Repo
 			}
 			if repoName == "" {
-				repoName = eng.Config.Docks[dockName].Repo
+				m, _ := eng.LoadManifest()
+				if m != nil {
+					if dock := m.FindDock(dockName); dock != nil {
+						if wsInfo.DefaultAgent == "" {
+							wsInfo.DefaultAgent = dock.Agent
+						}
+						if repoName == "" {
+							repoName = dock.Repo
+						}
+					}
+				}
 			}
 
 			if jsonOutput {
@@ -304,8 +312,8 @@ func newWsRenameCmd() *cobra.Command {
 	}
 }
 
-// autoBootstrap detects the CWD git repo, creates a dock and repo config,
-// and saves the config. Returns the dock name to use for ws new.
+// autoBootstrap detects the CWD git repo, creates a dock and repo in the manifest,
+// and saves. Returns the dock name to use for ws new.
 func autoBootstrap(eng *engine.Engine) (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -320,10 +328,14 @@ func autoBootstrap(eng *engine.Engine) (string, error) {
 	repoName := filepath.Base(repoRoot)
 	dockName := repoName
 
-	// Add repo if not already configured.
-	if _, ok := eng.Config.Repos[repoName]; !ok {
-		eng.Config.Repos[repoName] = config.RepoConfig{
-			Path: config.NormalizePath(repoRoot),
+	// Add repo to manifest if not already present.
+	m, _ := eng.LoadManifest()
+	if m == nil || m.FindRepo(repoName) == nil {
+		if addErr := eng.RepoAdd(repoName, repoRoot, "", "", true); addErr != nil {
+			// Ignore duplicate errors
+			if m != nil && m.FindRepo(repoName) == nil {
+				return "", addErr
+			}
 		}
 	}
 
@@ -332,19 +344,15 @@ func autoBootstrap(eng *engine.Engine) (string, error) {
 	if agentName != "" {
 		if _, ok := eng.Config.Agents[agentName]; !ok {
 			eng.Config.Agents[agentName] = config.AgentConfig{Command: agentName}
+			_ = eng.SaveConfig()
 		}
 	}
 
-	// Create dock if not already configured.
-	// DockNew handles adding to Config.Docks, saving config, and creating the tmux session.
-	if _, ok := eng.Config.Docks[dockName]; !ok {
+	// Create dock if not already present in manifest.
+	m, _ = eng.LoadManifest()
+	if m == nil || m.FindDock(dockName) == nil {
 		if err := eng.DockNew(dockName, repoName, agentName, ""); err != nil {
 			return "", err
-		}
-	} else {
-		// Dock exists but we may have added repo/agent above — save config.
-		if err := eng.SaveConfig(); err != nil {
-			return "", fmt.Errorf("saving config: %w", err)
 		}
 	}
 
@@ -396,13 +404,15 @@ func newWsLsCmd() *cobra.Command {
 				return err
 			}
 
-			dockCfg, hasCfg := eng.Config.Docks[currentSession]
 			repo := ""
-			if hasCfg {
-				repo = dockCfg.Repo
+			m, _ := eng.LoadManifest()
+			if m != nil {
+				if dock := m.FindDock(currentSession); dock != nil {
+					repo = dock.Repo
+				}
 			}
 
-			view := BuildListView(eng.Config, docks, ListViewOptions{
+			view := BuildListView(docks, ListViewOptions{
 				Focus:     ListFocus{Kind: FocusDock, Repo: repo, Dock: currentSession},
 				Recursive: false,
 			})
@@ -436,13 +446,15 @@ func newWsTreeCmd() *cobra.Command {
 				return err
 			}
 
-			dockCfg, hasCfg := eng.Config.Docks[currentSession]
 			repo := ""
-			if hasCfg {
-				repo = dockCfg.Repo
+			m, _ := eng.LoadManifest()
+			if m != nil {
+				if dock := m.FindDock(currentSession); dock != nil {
+					repo = dock.Repo
+				}
 			}
 
-			view := BuildListView(eng.Config, docks, ListViewOptions{
+			view := BuildListView(docks, ListViewOptions{
 				Focus:     ListFocus{Kind: FocusDock, Repo: repo, Dock: currentSession},
 				Recursive: true,
 			})

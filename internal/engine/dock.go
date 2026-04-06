@@ -9,6 +9,13 @@ import (
 	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
+// RepoInfo holds summary information about a repo.
+type RepoInfo struct {
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	WorktreeDir string `json:"worktree_dir"`
+}
+
 // DockInfo holds summary information about a dock.
 type DockInfo struct {
 	Name       string          `json:"name"`
@@ -50,15 +57,7 @@ func (e *Engine) DockNew(name, repo, agent, terminal string) error {
 	if err := ValidateName(name); err != nil {
 		return err
 	}
-	if _, exists := e.Config.Docks[name]; exists {
-		return fmt.Errorf("dock %q already exists", name)
-	}
 
-	if repo != "" {
-		if _, ok := e.Config.Repos[repo]; !ok {
-			return fmt.Errorf("unknown repo %q", repo)
-		}
-	}
 	if agent != "" {
 		if _, ok := e.Config.Agents[agent]; !ok {
 			return fmt.Errorf("unknown agent %q", agent)
@@ -77,14 +76,13 @@ func (e *Engine) DockNew(name, repo, agent, terminal string) error {
 		return err
 	}
 
-	e.Config.Docks[name] = config.DockConfig{
-		Repo:     repo,
-		Agent:    agent,
-		Terminal: terminal,
-	}
-	if e.configPath != "" {
-		if err := config.Save(e.configPath, e.Config); err != nil {
-			return fmt.Errorf("saving config: %w", err)
+	// Save terminal override to config if set.
+	if terminal != "" {
+		e.Config.Docks[name] = config.DockConfig{Terminal: terminal}
+		if e.configPath != "" {
+			if err := config.Save(e.configPath, e.Config); err != nil {
+				return fmt.Errorf("saving config: %w", err)
+			}
 		}
 	}
 
@@ -99,10 +97,21 @@ func (e *Engine) DockNew(name, repo, agent, terminal string) error {
 	}
 
 	return e.withManifest(func(m *manifest.Manifest) error {
-		if m.FindDock(name) == nil {
-			return m.AddDock(manifest.Dock{Name: name, Host: host})
+		// Validate repo reference against manifest repos.
+		if repo != "" {
+			if m.FindRepo(repo) == nil {
+				return fmt.Errorf("unknown repo %q", repo)
+			}
 		}
-		return nil
+		if m.FindDock(name) != nil {
+			return fmt.Errorf("dock %q already exists", name)
+		}
+		return m.AddDock(manifest.Dock{
+			Name:  name,
+			Repo:  repo,
+			Agent: agent,
+			Host:  host,
+		})
 	})
 }
 
@@ -118,16 +127,10 @@ func launchTerminal(terminal, session string) (int, error) {
 	return cmd.Process.Pid, nil
 }
 
-// DockRename renames a dock in config, manifest, and tmux.
+// DockRename renames a dock in manifest, config overrides, and tmux.
 func (e *Engine) DockRename(oldName, newName string) error {
 	if err := ValidateName(newName); err != nil {
 		return err
-	}
-	if _, exists := e.Config.Docks[oldName]; !exists {
-		return fmt.Errorf("dock %q not found", oldName)
-	}
-	if _, exists := e.Config.Docks[newName]; exists {
-		return fmt.Errorf("dock %q already exists", newName)
 	}
 
 	// Rename tmux session.
@@ -138,22 +141,27 @@ func (e *Engine) DockRename(oldName, newName string) error {
 		}
 	}
 
-	// Rename in config.
-	dockCfg := e.Config.Docks[oldName]
-	e.Config.Docks[newName] = dockCfg
-	delete(e.Config.Docks, oldName)
-	if e.configPath != "" {
-		if err := config.Save(e.configPath, e.Config); err != nil {
-			return fmt.Errorf("saving config: %w", err)
+	// Rename config overrides if any.
+	if dockCfg, ok := e.Config.Docks[oldName]; ok {
+		e.Config.Docks[newName] = dockCfg
+		delete(e.Config.Docks, oldName)
+		if e.configPath != "" {
+			if err := config.Save(e.configPath, e.Config); err != nil {
+				return fmt.Errorf("saving config: %w", err)
+			}
 		}
 	}
 
 	// Rename in manifest.
 	return e.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(oldName)
-		if dock != nil {
-			dock.Name = newName
+		if dock == nil {
+			return fmt.Errorf("dock %q not found", oldName)
 		}
+		if m.FindDock(newName) != nil {
+			return fmt.Errorf("dock %q already exists", newName)
+		}
+		dock.Name = newName
 		return nil
 	})
 }
@@ -180,28 +188,24 @@ func (e *Engine) DockCloseWorkspaces(name string, force bool) {
 
 // DockClose closes all workspaces in a dock and kills the tmux session.
 func (e *Engine) DockClose(name string, force bool) error {
-	// Check the dock exists in config or manifest.
-	_, inConfig := e.Config.Docks[name]
 	m, _ := e.LoadManifest()
 	var dock *manifest.Dock
 	if m != nil {
 		dock = m.FindDock(name)
 	}
-	if !inConfig && dock == nil {
+	if dock == nil {
 		return fmt.Errorf("unknown dock %q", name)
 	}
 
 	// Close workspaces if the dock has any in the manifest.
-	if dock != nil {
-		var names []string
-		for _, ws := range dock.Workspaces {
-			names = append(names, ws.Name)
-		}
-		for _, wsName := range names {
-			if err := e.WsClose(name, wsName, force); err != nil {
-				if !force {
-					return fmt.Errorf("workspace %q: %w", wsName, err)
-				}
+	var names []string
+	for _, ws := range dock.Workspaces {
+		names = append(names, ws.Name)
+	}
+	for _, wsName := range names {
+		if err := e.WsClose(name, wsName, force); err != nil {
+			if !force {
+				return fmt.Errorf("workspace %q: %w", wsName, err)
 			}
 		}
 	}
@@ -213,7 +217,7 @@ func (e *Engine) DockClose(name string, force bool) error {
 		return m.RemoveDock(name)
 	})
 
-	// Remove dock from config.
+	// Remove config overrides.
 	delete(e.Config.Docks, name)
 	if e.configPath != "" {
 		_ = config.Save(e.configPath, e.Config)
@@ -232,84 +236,83 @@ func (e *Engine) List() ([]DockInfo, error) {
 	}
 
 	var docks []DockInfo
-	for cfgName, dockCfg := range e.Config.Docks {
+	for i := range m.Docks {
+		dock := &m.Docks[i]
+		agent := e.resolvedDockAgent(dock.Name, m)
 		info := DockInfo{
-			Name:  cfgName,
-			Agent: dockCfg.Agent,
-			Repo:  dockCfg.Repo,
+			Name:  dock.Name,
+			Agent: agent,
+			Repo:  dock.Repo,
 		}
 
-		dock := m.FindDock(cfgName)
-		if dock != nil {
-			for i := range dock.Workspaces {
-				ws := &dock.Workspaces[i]
-				wsPath := config.ExpandPath(ws.Path)
-				_, statErr := os.Stat(wsPath)
+		for j := range dock.Workspaces {
+			ws := &dock.Workspaces[j]
+			wsPath := config.ExpandPath(ws.Path)
+			_, statErr := os.Stat(wsPath)
 
-				branch := ""
-				pr := ""
-				if ws.Worktree != nil {
-					branch = ws.Worktree.Branch
-					pr = ws.Worktree.PR
+			branch := ""
+			pr := ""
+			if ws.Worktree != nil {
+				branch = ws.Worktree.Branch
+				pr = ws.Worktree.PR
+			}
+
+			wsInfo := WorkspaceInfo{
+				Name:         ws.Name,
+				Type:         string(ws.Type),
+				Path:         ws.Path,
+				Branch:       branch,
+				PR:           pr,
+				Status:       string(ws.Status),
+				Missing:      ws.Path != "" && statErr != nil,
+				DefaultAgent: agent,
+				SyncStatus:   "ok",
+				SurfaceCount: len(ws.Surfaces),
+			}
+
+			if wsInfo.Missing {
+				wsInfo.SyncStatus = "missing"
+			}
+
+			for _, s := range ws.Surfaces {
+				sInfo := SurfaceInfo{
+					ID:      s.ID,
+					Name:    s.Name,
+					Type:    string(s.Type),
+					Backend: string(s.Backend),
+					Status:  "ok",
+				}
+				if s.Agent != nil {
+					sInfo.Agent = *s.Agent
+				}
+				if s.Command != nil {
+					sInfo.Command = *s.Command
 				}
 
-				wsInfo := WorkspaceInfo{
-					Name:         ws.Name,
-					Type:         string(ws.Type),
-					Path:         ws.Path,
-					Branch:       branch,
-					PR:           pr,
-					Status:       string(ws.Status),
-					Missing:      ws.Path != "" && statErr != nil,
-					DefaultAgent: dockCfg.Agent,
-					SyncStatus:   "ok",
-					SurfaceCount: len(ws.Surfaces),
-				}
-
-				if wsInfo.Missing {
-					wsInfo.SyncStatus = "missing"
-				}
-
-				for _, s := range ws.Surfaces {
-					sInfo := SurfaceInfo{
-						ID:      s.ID,
-						Name:    s.Name,
-						Type:    string(s.Type),
-						Backend: string(s.Backend),
-						Status:  "ok",
-					}
-					if s.Agent != nil {
-						sInfo.Agent = *s.Agent
-					}
-					if s.Command != nil {
-						sInfo.Command = *s.Command
-					}
-
-					// Check liveness for tmux surfaces.
-					if s.Tmux != nil && s.Tmux.WindowID != "" {
-						exists, _ := e.Tmux.WindowExists(s.Tmux.WindowID)
-						if !exists {
-							sInfo.Status = "stale"
-							wsInfo.Stale = true
-						} else {
-							val, err := e.Tmux.GetWindowOption(s.Tmux.WindowID, "@bay-waiting")
-							if err == nil && val == "1" {
-								wsInfo.Waiting = true
-							}
+				// Check liveness for tmux surfaces.
+				if s.Tmux != nil && s.Tmux.WindowID != "" {
+					exists, _ := e.Tmux.WindowExists(s.Tmux.WindowID)
+					if !exists {
+						sInfo.Status = "stale"
+						wsInfo.Stale = true
+					} else {
+						val, err := e.Tmux.GetWindowOption(s.Tmux.WindowID, "@bay-waiting")
+						if err == nil && val == "1" {
+							wsInfo.Waiting = true
 						}
 					}
-
-					wsInfo.Surfaces = append(wsInfo.Surfaces, sInfo)
 				}
 
-				if wsInfo.Missing {
-					wsInfo.Stale = false
-				}
-				if wsInfo.SyncStatus == "ok" && wsInfo.Stale {
-					wsInfo.SyncStatus = "stale"
-				}
-				info.Workspaces = append(info.Workspaces, wsInfo)
+				wsInfo.Surfaces = append(wsInfo.Surfaces, sInfo)
 			}
+
+			if wsInfo.Missing {
+				wsInfo.Stale = false
+			}
+			if wsInfo.SyncStatus == "ok" && wsInfo.Stale {
+				wsInfo.SyncStatus = "stale"
+			}
+			info.Workspaces = append(info.Workspaces, wsInfo)
 		}
 		docks = append(docks, info)
 	}

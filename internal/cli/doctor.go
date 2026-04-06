@@ -65,26 +65,32 @@ func newDoctorCmd() *cobra.Command {
 			}
 
 			// Check repo paths exist and bay awareness
-			for name, repo := range eng.Config.Repos {
-				path := config.ExpandPath(repo.Path)
-				if _, err := os.Stat(path); err != nil {
-					fmt.Printf("[WARN] repo %q path %s not accessible\n", name, path)
-					ok = false
-					continue
-				}
-				fmt.Printf("[OK] repo %q accessible\n", name)
-
-				// Check bay awareness in agent project files.
-				for agentName, agent := range eng.Config.Agents {
-					if agent.ProjectFile == "" {
+			repos, repoErr := eng.RepoList()
+			if repoErr != nil {
+				fmt.Printf("[WARN] could not load repos: %v\n", repoErr)
+				ok = false
+			} else {
+				for _, repo := range repos {
+					path := config.ExpandPath(repo.Path)
+					if _, err := os.Stat(path); err != nil {
+						fmt.Printf("[WARN] repo %q path %s not accessible\n", repo.Name, path)
+						ok = false
 						continue
 					}
-					pf := filepath.Join(path, agent.ProjectFile)
-					data, readErr := os.ReadFile(pf)
-					if readErr != nil {
-						fmt.Printf("[INFO] repo %q: %s not found (run bay repo init %s)\n", name, agent.ProjectFile, name)
-					} else if !strings.Contains(string(data), "bay agent-guide") {
-						fmt.Printf("[INFO] repo %q: %s missing bay awareness for %s (run bay repo init %s)\n", name, agent.ProjectFile, agentName, name)
+					fmt.Printf("[OK] repo %q accessible\n", repo.Name)
+
+					// Check bay awareness in agent project files.
+					for agentName, agent := range eng.Config.Agents {
+						if agent.ProjectFile == "" {
+							continue
+						}
+						pf := filepath.Join(path, agent.ProjectFile)
+						data, readErr := os.ReadFile(pf)
+						if readErr != nil {
+							fmt.Printf("[INFO] repo %q: %s not found (run bay repo init %s)\n", repo.Name, agent.ProjectFile, repo.Name)
+						} else if !strings.Contains(string(data), "bay agent-guide") {
+							fmt.Printf("[INFO] repo %q: %s missing bay awareness for %s (run bay repo init %s)\n", repo.Name, agent.ProjectFile, agentName, repo.Name)
+						}
 					}
 				}
 			}

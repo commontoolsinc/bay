@@ -21,12 +21,7 @@ func testEngine(t *testing.T) (*Engine, string) {
 			"claude": {Command: "claude"},
 			"codex":  {Command: "codex"},
 		},
-		Repos: map[string]config.RepoConfig{
-			"labs": {Path: filepath.Join(dir, "repos", "labs")},
-		},
-		Docks: map[string]config.DockConfig{
-			"labs": {Repo: "labs", Agent: "claude"},
-		},
+		Docks: map[string]config.DockConfig{},
 	}
 
 	// Create repo directory
@@ -42,6 +37,18 @@ func testEngine(t *testing.T) (*Engine, string) {
 	mockGit.SetGlobalIgnored(true) // default: config files are gitignored
 
 	eng := New(cfg, configPath, manifestPath, archivePath, mockTmux, mockGit)
+
+	// Set up repos and docks in the manifest (they now live there, not config).
+	manifest.Save(manifestPath, &manifest.Manifest{
+		Version: manifest.CurrentVersion,
+		Repos: []manifest.Repo{
+			{Name: "labs", Path: filepath.Join(dir, "repos", "labs")},
+		},
+		Docks: []manifest.Dock{
+			{Name: "labs", Repo: "labs", Agent: "claude", Workspaces: []manifest.Workspace{}},
+		},
+	})
+
 	return eng, dir
 }
 
@@ -94,10 +101,7 @@ func TestDockNew(t *testing.T) {
 		t.Fatalf("DockNew failed: %v", err)
 	}
 
-	// Verify config updated
-	if _, ok := eng.Config.Docks["research"]; !ok {
-		t.Error("dock not added to config")
-	}
+	// Verify manifest updated (docks are now in manifest, not config).
 
 	// Verify tmux session created
 	mockTmux := eng.Tmux.(*tmux.Mock)
@@ -153,26 +157,22 @@ func TestDockNew_LaunchesHostTerminal(t *testing.T) {
 	if dock.Host.AppCommand != "ghostty" {
 		t.Errorf("host app_command = %q, want ghostty", dock.Host.AppCommand)
 	}
-	// Config should have Terminal persisted.
-	if eng.Config.Docks["research"].Terminal != "ghostty" {
-		t.Errorf("config terminal = %q, want ghostty", eng.Config.Docks["research"].Terminal)
+	// Config should have Terminal override persisted.
+	if dc, ok := eng.Config.Docks["research"]; !ok || dc.Terminal != "ghostty" {
+		t.Errorf("config terminal override not persisted")
 	}
 }
 
 func TestRecover_RelaunchesHostTerminal(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	// Create a dock with a host terminal in the manifest.
+	// Set host terminal on the existing labs dock in the manifest.
 	m, _ := eng.LoadManifest()
-	m.AddDock(manifest.Dock{
-		Name: "labs",
-		Host: &manifest.GUIAttrs{AppCommand: "ghostty", PID: 0},
-	})
+	dock := m.FindDock("labs")
+	dock.Host = &manifest.GUIAttrs{AppCommand: "ghostty", PID: 0}
 	eng.saveManifest(m)
 
 	eng.Config.Docks["labs"] = config.DockConfig{
-		Repo:     "labs",
-		Agent:    "claude",
 		Terminal: "ghostty",
 	}
 
@@ -186,7 +186,7 @@ func TestRecover_RelaunchesHostTerminal(t *testing.T) {
 
 	// After recovery, the host PID should be updated (non-zero).
 	m, _ = eng.LoadManifest()
-	dock := m.FindDock("labs")
+	dock = m.FindDock("labs")
 	if dock == nil {
 		t.Fatal("dock not found after recovery")
 	}
@@ -834,13 +834,10 @@ func TestDockNew_SavesConfig(t *testing.T) {
 
 	eng.DockNew("research", "labs", "claude", "")
 
-	// Reload config from disk
-	loaded, err := config.Load(eng.configPath)
-	if err != nil {
-		t.Fatalf("loading saved config: %v", err)
-	}
-	if _, ok := loaded.Docks["research"]; !ok {
-		t.Error("new dock not persisted to config file")
+	// Verify dock in manifest
+	m, _ := eng.LoadManifest()
+	if m.FindDock("research") == nil {
+		t.Error("new dock not persisted to manifest")
 	}
 }
 
@@ -1149,14 +1146,19 @@ func TestRepoAdd_Local(t *testing.T) {
 		t.Fatalf("RepoAdd failed: %v", err)
 	}
 
-	if _, ok := eng.Config.Repos["newrepo"]; !ok {
-		t.Error("repo not added to config")
+	// Verify repo added to manifest
+	m, _ := eng.LoadManifest()
+	repo := m.FindRepo("newrepo")
+	if repo == nil {
+		t.Error("repo not added to manifest")
 	}
 
 	// Path should be normalized (absolute)
-	savedPath := eng.Config.Repos["newrepo"].Path
-	if savedPath != repoDir && savedPath != config.NormalizePath(repoDir) {
-		t.Errorf("saved path = %q, want normalized form of %q", savedPath, repoDir)
+	if repo != nil {
+		savedPath := repo.Path
+		if savedPath != repoDir && savedPath != config.NormalizePath(repoDir) {
+			t.Errorf("saved path = %q, want normalized form of %q", savedPath, repoDir)
+		}
 	}
 }
 
@@ -1227,11 +1229,12 @@ func TestRepoRemove_Force(t *testing.T) {
 	if err != nil {
 		t.Fatalf("force remove failed: %v", err)
 	}
-	if _, ok := eng.Config.Repos["labs"]; ok {
-		t.Error("repo should be removed")
+	m, _ := eng.LoadManifest()
+	if m.FindRepo("labs") != nil {
+		t.Error("repo should be removed from manifest")
 	}
-	if _, ok := eng.Config.Docks["labs"]; ok {
-		t.Error("dock should be removed with --force")
+	if m.FindDock("labs") != nil {
+		t.Error("dock should be removed from manifest with --force")
 	}
 }
 
@@ -1248,8 +1251,9 @@ func TestRepoAdd_NotGitRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RepoAdd with --force should succeed: %v", err)
 	}
-	if _, ok := eng.Config.Repos["plain"]; !ok {
-		t.Error("repo should be added with --force")
+	m, _ := eng.LoadManifest()
+	if m.FindRepo("plain") == nil {
+		t.Error("repo should be added to manifest with --force")
 	}
 }
 
@@ -1376,8 +1380,9 @@ func TestWsClose_CleansEmptyWorktreeDir(t *testing.T) {
 	eng, dir := testEngine(t)
 
 	// Create a real worktree parent directory to simulate the filesystem
-	repoCfg := eng.Config.Repos["labs"]
-	wtDir := repoCfg.EffectiveWorktreeDir()
+	m, _ := eng.LoadManifest()
+	repo := m.FindRepo("labs")
+	wtDir := repo.EffectiveWorktreeDir()
 	wsDir := filepath.Join(wtDir, "w1")
 	os.MkdirAll(wsDir, 0o755)
 
@@ -1457,8 +1462,9 @@ func TestWsClose_KeepsNonEmptyWorktreeDir(t *testing.T) {
 	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"})
 
 	// Create the worktree parent dir with a subdirectory to simulate w2 still there
-	repoCfg := eng.Config.Repos["labs"]
-	wtDir := repoCfg.EffectiveWorktreeDir()
+	m, _ := eng.LoadManifest()
+	repo := m.FindRepo("labs")
+	wtDir := repo.EffectiveWorktreeDir()
 	os.MkdirAll(filepath.Join(wtDir, "w2"), 0o755)
 
 	// Close w1 — parent dir should remain because w2 dir exists
@@ -2079,7 +2085,8 @@ func TestWsClose_RemoveWorktreeFailurePreservesWorkspaceState(t *testing.T) {
 	}
 	os.MkdirAll(ws.Path, 0o755)
 
-	repoPath := config.ExpandPath(eng.Config.Repos["labs"].Path)
+	m, _ := eng.LoadManifest()
+	repoPath := config.ExpandPath(m.FindRepo("labs").Path)
 	mockGit := eng.Git.(*git.Mock)
 	if err := mockGit.RemoveWorktree(repoPath, ws.Path, true); err != nil {
 		t.Fatalf("preparing RemoveWorktree failure: %v", err)

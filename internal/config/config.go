@@ -13,7 +13,6 @@ import (
 // Config represents the top-level bay configuration.
 type Config struct {
 	Agents  map[string]AgentConfig  `toml:"agents"`
-	Repos   map[string]RepoConfig   `toml:"repos"`
 	Docks   map[string]DockConfig   `toml:"docks"`
 	Editor  EditorConfig  `toml:"editor"`
 	Monitor MonitorConfig `toml:"monitor"`
@@ -32,23 +31,9 @@ type AgentConfig struct {
 	ProjectFile string `toml:"project_file,omitempty"`
 }
 
-// RepoConfig defines a managed repository.
-type RepoConfig struct {
-	Path        string `toml:"path"`
-	WorktreeDir string `toml:"worktree_dir"`
-}
-
-// EffectiveWorktreeDir returns the worktree directory, defaulting to {path}-worktrees.
-func (r RepoConfig) EffectiveWorktreeDir() string {
-	if r.WorktreeDir != "" {
-		return ExpandPath(r.WorktreeDir)
-	}
-	return ExpandPath(r.Path) + "-worktrees"
-}
-
-// DockConfig defines a dock (tmux session group).
+// DockConfig holds optional per-dock overrides.
+// Fields are only set when the user explicitly overrides manifest defaults.
 type DockConfig struct {
-	Repo      string   `toml:"repo"`
 	Agent     string   `toml:"agent"`
 	AgentArgs []string `toml:"agent_args"`
 	Terminal  string   `toml:"terminal,omitempty"`
@@ -72,7 +57,6 @@ func (m MonitorConfig) EffectiveInterval() int {
 func DefaultConfig() *Config {
 	return &Config{
 		Agents: make(map[string]AgentConfig),
-		Repos:  make(map[string]RepoConfig),
 		Docks:  make(map[string]DockConfig),
 	}
 }
@@ -118,9 +102,6 @@ func Parse(data string) (*Config, error) {
 	if cfg.Agents == nil {
 		cfg.Agents = make(map[string]AgentConfig)
 	}
-	if cfg.Repos == nil {
-		cfg.Repos = make(map[string]RepoConfig)
-	}
 	if cfg.Docks == nil {
 		cfg.Docks = make(map[string]DockConfig)
 	}
@@ -145,11 +126,6 @@ func Save(path string, cfg *Config) error {
 func (c *Config) Validate() []string {
 	var errs []string
 	for name, dock := range c.Docks {
-		if dock.Repo != "" {
-			if _, ok := c.Repos[dock.Repo]; !ok {
-				errs = append(errs, fmt.Sprintf("dock %q references unknown repo %q", name, dock.Repo))
-			}
-		}
 		if dock.Agent != "" {
 			if _, ok := c.Agents[dock.Agent]; !ok {
 				errs = append(errs, fmt.Sprintf("dock %q references unknown agent %q", name, dock.Agent))
@@ -157,6 +133,32 @@ func (c *Config) Validate() []string {
 		}
 	}
 	return errs
+}
+
+// ResolvedDockAgent returns the effective agent for a dock,
+// checking config overrides first, then the manifest default.
+func (c *Config) ResolvedDockAgent(dockName, manifestDefault string) string {
+	if dc, ok := c.Docks[dockName]; ok && dc.Agent != "" {
+		return dc.Agent
+	}
+	return manifestDefault
+}
+
+// ResolvedDockAgentArgs returns the effective agent args for a dock,
+// checking config overrides first, then the manifest default.
+func (c *Config) ResolvedDockAgentArgs(dockName string, manifestDefault []string) []string {
+	if dc, ok := c.Docks[dockName]; ok && len(dc.AgentArgs) > 0 {
+		return dc.AgentArgs
+	}
+	return manifestDefault
+}
+
+// ResolvedDockTerminal returns the effective terminal for a dock.
+func (c *Config) ResolvedDockTerminal(dockName string) string {
+	if dc, ok := c.Docks[dockName]; ok {
+		return dc.Terminal
+	}
+	return ""
 }
 
 // ExpandPath expands ~ to the user's home directory.

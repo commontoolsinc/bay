@@ -12,6 +12,9 @@ import (
 	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
+// expandPath is a shorthand for config.ExpandPath used throughout the engine.
+var expandPath = config.ExpandPath
+
 // WsNewOptions are options for creating a new workspace.
 type WsNewOptions struct {
 	Dock   string // dock name (required)
@@ -26,10 +29,6 @@ type WsNewOptions struct {
 // WsNew creates a new workspace with surfaces.
 func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	dockName := opts.Dock
-	dockCfg, ok := e.Config.Docks[dockName]
-	if !ok {
-		return nil, fmt.Errorf("unknown dock %q", dockName)
-	}
 
 	m, err := e.LoadManifest()
 	if err != nil {
@@ -39,10 +38,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	// Ensure dock exists in manifest.
 	dock := m.FindDock(dockName)
 	if dock == nil {
-		if err := m.AddDock(manifest.Dock{Name: dockName}); err != nil {
-			return nil, err
-		}
-		dock = m.FindDock(dockName)
+		return nil, fmt.Errorf("unknown dock %q", dockName)
 	}
 
 	// Determine workspace type and path.
@@ -51,7 +47,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	var worktreeAttrs *manifest.WorktreeAttrs
 	repoName := opts.Repo
 	if repoName == "" {
-		repoName = dockCfg.Repo
+		repoName = dock.Repo
 	}
 
 	// Determine display name early — it's also used for the worktree directory.
@@ -77,13 +73,13 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		if repoName == "" {
 			return nil, fmt.Errorf("dock %q has no default repo; specify --repo or --dir", dockName)
 		}
-		repoCfg, ok := e.Config.Repos[repoName]
-		if !ok {
+		repo := m.FindRepo(repoName)
+		if repo == nil {
 			return nil, fmt.Errorf("unknown repo %q", repoName)
 		}
 		worktreeAttrs = &manifest.WorktreeAttrs{Repo: repoName}
 
-		wtDir := repoCfg.EffectiveWorktreeDir()
+		wtDir := repo.EffectiveWorktreeDir()
 		wsPath = filepath.Join(wtDir, displayName)
 		// If the directory already exists (name reused after close), add a timestamp suffix.
 		if _, err := os.Stat(wsPath); err == nil {
@@ -94,7 +90,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 			return nil, fmt.Errorf("creating worktree dir: %w", err)
 		}
 
-		repoPath := config.ExpandPath(repoCfg.Path)
+		repoPath := config.ExpandPath(repo.Path)
 		if err := e.Git.CreateWorktree(repoPath, wsPath); err != nil {
 			return nil, fmt.Errorf("creating worktree: %w", err)
 		}
@@ -112,15 +108,20 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	// Determine agent.
 	agentName := opts.Agent
 	if agentName == "" {
-		agentName = dockCfg.Agent
+		agentName = e.resolvedDockAgent(dockName, m)
 	}
+
+	// Resolve agent args.
+	agentArgs := e.resolvedDockAgentArgs(dockName, m)
 
 	// rollbackWorktree cleans up a worktree on failure.
 	rollbackWorktree := func() {
 		if wsType == manifest.WorkspaceTypeWorktree && repoName != "" {
-			repoCfg := e.Config.Repos[repoName]
-			repoPath := config.ExpandPath(repoCfg.Path)
-			_ = e.Git.RemoveWorktree(repoPath, wsPath, true)
+			repo := m.FindRepo(repoName)
+			if repo != nil {
+				repoPath := config.ExpandPath(repo.Path)
+				_ = e.Git.RemoveWorktree(repoPath, wsPath, true)
+			}
 		}
 	}
 
@@ -161,7 +162,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		surfaceName = "shell"
 	}
 
-	surface := e.launchSurfaceInTmux(tmuxPaneID, dockName, surfaceType, agentName, "")
+	surface := e.launchSurfaceInTmux(tmuxPaneID, dockName, surfaceType, agentName, "", agentArgs)
 	surface.Name = surfaceName
 	surface.Tmux.PaneID = tmuxPaneID
 	surface.Tmux.WindowID = windowID
@@ -267,15 +268,15 @@ func (e *Engine) WsClose(dockName, wsName string, force bool) error {
 
 	// Remove worktree if applicable.
 	if ws.Type == manifest.WorkspaceTypeWorktree && ws.Worktree != nil && ws.Worktree.Repo != "" {
-		repoCfg, ok := e.Config.Repos[ws.Worktree.Repo]
-		if ok {
-			repoPath := config.ExpandPath(repoCfg.Path)
+		repo := m.FindRepo(ws.Worktree.Repo)
+		if repo != nil {
+			repoPath := config.ExpandPath(repo.Path)
 			if err := e.Git.RemoveWorktree(repoPath, ws.Path, force); err != nil {
 				if !force {
 					return fmt.Errorf("removing worktree: %w", err)
 				}
 			}
-			wtDir := repoCfg.EffectiveWorktreeDir()
+			wtDir := repo.EffectiveWorktreeDir()
 			_ = os.Remove(wtDir)
 		}
 	}

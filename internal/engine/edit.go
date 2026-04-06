@@ -36,18 +36,22 @@ func (e *Engine) EditAll(dockName string) ([]string, error) {
 
 // EditAllParentDir returns the worktree parent directory for a dock's repo.
 func (e *Engine) EditAllParentDir(dockName string) (string, error) {
-	dockCfg, ok := e.Config.Docks[dockName]
-	if !ok {
+	m, err := e.LoadManifest()
+	if err != nil {
+		return "", err
+	}
+	dock := m.FindDock(dockName)
+	if dock == nil {
 		return "", fmt.Errorf("unknown dock %q", dockName)
 	}
-	if dockCfg.Repo == "" {
+	if dock.Repo == "" {
 		return "", fmt.Errorf("dock %q has no repo configured", dockName)
 	}
-	repoCfg, ok := e.Config.Repos[dockCfg.Repo]
-	if !ok {
-		return "", fmt.Errorf("unknown repo %q", dockCfg.Repo)
+	repo := m.FindRepo(dock.Repo)
+	if repo == nil {
+		return "", fmt.Errorf("unknown repo %q", dock.Repo)
 	}
-	return repoCfg.EffectiveWorktreeDir(), nil
+	return repo.EffectiveWorktreeDir(), nil
 }
 
 // SetEditor sets the editor command in the config and saves.
