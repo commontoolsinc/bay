@@ -180,25 +180,28 @@ func (e *Engine) DockCloseWorkspaces(name string, force bool) {
 
 // DockClose closes all workspaces in a dock and kills the tmux session.
 func (e *Engine) DockClose(name string, force bool) error {
-	m, err := e.LoadManifest()
-	if err != nil {
-		return err
+	// Check the dock exists in config or manifest.
+	_, inConfig := e.Config.Docks[name]
+	m, _ := e.LoadManifest()
+	var dock *manifest.Dock
+	if m != nil {
+		dock = m.FindDock(name)
 	}
-
-	dock := m.FindDock(name)
-	if dock == nil {
+	if !inConfig && dock == nil {
 		return fmt.Errorf("unknown dock %q", name)
 	}
 
-	var names []string
-	for _, ws := range dock.Workspaces {
-		names = append(names, ws.Name)
-	}
-
-	for _, wsName := range names {
-		if err := e.WsClose(name, wsName, force); err != nil {
-			if !force {
-				return fmt.Errorf("workspace %q: %w", wsName, err)
+	// Close workspaces if the dock has any in the manifest.
+	if dock != nil {
+		var names []string
+		for _, ws := range dock.Workspaces {
+			names = append(names, ws.Name)
+		}
+		for _, wsName := range names {
+			if err := e.WsClose(name, wsName, force); err != nil {
+				if !force {
+					return fmt.Errorf("workspace %q: %w", wsName, err)
+				}
 			}
 		}
 	}
