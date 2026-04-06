@@ -488,6 +488,22 @@ No migration code. No existing users to migrate. Clean cut:
 Worktrees on disk are unaffected — they're just git worktrees. Recreate
 workspaces as needed.
 
+## Implementation status
+
+**Done (merged to main):**
+- Phase 0a+1a: manifest package rewrite (JSON, Surface types, 43 tests) — PR #51
+- Phase 1b: engine rewrite (all operations use Surface model) — PR #52
+- Phase 1c partial: CLI updated to compile with new types — PR #52
+- Nav and monitor packages updated — PR #52
+
+**Next:**
+- Rewrite test files: engine_test.go (~2,079 lines), nav_test.go,
+  monitor_test.go, cli test files. All reference old types.
+- Config cleanup: remove ConfigFile from AgentConfig, remove
+  AgentConfigTemplate from DockConfig, add ResumeArgs/ProjectFile/Terminal/Template.
+- Phase 1c completion: new CLI command structure (surface/sf, workspace/ws nouns)
+- Phase 1d: navigation rewrite (built-in picker, scoped nav)
+
 ## What's NOT in scope
 
 - Cross-dock navigation (deferred to Phase 6).
