@@ -2,6 +2,7 @@ package focus
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -36,5 +37,23 @@ func TestSourcePath(t *testing.T) {
 	path := SourcePath()
 	if path == "" {
 		t.Error("SourcePath should return a non-empty path")
+	}
+}
+
+func TestSwiftSource_TypeChecks(t *testing.T) {
+	if _, err := exec.LookPath("swiftc"); err != nil {
+		t.Skip("swiftc not available")
+	}
+
+	// Find the Swift source relative to this test file.
+	source := filepath.Join("bay-focus.swift")
+	if _, err := os.Stat(source); err != nil {
+		t.Skipf("Swift source not found at %s", source)
+	}
+
+	cmd := exec.Command("swiftc", "-typecheck", source)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Errorf("Swift type-check failed:\n%s", out)
 	}
 }

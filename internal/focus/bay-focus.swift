@@ -115,13 +115,14 @@ func activateApp(_ bundleID: String) -> Bool {
     guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first else {
         return false
     }
-    return app.activate(options: [.activateIgnoringOtherApps])
+    return app.activate()
 }
 
 // Check Accessibility permission.
 func checkAccessibility() -> Bool {
+    let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
     let trusted = AXIsProcessTrustedWithOptions(
-        [kAXTrustedCheckOptionPrompt: false] as CFDictionary
+        [key: false] as CFDictionary
     )
     return trusted
 }
