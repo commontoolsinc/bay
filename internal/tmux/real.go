@@ -255,6 +255,11 @@ func (r *Real) GetPanePID(paneID string) (int, error) {
 	return pid, nil
 }
 
+func (r *Real) PaneExists(paneID string) (bool, error) {
+	err := runSilent("display-message", "-t", paneID, "-p", "#{pane_id}")
+	return err == nil, nil
+}
+
 func (r *Real) GetPaneCursorY(paneID string) (int, error) {
 	out, err := run("display-message", "-t", paneID, "-p", "#{cursor_y}")
 	if err != nil {

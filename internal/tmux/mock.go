@@ -378,6 +378,12 @@ func (m *Mock) GetPanePID(paneID string) (int, error) {
 	return p.pid, nil
 }
 
+func (m *Mock) PaneExists(paneID string) (bool, error) {
+	m.record("PaneExists", paneID)
+	_, ok := m.panes[paneID]
+	return ok, nil
+}
+
 func (m *Mock) GetPaneCursorY(paneID string) (int, error) {
 	m.record("GetPaneCursorY", paneID)
 	p, ok := m.panes[paneID]
