@@ -155,6 +155,7 @@ func NewRootCmd(version string) *cobra.Command {
 		addPromptCmd,
 		versionCmd,
 		newAgentGuideCmd(), // hidden, for skill
+		newConfigHelpCmd(), // hidden, for bay help config
 	)
 
 	RegisterCompletion(root)

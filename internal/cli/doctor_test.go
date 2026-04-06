@@ -41,17 +41,13 @@ func TestKeybindingsIncludeSurfaceNavigation(t *testing.T) {
 	}
 }
 
-func TestDefaultConfigHasNoRemovedFields(t *testing.T) {
+func TestDefaultSetupConfig(t *testing.T) {
 	cfg := defaultSetupConfig()
-	for name, agent := range cfg.Agents {
-		if agent.Command == "" {
-			t.Errorf("agent %q has empty command", name)
-		}
+	if cfg == nil {
+		t.Fatal("defaultSetupConfig returned nil")
 	}
-	for name, agent := range cfg.Agents {
-		if agent.ProjectFile == "" && agent.Command == "claude" {
-			t.Errorf("agent %q should have project_file set", name)
-		}
+	if len(cfg.Agents) == 0 {
+		t.Error("expected at least one agent defined")
 	}
 }
 

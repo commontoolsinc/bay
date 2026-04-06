@@ -91,6 +91,17 @@ func newWsNewCmd() *cobra.Command {
 			}
 			fmt.Printf("Workspace %s created in dock %s (path: %s)\n",
 				ws.Name, opts.Dock, ws.Path)
+
+			// Suggest how to get into the workspace if not already there.
+			currentSession, tmuxErr := eng.Tmux.CurrentSession()
+			if tmuxErr != nil {
+				// Not in tmux at all.
+				fmt.Printf("\nAttach with:\n  tmux attach -t %s\n", opts.Dock)
+			} else if currentSession != opts.Dock {
+				// In tmux but different session.
+				fmt.Printf("\nSwitch with:\n  tmux switch-client -t %s\n", opts.Dock)
+			}
+
 			return nil
 		},
 	}
@@ -361,6 +372,7 @@ func autoBootstrap(eng *engine.Engine) (string, error) {
 		fmt.Printf(", agent %s", agentName)
 	}
 	fmt.Println()
+	fmt.Println("Run `bay setup` to install keybindings and shell completions.")
 
 	return dockName, nil
 }

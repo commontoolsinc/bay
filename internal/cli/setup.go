@@ -97,6 +97,10 @@ func newSetupCmd() *cobra.Command {
 				if err := config.Save(configPath, cfg); err != nil {
 					return fmt.Errorf("writing config: %w", err)
 				}
+				// Prepend a header comment pointing to docs.
+				data, _ := os.ReadFile(configPath)
+				header := "# Bay config — run 'bay help config' for documentation.\n\n"
+				_ = os.WriteFile(configPath, append([]byte(header), data...), 0o644)
 				fmt.Printf("Config written to %s\n", configPath)
 			}
 
@@ -158,7 +162,6 @@ func defaultSetupConfig() *config.Config {
 			"codex":  {Command: "codex"},
 			"gemini": {Command: "gemini"},
 		},
-		Docks: map[string]config.DockConfig{},
 		Monitor: config.MonitorConfig{
 			IntervalSeconds: 3,
 		},
