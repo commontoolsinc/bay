@@ -516,8 +516,9 @@ workspaces as needed.
 
 - Phase 2b: dock host terminal (launch/recover terminal app) — PR #65
 
+- Phase 2c: bay-focus Swift helper (compile, doctor check, Accessibility) — PR #66
+
 **Next:**
-- Phase 2c: bay-focus Swift helper
 - Phase 5d: documentation rewrite
 
 ## What's NOT in scope
