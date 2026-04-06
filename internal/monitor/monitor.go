@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/commontoolsinc/bay/internal/git"
 	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/commontoolsinc/bay/internal/tmux"
 )
@@ -34,11 +35,17 @@ const (
 
 	// captureLinesCount is how many lines to capture from each pane.
 	captureLinesCount = 20
+
+	// PRCheckCycles is how many check cycles between PR detection runs.
+	// With a default 3-second interval, 20 cycles = ~60 seconds.
+	PRCheckCycles = 20
 )
 
 // Monitor watches agent panes for input prompts and highlights their tmux windows.
+// It also periodically detects PR numbers for workspaces with branches.
 type Monitor struct {
 	tmux         tmux.Interface
+	git          git.Interface
 	manifestPath string
 	patternsPath string
 	pidPath      string
@@ -47,9 +54,12 @@ type Monitor struct {
 	// tracked keeps state of which windows are currently highlighted to avoid
 	// redundant tmux calls and to know when to clear.
 	tracked map[string]bool
+
+	// cycle counts check cycles for cadence-gated operations.
+	cycle int
 }
 
-// New creates a new Monitor.
+// New creates a new Monitor without git support (PR detection disabled).
 func New(t tmux.Interface, manifestPath, patternsPath, pidPath string, intervalSecs int) *Monitor {
 	return &Monitor{
 		tmux:         t,
@@ -59,6 +69,13 @@ func New(t tmux.Interface, manifestPath, patternsPath, pidPath string, intervalS
 		intervalSecs: intervalSecs,
 		tracked:      make(map[string]bool),
 	}
+}
+
+// NewWithGit creates a Monitor with git support for background PR detection.
+func NewWithGit(t tmux.Interface, g git.Interface, manifestPath, patternsPath, pidPath string, intervalSecs int) *Monitor {
+	m := New(t, manifestPath, patternsPath, pidPath, intervalSecs)
+	m.git = g
+	return m
 }
 
 // Run is the main loop. It periodically checks all windows and exits when ctx is cancelled.
@@ -128,7 +145,40 @@ func (m *Monitor) CheckOnce() error {
 		}
 	}
 
+	// Periodic PR detection (slower cadence than prompt checking).
+	m.cycle++
+	if m.git != nil && m.cycle%PRCheckCycles == 0 {
+		if m.detectPRs(mf) {
+			_ = manifest.Save(m.manifestPath, mf)
+		}
+	}
+
 	return nil
+}
+
+// detectPRs checks workspaces with a branch but no PR and tries to find one.
+// Returns true if any PR was detected (manifest needs saving).
+func (m *Monitor) detectPRs(mf *manifest.Manifest) bool {
+	changed := false
+	for i := range mf.Docks {
+		dock := &mf.Docks[i]
+		for j := range dock.Workspaces {
+			ws := &dock.Workspaces[j]
+			if ws.Worktree == nil || ws.Worktree.Branch == "" || ws.Worktree.PR != "" {
+				continue
+			}
+			if ws.Path == "" {
+				continue
+			}
+			pr, err := m.git.PRForBranch(ws.Path, ws.Worktree.Branch)
+			if err != nil || pr == "" {
+				continue
+			}
+			ws.Worktree.PR = pr
+			changed = true
+		}
+	}
+	return changed
 }
 
 // hasMonitorableSurface returns true if the surface is an agent or cmd that should be monitored.

@@ -16,6 +16,7 @@ type repoState struct {
 	defaultBranch string
 	ignored       map[string]bool
 	worktrees     map[string]bool
+	prs           map[string]string // branch → PR number
 }
 
 // Mock is a test double for Interface that tracks calls and stores state.
@@ -39,6 +40,7 @@ func (m *Mock) repo(path string) *repoState {
 		r = &repoState{
 			ignored:   make(map[string]bool),
 			worktrees: make(map[string]bool),
+			prs:       make(map[string]string),
 		}
 		m.repos[path] = r
 	}
@@ -180,6 +182,17 @@ func (m *Mock) CreateBranch(path, branchName string) error {
 	m.record("CreateBranch", path, branchName)
 	m.repo(path).branch = branchName
 	return nil
+}
+
+func (m *Mock) PRForBranch(path, branch string) (string, error) {
+	m.record("PRForBranch", path, branch)
+	pr := m.repo(path).prs[branch]
+	return pr, nil
+}
+
+// SetPR configures the PR number for a branch in a repo.
+func (m *Mock) SetPR(path, branch, pr string) {
+	m.repo(path).prs[branch] = pr
 }
 
 func (m *Mock) DefaultBranch(repoPath string) (string, error) {
