@@ -137,7 +137,6 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		rollbackWorktree()
 		return nil, fmt.Errorf("creating tmux window: %w", err)
 	}
-	_ = e.Tmux.SetWindowOption(windowID, "remain-on-exit", "on")
 	e.cleanPlaceholders(dockName)
 
 	// Get the first pane in the new window.
