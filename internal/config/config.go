@@ -26,10 +26,10 @@ type EditorConfig struct {
 }
 
 // AgentConfig defines an agent type.
-// TODO: remove ConfigFile (no longer generated), add ResumeArgs and ProjectFile per redesign plan.
 type AgentConfig struct {
-	Command    string `toml:"command"`
-	ConfigFile string `toml:"config_file"`
+	Command     string `toml:"command"`
+	ResumeArgs  string `toml:"resume_args,omitempty"`
+	ProjectFile string `toml:"project_file,omitempty"`
 }
 
 // RepoConfig defines a managed repository.
@@ -47,12 +47,12 @@ func (r RepoConfig) EffectiveWorktreeDir() string {
 }
 
 // DockConfig defines a dock (tmux session group).
-// TODO: remove AgentConfigTemplate (no longer used), add Terminal and Template per redesign plan.
 type DockConfig struct {
-	Repo                string   `toml:"repo"`
-	Agent               string   `toml:"agent"`
-	AgentArgs           []string `toml:"agent_args"`
-	AgentConfigTemplate string   `toml:"agent_config_template"`
+	Repo      string   `toml:"repo"`
+	Agent     string   `toml:"agent"`
+	AgentArgs []string `toml:"agent_args"`
+	Terminal  string   `toml:"terminal,omitempty"`
+	Template  string   `toml:"template,omitempty"`
 }
 
 // MonitorConfig configures the pane monitor.

@@ -71,34 +71,7 @@ func newDoctorCmd() *cobra.Command {
 				}
 			}
 
-			// Check gitignore for each repo+agent combo
-			for dockName, dock := range eng.Config.Docks {
-				if dock.Agent == "" || dock.Repo == "" {
-					continue
-				}
-				agentCfg, aok := eng.Config.Agents[dock.Agent]
-				repoCfg, rok := eng.Config.Repos[dock.Repo]
-				if !aok || !rok {
-					continue
-				}
-				if agentCfg.ConfigFile == "" {
-					continue
-				}
-				repoPath := config.ExpandPath(repoCfg.Path)
-				ignored, gitErr := eng.Git.IsIgnored(repoPath, agentCfg.ConfigFile)
-				if gitErr != nil {
-					fmt.Printf("[WARN] dock %q: could not check gitignore for %s in %s\n",
-						dockName, agentCfg.ConfigFile, repoPath)
-					ok = false
-				} else if !ignored {
-					fmt.Printf("[WARN] dock %q: %s not in .gitignore for %s\n",
-						dockName, agentCfg.ConfigFile, repoPath)
-					ok = false
-				} else {
-					fmt.Printf("[OK] dock %q: %s gitignored in %s\n",
-						dockName, agentCfg.ConfigFile, repoPath)
-				}
-			}
+
 
 			// Check workspace paths in manifest
 			m, loadErr := eng.LoadManifest()

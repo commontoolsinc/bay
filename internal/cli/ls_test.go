@@ -17,7 +17,7 @@ func testListEngine(t *testing.T) (*engine.Engine, string) {
 
 	cfg := &config.Config{
 		Agents: map[string]config.AgentConfig{
-			"claude": {Command: "claude", ConfigFile: "CLAUDE.local.md"},
+			"claude": {Command: "claude"},
 		},
 		Repos: map[string]config.RepoConfig{
 			"labs": {Path: filepath.Join(dir, "repos", "labs")},

@@ -18,8 +18,8 @@ func testEngine(t *testing.T) (*Engine, string) {
 
 	cfg := &config.Config{
 		Agents: map[string]config.AgentConfig{
-			"claude": {Command: "claude", ConfigFile: "CLAUDE.local.md"},
-			"codex":  {Command: "codex", ConfigFile: "AGENTS.local.md"},
+			"claude": {Command: "claude"},
+			"codex":  {Command: "codex"},
 		},
 		Repos: map[string]config.RepoConfig{
 			"labs": {Path: filepath.Join(dir, "repos", "labs")},

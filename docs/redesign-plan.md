@@ -495,13 +495,12 @@ workspaces as needed.
 - Phase 1b: engine rewrite (all operations use Surface model) — PR #52
 - Phase 1c partial: CLI updated to compile with new types — PR #52
 - Nav and monitor packages updated — PR #52
+- Test rewrite: all test files updated for Surface model — PR #53
+- Config cleanup: removed ConfigFile/AgentConfigTemplate, added
+  ResumeArgs/ProjectFile/Terminal/Template — PR #54
 
 **Next:**
-- Rewrite test files: engine_test.go (~2,079 lines), nav_test.go,
-  monitor_test.go, cli test files. All reference old types.
-- Config cleanup: remove ConfigFile from AgentConfig, remove
-  AgentConfigTemplate from DockConfig, add ResumeArgs/ProjectFile/Terminal/Template.
-- Phase 1c completion: new CLI command structure (surface/sf, workspace/ws nouns)
+- Phase 1c completion: new CLI command structure (surface/sf noun, remove old win/pane/close-pane)
 - Phase 1d: navigation rewrite (built-in picker, scoped nav)
 
 ## What's NOT in scope
