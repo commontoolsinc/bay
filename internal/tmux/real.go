@@ -166,6 +166,10 @@ func (r *Real) SelectWindow(windowID string) error {
 
 // --- Panes ---
 
+func (r *Real) SelectPane(paneID string) error {
+	return runSilent("select-pane", "-t", paneID)
+}
+
 func (r *Real) SplitWindow(windowID string, dir string, cwd string) (string, error) {
 	flag := "-v"
 	if dir == "h" {

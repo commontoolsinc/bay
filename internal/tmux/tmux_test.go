@@ -319,6 +319,24 @@ func TestKillPane_Missing(t *testing.T) {
 	}
 }
 
+func TestSelectPane(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	winID, _ := m.NewWindow("work", "editor", "/home")
+	paneID, _ := m.SplitWindow(winID, "v", "/home")
+
+	if err := m.SelectPane(paneID); err != nil {
+		t.Fatalf("SelectPane: %v", err)
+	}
+}
+
+func TestSelectPane_Missing(t *testing.T) {
+	m := NewMock()
+	if err := m.SelectPane("%999"); err == nil {
+		t.Error("expected error selecting non-existent pane")
+	}
+}
+
 func TestSendKeys(t *testing.T) {
 	m := NewMock()
 	m.NewSession("work")

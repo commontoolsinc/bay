@@ -277,6 +277,14 @@ func (m *Mock) SplitWindow(windowID string, dir string, cwd string) (string, err
 	return paneID, nil
 }
 
+func (m *Mock) SelectPane(paneID string) error {
+	m.record("SelectPane", paneID)
+	if _, ok := m.panes[paneID]; !ok {
+		return fmt.Errorf("pane %q not found", paneID)
+	}
+	return nil
+}
+
 func (m *Mock) KillPane(paneID string) error {
 	m.record("KillPane", paneID)
 	p, ok := m.panes[paneID]

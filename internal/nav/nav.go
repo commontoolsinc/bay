@@ -226,3 +226,90 @@ func FormatEntries(entries []Entry) string {
 	}
 	return sb.String()
 }
+
+// --- Surface-level navigation (intra-workspace) ---
+
+// SurfaceEntry represents a navigable surface within a workspace.
+type SurfaceEntry struct {
+	ID       int
+	Name     string
+	Type     string // "agent", "editor", "shell", "cmd"
+	PaneID   string // tmux pane ID (empty for GUI surfaces)
+	WindowID string // tmux window ID
+	Waiting  bool
+	Current  bool // true if this is the currently focused surface
+}
+
+// CollectSurfaces builds a list of surface entries for a workspace.
+func CollectSurfaces(ws *manifest.Workspace, tc tmux.Interface, currentPaneID string) []SurfaceEntry {
+	var entries []SurfaceEntry
+	for _, s := range ws.Surfaces {
+		e := SurfaceEntry{
+			ID:   s.ID,
+			Name: s.Name,
+			Type: string(s.Type),
+		}
+		if s.Tmux != nil {
+			e.PaneID = s.Tmux.PaneID
+			e.WindowID = s.Tmux.WindowID
+			if e.PaneID == currentPaneID && currentPaneID != "" {
+				e.Current = true
+			}
+			// Check waiting status on the window.
+			if e.WindowID != "" {
+				val, err := tc.GetWindowOption(e.WindowID, "@bay-waiting")
+				if err == nil && val == "1" {
+					e.Waiting = true
+				}
+			}
+		}
+		entries = append(entries, e)
+	}
+	return entries
+}
+
+// NextSurface returns the next surface after the current one, wrapping around.
+// If no surface is marked current, returns the first entry.
+func NextSurface(entries []SurfaceEntry) *SurfaceEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	cur := -1
+	for i, e := range entries {
+		if e.Current {
+			cur = i
+			break
+		}
+	}
+	next := (cur + 1) % len(entries)
+	return &entries[next]
+}
+
+// PrevSurface returns the previous surface before the current one, wrapping around.
+// If no surface is marked current, returns the last entry.
+func PrevSurface(entries []SurfaceEntry) *SurfaceEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	cur := -1
+	for i, e := range entries {
+		if e.Current {
+			cur = i
+			break
+		}
+	}
+	if cur == -1 {
+		// No current — return last (prev wraps to end).
+		return &entries[len(entries)-1]
+	}
+	prev := (cur - 1 + len(entries)) % len(entries)
+	return &entries[prev]
+}
+
+// SurfaceByIndex returns the surface at the given 1-based index, or nil if out of range.
+func SurfaceByIndex(entries []SurfaceEntry, index int) *SurfaceEntry {
+	if index < 1 || index > len(entries) {
+		return nil
+	}
+	return &entries[index-1]
+}
