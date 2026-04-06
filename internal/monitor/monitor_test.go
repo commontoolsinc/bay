@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/commontoolsinc/bay/internal/git"
 	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/commontoolsinc/bay/internal/tmux"
 )
@@ -514,6 +515,111 @@ func TestRun_CancelsOnContext(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Run did not exit after context cancellation")
+	}
+}
+
+// --- PR detection tests ---
+
+func TestCheckOnce_DetectsPR(t *testing.T) {
+	dir := t.TempDir()
+	mock := tmux.NewMock()
+	mockGit := git.NewMock()
+
+	mock.NewSession("dev")
+	winID, _ := mock.NewWindow("dev", "test-ws", "/tmp")
+
+	agentName := "claude"
+	m := manifest.New()
+	m.Docks = []manifest.Dock{
+		{
+			Name: "dev",
+			Workspaces: []manifest.Workspace{
+				{
+					Name:     "test-ws",
+					Type:     manifest.WorkspaceTypeWorktree,
+					Path:     "/tmp",
+					Status:   manifest.WorkspaceStatusActive,
+					Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "feature/login"},
+					Surfaces: []manifest.Surface{
+						{
+							ID: 1, Name: "agent", Type: manifest.SurfaceTypeAgent,
+							Backend: manifest.SurfaceBackendTmux, Agent: &agentName,
+							Tmux: &manifest.TmuxAttrs{WindowID: winID, PaneID: "%1", LayoutGroup: 1},
+						},
+					},
+				},
+			},
+		},
+	}
+	manifestPath := filepath.Join(dir, "manifest.toml")
+	manifest.Save(manifestPath, m)
+
+	// Configure mock: PR exists for this branch.
+	mockGit.SetPR("/tmp", "feature/login", "99")
+
+	patternsPath := filepath.Join(dir, "bay-prompts.txt")
+	os.WriteFile(patternsPath, []byte(""), 0o644)
+	pidPath := filepath.Join(dir, "monitor.pid")
+
+	mon := NewWithGit(mock, mockGit, manifestPath, patternsPath, pidPath, 1)
+
+	// Run enough cycles to trigger PR check (prCheckInterval).
+	for i := 0; i < PRCheckCycles+1; i++ {
+		mon.CheckOnce()
+	}
+
+	// Reload manifest and verify PR was cached.
+	updated, err := manifest.Load(manifestPath)
+	if err != nil {
+		t.Fatalf("loading manifest: %v", err)
+	}
+	dock := updated.FindDock("dev")
+	ws := dock.FindWorkspace("test-ws")
+	if ws.Worktree.PR != "99" {
+		t.Errorf("PR = %q, want 99", ws.Worktree.PR)
+	}
+}
+
+func TestCheckOnce_SkipsPRDetectionForWorkspaceWithNoPath(t *testing.T) {
+	dir := t.TempDir()
+	mock := tmux.NewMock()
+	mockGit := git.NewMock()
+
+	m := manifest.New()
+	m.Docks = []manifest.Dock{
+		{
+			Name: "dev",
+			Workspaces: []manifest.Workspace{
+				{
+					Name:     "test-ws",
+					Status:   manifest.WorkspaceStatusActive,
+					Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "feature/no-pr"},
+					// No Path — detectPRs skips workspaces without a path.
+				},
+			},
+		},
+	}
+	manifestPath := filepath.Join(dir, "manifest.toml")
+	manifest.Save(manifestPath, m)
+
+	patternsPath := filepath.Join(dir, "bay-prompts.txt")
+	os.WriteFile(patternsPath, []byte(""), 0o644)
+	pidPath := filepath.Join(dir, "monitor.pid")
+
+	mon := NewWithGit(mock, mockGit, manifestPath, patternsPath, pidPath, 1)
+
+	for i := 0; i < PRCheckCycles+1; i++ {
+		if err := mon.CheckOnce(); err != nil {
+			t.Fatalf("CheckOnce: %v", err)
+		}
+	}
+
+	// PR should remain empty — workspace was skipped.
+	updated, _ := manifest.Load(manifestPath)
+	dock := updated.FindDock("dev")
+	ws := dock.FindWorkspace("test-ws")
+	if ws.Worktree.PR != "" {
+		t.Errorf("PR = %q, want empty", ws.Worktree.PR)
 	}
 }
 

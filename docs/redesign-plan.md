@@ -504,7 +504,10 @@ workspaces as needed.
 - Phase 1d: navigation commands (surface go/next/prev, ws go/next/prev) — PR #57
 - Phase 1d: keybindings (21 bindings: surface/ws nav, index jump, utility) — PR #58
 
+- Phase 4a: automatic PR detection via `gh pr view` during sync — PR #59
+
 **Next:**
+- Phase 5: zero-config, templates, docs rewrite
 - Phase 2: GUI integration (editor surfaces, dock host terminal)
 
 ## What's NOT in scope

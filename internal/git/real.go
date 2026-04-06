@@ -137,6 +137,16 @@ func (r *Real) CreateBranch(path, branchName string) error {
 	return nil
 }
 
+func (r *Real) PRForBranch(path, branch string) (string, error) {
+	cmd := exec.Command("gh", "pr", "view", branch, "--json", "number", "-q", ".number")
+	cmd.Dir = path
+	out, err := cmd.Output()
+	if err != nil {
+		return "", nil // no PR or gh not installed — not an error
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 func (r *Real) DefaultBranch(repoPath string) (string, error) {
 	// Try the remote HEAD symref first.
 	cmd := exec.Command("git", "-C", repoPath, "symbolic-ref", "refs/remotes/origin/HEAD")

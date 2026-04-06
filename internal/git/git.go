@@ -23,6 +23,9 @@ type Interface interface {
 	// Branch operations
 	CreateBranch(path, branchName string) error
 
+	// PR detection
+	PRForBranch(path, branch string) (string, error)
+
 	// Default branch
 	DefaultBranch(repoPath string) (string, error)
 }

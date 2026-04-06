@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/commontoolsinc/bay/internal/config"
+	gitpkg "github.com/commontoolsinc/bay/internal/git"
 	"github.com/commontoolsinc/bay/internal/monitor"
 	tmuxpkg "github.com/commontoolsinc/bay/internal/tmux"
 	"github.com/spf13/cobra"
@@ -37,7 +38,8 @@ func newMonitorWithConfig() (*monitor.Monitor, error) {
 	}
 
 	t := tmuxpkg.NewReal()
-	return monitor.New(t, p.ManifestFile, p.PatternsFile, p.PIDFile, cfg.Monitor.EffectiveInterval()), nil
+	g := gitpkg.NewReal()
+	return monitor.NewWithGit(t, g, p.ManifestFile, p.PatternsFile, p.PIDFile, cfg.Monitor.EffectiveInterval()), nil
 }
 
 func newMonitorStartCmd() *cobra.Command {
