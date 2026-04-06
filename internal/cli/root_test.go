@@ -85,6 +85,25 @@ func TestSurfaceAlias(t *testing.T) {
 	}
 }
 
+func TestRepoSubcommands(t *testing.T) {
+	root := NewRootCmd("test")
+	repo, _, err := root.Find([]string{"repo"})
+	if err != nil {
+		t.Fatalf("finding repo: %v", err)
+	}
+
+	expected := []string{"add", "ls", "show", "remove", "init"}
+	found := map[string]bool{}
+	for _, cmd := range repo.Commands() {
+		found[cmd.Name()] = true
+	}
+	for _, name := range expected {
+		if !found[name] {
+			t.Errorf("repo subcommand %q not found", name)
+		}
+	}
+}
+
 func TestDockSubcommands(t *testing.T) {
 	root := NewRootCmd("test")
 	dock, _, err := root.Find([]string{"dock"})

@@ -1019,6 +1019,100 @@ func TestRepoRemove_NotFound(t *testing.T) {
 	}
 }
 
+// --- RepoInit tests ---
+
+func TestRepoInit_AppendsAwarenessLine(t *testing.T) {
+	eng, dir := testEngine(t)
+
+	repoDir := filepath.Join(dir, "repos", "labs")
+	eng.Config.Agents["claude"] = config.AgentConfig{
+		Command:     "claude",
+		ProjectFile: "CLAUDE.md",
+	}
+
+	// Create project file without bay awareness.
+	projectFile := filepath.Join(repoDir, "CLAUDE.md")
+	os.WriteFile(projectFile, []byte("# My Project\n"), 0o644)
+
+	err := eng.RepoInit("labs")
+	if err != nil {
+		t.Fatalf("RepoInit: %v", err)
+	}
+
+	data, _ := os.ReadFile(projectFile)
+	if !strings.Contains(string(data), "bay agent-guide") {
+		t.Errorf("project file should mention bay agent-guide, got:\n%s", data)
+	}
+}
+
+func TestRepoInit_IdempotentIfAlreadyPresent(t *testing.T) {
+	eng, dir := testEngine(t)
+
+	repoDir := filepath.Join(dir, "repos", "labs")
+	eng.Config.Agents["claude"] = config.AgentConfig{
+		Command:     "claude",
+		ProjectFile: "CLAUDE.md",
+	}
+
+	projectFile := filepath.Join(repoDir, "CLAUDE.md")
+	os.WriteFile(projectFile, []byte("# My Project\nRun bay agent-guide for commands.\n"), 0o644)
+
+	err := eng.RepoInit("labs")
+	if err != nil {
+		t.Fatalf("RepoInit: %v", err)
+	}
+
+	// Should not double-append.
+	data, _ := os.ReadFile(projectFile)
+	if strings.Count(string(data), "bay agent-guide") != 1 {
+		t.Errorf("bay awareness should appear exactly once, got:\n%s", data)
+	}
+}
+
+func TestRepoInit_CreatesWorktreeinclude(t *testing.T) {
+	eng, dir := testEngine(t)
+
+	repoDir := filepath.Join(dir, "repos", "labs")
+
+	err := eng.RepoInit("labs")
+	if err != nil {
+		t.Fatalf("RepoInit: %v", err)
+	}
+
+	wtInclude := filepath.Join(repoDir, ".worktreeinclude")
+	if _, err := os.Stat(wtInclude); err != nil {
+		t.Error(".worktreeinclude should be created")
+	}
+}
+
+func TestRepoInit_SkipsWorktreeincludeIfExists(t *testing.T) {
+	eng, dir := testEngine(t)
+
+	repoDir := filepath.Join(dir, "repos", "labs")
+	wtInclude := filepath.Join(repoDir, ".worktreeinclude")
+	os.WriteFile(wtInclude, []byte(".env\n"), 0o644)
+
+	err := eng.RepoInit("labs")
+	if err != nil {
+		t.Fatalf("RepoInit: %v", err)
+	}
+
+	// Existing content should be preserved.
+	data, _ := os.ReadFile(wtInclude)
+	if !strings.Contains(string(data), ".env") {
+		t.Error("existing .worktreeinclude content should be preserved")
+	}
+}
+
+func TestRepoInit_UnknownRepo(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	err := eng.RepoInit("nonexistent")
+	if err == nil {
+		t.Error("expected error for unknown repo")
+	}
+}
+
 func TestWsClose_CleansEmptyWorktreeDir(t *testing.T) {
 	eng, dir := testEngine(t)
 
