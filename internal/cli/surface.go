@@ -363,7 +363,7 @@ func pickSurface(eng *engine.Engine, entries []nav.SurfaceEntry) error {
 		}
 	}
 
-	selected, err := picker.Run(items, picker.Options{Prompt: "surface> "}, os.Stdin, os.Stdout)
+	selected, err := defaultPicker.Pick(items, picker.Options{Prompt: "surface> "})
 	if err != nil || selected < 0 {
 		return nil // cancelled
 	}

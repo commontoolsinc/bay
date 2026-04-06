@@ -535,7 +535,7 @@ func pickWorkspace(eng *engine.Engine, entries []nav.Entry) error {
 		}
 	}
 
-	selected, err := picker.Run(items, picker.Options{Prompt: "workspace> "}, os.Stdin, os.Stdout)
+	selected, err := defaultPicker.Pick(items, picker.Options{Prompt: "workspace> "})
 	if err != nil || selected < 0 {
 		return nil
 	}
