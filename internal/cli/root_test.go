@@ -15,7 +15,7 @@ func TestNewRootCmd(t *testing.T) {
 		"dock": false, "repo": false, "ws": false, "surface": false,
 		"go": false, "ls": false, "pwd": false, "recover": false, "doctor": false,
 		"setup": false, "monitor": false, "add-prompt": false, "version": false,
-		"shell": false, "edit": false, "status-line": false, "close-pane": false,
+		"shell": false, "edit": false, "restart": false, "status-line": false,
 		"agent-guide": false,
 	}
 	for _, cmd := range root.Commands() {
@@ -43,13 +43,24 @@ func TestNewRootCmd(t *testing.T) {
 func TestNewRootCmd_OldCommandsRemoved(t *testing.T) {
 	root := NewRootCmd("test")
 
-	removed := []string{"win", "pane"}
+	removed := []string{"win", "pane", "close-pane"}
 	for _, cmd := range root.Commands() {
 		for _, name := range removed {
 			if cmd.Name() == name {
 				t.Errorf("old command %q should be removed", name)
 			}
 		}
+	}
+}
+
+func TestRestartCommandExists(t *testing.T) {
+	root := NewRootCmd("test")
+	cmd, _, err := root.Find([]string{"restart"})
+	if err != nil {
+		t.Fatalf("finding restart: %v", err)
+	}
+	if cmd.Name() != "restart" {
+		t.Errorf("expected restart, got %q", cmd.Name())
 	}
 }
 

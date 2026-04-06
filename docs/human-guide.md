@@ -419,6 +419,7 @@ bay edit [name|self]        # open workspace in editor (creates GUI surface)
 bay edit --all              # open all workspaces in current dock
 bay edit --set <editor>     # set default editor
 bay edit --show             # show which editor would be used
+bay restart [workspace]     # alias for bay surface restart
 ```
 
 ### Navigation summary
@@ -676,7 +677,11 @@ Use `bay status-line` in your tmux config to show workspace info:
 set -g status-right '#(bay status-line full)'
 ```
 
-Fields: `name`, `branch`, `pr`, `status`, `dock`, `full`.
+Fields: `name`, `branch`, `pr`, `status`, `dock`, `merged`, `full`.
+
+The `merged` field shows a count of done/merged workspaces in the
+current dock (e.g. "2 merged"). Useful for a status bar reminder to
+clean up.
 
 ## Recovery
 

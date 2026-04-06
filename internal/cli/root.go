@@ -56,16 +56,45 @@ func newEngine() (*engine.Engine, error) {
 	return engine.New(cfg, p.ConfigFile, p.ManifestFile, p.ArchiveFile, t, g), nil
 }
 
+const bayHelpTemplate = `Bay — workspace management for tmux and git worktrees.
+
+Quick start:
+  bay ws new              create a workspace
+  bay go [query]          jump to a surface
+  bay ws go [query]       jump to a workspace
+  bay ls                  see everything
+  bay edit                open editor
+  bay shell               open shell
+  bay restart             restart current surface
+
+Run 'bay help <command>' for details on any command.
+Run 'bay help --all' for a complete command list.
+`
+
 // NewRootCmd creates the root bay command.
 func NewRootCmd(version string) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "bay",
 		Short:         "Multi-session workspace management for tmux and git worktrees",
-		Long:          "Bay manages concurrent workspaces across tmux windows and git worktrees.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
 
+	var helpAll bool
+	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		if helpAll {
+			// Full cobra help.
+			cmd.SetHelpTemplate(cmd.UsageTemplate())
+			cmd.Help()
+		} else if cmd == root {
+			// Focused help for root command.
+			fmt.Fprint(cmd.OutOrStdout(), bayHelpTemplate)
+		} else {
+			// Default help for subcommands.
+			cmd.Help()
+		}
+	})
+	root.Flags().BoolVar(&helpAll, "all", false, "show all commands")
 	root.PersistentFlags().StringVar(&cfgPath, "config", "", "config file path (default ~/.config/bay/config.toml)")
 
 	// Define command groups
@@ -85,6 +114,8 @@ func NewRootCmd(version string) *cobra.Command {
 	shellCmd.GroupID = "workspace"
 	editCmd := newEditCmd()
 	editCmd.GroupID = "workspace"
+	restartCmd := newRestartCmd()
+	restartCmd.GroupID = "workspace"
 
 	// Navigation commands
 	goCmd := newGoCmd()
@@ -121,6 +152,7 @@ func NewRootCmd(version string) *cobra.Command {
 		surfaceCmd,
 		shellCmd,
 		editCmd,
+		restartCmd,
 		goCmd,
 		lsCmd,
 		pwdCmd,
@@ -133,7 +165,6 @@ func NewRootCmd(version string) *cobra.Command {
 		monitorCmd,
 		addPromptCmd,
 		versionCmd,
-		newClosePaneCmd(),  // hidden, for keybinding
 		newAgentGuideCmd(), // hidden, for skill
 	)
 

@@ -160,7 +160,7 @@ jumps straight to the next waiting agent — no hunting through tabs.
 If you need to restart the agent:
 
 ```
-bay sf restart agent
+bay restart
 ```
 
 Bay uses `--continue` (or whatever `resume_args` you've configured) so

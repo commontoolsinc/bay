@@ -236,7 +236,7 @@ var bayKeybindings = []struct {
 	{"M-9", "bay go --index 9", "Option+9: surface 9", "run-shell"},
 
 	// Utility
-	{"M-w", "bay close-pane", "Option+w: close current pane", "run-shell"},
+	{"M-w", "bay sf close", "Option+w: close current surface (or pane)", "run-shell"},
 	{"M-s", "bay shell", "Option+s: split a shell pane", "run-shell"},
 }
 

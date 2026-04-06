@@ -14,7 +14,7 @@ func newStatusLineCmd() *cobra.Command {
 		Long: `Output a single field for the current workspace, resolved by tmux window ID.
 Designed for use in tmux status-format strings. Outputs empty string if not in a workspace.
 
-Fields: name, branch, pr, status, dock, full`,
+Fields: name, branch, pr, status, dock, merged, full`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			field := args[0]
@@ -50,6 +50,23 @@ Fields: name, branch, pr, status, dock, full`,
 				out = string(ws.Status)
 			case "dock":
 				out = dockName
+			case "merged":
+				// Count of workspaces with status=done in the current dock.
+				m, loadErr := eng.LoadManifest()
+				if loadErr == nil {
+					dock := m.FindDock(dockName)
+					if dock != nil {
+						count := 0
+						for _, w := range dock.Workspaces {
+							if w.Status == "done" {
+								count++
+							}
+						}
+						if count > 0 {
+							out = fmt.Sprintf("%d merged", count)
+						}
+					}
+				}
 			case "full":
 				parts := []string{ws.Name}
 				if ws.Worktree != nil && ws.Worktree.Branch != "" {

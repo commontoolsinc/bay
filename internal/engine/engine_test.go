@@ -247,6 +247,43 @@ func TestWsNew_Worktree(t *testing.T) {
 	}
 }
 
+func TestWsNew_CopiesWorktreeincludeFiles(t *testing.T) {
+	eng, dir := testEngine(t)
+
+	repoDir := filepath.Join(dir, "repos", "labs")
+
+	// Create a .worktreeinclude file listing ".env".
+	os.WriteFile(filepath.Join(repoDir, ".worktreeinclude"), []byte(".env\n"), 0o644)
+
+	// Create the .env file in the repo root.
+	os.WriteFile(filepath.Join(repoDir, ".env"), []byte("SECRET=abc\n"), 0o644)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+
+	// The .env file should have been copied into the worktree.
+	data, err := os.ReadFile(filepath.Join(ws.Path, ".env"))
+	if err != nil {
+		t.Fatalf(".env not copied to worktree: %v", err)
+	}
+	if string(data) != "SECRET=abc\n" {
+		t.Errorf(".env content = %q, want SECRET=abc", data)
+	}
+}
+
+func TestWsNew_SkipsWorktreeincludeIfMissing(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	// No .worktreeinclude file — should not error.
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	_ = ws
+}
+
 func TestWsNew_SequentialDefaultNames(t *testing.T) {
 	eng, _ := testEngine(t)
 
@@ -1548,6 +1585,25 @@ func TestPlaceholder_CleanedOnRecovery(t *testing.T) {
 }
 
 // --- syncWorkspaceGitState tests ---
+
+func TestSetLastFocused(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, _ := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
+	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell-2", "", "", "v")
+	ws, _ = eng.WsShow("labs", "w1")
+
+	// Set last focused to second surface.
+	err := eng.SetLastFocused("labs", "w1", ws.Surfaces[1].ID)
+	if err != nil {
+		t.Fatalf("SetLastFocused: %v", err)
+	}
+
+	ws, _ = eng.WsShow("labs", "w1")
+	if ws.LastFocused != ws.Surfaces[1].ID {
+		t.Errorf("LastFocused = %d, want %d", ws.LastFocused, ws.Surfaces[1].ID)
+	}
+}
 
 func TestSyncWorkspaceGitState_UpdatesBranch(t *testing.T) {
 	eng, _ := testEngine(t)
