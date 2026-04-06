@@ -456,7 +456,15 @@ Depends on Phase 1.
 - `bay repo add` calls `repo init` automatically.
 - `bay doctor` flags repos missing bay awareness.
 
-**5d. Setup and doctor updates**
+**5d. Documentation rewrite**
+- Rewrite `docs/tutorial.md` for new model (surfaces, new CLI, keybindings).
+- Rewrite `docs/human-guide.md` for new commands and workflows.
+- Rewrite `docs/agent-reference.md` for new model (surfaces replace
+  windows/panes, new JSON output schemas, updated command reference,
+  remove `ws update` instructions).
+- Update `bay agent-guide` hidden command output to match.
+
+**5e. Setup and doctor updates**
 - `bay setup` guides through incremental setup: basic → editor →
   terminal → Space switching.
 - `bay doctor` reports platform capabilities and missing optional
