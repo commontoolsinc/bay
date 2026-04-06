@@ -94,7 +94,7 @@ func NewRootCmd(version string) *cobra.Command {
 			cmd.Help()
 		}
 	})
-	root.PersistentFlags().BoolVar(&helpAll, "all", false, "show all commands")
+	root.Flags().BoolVar(&helpAll, "all", false, "show all commands")
 	root.PersistentFlags().StringVar(&cfgPath, "config", "", "config file path (default ~/.config/bay/config.toml)")
 
 	// Define command groups

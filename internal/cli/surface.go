@@ -259,7 +259,7 @@ func surfaceGo(eng *engine.Engine, args []string, index int, nextWaiting bool) e
 		for offset := 1; offset <= n; offset++ {
 			idx := (cur + offset) % n
 			if entries[idx].Waiting {
-				return focusSurface(eng, &entries[idx])
+				return focusSurface(eng, &entries[idx], dockName, wsName)
 			}
 		}
 		fmt.Println("No waiting surfaces in this workspace.")
@@ -272,7 +272,7 @@ func surfaceGo(eng *engine.Engine, args []string, index int, nextWaiting bool) e
 		if target == nil {
 			return fmt.Errorf("no surface at index %d (workspace has %d surfaces)", index, len(entries))
 		}
-		return focusSurface(eng, target)
+		return focusSurface(eng, target, dockName, wsName)
 	}
 
 	// Filter by query.
@@ -289,9 +289,9 @@ func surfaceGo(eng *engine.Engine, args []string, index int, nextWaiting bool) e
 		fmt.Println("No matching surfaces.")
 		return nil
 	case 1:
-		return focusSurface(eng, &entries[0])
+		return focusSurface(eng, &entries[0], dockName, wsName)
 	default:
-		return pickSurface(eng, entries)
+		return pickSurface(eng, entries, dockName, wsName)
 	}
 }
 
@@ -323,13 +323,14 @@ func surfaceCycle(eng *engine.Engine, forward bool) error {
 	if target == nil {
 		return nil
 	}
-	return focusSurface(eng, target)
+	return focusSurface(eng, target, dockName, wsName)
 }
 
-// focusSurface switches tmux focus to a surface's pane.
-func focusSurface(eng *engine.Engine, entry *nav.SurfaceEntry) error {
+// focusSurface switches focus to a surface and records it as last-focused.
+func focusSurface(eng *engine.Engine, entry *nav.SurfaceEntry, dockName, wsName string) error {
 	// GUI surface: launch the editor CLI to activate its window.
 	if entry.AppCommand != "" {
+		_ = eng.SetLastFocused(dockName, wsName, entry.ID)
 		return focusGUISurface(entry)
 	}
 	// Tmux surface: select window + pane.
@@ -339,8 +340,11 @@ func focusSurface(eng *engine.Engine, entry *nav.SurfaceEntry) error {
 		}
 	}
 	if entry.PaneID != "" {
-		return eng.Tmux.SelectPane(entry.PaneID)
+		if err := eng.Tmux.SelectPane(entry.PaneID); err != nil {
+			return err
+		}
 	}
+	_ = eng.SetLastFocused(dockName, wsName, entry.ID)
 	return nil
 }
 
@@ -359,7 +363,7 @@ func focusGUISurface(entry *nav.SurfaceEntry) error {
 }
 
 // pickSurface shows the built-in picker for surface selection.
-func pickSurface(eng *engine.Engine, entries []nav.SurfaceEntry) error {
+func pickSurface(eng *engine.Engine, entries []nav.SurfaceEntry, dockName, wsName string) error {
 	items := make([]picker.Item, len(entries))
 	for i, e := range entries {
 		items[i] = picker.Item{
@@ -372,7 +376,7 @@ func pickSurface(eng *engine.Engine, entries []nav.SurfaceEntry) error {
 	if err != nil || selected < 0 {
 		return nil // cancelled
 	}
-	return focusSurface(eng, &entries[selected])
+	return focusSurface(eng, &entries[selected], dockName, wsName)
 }
 
 // formatSurfaceEntry formats a surface entry for picker display.

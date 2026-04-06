@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -83,7 +84,8 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		worktreeAttrs = &manifest.WorktreeAttrs{Repo: repoName}
 
 		wtDir := repoCfg.EffectiveWorktreeDir()
-		wsPath = filepath.Join(wtDir, displayName)
+		dirSuffix := strconv.FormatInt(time.Now().UnixMilli(), 36)
+		wsPath = filepath.Join(wtDir, displayName+"-"+dirSuffix)
 
 		if err := os.MkdirAll(wtDir, 0o755); err != nil {
 			return nil, fmt.Errorf("creating worktree dir: %w", err)
@@ -93,6 +95,9 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		if err := e.Git.CreateWorktree(repoPath, wsPath); err != nil {
 			return nil, fmt.Errorf("creating worktree: %w", err)
 		}
+
+		// Copy files listed in .worktreeinclude from repo root to worktree.
+		copyWorktreeIncludeFiles(repoPath, wsPath)
 	}
 	if err := ValidateName(displayName); err != nil {
 		return nil, err
@@ -516,6 +521,58 @@ func (e *Engine) updateWindowNames(ws *manifest.Workspace, name string) {
 			_ = e.Tmux.RenameWindow(s.Tmux.WindowID, name)
 			seen[s.Tmux.WindowID] = true
 		}
+	}
+}
+
+// SetLastFocused records which surface was last focused in a workspace.
+func (e *Engine) SetLastFocused(dockName, wsName string, surfaceID int) error {
+	return e.withManifest(func(m *manifest.Manifest) error {
+		dock := m.FindDock(dockName)
+		if dock == nil {
+			return fmt.Errorf("unknown dock %q", dockName)
+		}
+		ws := dock.FindWorkspace(wsName)
+		if ws == nil {
+			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
+		}
+		ws.LastFocused = surfaceID
+		return nil
+	})
+}
+
+// copyWorktreeIncludeFiles reads .worktreeinclude from the repo root and copies
+// matching files into the new worktree. Each line is a filename (not a glob).
+// Missing source files and missing .worktreeinclude are silently ignored.
+func copyWorktreeIncludeFiles(repoRoot, worktreePath string) {
+	includeFile := filepath.Join(repoRoot, ".worktreeinclude")
+	data, err := os.ReadFile(includeFile)
+	if err != nil {
+		return // no .worktreeinclude — nothing to copy
+	}
+
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		src := filepath.Join(repoRoot, line)
+		srcData, err := os.ReadFile(src)
+		if err != nil {
+			continue // source file doesn't exist — skip
+		}
+
+		dst := filepath.Join(worktreePath, line)
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			continue
+		}
+
+		// Preserve the source file's permissions.
+		info, err := os.Stat(src)
+		if err != nil {
+			continue
+		}
+		_ = os.WriteFile(dst, srcData, info.Mode())
 	}
 }
 

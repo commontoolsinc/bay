@@ -147,12 +147,15 @@ func FormatEntry(e Entry) string {
 	if e.PR != "" {
 		pr = "#" + e.PR
 	}
-	waiting := ""
+	tags := ""
+	if e.Status == manifest.WorkspaceStatusDone {
+		tags += "  MERGED"
+	}
 	if e.Waiting {
-		waiting = "  WAITING"
+		tags += "  WAITING"
 	}
 	return fmt.Sprintf("%s  %s  %s  %s  %s%s",
-		e.DockName, e.WsName, e.Branch, pr, string(e.Status), waiting)
+		e.DockName, e.WsName, e.Branch, pr, string(e.Status), tags)
 }
 
 // FormatEntries formats all entries with aligned columns.

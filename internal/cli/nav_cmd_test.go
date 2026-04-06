@@ -104,7 +104,7 @@ func TestFocusSurface_SelectsWindowAndPane(t *testing.T) {
 	panes, _ := mockTmux.ListPanes(winID)
 
 	entry := &nav.SurfaceEntry{WindowID: winID, PaneID: panes[0].ID}
-	if err := focusSurface(eng, entry); err != nil {
+	if err := focusSurface(eng, entry, "labs", "w1"); err != nil {
 		t.Fatalf("focusSurface: %v", err)
 	}
 
@@ -130,7 +130,7 @@ func TestFocusSurface_SkipsEmptyIDs(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 
 	entry := &nav.SurfaceEntry{} // no window or pane ID
-	if err := focusSurface(eng, entry); err != nil {
+	if err := focusSurface(eng, entry, "labs", "w1"); err != nil {
 		t.Fatalf("focusSurface: %v", err)
 	}
 
