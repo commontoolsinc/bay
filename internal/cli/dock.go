@@ -18,6 +18,8 @@ func newDockCmd() *cobra.Command {
 		newDockNewCmd(),
 		newDockLsCmd(),
 		newDockShowCmd(),
+		newDockTreeCmd(),
+		newDockRenameCmd(),
 		newDockCloseCmd(),
 		newDockRecoverCmd(),
 	)
@@ -87,9 +89,10 @@ func newDockLsCmd() *cobra.Command {
 
 func newDockShowCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "show <name>",
-		Short: "Show dock details",
-		Args:  cobra.ExactArgs(1),
+		Use:     "show <name>",
+		Aliases: []string{"cat"},
+		Short:   "Show dock details",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
@@ -163,13 +166,69 @@ func newDockShowCmd() *cobra.Command {
 	}
 }
 
+func newDockTreeCmd() *cobra.Command {
+	var longOutput bool
+
+	cmd := &cobra.Command{
+		Use:   "tree <name>",
+		Short: "Tree view for a specific dock",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine()
+			if err != nil {
+				return err
+			}
+
+			dockName := args[0]
+			if _, ok := eng.Config.Docks[dockName]; !ok {
+				return fmt.Errorf("dock %q not found", dockName)
+			}
+
+			docks, err := eng.List()
+			if err != nil {
+				return err
+			}
+
+			dockCfg := eng.Config.Docks[dockName]
+			view := BuildListView(eng.Config, docks, ListViewOptions{
+				Focus:     ListFocus{Kind: FocusDock, Repo: dockCfg.Repo, Dock: dockName},
+				Recursive: true,
+			})
+
+			fmt.Print(FormatListView(view, longOutput))
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVarP(&longOutput, "long", "l", false, "show extended details such as tmux IDs")
+
+	return cmd
+}
+
+func newDockRenameCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "rename <old> <new>",
+		Aliases: []string{"mv"},
+		Short:   "Rename a dock",
+		Args:    cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine()
+			if err != nil {
+				return err
+			}
+			return eng.DockRename(args[0], args[1])
+		},
+	}
+}
+
 func newDockCloseCmd() *cobra.Command {
 	var force bool
 
 	cmd := &cobra.Command{
-		Use:   "close <name>",
-		Short: "Close all workspaces in a dock",
-		Args:  cobra.ExactArgs(1),
+		Use:     "close <name>",
+		Aliases: []string{"rm"},
+		Short:   "Close all workspaces in a dock",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {

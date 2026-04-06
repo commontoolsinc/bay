@@ -27,6 +27,8 @@ func newWsCmd() *cobra.Command {
 		newWsShowCmd(),
 		newWsUpdateCmd(),
 		newWsRenameCmd(),
+		newWsLsCmd(),
+		newWsTreeCmd(),
 		newWsGoCmd(),
 		newWsNextCmd(),
 		newWsPrevCmd(),
@@ -107,8 +109,9 @@ func newWsCloseCmd() *cobra.Command {
 	var force, done bool
 
 	cmd := &cobra.Command{
-		Use:   "close [name|self]",
-		Short: "Close a workspace and all its windows",
+		Use:     "close [name|self]",
+		Aliases: []string{"rm"},
+		Short:   "Close a workspace and all its surfaces",
 		Long: `Close a workspace and all its windows.
 
   bay ws close w1          close a specific workspace
@@ -167,9 +170,10 @@ func newWsShowCmd() *cobra.Command {
 	var jsonOutput bool
 
 	cmd := &cobra.Command{
-		Use:   "show [name|self]",
-		Short: "Show workspace details (default: current)",
-		Args:  cobra.MaximumNArgs(1),
+		Use:     "show [name|self]",
+		Aliases: []string{"cat"},
+		Short:   "Show workspace details (default: current)",
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
@@ -280,9 +284,10 @@ func newWsUpdateCmd() *cobra.Command {
 
 func newWsRenameCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "rename <name|self> <new-name>",
-		Short: "Rename a workspace display name",
-		Args:  cobra.ExactArgs(2),
+		Use:     "rename <name|self> <new-name>",
+		Aliases: []string{"mv"},
+		Short:   "Rename a workspace display name",
+		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
@@ -369,6 +374,87 @@ func resolveTarget(eng *engine.Engine, target string) (string, string, error) {
 		return eng.ResolveSelf()
 	}
 	return eng.ResolveWorkspace(target)
+}
+
+func newWsLsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "ls",
+		Aliases: []string{"list"},
+		Short:   "List workspaces in the current dock",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine()
+			if err != nil {
+				return err
+			}
+
+			currentSession, tmuxErr := eng.Tmux.CurrentSession()
+			if tmuxErr != nil {
+				return fmt.Errorf("not in a tmux session — cannot determine current dock")
+			}
+
+			docks, err := eng.List()
+			if err != nil {
+				return err
+			}
+
+			dockCfg, hasCfg := eng.Config.Docks[currentSession]
+			repo := ""
+			if hasCfg {
+				repo = dockCfg.Repo
+			}
+
+			view := BuildListView(eng.Config, docks, ListViewOptions{
+				Focus:     ListFocus{Kind: FocusDock, Repo: repo, Dock: currentSession},
+				Recursive: false,
+			})
+
+			fmt.Print(FormatListView(view, false))
+			return nil
+		},
+	}
+}
+
+func newWsTreeCmd() *cobra.Command {
+	var longOutput bool
+
+	cmd := &cobra.Command{
+		Use:   "tree",
+		Short: "Tree view of workspaces and surfaces in the current dock",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine()
+			if err != nil {
+				return err
+			}
+
+			currentSession, tmuxErr := eng.Tmux.CurrentSession()
+			if tmuxErr != nil {
+				return fmt.Errorf("not in a tmux session — cannot determine current dock")
+			}
+
+			docks, err := eng.List()
+			if err != nil {
+				return err
+			}
+
+			dockCfg, hasCfg := eng.Config.Docks[currentSession]
+			repo := ""
+			if hasCfg {
+				repo = dockCfg.Repo
+			}
+
+			view := BuildListView(eng.Config, docks, ListViewOptions{
+				Focus:     ListFocus{Kind: FocusDock, Repo: repo, Dock: currentSession},
+				Recursive: true,
+			})
+
+			fmt.Print(FormatListView(view, longOutput))
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVarP(&longOutput, "long", "l", false, "show extended details such as tmux IDs")
+
+	return cmd
 }
 
 func newWsGoCmd() *cobra.Command {

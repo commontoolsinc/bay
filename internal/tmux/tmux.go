@@ -7,6 +7,7 @@ type Interface interface {
 	HasSession(name string) (bool, error)
 	NewSession(name string) error
 	KillSession(name string) error
+	RenameSession(oldName string, newName string) error
 	ListSessions() ([]Session, error)
 
 	// Windows

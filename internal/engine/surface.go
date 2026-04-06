@@ -219,6 +219,33 @@ func (e *Engine) SurfaceRestart(dockName, wsName, surfaceName string) error {
 	return nil
 }
 
+// SurfaceRename renames a surface within a workspace.
+func (e *Engine) SurfaceRename(dockName, wsName, oldName, newName string) error {
+	if err := ValidateName(newName); err != nil {
+		return err
+	}
+
+	return e.withManifest(func(m *manifest.Manifest) error {
+		dock := m.FindDock(dockName)
+		if dock == nil {
+			return fmt.Errorf("unknown dock %q", dockName)
+		}
+		ws := dock.FindWorkspace(wsName)
+		if ws == nil {
+			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
+		}
+		s := ws.FindSurface(oldName)
+		if s == nil {
+			return fmt.Errorf("surface %q not found in workspace %q", oldName, wsName)
+		}
+		if existing := ws.FindSurface(newName); existing != nil {
+			return fmt.Errorf("surface name %q already in use in workspace %q", newName, wsName)
+		}
+		s.Name = newName
+		return nil
+	})
+}
+
 // nextLayoutGroup returns the next layout group number for a workspace.
 func nextLayoutGroup(ws *manifest.Workspace) int {
 	max := 0

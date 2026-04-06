@@ -84,7 +84,7 @@ func TestCompletionsRegistered(t *testing.T) {
 func TestWorkspaceCompletions(t *testing.T) {
 	// Set up a manifest with test data in a temp dir
 	dir := t.TempDir()
-	manifestPath := filepath.Join(dir, "manifest.toml")
+	manifestPath := filepath.Join(dir, "manifest.json")
 
 	m := manifest.New()
 	m.Docks = []manifest.Dock{
@@ -110,11 +110,11 @@ func TestWorkspaceCompletions(t *testing.T) {
 	os.Setenv("XDG_DATA_HOME", dir)
 	defer os.Setenv("XDG_DATA_HOME", origXDG)
 
-	// Copy to bay/manifest.toml (where DefaultPaths looks)
+	// Copy to bay/manifest.json (where DefaultPaths looks)
 	bayDir := filepath.Join(dir, "bay")
 	os.MkdirAll(bayDir, 0o755)
 	data, _ := os.ReadFile(manifestPath)
-	os.WriteFile(filepath.Join(bayDir, "manifest.toml"), data, 0o644)
+	os.WriteFile(filepath.Join(bayDir, "manifest.json"), data, 0o644)
 
 	fn := workspaceCompletions()
 	completions, directive := fn(nil, nil, "")

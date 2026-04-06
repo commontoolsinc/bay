@@ -21,8 +21,8 @@ func DefaultPaths() Paths {
 		ConfigDir:    configDir,
 		DataDir:      dataDir,
 		ConfigFile:   DefaultConfigPath(),
-		ManifestFile: filepath.Join(dataDir, "manifest.toml"),
-		ArchiveFile:  filepath.Join(dataDir, "archive.toml"),
+		ManifestFile: filepath.Join(dataDir, "manifest.json"),
+		ArchiveFile:  filepath.Join(dataDir, "archive.json"),
 		PatternsFile: filepath.Join(configDir, "bay-prompts.txt"),
 		PIDFile:      filepath.Join(dataDir, "monitor.pid"),
 	}

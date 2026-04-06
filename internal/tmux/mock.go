@@ -116,6 +116,28 @@ func (m *Mock) KillSession(name string) error {
 	return nil
 }
 
+func (m *Mock) RenameSession(oldName string, newName string) error {
+	m.record("RenameSession", oldName, newName)
+	if !m.sessions[oldName] {
+		return fmt.Errorf("session %q not found", oldName)
+	}
+	if m.sessions[newName] {
+		return fmt.Errorf("session %q already exists", newName)
+	}
+	delete(m.sessions, oldName)
+	m.sessions[newName] = true
+	// Update all windows belonging to this session.
+	for _, w := range m.windows {
+		if w.session == oldName {
+			w.session = newName
+		}
+	}
+	if m.currentSessionSet && m.currentSession == oldName {
+		m.currentSession = newName
+	}
+	return nil
+}
+
 func (m *Mock) ListSessions() ([]Session, error) {
 	m.record("ListSessions")
 	var result []Session

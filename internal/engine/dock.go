@@ -118,6 +118,46 @@ func launchTerminal(terminal, session string) (int, error) {
 	return cmd.Process.Pid, nil
 }
 
+// DockRename renames a dock in config, manifest, and tmux.
+func (e *Engine) DockRename(oldName, newName string) error {
+	if err := ValidateName(newName); err != nil {
+		return err
+	}
+	if _, exists := e.Config.Docks[oldName]; !exists {
+		return fmt.Errorf("dock %q not found", oldName)
+	}
+	if _, exists := e.Config.Docks[newName]; exists {
+		return fmt.Errorf("dock %q already exists", newName)
+	}
+
+	// Rename tmux session.
+	exists, _ := e.Tmux.HasSession(oldName)
+	if exists {
+		if err := e.Tmux.RenameSession(oldName, newName); err != nil {
+			return fmt.Errorf("renaming tmux session: %w", err)
+		}
+	}
+
+	// Rename in config.
+	dockCfg := e.Config.Docks[oldName]
+	e.Config.Docks[newName] = dockCfg
+	delete(e.Config.Docks, oldName)
+	if e.configPath != "" {
+		if err := config.Save(e.configPath, e.Config); err != nil {
+			return fmt.Errorf("saving config: %w", err)
+		}
+	}
+
+	// Rename in manifest.
+	return e.withManifest(func(m *manifest.Manifest) error {
+		dock := m.FindDock(oldName)
+		if dock != nil {
+			dock.Name = newName
+		}
+		return nil
+	})
+}
+
 // DockCloseWorkspaces closes all workspaces in a dock.
 func (e *Engine) DockCloseWorkspaces(name string, force bool) {
 	m, err := e.LoadManifest()
@@ -164,6 +204,18 @@ func (e *Engine) DockClose(name string, force bool) error {
 	}
 
 	_ = e.Tmux.KillSession(name)
+
+	// Remove dock from manifest.
+	_ = e.withManifest(func(m *manifest.Manifest) error {
+		return m.RemoveDock(name)
+	})
+
+	// Remove dock from config.
+	delete(e.Config.Docks, name)
+	if e.configPath != "" {
+		_ = config.Save(e.configPath, e.Config)
+	}
+
 	return nil
 }
 

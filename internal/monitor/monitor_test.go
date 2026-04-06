@@ -253,7 +253,7 @@ func createTestManifest(t *testing.T, dir string, tmuxWindowID string) string {
 			},
 		},
 	}
-	path := filepath.Join(dir, "manifest.toml")
+	path := filepath.Join(dir, "manifest.json")
 	if err := manifest.Save(path, m); err != nil {
 		t.Fatalf("saving test manifest: %v", err)
 	}
@@ -283,7 +283,7 @@ func createShellOnlyManifest(t *testing.T, dir string, tmuxWindowID string) stri
 			},
 		},
 	}
-	path := filepath.Join(dir, "manifest.toml")
+	path := filepath.Join(dir, "manifest.json")
 	if err := manifest.Save(path, m); err != nil {
 		t.Fatalf("saving test manifest: %v", err)
 	}
@@ -488,7 +488,7 @@ func TestRun_CancelsOnContext(t *testing.T) {
 	dir := t.TempDir()
 	mock := tmux.NewMock()
 
-	manifestPath := filepath.Join(dir, "manifest.toml")
+	manifestPath := filepath.Join(dir, "manifest.json")
 	m := manifest.New()
 	manifest.Save(manifestPath, m)
 
@@ -551,7 +551,7 @@ func TestCheckOnce_DetectsPR(t *testing.T) {
 			},
 		},
 	}
-	manifestPath := filepath.Join(dir, "manifest.toml")
+	manifestPath := filepath.Join(dir, "manifest.json")
 	manifest.Save(manifestPath, m)
 
 	// Configure mock: PR exists for this branch.
@@ -599,7 +599,7 @@ func TestCheckOnce_SkipsPRDetectionForWorkspaceWithNoPath(t *testing.T) {
 			},
 		},
 	}
-	manifestPath := filepath.Join(dir, "manifest.toml")
+	manifestPath := filepath.Join(dir, "manifest.json")
 	manifest.Save(manifestPath, m)
 
 	patternsPath := filepath.Join(dir, "bay-prompts.txt")
@@ -646,7 +646,7 @@ func TestCheckOnce_DetectsMergedBranch(t *testing.T) {
 			},
 		},
 	}
-	manifestPath := filepath.Join(dir, "manifest.toml")
+	manifestPath := filepath.Join(dir, "manifest.json")
 	manifest.Save(manifestPath, m)
 
 	// Configure: branch is merged into default.
@@ -692,7 +692,7 @@ func TestCheckOnce_SkipsMergeCheckForInactiveWorkspace(t *testing.T) {
 			},
 		},
 	}
-	manifestPath := filepath.Join(dir, "manifest.toml")
+	manifestPath := filepath.Join(dir, "manifest.json")
 	manifest.Save(manifestPath, m)
 
 	mockGit.SetMerged("/tmp", "feature/old", true)
