@@ -40,11 +40,12 @@ type ListView struct {
 	Focus        ListFocus  `json:"focus"`
 	Recursive    bool       `json:"recursive"`
 	Repos        []RepoInfo `json:"repos"`
-	CurrentDock  string     `json:"-"` // for highlighting; not serialized
-	CurrentWs    string     `json:"-"`
+	CurrentDock    string `json:"-"` // for highlighting; not serialized
+	CurrentWs      string `json:"-"`
+	CurrentSurface string `json:"-"`
 }
 
-// SetCurrentContext populates the current dock/workspace for highlighting.
+// SetCurrentContext populates the current dock/workspace/surface for highlighting.
 func (v *ListView) SetCurrentContext(eng *engine.Engine) {
 	if session, err := eng.Tmux.CurrentSession(); err == nil {
 		v.CurrentDock = session
@@ -52,6 +53,10 @@ func (v *ListView) SetCurrentContext(eng *engine.Engine) {
 	if dock, ws, err := eng.ResolveSelf(); err == nil {
 		v.CurrentDock = dock
 		v.CurrentWs = ws
+	}
+	// Resolve current surface from tmux pane.
+	if ctx, err := eng.CurrentContext(); err == nil {
+		v.CurrentSurface = ctx.Surface
 	}
 }
 
@@ -341,7 +346,11 @@ func FormatListView(view ListView, long bool) string {
 					continue
 				}
 				for _, s := range ws.Surfaces {
-					writeIndentedLine(&b, 3, labelValue("surface", s.Name), surfaceMeta(s, long))
+					sName := s.Name
+					if dock.Name == view.CurrentDock && ws.Name == view.CurrentWs && s.Name == view.CurrentSurface {
+						sName += " *"
+					}
+					writeIndentedLine(&b, 3, labelValue("surface", sName), surfaceMeta(s, long))
 				}
 			}
 		}
