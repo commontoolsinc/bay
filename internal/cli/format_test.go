@@ -41,55 +41,30 @@ func testDocks() []engine.DockInfo {
 			Repo: "bay",
 			Workspaces: []engine.WorkspaceInfo{
 				{
-					ID:      "w1",
-					Name:    "auth-fix",
-					Type:    "worktree",
-					Path:    "~/projects/bay-wt/w1",
-					Branch:  "fix/login",
-					Status:  "active",
+					Name:   "auth-fix",
+					Type:   "worktree",
+					Path:   "~/projects/bay-wt/auth-fix",
+					Branch: "fix/login",
+					Status: "active",
 					Waiting: true,
-					Windows: []engine.WindowInfo{
-						{
-							ID:           1,
-							Name:         "editor",
-							TmuxWindowID: "@12",
-							Panes: []engine.PaneInfo{
-								{ID: 1, TmuxPaneID: "%21", Type: "shell", Status: "ok"},
-								{ID: 2, TmuxPaneID: "%22", Type: "agent", Agent: "codex", Status: "ok"},
-							},
-							Status: "ok",
-						},
-						{
-							ID:           2,
-							Name:         "tests",
-							TmuxWindowID: "@13",
-							Panes: []engine.PaneInfo{
-								{ID: 1, TmuxPaneID: "%23", Type: "cmd", Command: "npm test --watch=false", Status: "ok"},
-							},
-							Status: "ok",
-						},
+					SurfaceCount: 3,
+					Surfaces: []engine.SurfaceInfo{
+						{ID: 1, Name: "shell", Type: "shell", Backend: "tmux-pane", Status: "ok"},
+						{ID: 2, Name: "agent", Type: "agent", Agent: "codex", Backend: "tmux-pane", Status: "ok"},
+						{ID: 3, Name: "tests", Type: "cmd", Command: "npm test --watch=false", Backend: "tmux-pane", Status: "ok"},
 					},
 					SyncStatus: "ok",
 				},
 				{
-					ID:          "w2",
-					Name:        "cleanup",
-					Type:        "worktree",
-					Path:        "~/projects/bay-wt/w2",
-					Branch:      "cleanup",
-					Status:      "idle",
-					WindowCount: 1,
-					SyncStatus:  "stale",
-					Windows: []engine.WindowInfo{
-						{
-							ID:           1,
-							Name:         "main",
-							TmuxWindowID: "@14",
-							Status:       "stale",
-							Panes: []engine.PaneInfo{
-								{ID: 1, TmuxPaneID: "%24", Type: "shell", Status: "stale"},
-							},
-						},
+					Name:         "cleanup",
+					Type:         "worktree",
+					Path:         "~/projects/bay-wt/cleanup",
+					Branch:       "cleanup",
+					Status:       "idle",
+					SurfaceCount: 1,
+					SyncStatus:   "stale",
+					Surfaces: []engine.SurfaceInfo{
+						{ID: 1, Name: "shell", Type: "shell", Backend: "tmux-pane", Status: "stale"},
 					},
 				},
 			},
@@ -99,14 +74,13 @@ func testDocks() []engine.DockInfo {
 			Repo: "bay",
 			Workspaces: []engine.WorkspaceInfo{
 				{
-					ID:          "w1",
-					Name:        "landing",
-					Type:        "worktree",
-					Path:        "~/projects/bay-wt-web/w1",
-					Branch:      "feature/landing",
-					Status:      "active",
-					WindowCount: 1,
-					SyncStatus:  "ok",
+					Name:         "landing",
+					Type:         "worktree",
+					Path:         "~/projects/bay-wt-web/landing",
+					Branch:       "feature/landing",
+					Status:       "active",
+					SurfaceCount: 1,
+					SyncStatus:   "ok",
 				},
 			},
 		},
@@ -115,14 +89,13 @@ func testDocks() []engine.DockInfo {
 			Repo: "other",
 			Workspaces: []engine.WorkspaceInfo{
 				{
-					ID:          "w1",
-					Name:        "deploy",
-					Type:        "external",
-					Path:        "~/projects/other/deploy",
-					Branch:      "main",
-					Status:      "done",
-					WindowCount: 0,
-					SyncStatus:  "missing",
+					Name:         "deploy",
+					Type:         "external",
+					Path:         "~/projects/other/deploy",
+					Branch:       "main",
+					Status:       "done",
+					SurfaceCount: 0,
+					SyncStatus:   "missing",
 				},
 			},
 		},
@@ -151,14 +124,14 @@ func TestBuildListView_DockFocusStopsAtWorkspacesByDefault(t *testing.T) {
 	if !strings.Contains(out, "workspace auth-fix") || !strings.Contains(out, "workspace cleanup") {
 		t.Fatalf("dock focus output missing workspaces:\n%s", out)
 	}
-	if strings.Contains(out, "pane ") || strings.Contains(out, "window ") {
-		t.Fatalf("dock focus default should not recurse into windows/panes:\n%s", out)
+	if strings.Contains(out, "surface ") {
+		t.Fatalf("dock focus default should not recurse into surfaces:\n%s", out)
 	}
 }
 
 func TestBuildListView_WorkspaceFocusShowsFullTree(t *testing.T) {
 	view := BuildListView(testConfig(), testDocks(), ListViewOptions{
-		Focus: ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "w1"},
+		Focus: ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "auth-fix"},
 	})
 	out := stripANSI(FormatListView(view, false))
 
@@ -166,11 +139,10 @@ func TestBuildListView_WorkspaceFocusShowsFullTree(t *testing.T) {
 		"repo bay",
 		"dock api",
 		"workspace auth-fix",
-		"window 1",
-		"pane 2",
-		"kind=agent",
+		"surface agent",
+		"type=agent",
 		"agent=codex",
-		"kind=cmd",
+		"type=cmd",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("workspace focus output missing %q:\n%s", want, out)
@@ -180,25 +152,12 @@ func TestBuildListView_WorkspaceFocusShowsFullTree(t *testing.T) {
 
 func TestBuildListView_WorkspaceFocusRestrictsToDock(t *testing.T) {
 	view := BuildListView(testConfig(), testDocks(), ListViewOptions{
-		Focus: ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "w1"},
+		Focus: ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "auth-fix"},
 	})
 	out := stripANSI(FormatListView(view, false))
 
 	if strings.Contains(out, "workspace landing") {
-		t.Fatalf("workspace focus should not include matching workspace ids from other docks:\n%s", out)
-	}
-}
-
-func TestFormatListView_LongShowsTmuxIDs(t *testing.T) {
-	view := BuildListView(testConfig(), testDocks(), ListViewOptions{
-		Focus: ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "w1"},
-	})
-	out := stripANSI(FormatListView(view, true))
-
-	for _, want := range []string{"tmux=@12", "tmux=%22"} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("long output missing %q:\n%s", want, out)
-		}
+		t.Fatalf("workspace focus should not include workspaces from other docks:\n%s", out)
 	}
 }
 
@@ -216,37 +175,29 @@ func TestFormatListView_SuppressesSyncOKAndShowsStale(t *testing.T) {
 	}
 }
 
-func TestFormatWorkspaceShow_IncludesDefaultAgentAndPanes(t *testing.T) {
+func TestFormatWorkspaceShow_IncludesDefaultAgentAndSurfaces(t *testing.T) {
 	ws := &engine.WorkspaceInfo{
-		ID:           "w1",
 		Name:         "auth-fix",
 		Type:         "worktree",
-		Path:         "~/projects/bay-wt/w1",
+		Path:         "~/projects/bay-wt/auth-fix",
 		Branch:       "fix/login",
 		Status:       "active",
 		DefaultAgent: "codex",
 		SyncStatus:   "ok",
-		Windows: []engine.WindowInfo{
-			{
-				ID:     1,
-				Name:   "editor",
-				Status: "ok",
-				Panes: []engine.PaneInfo{
-					{ID: 1, Type: "shell", Status: "ok"},
-					{ID: 2, Type: "agent", Agent: "codex", Status: "ok"},
-				},
-			},
+		Surfaces: []engine.SurfaceInfo{
+			{ID: 1, Name: "shell", Type: "shell", Status: "ok"},
+			{ID: 2, Name: "agent", Type: "agent", Agent: "codex", Status: "ok"},
 		},
 	}
 
 	out := stripANSI(FormatWorkspaceShow("bay", "api", ws, false))
 	for _, want := range []string{
-		"workspace auth-fix (w1)",
+		"workspace auth-fix",
 		"repo bay",
 		"dock api",
 		"default agent codex",
-		"pane 2",
-		"kind=agent",
+		"surface agent",
+		"type=agent",
 		"agent=codex",
 	} {
 		if !strings.Contains(out, want) {
@@ -261,9 +212,9 @@ func TestLabelValueFormatsHumanReadableLabels(t *testing.T) {
 	}
 }
 
-func TestFormatListRows_DenormalizesPaneRows(t *testing.T) {
+func TestFormatListRows_DenormalizesSurfaceRows(t *testing.T) {
 	view := BuildListView(testConfig(), testDocks(), ListViewOptions{
-		Focus:     ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "w1"},
+		Focus:     ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "auth-fix"},
 		Recursive: true,
 	})
 	rows := ListRows(view)
@@ -275,7 +226,7 @@ func TestFormatListRows_DenormalizesPaneRows(t *testing.T) {
 		t.Fatalf("Marshal failed: %v", err)
 	}
 	s := string(data)
-	for _, want := range []string{`"pane_type":"agent"`, `"pane_agent":"codex"`, `"window_id":2`} {
+	for _, want := range []string{`"surface_type":"agent"`, `"surface_agent":"codex"`, `"surface_type":"cmd"`} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("rows JSON missing %q:\n%s", want, s)
 		}
@@ -323,7 +274,7 @@ func TestFormatDockTree_IncludesNoRepoDocks(t *testing.T) {
 		{
 			Name: "tools",
 			Workspaces: []engine.WorkspaceInfo{
-				{ID: "w1", Name: "scratch", Branch: "notes", Status: "active", WindowCount: 1, SyncStatus: "ok"},
+				{Name: "scratch", Branch: "notes", Status: "active", SurfaceCount: 1, SyncStatus: "ok"},
 			},
 		},
 	}

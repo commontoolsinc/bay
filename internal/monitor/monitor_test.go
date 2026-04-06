@@ -91,7 +91,6 @@ Do you want to continue
 		t.Fatalf("expected 3 patterns, got %d", len(patterns))
 	}
 
-	// Verify they actually match expected strings.
 	if !patterns[0].MatchString("WAITING FOR INPUT") {
 		t.Error("pattern 0 should match case-insensitively")
 	}
@@ -199,12 +198,10 @@ func TestPIDFile(t *testing.T) {
 	dir := t.TempDir()
 	pidPath := filepath.Join(dir, "monitor.pid")
 
-	// Write PID.
 	if err := WritePIDFile(pidPath, 12345); err != nil {
 		t.Fatalf("WritePIDFile: %v", err)
 	}
 
-	// Read it back.
 	pid, err := ReadPIDFile(pidPath)
 	if err != nil {
 		t.Fatalf("ReadPIDFile: %v", err)
@@ -213,12 +210,10 @@ func TestPIDFile(t *testing.T) {
 		t.Errorf("expected PID 12345, got %d", pid)
 	}
 
-	// Remove.
 	if err := RemovePIDFile(pidPath); err != nil {
 		t.Fatalf("RemovePIDFile: %v", err)
 	}
 
-	// Reading missing file should return error.
 	_, err = ReadPIDFile(pidPath)
 	if err == nil {
 		t.Error("expected error reading removed PID file")
@@ -227,25 +222,30 @@ func TestPIDFile(t *testing.T) {
 
 // --- TestCheckLoop ---
 
-// createTestManifest builds a manifest with one dock ("dev") containing one workspace ("w1")
-// with a window that has an agent pane. The tmuxWindowID is the actual tmux window ID.
+// createTestManifest builds a manifest with one dock ("dev") containing one workspace
+// with an agent surface and a shell surface.
 func createTestManifest(t *testing.T, dir string, tmuxWindowID string) string {
 	t.Helper()
+	agentName := "claude"
 	m := manifest.New()
-	m.Docks["dev"] = &manifest.DockState{
-		Workspaces: map[string]*manifest.Workspace{
-			"w1": {
-				Name:   "test-ws",
-				Type:   manifest.WorkspaceTypeWorktree,
-				Status: manifest.WorkspaceStatusActive,
-				Windows: []manifest.Window{
-					{
-						ID:           1,
-						TmuxWindowID: tmuxWindowID,
-						Name:         "test-ws",
-						Panes: []manifest.Pane{
-							{ID: 1, Type: manifest.PaneTypeAgent, Agent: "claude"},
-							{ID: 2, Type: manifest.PaneTypeShell},
+	m.Docks = []manifest.Dock{
+		{
+			Name: "dev",
+			Workspaces: []manifest.Workspace{
+				{
+					Name:   "test-ws",
+					Type:   manifest.WorkspaceTypeWorktree,
+					Status: manifest.WorkspaceStatusActive,
+					Surfaces: []manifest.Surface{
+						{
+							ID: 1, Name: "agent", Type: manifest.SurfaceTypeAgent,
+							Backend: manifest.SurfaceBackendTmux, Agent: &agentName,
+							Tmux: &manifest.TmuxAttrs{WindowID: tmuxWindowID, PaneID: "%1", LayoutGroup: 1},
+						},
+						{
+							ID: 2, Name: "shell", Type: manifest.SurfaceTypeShell,
+							Backend: manifest.SurfaceBackendTmux,
+							Tmux:    &manifest.TmuxAttrs{WindowID: tmuxWindowID, PaneID: "%2", LayoutGroup: 1},
 						},
 					},
 				},
@@ -259,23 +259,23 @@ func createTestManifest(t *testing.T, dir string, tmuxWindowID string) string {
 	return path
 }
 
-// createShellOnlyManifest builds a manifest where the window has only shell panes (no agent/cmd).
+// createShellOnlyManifest builds a manifest where the workspace has only a shell surface.
 func createShellOnlyManifest(t *testing.T, dir string, tmuxWindowID string) string {
 	t.Helper()
 	m := manifest.New()
-	m.Docks["dev"] = &manifest.DockState{
-		Workspaces: map[string]*manifest.Workspace{
-			"w1": {
-				Name:   "shell-ws",
-				Type:   manifest.WorkspaceTypeWorktree,
-				Status: manifest.WorkspaceStatusActive,
-				Windows: []manifest.Window{
-					{
-						ID:           1,
-						TmuxWindowID: tmuxWindowID,
-						Name:         "shell-ws",
-						Panes: []manifest.Pane{
-							{ID: 1, Type: manifest.PaneTypeShell},
+	m.Docks = []manifest.Dock{
+		{
+			Name: "dev",
+			Workspaces: []manifest.Workspace{
+				{
+					Name:   "shell-ws",
+					Type:   manifest.WorkspaceTypeWorktree,
+					Status: manifest.WorkspaceStatusActive,
+					Surfaces: []manifest.Surface{
+						{
+							ID: 1, Name: "shell", Type: manifest.SurfaceTypeShell,
+							Backend: manifest.SurfaceBackendTmux,
+							Tmux:    &manifest.TmuxAttrs{WindowID: tmuxWindowID, PaneID: "%1", LayoutGroup: 1},
 						},
 					},
 				},
@@ -293,19 +293,15 @@ func TestCheckLoop_SetsHighlightOnMatch(t *testing.T) {
 	dir := t.TempDir()
 	mock := tmux.NewMock()
 
-	// Set up tmux state: session with one window, one pane.
 	mock.NewSession("dev")
 	winID, _ := mock.NewWindow("dev", "test-ws", "/tmp")
 	panes, _ := mock.ListPanes(winID)
 	paneID := panes[0].ID
 
-	// Set the pane content to match a waiting pattern.
 	mock.SetCaptureContent(paneID, "some output\nWaiting for input\n$")
 
-	// Create manifest pointing to this window.
 	manifestPath := createTestManifest(t, dir, winID)
 
-	// Create patterns file.
 	patternsPath := filepath.Join(dir, "bay-prompts.txt")
 	if err := os.WriteFile(patternsPath, []byte("(?i)waiting for input\n"), 0o644); err != nil {
 		t.Fatalf("writing patterns: %v", err)
@@ -314,12 +310,10 @@ func TestCheckLoop_SetsHighlightOnMatch(t *testing.T) {
 	pidPath := filepath.Join(dir, "monitor.pid")
 	mon := New(mock, manifestPath, patternsPath, pidPath, 1)
 
-	// Run one check cycle.
 	if err := mon.CheckOnce(); err != nil {
 		t.Fatalf("CheckOnce: %v", err)
 	}
 
-	// Verify the highlight flag was set on the window.
 	val, err := mock.GetWindowOption(winID, "@bay-waiting")
 	if err != nil {
 		t.Fatalf("GetWindowOption: %v", err)
@@ -328,7 +322,6 @@ func TestCheckLoop_SetsHighlightOnMatch(t *testing.T) {
 		t.Errorf("expected @bay-waiting=1, got %q", val)
 	}
 
-	// Verify the style was set.
 	style, err := mock.GetWindowOption(winID, "window-status-style")
 	if err != nil {
 		t.Fatalf("GetWindowOption for style: %v", err)
@@ -347,7 +340,6 @@ func TestCheckLoop_ClearsHighlightWhenNoMatch(t *testing.T) {
 	panes, _ := mock.ListPanes(winID)
 	paneID := panes[0].ID
 
-	// Initially matching.
 	mock.SetCaptureContent(paneID, "Waiting for input")
 
 	manifestPath := createTestManifest(t, dir, winID)
@@ -359,7 +351,6 @@ func TestCheckLoop_ClearsHighlightWhenNoMatch(t *testing.T) {
 	pidPath := filepath.Join(dir, "monitor.pid")
 	mon := New(mock, manifestPath, patternsPath, pidPath, 1)
 
-	// First check: should set highlight.
 	if err := mon.CheckOnce(); err != nil {
 		t.Fatalf("CheckOnce (1): %v", err)
 	}
@@ -368,10 +359,8 @@ func TestCheckLoop_ClearsHighlightWhenNoMatch(t *testing.T) {
 		t.Fatalf("expected highlight to be set after first check")
 	}
 
-	// Now change pane content to non-matching.
 	mock.SetCaptureContent(paneID, "compiling...\ndone.\n$")
 
-	// Second check: should clear highlight.
 	if err := mon.CheckOnce(); err != nil {
 		t.Fatalf("CheckOnce (2): %v", err)
 	}
@@ -393,7 +382,6 @@ func TestCheckLoop_SkipsShellOnlyWindows(t *testing.T) {
 	panes, _ := mock.ListPanes(winID)
 	paneID := panes[0].ID
 
-	// Even though content matches, a shell-only window should be skipped.
 	mock.SetCaptureContent(paneID, "Waiting for input")
 
 	manifestPath := createShellOnlyManifest(t, dir, winID)
@@ -409,7 +397,6 @@ func TestCheckLoop_SkipsShellOnlyWindows(t *testing.T) {
 		t.Fatalf("CheckOnce: %v", err)
 	}
 
-	// The @bay-waiting option should NOT be set on the window.
 	_, err := mock.GetWindowOption(winID, "@bay-waiting")
 	if err == nil {
 		t.Error("expected no @bay-waiting option on shell-only window")
@@ -425,7 +412,6 @@ func TestCheckLoop_HandlesANSIInPaneContent(t *testing.T) {
 	panes, _ := mock.ListPanes(winID)
 	paneID := panes[0].ID
 
-	// Content has ANSI escapes around the matching text.
 	mock.SetCaptureContent(paneID, "\033[1;31mWaiting for input\033[0m")
 
 	manifestPath := createTestManifest(t, dir, winID)
@@ -464,7 +450,6 @@ func TestCheckLoop_ReloadsPatterns(t *testing.T) {
 	manifestPath := createTestManifest(t, dir, winID)
 	patternsPath := filepath.Join(dir, "bay-prompts.txt")
 
-	// Initially empty patterns: no match.
 	if err := os.WriteFile(patternsPath, []byte("# empty\n"), 0o644); err != nil {
 		t.Fatalf("writing patterns: %v", err)
 	}
@@ -476,13 +461,11 @@ func TestCheckLoop_ReloadsPatterns(t *testing.T) {
 		t.Fatalf("CheckOnce (1): %v", err)
 	}
 
-	// No match expected — option should not be set.
 	_, err := mock.GetWindowOption(winID, "@bay-waiting")
 	if err == nil {
 		t.Error("expected no @bay-waiting with empty patterns")
 	}
 
-	// Now update patterns file to match.
 	if err := os.WriteFile(patternsPath, []byte("custom prompt here\n"), 0o644); err != nil {
 		t.Fatalf("rewriting patterns: %v", err)
 	}
@@ -521,7 +504,6 @@ func TestRun_CancelsOnContext(t *testing.T) {
 		done <- mon.Run(ctx)
 	}()
 
-	// Give it a moment to start.
 	time.Sleep(50 * time.Millisecond)
 	cancel()
 

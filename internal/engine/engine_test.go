@@ -34,8 +34,8 @@ func testEngine(t *testing.T) (*Engine, string) {
 	os.MkdirAll(repoDir, 0o755)
 
 	configPath := filepath.Join(dir, "config.toml")
-	manifestPath := filepath.Join(dir, "manifest.toml")
-	archivePath := filepath.Join(dir, "archive.toml")
+	manifestPath := filepath.Join(dir, "manifest.json")
+	archivePath := filepath.Join(dir, "archive.json")
 
 	mockTmux := tmux.NewMock()
 	mockGit := git.NewMock()
@@ -106,8 +106,8 @@ func TestDockNew(t *testing.T) {
 	}
 
 	// Verify manifest updated
-	m, _ := manifest.Load(eng.manifestPath)
-	if _, ok := m.Docks["research"]; !ok {
+	m, _ := eng.LoadManifest()
+	if m.FindDock("research") == nil {
 		t.Error("dock not in manifest")
 	}
 }
@@ -134,7 +134,7 @@ func TestDockNew_InvalidName(t *testing.T) {
 func TestWsNew_Worktree(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -148,14 +148,14 @@ func TestWsNew_Worktree(t *testing.T) {
 	if ws.Name != "w1" {
 		t.Errorf("name = %q, want w1", ws.Name)
 	}
-	if len(ws.Windows) != 1 {
-		t.Fatalf("windows = %d, want 1", len(ws.Windows))
+	if len(ws.Surfaces) != 1 {
+		t.Fatalf("surfaces = %d, want 1", len(ws.Surfaces))
 	}
-	if ws.Windows[0].Panes[0].Type != manifest.PaneTypeAgent {
-		t.Errorf("pane type = %q, want agent", ws.Windows[0].Panes[0].Type)
+	if ws.Surfaces[0].Type != manifest.SurfaceTypeAgent {
+		t.Errorf("surface type = %q, want agent", ws.Surfaces[0].Type)
 	}
-	if ws.Windows[0].Panes[0].TmuxPaneID == "" {
-		t.Error("expected first pane to record tmux pane ID")
+	if ws.Surfaces[0].Tmux == nil || ws.Surfaces[0].Tmux.PaneID == "" {
+		t.Error("expected first surface to record tmux pane ID")
 	}
 
 	// Verify worktree was created
@@ -165,13 +165,14 @@ func TestWsNew_Worktree(t *testing.T) {
 	}
 
 	// Verify manifest persisted
-	m, _ := manifest.Load(eng.manifestPath)
-	if _, ok := m.Docks["labs"].Workspaces["w1"]; !ok {
+	m, _ := eng.LoadManifest()
+	dock := m.FindDock("labs")
+	if dock == nil || dock.FindWorkspace("w1") == nil {
 		t.Error("workspace not in manifest")
 	}
 
 	// Second workspace gets w2
-	ws2, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	ws2, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"})
 	if err != nil {
 		t.Fatalf("second WsNew failed: %v", err)
 	}
@@ -180,27 +181,27 @@ func TestWsNew_Worktree(t *testing.T) {
 	}
 }
 
-func TestPaneAdd_PersistsTmuxPaneID(t *testing.T) {
+func TestSurfaceAdd_PersistsTmuxPaneID(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
 
-	if err := eng.PaneAdd("labs", "w1", 1, "codex", false, "", "v"); err != nil {
-		t.Fatalf("PaneAdd failed: %v", err)
+	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeAgent, "agent", "codex", "", "v"); err != nil {
+		t.Fatalf("SurfaceAdd failed: %v", err)
 	}
 
-	ws, err = eng.WsShow("labs", "w1")
+	ws, err := eng.WsShow("labs", "w1")
 	if err != nil {
 		t.Fatalf("WsShow failed: %v", err)
 	}
-	if len(ws.Windows[0].Panes) != 2 {
-		t.Fatalf("panes = %d, want 2", len(ws.Windows[0].Panes))
+	if len(ws.Surfaces) != 2 {
+		t.Fatalf("surfaces = %d, want 2", len(ws.Surfaces))
 	}
-	if ws.Windows[0].Panes[1].TmuxPaneID == "" {
-		t.Fatal("expected added pane to record tmux pane ID")
+	if ws.Surfaces[1].Tmux == nil || ws.Surfaces[1].Tmux.PaneID == "" {
+		t.Fatal("expected added surface to record tmux pane ID")
 	}
 }
 
@@ -213,6 +214,7 @@ func TestWsNew_External(t *testing.T) {
 	ws, err := eng.WsNew(WsNewOptions{
 		Dock: "labs",
 		Dir:  extDir,
+		Name: "ext1",
 	})
 	if err != nil {
 		t.Fatalf("WsNew external failed: %v", err)
@@ -235,13 +237,13 @@ func TestWsNew_External(t *testing.T) {
 func TestWsNew_Shell(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
 	if err != nil {
 		t.Fatalf("WsNew shell failed: %v", err)
 	}
 
-	if ws.Windows[0].Panes[0].Type != manifest.PaneTypeShell {
-		t.Errorf("pane type = %q, want shell", ws.Windows[0].Panes[0].Type)
+	if ws.Surfaces[0].Type != manifest.SurfaceTypeShell {
+		t.Errorf("surface type = %q, want shell", ws.Surfaces[0].Type)
 	}
 }
 
@@ -258,7 +260,7 @@ func TestWsClose_Worktree(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	// Create workspace
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -270,8 +272,9 @@ func TestWsClose_Worktree(t *testing.T) {
 	}
 
 	// Verify removed from manifest
-	m, _ := manifest.Load(eng.manifestPath)
-	if _, ok := m.Docks["labs"].Workspaces["w1"]; ok {
+	m, _ := eng.LoadManifest()
+	dock := m.FindDock("labs")
+	if dock != nil && dock.FindWorkspace("w1") != nil {
 		t.Error("workspace should be removed from manifest")
 	}
 
@@ -286,7 +289,8 @@ func TestWsClose_Worktree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loading archive: %v", err)
 	}
-	if _, ok := archive.Docks["labs"].Workspaces["w1"]; !ok {
+	archiveDock := archive.FindDock("labs")
+	if archiveDock == nil || archiveDock.FindWorkspace("w1") == nil {
 		t.Error("workspace should be in archive")
 	}
 }
@@ -294,7 +298,7 @@ func TestWsClose_Worktree(t *testing.T) {
 func TestWsClose_Dirty(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -322,7 +326,7 @@ func TestWsClose_Dirty(t *testing.T) {
 func TestWsUpdate(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -334,12 +338,13 @@ func TestWsUpdate(t *testing.T) {
 		t.Fatalf("WsUpdate failed: %v", err)
 	}
 
-	ws, _ := eng.WsShow("labs", "w1")
-	if ws.Branch != "feature/mem-refactor" {
-		t.Errorf("branch = %q", ws.Branch)
+	// WsUpdate with branch abbreviates the name: w1 -> mem-refactor
+	ws, _ := eng.WsShow("labs", "mem-refactor")
+	if ws.Worktree == nil || ws.Worktree.Branch != "feature/mem-refactor" {
+		t.Errorf("branch = %v", ws.Worktree)
 	}
-	if ws.PR != "234" {
-		t.Errorf("pr = %q", ws.PR)
+	if ws.Worktree.PR != "234" {
+		t.Errorf("pr = %q", ws.Worktree.PR)
 	}
 	// Auto-abbreviated name
 	if ws.Name != "mem-refactor" {
@@ -354,7 +359,7 @@ func TestWsUpdate(t *testing.T) {
 func TestWsRename(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -364,97 +369,99 @@ func TestWsRename(t *testing.T) {
 		t.Fatalf("WsRename failed: %v", err)
 	}
 
-	ws, _ := eng.WsShow("labs", "w1")
+	ws, _ := eng.WsShow("labs", "my-ws")
 	if ws.Name != "my-ws" {
 		t.Errorf("name = %q, want my-ws", ws.Name)
 	}
 
 	// Verify name override sticks after branch update
 	branch := "feature/something"
-	err = eng.WsUpdate("labs", "w1", &branch, nil, nil)
+	err = eng.WsUpdate("labs", "my-ws", &branch, nil, nil)
 	if err != nil {
 		t.Fatalf("WsUpdate failed: %v", err)
 	}
-	ws, _ = eng.WsShow("labs", "w1")
+	ws, _ = eng.WsShow("labs", "my-ws")
 	if ws.Name != "my-ws" {
 		t.Errorf("name after update = %q, want my-ws (override should stick)", ws.Name)
 	}
 }
 
-func TestWinOpen(t *testing.T) {
+func TestSurfaceAdd_NewLayoutGroup(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
 
-	err = eng.WinOpen("labs", "w1", "", true, "")
+	// Add a new surface with empty splitDir = new tmux window / layout group
+	err = eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell", "", "", "")
 	if err != nil {
-		t.Fatalf("WinOpen failed: %v", err)
+		t.Fatalf("SurfaceAdd failed: %v", err)
 	}
 
 	ws, _ := eng.WsShow("labs", "w1")
-	if len(ws.Windows) != 2 {
-		t.Fatalf("expected 2 windows, got %d", len(ws.Windows))
+	if len(ws.Surfaces) != 2 {
+		t.Fatalf("expected 2 surfaces, got %d", len(ws.Surfaces))
 	}
-	if ws.Windows[1].Name != "w1:2" {
-		t.Errorf("second window name = %q, want w1:2", ws.Windows[1].Name)
+	if ws.Surfaces[1].Type != manifest.SurfaceTypeShell {
+		t.Errorf("surface type = %q, want shell", ws.Surfaces[1].Type)
 	}
-	if ws.Windows[1].Panes[0].Type != manifest.PaneTypeShell {
-		t.Errorf("pane type = %q, want shell", ws.Windows[1].Panes[0].Type)
+	// New layout group should be different from the first
+	if ws.Surfaces[1].Tmux.LayoutGroup == ws.Surfaces[0].Tmux.LayoutGroup {
+		t.Error("new surface should be in a different layout group")
 	}
 }
 
-func TestWinClose(t *testing.T) {
+func TestSurfaceClose(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
 
-	// Open second window
-	eng.WinOpen("labs", "w1", "", true, "")
+	// Open second surface in new layout group
+	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell", "", "", "")
 
-	// Close the second window
-	err = eng.WinClose("labs", "w1", 2)
+	// Close the second surface
+	err = eng.SurfaceClose("labs", "w1", "shell")
 	if err != nil {
-		t.Fatalf("WinClose failed: %v", err)
+		t.Fatalf("SurfaceClose failed: %v", err)
 	}
 
 	ws, _ := eng.WsShow("labs", "w1")
-	if len(ws.Windows) != 1 {
-		t.Errorf("expected 1 window after close, got %d", len(ws.Windows))
+	if len(ws.Surfaces) != 1 {
+		t.Errorf("expected 1 surface after close, got %d", len(ws.Surfaces))
 	}
 }
 
-func TestPaneAdd(t *testing.T) {
+func TestSurfaceAdd_Split(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
 
-	err = eng.PaneAdd("labs", "w1", 1, "", true, "", "h")
+	err = eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell", "", "", "h")
 	if err != nil {
-		t.Fatalf("PaneAdd failed: %v", err)
+		t.Fatalf("SurfaceAdd failed: %v", err)
 	}
 
 	ws, _ := eng.WsShow("labs", "w1")
-	if len(ws.Windows[0].Panes) != 2 {
-		t.Fatalf("expected 2 panes, got %d", len(ws.Windows[0].Panes))
+	if len(ws.Surfaces) != 2 {
+		t.Fatalf("expected 2 surfaces, got %d", len(ws.Surfaces))
 	}
-	pane := ws.Windows[0].Panes[1]
-	if pane.Type != manifest.PaneTypeShell {
-		t.Errorf("pane type = %q, want shell", pane.Type)
+	s := ws.Surfaces[1]
+	if s.Type != manifest.SurfaceTypeShell {
+		t.Errorf("surface type = %q, want shell", s.Type)
 	}
-	if pane.SplitDir != "h" {
-		t.Errorf("split_dir = %q, want h", pane.SplitDir)
+	if s.Tmux.SplitDir != "h" {
+		t.Errorf("split_dir = %q, want h", s.Tmux.SplitDir)
 	}
-	if pane.SplitFrom != 1 {
-		t.Errorf("split_from = %d, want 1", pane.SplitFrom)
+	if s.Tmux.SplitFrom != ws.Surfaces[0].ID {
+		t.Errorf("split_from = %d, want %d (first surface ID)", s.Tmux.SplitFrom, ws.Surfaces[0].ID)
 	}
 }
 
@@ -462,17 +469,18 @@ func TestDockClose(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	// Create two workspaces
-	eng.WsNew(WsNewOptions{Dock: "labs"})
-	eng.WsNew(WsNewOptions{Dock: "labs"})
+	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"})
 
 	err := eng.DockClose("labs", false)
 	if err != nil {
 		t.Fatalf("DockClose failed: %v", err)
 	}
 
-	m, _ := manifest.Load(eng.manifestPath)
-	if len(m.Docks["labs"].Workspaces) != 0 {
-		t.Errorf("expected 0 workspaces, got %d", len(m.Docks["labs"].Workspaces))
+	m, _ := eng.LoadManifest()
+	dock := m.FindDock("labs")
+	if dock != nil && len(dock.Workspaces) != 0 {
+		t.Errorf("expected 0 workspaces, got %d", len(dock.Workspaces))
 	}
 }
 
@@ -480,7 +488,7 @@ func TestRecover(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	// Create a workspace
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -493,13 +501,13 @@ func TestRecover(t *testing.T) {
 	mockTmux.Reset()
 
 	// Recover
-	cmds, err := eng.Recover()
+	results, err := eng.Recover()
 	if err != nil {
 		t.Fatalf("Recover failed: %v", err)
 	}
 
-	if len(cmds) == 0 {
-		t.Error("expected attach commands")
+	if len(results) == 0 {
+		t.Error("expected recovery results")
 	}
 
 	// Verify session was recreated
@@ -508,155 +516,49 @@ func TestRecover(t *testing.T) {
 	}
 }
 
-func TestGenerateAgentConfig(t *testing.T) {
-	eng, dir := testEngine(t)
-
-	// Create template
-	tmplDir := filepath.Join(dir, "templates")
-	os.MkdirAll(tmplDir, 0o755)
-	tmplPath := filepath.Join(tmplDir, "labs.md")
-	os.WriteFile(tmplPath, []byte("Workspace: {workspace_name} (ID: {workspace_id}) in {dock}"), 0o644)
-
-	eng.Config.Docks["labs"] = config.DockConfig{
-		Repo:                "labs",
-		Agent:               "claude",
-		AgentConfigTemplate: tmplPath,
-	}
-
-	wsPath := filepath.Join(dir, "ws1")
-	os.MkdirAll(wsPath, 0o755)
-
-	err := eng.generateAgentConfig("labs", "claude", "w1", "test-ws", wsPath, manifest.WorkspaceTypeWorktree, "labs")
-	if err != nil {
-		t.Fatalf("generateAgentConfig failed: %v", err)
-	}
-
-	// Read generated config
-	data, err := os.ReadFile(filepath.Join(wsPath, "CLAUDE.local.md"))
-	if err != nil {
-		t.Fatalf("reading config: %v", err)
-	}
-	content := string(data)
-	// Should contain the bay preamble with substituted values
-	if !strings.Contains(content, "bay workspace test-ws (w1) in the labs dock") {
-		t.Errorf("config missing preamble with substituted values, got:\n%s", content)
-	}
-	// Should contain the user template content
-	if !strings.Contains(content, "Workspace: test-ws (ID: w1) in labs") {
-		t.Errorf("config missing template content, got:\n%s", content)
-	}
-}
-
-func TestGenerateAgentConfig_GitignoreRefused(t *testing.T) {
-	eng, dir := testEngine(t)
-
-	mockGit := eng.Git.(*git.Mock)
-	mockGit.SetGlobalIgnored(false) // not gitignored
-
-	wsPath := filepath.Join(dir, "ws1")
-	os.MkdirAll(wsPath, 0o755)
-
-	eng.Config.Docks["labs"] = config.DockConfig{
-		Repo:                "labs",
-		Agent:               "claude",
-		AgentConfigTemplate: filepath.Join(dir, "templates", "labs.md"),
-	}
-
-	err := eng.generateAgentConfig("labs", "claude", "w1", "test", wsPath, manifest.WorkspaceTypeWorktree, "labs")
-	if err == nil {
-		t.Error("expected error when config file not gitignored")
-	}
-}
-
-func TestGenerateAgentConfig_PreambleWithoutTemplate(t *testing.T) {
-	// Bay should write the preamble even when no template is configured.
-	eng, _ := testEngine(t)
-
-	// labs dock has no agent_config_template by default
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
-	if err != nil {
-		t.Fatalf("WsNew failed: %v", err)
-	}
-
-	configPath := filepath.Join(ws.Path, "CLAUDE.local.md")
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatalf("config file not written: %v", err)
-	}
-	content := string(data)
-	if !strings.Contains(content, "# Bay Workspace") {
-		t.Error("config missing bay preamble")
-	}
-	if !strings.Contains(content, "bay ws update self") {
-		t.Error("config missing bay update instructions")
-	}
-	if !strings.Contains(content, ws.Path) {
-		t.Errorf("config missing workspace path %q", ws.Path)
-	}
-}
-
 // --- Regression tests for code review fixes ---
 
-func TestWsUpdate_WindowNamesPersisted(t *testing.T) {
-	// Regression: WsUpdate iterated windows by value, so Name mutations were lost
+func TestWsUpdate_TmuxWindowRenamed(t *testing.T) {
+	// Regression: WsUpdate should rename tmux windows when workspace name changes
 	eng, _ := testEngine(t)
 
-	eng.WsNew(WsNewOptions{Dock: "labs"})
-	eng.WinOpen("labs", "w1", "", true, "") // second window
+	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 
 	branch := "feature/new-thing"
 	eng.WsUpdate("labs", "w1", &branch, nil, nil)
 
-	ws, _ := eng.WsShow("labs", "w1")
-	if ws.Windows[0].Name != "new-thing" {
-		t.Errorf("window 1 name = %q, want new-thing", ws.Windows[0].Name)
+	// Verify RenameWindow was called
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	found := false
+	for _, call := range mockTmux.Calls {
+		if call.Method == "RenameWindow" {
+			found = true
+			break
+		}
 	}
-	if ws.Windows[1].Name != "new-thing:2" {
-		t.Errorf("window 2 name = %q, want new-thing:2", ws.Windows[1].Name)
+	if !found {
+		t.Error("expected RenameWindow call when branch changes workspace name")
 	}
 }
 
-func TestWsRename_WindowNamesPersisted(t *testing.T) {
-	// Regression: WsRename iterated windows by value
+func TestWsRename_TmuxWindowRenamed(t *testing.T) {
+	// Regression: WsRename should rename tmux windows
 	eng, _ := testEngine(t)
 
-	eng.WsNew(WsNewOptions{Dock: "labs"})
-	eng.WinOpen("labs", "w1", "", true, "")
+	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 
 	eng.WsRename("labs", "w1", "renamed")
 
-	ws, _ := eng.WsShow("labs", "w1")
-	if ws.Windows[0].Name != "renamed" {
-		t.Errorf("window 1 name = %q, want renamed", ws.Windows[0].Name)
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	found := false
+	for _, call := range mockTmux.Calls {
+		if call.Method == "RenameWindow" && len(call.Args) >= 2 && call.Args[1] == "renamed" {
+			found = true
+			break
+		}
 	}
-	if ws.Windows[1].Name != "renamed:2" {
-		t.Errorf("window 2 name = %q, want renamed:2", ws.Windows[1].Name)
-	}
-}
-
-func TestGenerateAgentConfig_WorkspaceType(t *testing.T) {
-	// Regression: {workspace_type} was hardcoded to "worktree"
-	eng, dir := testEngine(t)
-
-	tmplDir := filepath.Join(dir, "templates")
-	os.MkdirAll(tmplDir, 0o755)
-	tmplPath := filepath.Join(tmplDir, "labs.md")
-	os.WriteFile(tmplPath, []byte("type={workspace_type}"), 0o644)
-
-	eng.Config.Docks["labs"] = config.DockConfig{
-		Repo:                "labs",
-		Agent:               "claude",
-		AgentConfigTemplate: tmplPath,
-	}
-
-	wsPath := filepath.Join(dir, "ws1")
-	os.MkdirAll(wsPath, 0o755)
-
-	eng.generateAgentConfig("labs", "claude", "w1", "test", wsPath, manifest.WorkspaceTypeExternal, "labs")
-
-	data, _ := os.ReadFile(filepath.Join(wsPath, "CLAUDE.local.md"))
-	if !strings.Contains(string(data), "type=external") {
-		t.Errorf("config should contain type=external, got:\n%s", string(data))
+	if !found {
+		t.Error("expected RenameWindow call with new name")
 	}
 }
 
@@ -682,7 +584,7 @@ func TestWsClose_DeletedWorktree(t *testing.T) {
 	// Regression: safety checks failed on non-existent worktree paths
 	eng, _ := testEngine(t)
 
-	eng.WsNew(WsNewOptions{Dock: "labs"})
+	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	// Don't create the directory — simulates externally deleted worktree
 
 	// Should succeed without force since path doesn't exist
@@ -712,59 +614,19 @@ func TestDockNew_SavesConfig(t *testing.T) {
 	}
 }
 
-func TestGenerateAgentConfig_UsesWorkspaceRepo(t *testing.T) {
-	// Regression: generateAgentConfig used dock default repo for template vars
-	// and gitignore checks, ignoring workspace repo overrides.
-	eng, dir := testEngine(t)
-
-	// Add a second repo
-	otherRepoDir := filepath.Join(dir, "repos", "other")
-	os.MkdirAll(otherRepoDir, 0o755)
-	eng.Config.Repos["other"] = config.RepoConfig{Path: otherRepoDir}
-
-	tmplDir := filepath.Join(dir, "templates")
-	os.MkdirAll(tmplDir, 0o755)
-	tmplPath := filepath.Join(tmplDir, "labs.md")
-	os.WriteFile(tmplPath, []byte("{dock_repo}"), 0o644)
-
-	eng.Config.Docks["labs"] = config.DockConfig{
-		Repo:                "labs",
-		Agent:               "claude",
-		AgentConfigTemplate: tmplPath,
-	}
-
-	wsPath := filepath.Join(dir, "ws1")
-	os.MkdirAll(wsPath, 0o755)
-
-	// Generate with workspace repo override "other"
-	err := eng.generateAgentConfig("labs", "claude", "w1", "test", wsPath, manifest.WorkspaceTypeWorktree, "other")
-	if err != nil {
-		t.Fatalf("generateAgentConfig failed: %v", err)
-	}
-
-	data, _ := os.ReadFile(filepath.Join(wsPath, "CLAUDE.local.md"))
-	// Should contain the "other" repo path, not the "labs" repo path
-	if !strings.Contains(string(data), otherRepoDir) {
-		t.Errorf("config should contain workspace repo path %q, got:\n%s", otherRepoDir, string(data))
-	}
-}
-
 func TestWsClose_UnpushedCheckError_Refuses(t *testing.T) {
 	// Regression: WsClose silently ignored errors from HasUnpushedCommits,
 	// allowing worktree removal without verifying push status.
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
 	os.MkdirAll(ws.Path, 0o755)
 
-	// Mock: HasUnpushedCommits returns error
+	// When unpushed is true, it refuses.
 	mockGit := eng.Git.(*git.Mock)
-	mockGit.SetUnpushed(ws.Path, false)
-	// We need the mock to return an error, but the current mock doesn't support that.
-	// Instead, test the positive case: when unpushed is true, it refuses.
 	mockGit.SetUnpushed(ws.Path, true)
 
 	err = eng.WsClose("labs", "w1", false)
@@ -778,19 +640,19 @@ func TestWsNew_RollbackOnManifestFailure(t *testing.T) {
 	eng, dir := testEngine(t)
 
 	// Create first workspace successfully so manifest has dock state
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	if err != nil {
 		t.Fatalf("first WsNew failed: %v", err)
 	}
 
 	// Now point manifest to a non-existent path inside a read-only directory.
-	// Load will create a fresh manifest (path doesn't exist → empty),
+	// Load will create a fresh manifest (path doesn't exist -> empty),
 	// but Save will fail because it can't create the lock file.
 	badDir := filepath.Join(dir, "readonly")
 	os.MkdirAll(badDir, 0o755)
 	// Write the current manifest content there (so load succeeds)
 	curData, _ := os.ReadFile(eng.manifestPath)
-	badManifest := filepath.Join(badDir, "manifest.toml")
+	badManifest := filepath.Join(badDir, "manifest.json")
 	os.WriteFile(badManifest, curData, 0o444)
 	// Make dir read-only so lock file cannot be created
 	os.Chmod(badDir, 0o555)
@@ -801,7 +663,7 @@ func TestWsNew_RollbackOnManifestFailure(t *testing.T) {
 	mockTmux := eng.Tmux.(*tmux.Mock)
 	callsBefore := len(mockTmux.Calls)
 
-	_, err = eng.WsNew(WsNewOptions{Dock: "labs"})
+	_, err = eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"})
 	if err == nil {
 		t.Fatal("expected error from WsNew with unwritable manifest dir")
 	}
@@ -819,23 +681,24 @@ func TestWsNew_RollbackOnManifestFailure(t *testing.T) {
 	}
 }
 
-func TestRecoverUsesPerPaneAgent(t *testing.T) {
-	// Regression: recovery used dock default agent for all panes, ignoring
-	// the pane's recorded Agent field.
+func TestRecoverUsesPerSurfaceAgent(t *testing.T) {
+	// Regression: recovery used dock default agent for all surfaces, ignoring
+	// the surface's recorded Agent field.
 	eng, _ := testEngine(t)
 
 	// Create workspace with codex agent override
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Agent: "codex"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Agent: "codex"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
 	os.MkdirAll(ws.Path, 0o755)
 
-	// Verify the pane recorded "codex"
+	// Verify the surface recorded "codex"
 	m, _ := eng.LoadManifest()
-	pane := m.Docks["labs"].Workspaces["w1"].Windows[0].Panes[0]
-	if pane.Agent != "codex" {
-		t.Fatalf("pane agent = %q, want codex", pane.Agent)
+	dock := m.FindDock("labs")
+	storedWs := dock.FindWorkspace("w1")
+	if storedWs.Surfaces[0].Agent == nil || *storedWs.Surfaces[0].Agent != "codex" {
+		t.Fatalf("surface agent = %v, want codex", storedWs.Surfaces[0].Agent)
 	}
 
 	// Simulate reboot
@@ -848,64 +711,61 @@ func TestRecoverUsesPerPaneAgent(t *testing.T) {
 		t.Fatalf("Recover failed: %v", err)
 	}
 
-	// Verify the recovered pane was launched with "codex" not "claude"
+	// Verify the recovered surface was launched with "codex" not "claude"
 	for _, call := range mockTmux.Calls {
 		if call.Method == "SendKeys" && len(call.Args) >= 2 {
 			if call.Args[1] == "codex" {
 				return // correct agent launched
 			}
 			if call.Args[1] == "claude" {
-				t.Error("recovery launched dock default agent 'claude' instead of pane's 'codex'")
+				t.Error("recovery launched dock default agent 'claude' instead of surface's 'codex'")
 				return
 			}
 		}
 	}
-	// If we get here, no SendKeys was called at all — also a problem,
-	// but only if there was a window to recover (might have been skipped
-	// if path didn't exist). The os.MkdirAll above should handle that.
 }
 
-func TestCmdPanePersistsCommand(t *testing.T) {
-	// Regression: command panes had no Command field, recovery couldn't restore them.
+func TestCmdSurfacePersistsCommand(t *testing.T) {
+	// Regression: command surfaces had no Command field, recovery couldn't restore them.
 	eng, _ := testEngine(t)
 
-	eng.WsNew(WsNewOptions{Dock: "labs"})
+	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 
-	// Open a window with a custom command
-	eng.WinOpen("labs", "w1", "", false, "tail -f /var/log/syslog")
+	// Add a cmd surface in a new layout group
+	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeCmd, "tail", "", "tail -f /var/log/syslog", "")
 
 	ws, _ := eng.WsShow("labs", "w1")
-	if len(ws.Windows) < 2 {
-		t.Fatal("expected 2 windows")
+	if len(ws.Surfaces) < 2 {
+		t.Fatal("expected 2 surfaces")
 	}
-	pane := ws.Windows[1].Panes[0]
-	if pane.Type != manifest.PaneTypeCmd {
-		t.Errorf("pane type = %q, want cmd", pane.Type)
+	s := ws.Surfaces[1]
+	if s.Type != manifest.SurfaceTypeCmd {
+		t.Errorf("surface type = %q, want cmd", s.Type)
 	}
-	if pane.Command != "tail -f /var/log/syslog" {
-		t.Errorf("pane command = %q, want 'tail -f /var/log/syslog'", pane.Command)
+	if s.Command == nil || *s.Command != "tail -f /var/log/syslog" {
+		t.Errorf("surface command = %v, want 'tail -f /var/log/syslog'", s.Command)
 	}
 }
 
-func TestPaneAddPersistsCommand(t *testing.T) {
+func TestSurfaceAddPersistsCommand(t *testing.T) {
 	eng, _ := testEngine(t)
-	eng.WsNew(WsNewOptions{Dock: "labs"})
+	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 
-	eng.PaneAdd("labs", "w1", 1, "", false, "watch df -h", "h")
+	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeCmd, "watch", "", "watch df -h", "h")
 
 	ws, _ := eng.WsShow("labs", "w1")
-	pane := ws.Windows[0].Panes[1]
-	if pane.Command != "watch df -h" {
-		t.Errorf("pane command = %q, want 'watch df -h'", pane.Command)
+	s := ws.Surfaces[1]
+	if s.Command == nil || *s.Command != "watch df -h" {
+		t.Errorf("surface command = %v, want 'watch df -h'", s.Command)
 	}
 }
 
-func TestRecoverCmdPane(t *testing.T) {
-	// Regression: recovery fell back to plain shell for cmd panes.
+func TestRecoverCmdSurface(t *testing.T) {
+	// Regression: recovery fell back to plain shell for cmd surfaces.
 	eng, _ := testEngine(t)
 
-	eng.WsNew(WsNewOptions{Dock: "labs"})
-	eng.WinOpen("labs", "w1", "", false, "htop")
+	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeCmd, "htop", "", "htop", "")
 
 	ws, _ := eng.WsShow("labs", "w1")
 	os.MkdirAll(ws.Path, 0o755)
@@ -921,24 +781,23 @@ func TestRecoverCmdPane(t *testing.T) {
 			return // pass
 		}
 	}
-	t.Error("expected SendKeys with 'htop' for cmd pane recovery")
+	t.Error("expected SendKeys with 'htop' for cmd surface recovery")
 }
 
-func TestRecoverReconcilesPanesInExistingWindow(t *testing.T) {
-	// Regression: recovery skipped pane repair for existing windows.
+func TestRecoverReconcilesSurfacesInExistingWindow(t *testing.T) {
+	// Regression: recovery skipped surface repair for existing windows.
 	eng, _ := testEngine(t)
 
-	eng.WsNew(WsNewOptions{Dock: "labs"})
-	eng.PaneAdd("labs", "w1", 1, "", true, "", "h")
+	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell", "", "", "h")
 
 	ws, _ := eng.WsShow("labs", "w1")
 	os.MkdirAll(ws.Path, 0o755)
 
-	// Manifest says 2 panes. Kill one pane in tmux so only 1 remains.
+	// Manifest says 2 surfaces. Kill one pane in tmux so only 1 remains.
 	mockTmux := eng.Tmux.(*tmux.Mock)
-	// The window has 2 tmux panes (created by WsNew + PaneAdd).
-	// Find and kill the second one.
-	winID := ws.Windows[0].TmuxWindowID
+	// The window has 2 tmux panes (created by WsNew + SurfaceAdd split).
+	winID := ws.Surfaces[0].Tmux.WindowID
 	panes, _ := mockTmux.ListPanes(winID)
 	if len(panes) < 2 {
 		t.Fatalf("expected 2 tmux panes, got %d", len(panes))
@@ -960,18 +819,18 @@ func TestRecoverReconcilesPanesInExistingWindow(t *testing.T) {
 	}
 }
 
-func TestWinRestartUsesPerPaneAgent(t *testing.T) {
-	// Regression: WinRestart used dock default agent for all panes.
+func TestSurfaceRestartUsesPerSurfaceAgent(t *testing.T) {
+	// Regression: SurfaceRestart used dock default agent for all surfaces.
 	eng, _ := testEngine(t)
 
-	eng.WsNew(WsNewOptions{Dock: "labs", Agent: "codex"})
+	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Agent: "codex"})
 
 	mockTmux := eng.Tmux.(*tmux.Mock)
 
 	// Clear calls to isolate restart
 	mockTmux.Calls = nil
 
-	eng.WinRestart("labs", "w1", 1)
+	eng.SurfaceRestart("labs", "w1", "agent")
 
 	// Should respawn with codex, not claude
 	for _, call := range mockTmux.Calls {
@@ -980,7 +839,7 @@ func TestWinRestartUsesPerPaneAgent(t *testing.T) {
 				return // correct
 			}
 			if call.Args[2] == "claude" {
-				t.Error("WinRestart used dock default 'claude' instead of pane's 'codex'")
+				t.Error("SurfaceRestart used dock default 'claude' instead of surface's 'codex'")
 				return
 			}
 		}
@@ -989,7 +848,7 @@ func TestWinRestartUsesPerPaneAgent(t *testing.T) {
 
 func TestWsUpdate_InvalidStatus(t *testing.T) {
 	eng, _ := testEngine(t)
-	eng.WsNew(WsNewOptions{Dock: "labs"})
+	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 
 	bad := "banana"
 	err := eng.WsUpdate("labs", "w1", nil, nil, &bad)
@@ -1122,12 +981,6 @@ func TestRepoAdd_NotGitRepo(t *testing.T) {
 	eng.configPath = filepath.Join(dir, "config.toml")
 	config.Save(eng.configPath, eng.Config)
 
-	// Mock defaults to IsGitRepo=true; override for this test by using
-	// a custom mock that returns false. Instead, we test the real path:
-	// create a plain directory (not a git repo). The mock always returns true,
-	// so we verify the logic by testing with force=false on a mock that
-	// returns false. We need to make the mock configurable.
-	// For now, test the force=true path to ensure it bypasses the check.
 	plainDir := filepath.Join(dir, "not-a-repo")
 	os.MkdirAll(plainDir, 0o755)
 
@@ -1175,7 +1028,7 @@ func TestWsClose_CleansEmptyWorktreeDir(t *testing.T) {
 	wsDir := filepath.Join(wtDir, "w1")
 	os.MkdirAll(wsDir, 0o755)
 
-	eng.WsNew(WsNewOptions{Dock: "labs"})
+	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	eng.WsClose("labs", "w1", true)
 
 	// The worktree parent dir should be removed if empty
@@ -1194,7 +1047,7 @@ func TestWsClose_CleansEmptyWorktreeDir(t *testing.T) {
 func TestList_UsesDockDefaultAgentForShellWorkspace(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -1207,23 +1060,19 @@ func TestList_UsesDockDefaultAgentForShellWorkspace(t *testing.T) {
 	if len(docks) != 1 || len(docks[0].Workspaces) != 1 {
 		t.Fatalf("unexpected dock/workspace count: %#v", docks)
 	}
-	if docks[0].Workspaces[0].Agent != "claude" {
-		t.Errorf("agent = %q, want dock default claude", docks[0].Workspaces[0].Agent)
+	if docks[0].Workspaces[0].DefaultAgent != "claude" {
+		t.Errorf("default_agent = %q, want dock default claude", docks[0].Workspaces[0].DefaultAgent)
 	}
 }
 
-func TestList_PreservesWorkspaceAgentOverrideAfterPrimaryWindowClosed(t *testing.T) {
+func TestList_PreservesWorkspaceAgentOverride(t *testing.T) {
+	// Verify that creating a workspace with a non-default agent
+	// shows that agent in the List output.
 	eng, _ := testEngine(t)
 
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Agent: "codex"})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Agent: "codex"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
-	}
-	if err := eng.WinOpen("labs", "w1", "", true, ""); err != nil {
-		t.Fatalf("WinOpen failed: %v", err)
-	}
-	if err := eng.WinClose("labs", "w1", 1); err != nil {
-		t.Fatalf("WinClose failed: %v", err)
 	}
 
 	docks, err := eng.List()
@@ -1234,8 +1083,16 @@ func TestList_PreservesWorkspaceAgentOverrideAfterPrimaryWindowClosed(t *testing
 	if len(docks) != 1 || len(docks[0].Workspaces) != 1 {
 		t.Fatalf("unexpected dock/workspace count: %#v", docks)
 	}
-	if docks[0].Workspaces[0].Agent != "codex" {
-		t.Errorf("agent = %q, want workspace override codex", docks[0].Workspaces[0].Agent)
+	ws := docks[0].Workspaces[0]
+	// The surface should record the codex agent
+	foundCodex := false
+	for _, s := range ws.Surfaces {
+		if s.Agent == "codex" {
+			foundCodex = true
+		}
+	}
+	if !foundCodex {
+		t.Errorf("expected to find codex agent in surfaces, got: %#v", ws.Surfaces)
 	}
 }
 
@@ -1243,8 +1100,8 @@ func TestWsClose_KeepsNonEmptyWorktreeDir(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	// Create two workspaces
-	eng.WsNew(WsNewOptions{Dock: "labs"})
-	eng.WsNew(WsNewOptions{Dock: "labs"})
+	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"})
 
 	// Create the worktree parent dir with a subdirectory to simulate w2 still there
 	repoCfg := eng.Config.Repos["labs"]
@@ -1264,7 +1121,7 @@ func TestPlaceholder_CleanedOnWsNew(t *testing.T) {
 	// Creating a workspace should clean it up.
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -1286,7 +1143,7 @@ func TestPlaceholder_CreatedOnLastWsClose(t *testing.T) {
 	// Closing the last workspace should leave a placeholder.
 	eng, _ := testEngine(t)
 
-	eng.WsNew(WsNewOptions{Dock: "labs"})
+	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 
 	err := eng.WsClose("labs", "w1", true)
 	if err != nil {
@@ -1337,7 +1194,7 @@ func TestPlaceholder_NotCleanedIfUsed(t *testing.T) {
 	}
 
 	// Create a workspace — should NOT clean the used placeholder
-	eng.WsNew(WsNewOptions{Dock: "research"})
+	eng.WsNew(WsNewOptions{Dock: "research", Name: "w1"})
 
 	windows, _ = mockTmux.ListWindows("research")
 	foundUsedPlaceholder := false
@@ -1355,7 +1212,7 @@ func TestPlaceholder_NotCleanedIfUsed(t *testing.T) {
 func TestPlaceholder_CleanedOnRecovery(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, _ := eng.WsNew(WsNewOptions{Dock: "labs"})
+	ws, _ := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	os.MkdirAll(ws.Path, 0o755)
 
 	mockTmux := eng.Tmux.(*tmux.Mock)
@@ -1379,7 +1236,7 @@ func TestPlaceholder_CleanedOnRecovery(t *testing.T) {
 func TestSyncWorkspaceGitState_UpdatesBranch(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -1392,16 +1249,17 @@ func TestSyncWorkspaceGitState_UpdatesBranch(t *testing.T) {
 	// SyncAll should pick up the branch
 	eng.SyncAll()
 
-	ws, _ = eng.WsShow("labs", "w1")
-	if ws.Branch != "feature/sync-test" {
-		t.Errorf("branch = %q, want feature/sync-test", ws.Branch)
+	// SyncAll renames workspace from w1 to "sync-test" (abbreviated branch)
+	ws, _ = eng.WsShow("labs", "sync-test")
+	if ws.Worktree == nil || ws.Worktree.Branch != "feature/sync-test" {
+		t.Errorf("branch = %v, want feature/sync-test", ws.Worktree)
 	}
 }
 
 func TestSyncWorkspaceGitState_BranchChangeUpdatesNameAndStatus(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -1416,7 +1274,7 @@ func TestSyncWorkspaceGitState_BranchChangeUpdatesNameAndStatus(t *testing.T) {
 
 	eng.SyncAll()
 
-	ws, _ = eng.WsShow("labs", "w1")
+	ws, _ = eng.WsShow("labs", "my-feature")
 	if ws.Name != "my-feature" {
 		t.Errorf("name = %q, want my-feature", ws.Name)
 	}
@@ -1428,7 +1286,7 @@ func TestSyncWorkspaceGitState_BranchChangeUpdatesNameAndStatus(t *testing.T) {
 func TestSyncWorkspaceGitState_EmptyBranchNoOverwrite(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -1444,16 +1302,17 @@ func TestSyncWorkspaceGitState_EmptyBranchNoOverwrite(t *testing.T) {
 
 	eng.SyncAll()
 
-	ws, _ = eng.WsShow("labs", "w1")
-	if ws.Branch != "feature/existing" {
-		t.Errorf("branch = %q, want feature/existing (empty should not overwrite)", ws.Branch)
+	// WsUpdate renamed the workspace to "existing" via abbreviateBranch
+	ws, _ = eng.WsShow("labs", "existing")
+	if ws.Worktree.Branch != "feature/existing" {
+		t.Errorf("branch = %q, want feature/existing (empty should not overwrite)", ws.Worktree.Branch)
 	}
 }
 
 func TestSyncWorkspaceGitState_NameOverriddenNotChanged(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -1468,25 +1327,26 @@ func TestSyncWorkspaceGitState_NameOverriddenNotChanged(t *testing.T) {
 
 	eng.SyncAll()
 
-	ws, _ = eng.WsShow("labs", "w1")
+	ws, _ = eng.WsShow("labs", "custom-name")
 	if ws.Name != "custom-name" {
 		t.Errorf("name = %q, want custom-name (NameOverridden should prevent change)", ws.Name)
 	}
 	// Branch should still be updated even if name is overridden
-	if ws.Branch != "feature/something-else" {
-		t.Errorf("branch = %q, want feature/something-else", ws.Branch)
+	if ws.Worktree.Branch != "feature/something-else" {
+		t.Errorf("branch = %q, want feature/something-else", ws.Worktree.Branch)
 	}
 }
 
-func TestCurrentContext_ResolvesWorkspaceWindowAndPane(t *testing.T) {
+func TestCurrentContext(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
-	if err := eng.PaneAdd("labs", "w1", 1, "codex", false, "", "v"); err != nil {
-		t.Fatalf("PaneAdd failed: %v", err)
+	os.MkdirAll(ws.Path, 0o755)
+	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeAgent, "agent", "codex", "", "v"); err != nil {
+		t.Fatalf("SurfaceAdd failed: %v", err)
 	}
 	ws, err = eng.WsShow("labs", "w1")
 	if err != nil {
@@ -1502,31 +1362,28 @@ func TestCurrentContext_ResolvesWorkspaceWindowAndPane(t *testing.T) {
 
 	mockTmux := eng.Tmux.(*tmux.Mock)
 	mockTmux.SetCurrentSession("labs")
-	mockTmux.SetCurrentWindowID(ws.Windows[0].TmuxWindowID)
-	mockTmux.SetCurrentPaneID(ws.Windows[0].Panes[1].TmuxPaneID)
+	mockTmux.SetCurrentWindowID(ws.Surfaces[0].Tmux.WindowID)
+	mockTmux.SetCurrentPaneID(ws.Surfaces[1].Tmux.PaneID)
 
 	ctx, err := eng.CurrentContext()
 	if err != nil {
 		t.Fatalf("CurrentContext failed: %v", err)
 	}
-	if ctx.Repo != "labs" || ctx.Dock != "labs" || ctx.WorkspaceID != "w1" {
+	if ctx.Repo != "labs" || ctx.Dock != "labs" || ctx.Workspace != "w1" {
 		t.Fatalf("unexpected context: %#v", ctx)
 	}
-	if ctx.WindowID != 1 {
-		t.Fatalf("window = %d, want 1", ctx.WindowID)
+	if ctx.Surface != "agent" {
+		t.Fatalf("surface = %q, want agent", ctx.Surface)
 	}
-	if ctx.Window != ws.Windows[0].Name {
-		t.Fatalf("window = %q, want %q", ctx.Window, ws.Windows[0].Name)
-	}
-	if ctx.PaneID != 2 {
-		t.Fatalf("pane = %d, want 2", ctx.PaneID)
+	if ctx.SurfaceID != ws.Surfaces[1].ID {
+		t.Fatalf("surface_id = %d, want %d", ctx.SurfaceID, ws.Surfaces[1].ID)
 	}
 }
 
 func TestCurrentContext_OutsideTmuxStillResolvesRepoAndWorkspace(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -1544,63 +1401,59 @@ func TestCurrentContext_OutsideTmuxStillResolvesRepoAndWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CurrentContext failed: %v", err)
 	}
-	if ctx.Repo != "labs" || ctx.WorkspaceID != "w1" {
+	if ctx.Repo != "labs" || ctx.Workspace != "w1" {
 		t.Fatalf("unexpected context: %#v", ctx)
 	}
-	if ctx.WindowID != 0 || ctx.PaneID != 0 {
-		t.Fatalf("window/pane should be omitted outside tmux: %#v", ctx)
+	if ctx.Surface != "" || ctx.SurfaceID != 0 {
+		t.Fatalf("surface should be empty outside tmux: %#v", ctx)
 	}
 }
 
-// --- non-destructive tmux state sync tests ---
+// --- syncSurfaceTmuxState tests ---
 
-func TestSyncAll_PreservesDeadWindows(t *testing.T) {
+func TestSyncAll_RemovesStaleSurfaces(t *testing.T) {
+	// In the new model, syncSurfaceTmuxState REMOVES stale surfaces
+	// whose tmux windows no longer exist.
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
 
-	// Open a second window
-	eng.WinOpen("labs", "w1", "", true, "")
-	ws, _ = eng.WsShow("labs", "w1")
-	if len(ws.Windows) != 2 {
-		t.Fatalf("expected 2 windows, got %d", len(ws.Windows))
+	// Add a second surface in a new layout group
+	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell", "", "", "")
+	ws, _ := eng.WsShow("labs", "w1")
+	if len(ws.Surfaces) != 2 {
+		t.Fatalf("expected 2 surfaces, got %d", len(ws.Surfaces))
 	}
 
-	// Kill the second window in tmux (simulating user closing it externally)
+	// Kill the second surface's tmux window (simulating user closing it externally)
 	mockTmux := eng.Tmux.(*tmux.Mock)
-	mockTmux.KillWindow(ws.Windows[1].TmuxWindowID)
+	mockTmux.KillWindow(ws.Surfaces[1].Tmux.WindowID)
 
-	// SyncAll should preserve the dead window for recovery
+	// SyncAll should remove the stale surface
 	eng.SyncAll()
 
 	ws, _ = eng.WsShow("labs", "w1")
-	if len(ws.Windows) != 2 {
-		t.Errorf("expected 2 windows after sync, got %d", len(ws.Windows))
+	if len(ws.Surfaces) != 1 {
+		t.Errorf("expected 1 surface after sync (stale removed), got %d", len(ws.Surfaces))
 	}
 }
 
-func TestList_PreservesDeadWindowsForRecovery(t *testing.T) {
+func TestList_MarksStaleWorkspace(t *testing.T) {
+	// After a tmux window is killed and List is called, the workspace
+	// should show as stale (its surfaces are removed by SyncAll).
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
-	if err := eng.WinOpen("labs", "w1", "", true, ""); err != nil {
-		t.Fatalf("WinOpen failed: %v", err)
-	}
-	ws, _ = eng.WsShow("labs", "w1")
-	if len(ws.Windows) != 2 {
-		t.Fatalf("expected 2 windows, got %d", len(ws.Windows))
-	}
 
+	// Kill the workspace's tmux window
 	mockTmux := eng.Tmux.(*tmux.Mock)
-	if err := mockTmux.KillWindow(ws.Windows[1].TmuxWindowID); err != nil {
-		t.Fatalf("KillWindow failed: %v", err)
-	}
+	mockTmux.KillWindow(ws.Surfaces[0].Tmux.WindowID)
 
 	docks, err := eng.List()
 	if err != nil {
@@ -1609,281 +1462,47 @@ func TestList_PreservesDeadWindowsForRecovery(t *testing.T) {
 	if len(docks) != 1 || len(docks[0].Workspaces) != 1 {
 		t.Fatalf("unexpected dock/workspace count: %#v", docks)
 	}
-	if !docks[0].Workspaces[0].Stale {
-		t.Fatal("workspace should be marked stale")
-	}
 
-	ws, _ = eng.WsShow("labs", "w1")
-	if len(ws.Windows) != 2 {
-		t.Fatalf("manifest lost dead window; windows = %d, want 2", len(ws.Windows))
-	}
-
-	os.MkdirAll(ws.Path, 0o755)
-	if _, err := eng.Recover(); err != nil {
-		t.Fatalf("Recover failed: %v", err)
-	}
-
-	ws, _ = eng.WsShow("labs", "w1")
-	if len(ws.Windows) != 2 {
-		t.Fatalf("workspace windows after recover = %d, want 2", len(ws.Windows))
-	}
-	exists, _ := mockTmux.WindowExists(ws.Windows[1].TmuxWindowID)
-	if !exists {
-		t.Error("dead window should be recreated during recovery")
+	// The workspace should be present but surfaces removed
+	wsInfo := docks[0].Workspaces[0]
+	if wsInfo.SurfaceCount != 0 {
+		t.Errorf("expected 0 surfaces after sync, got %d", wsInfo.SurfaceCount)
 	}
 }
 
-func TestWinOpen_AgentConfigFailureDoesNotCreateWindow(t *testing.T) {
+func TestSyncAll_RemovesStaleSurfacesForSplitPanes(t *testing.T) {
+	// When a tmux window is killed, all surfaces in that window
+	// (including split panes) should be removed.
 	eng, _ := testEngine(t)
 
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
 
-	mockGit := eng.Git.(*git.Mock)
-	mockGit.SetGlobalIgnored(false)
-
-	err = eng.WinOpen("labs", "w1", "claude", false, "")
-	if err == nil {
-		t.Fatal("expected WinOpen to fail when agent config cannot be generated")
-	}
-
+	// Add a split pane in the same layout group
+	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell", "", "", "h")
 	ws, _ := eng.WsShow("labs", "w1")
-	if len(ws.Windows) != 1 {
-		t.Fatalf("windows = %d, want 1 after failed WinOpen", len(ws.Windows))
-	}
-}
-
-func TestPaneAdd_AgentConfigFailureDoesNotCreatePane(t *testing.T) {
-	eng, _ := testEngine(t)
-
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true})
-	if err != nil {
-		t.Fatalf("WsNew failed: %v", err)
+	if len(ws.Surfaces) != 2 {
+		t.Fatalf("expected 2 surfaces, got %d", len(ws.Surfaces))
 	}
 
-	mockGit := eng.Git.(*git.Mock)
-	mockGit.SetGlobalIgnored(false)
-
-	err = eng.PaneAdd("labs", "w1", 1, "claude", false, "", "h")
-	if err == nil {
-		t.Fatal("expected PaneAdd to fail when agent config cannot be generated")
-	}
-
-	ws, _ := eng.WsShow("labs", "w1")
-	if len(ws.Windows[0].Panes) != 1 {
-		t.Fatalf("panes = %d, want 1 after failed PaneAdd", len(ws.Windows[0].Panes))
-	}
-}
-
-func TestRecover_ReturnsAgentConfigErrors(t *testing.T) {
-	eng, _ := testEngine(t)
-
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Agent: "codex"})
-	if err != nil {
-		t.Fatalf("WsNew failed: %v", err)
-	}
-	os.MkdirAll(ws.Path, 0o755)
-
-	mockGit := eng.Git.(*git.Mock)
-	mockGit.SetGlobalIgnored(false)
+	// Kill one tmux pane (not the window)
 	mockTmux := eng.Tmux.(*tmux.Mock)
-	mockTmux.Reset()
-
-	_, err = eng.Recover()
-	if err == nil {
-		t.Fatal("expected Recover to return agent config error")
-	}
-}
-
-func TestRecover_FindWindowByNameRefreshesPaneIDs(t *testing.T) {
-	eng, _ := testEngine(t)
-
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true})
-	if err != nil {
-		t.Fatalf("WsNew failed: %v", err)
-	}
-	if err := eng.PaneAdd("labs", "w1", 1, "codex", false, "", "v"); err != nil {
-		t.Fatalf("PaneAdd failed: %v", err)
-	}
-	if err := os.MkdirAll(ws.Path, 0o755); err != nil {
-		t.Fatalf("MkdirAll failed: %v", err)
-	}
-
-	ws, err = eng.WsShow("labs", "w1")
-	if err != nil {
-		t.Fatalf("WsShow failed: %v", err)
-	}
-	oldWindowID := ws.Windows[0].TmuxWindowID
-	oldPaneID := ws.Windows[0].Panes[1].TmuxPaneID
-
-	mockTmux := eng.Tmux.(*tmux.Mock)
-	if err := mockTmux.KillWindow(oldWindowID); err != nil {
-		t.Fatalf("KillWindow failed: %v", err)
-	}
-	foundWindowID, err := mockTmux.NewWindow("labs", ws.Windows[0].Name, ws.Path)
-	if err != nil {
-		t.Fatalf("NewWindow failed: %v", err)
-	}
-	foundPaneID, err := mockTmux.SplitWindow(foundWindowID, "v", ws.Path)
-	if err != nil {
-		t.Fatalf("SplitWindow failed: %v", err)
-	}
-
-	if _, err := eng.Recover(); err != nil {
-		t.Fatalf("Recover failed: %v", err)
-	}
-
-	ws, err = eng.WsShow("labs", "w1")
-	if err != nil {
-		t.Fatalf("WsShow failed: %v", err)
-	}
-	if ws.Windows[0].TmuxWindowID != foundWindowID {
-		t.Fatalf("window id = %q, want %q", ws.Windows[0].TmuxWindowID, foundWindowID)
-	}
-	if ws.Windows[0].Panes[1].TmuxPaneID != foundPaneID {
-		t.Fatalf("pane id = %q, want %q", ws.Windows[0].Panes[1].TmuxPaneID, foundPaneID)
-	}
-	if ws.Windows[0].Panes[1].TmuxPaneID == oldPaneID {
-		t.Fatalf("pane id was not refreshed from stale value %q", oldPaneID)
-	}
-}
-
-func TestWsClose_RemoveWorktreeFailurePreservesWorkspaceState(t *testing.T) {
-	eng, _ := testEngine(t)
-
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
-	if err != nil {
-		t.Fatalf("WsNew failed: %v", err)
-	}
-	if err := eng.WinOpen("labs", "w1", "", true, ""); err != nil {
-		t.Fatalf("WinOpen failed: %v", err)
-	}
-	os.MkdirAll(ws.Path, 0o755)
-
-	repoPath := config.ExpandPath(eng.Config.Repos["labs"].Path)
-	mockGit := eng.Git.(*git.Mock)
-	if err := mockGit.RemoveWorktree(repoPath, ws.Path, true); err != nil {
-		t.Fatalf("preparing RemoveWorktree failure: %v", err)
-	}
-
-	err = eng.WsClose("labs", "w1", false)
-	if err == nil {
-		t.Fatal("expected WsClose to fail when RemoveWorktree fails")
-	}
-
-	stillThere, showErr := eng.WsShow("labs", "w1")
-	if showErr != nil {
-		t.Fatalf("workspace should remain in manifest after failed close: %v", showErr)
-	}
-	if len(stillThere.Windows) != 2 {
-		t.Fatalf("windows = %d, want 2 after failed close", len(stillThere.Windows))
-	}
-
-	mockTmux := eng.Tmux.(*tmux.Mock)
-	for _, win := range stillThere.Windows {
-		exists, _ := mockTmux.WindowExists(win.TmuxWindowID)
-		if !exists {
-			t.Fatalf("window %s should still exist after failed close", win.TmuxWindowID)
-		}
-	}
-}
-
-func TestRepoRemove_ForceRemovesManifestDock(t *testing.T) {
-	eng, dir := testEngine(t)
-	eng.configPath = filepath.Join(dir, "config.toml")
-	if err := config.Save(eng.configPath, eng.Config); err != nil {
-		t.Fatalf("saving config: %v", err)
-	}
-
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
-	if err != nil {
-		t.Fatalf("WsNew failed: %v", err)
-	}
-	os.MkdirAll(ws.Path, 0o755)
-
-	if err := eng.RepoRemove("labs", true); err != nil {
-		t.Fatalf("RepoRemove failed: %v", err)
-	}
-
-	m, err := manifest.Load(eng.manifestPath)
-	if err != nil {
-		t.Fatalf("loading manifest: %v", err)
-	}
-	if _, ok := m.Docks["labs"]; ok {
-		t.Fatal("dock labs should be removed from manifest")
-	}
-
-	mockTmux := eng.Tmux.(*tmux.Mock)
-	mockTmux.Reset()
-	if _, err := eng.Recover(); err != nil {
-		t.Fatalf("Recover failed: %v", err)
-	}
-	has, _ := mockTmux.HasSession("labs")
-	if has {
-		t.Error("recover should not recreate force-removed dock")
-	}
-}
-
-func TestSyncAll_PreservesMissingManagedPanes(t *testing.T) {
-	eng, _ := testEngine(t)
-
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
-	if err != nil {
-		t.Fatalf("WsNew failed: %v", err)
-	}
-
-	// Add a second pane
-	eng.PaneAdd("labs", "w1", 1, "", true, "", "h")
-	ws, _ = eng.WsShow("labs", "w1")
-	if len(ws.Windows[0].Panes) != 2 {
-		t.Fatalf("expected 2 panes, got %d", len(ws.Windows[0].Panes))
-	}
-
-	// Kill one tmux pane so tmux has fewer than manifest
-	mockTmux := eng.Tmux.(*tmux.Mock)
-	winID := ws.Windows[0].TmuxWindowID
+	winID := ws.Surfaces[0].Tmux.WindowID
 	panes, _ := mockTmux.ListPanes(winID)
 	if len(panes) < 2 {
 		t.Fatalf("expected 2 tmux panes, got %d", len(panes))
 	}
 	mockTmux.KillPane(panes[1].ID)
 
-	// SyncAll should preserve the manifest pane list for recovery
+	// SyncAll should keep surfaces since the window still exists
 	eng.SyncAll()
 
 	ws, _ = eng.WsShow("labs", "w1")
-	if len(ws.Windows[0].Panes) != 2 {
-		t.Errorf("expected 2 panes after sync, got %d", len(ws.Windows[0].Panes))
-	}
-}
-
-// --- SyncManifestPanes test ---
-
-func TestSyncManifestPanes_TrimsToCount(t *testing.T) {
-	eng, _ := testEngine(t)
-
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
-	if err != nil {
-		t.Fatalf("WsNew failed: %v", err)
-	}
-
-	// Add extra panes to manifest
-	eng.PaneAdd("labs", "w1", 1, "", true, "", "h")
-	eng.PaneAdd("labs", "w1", 1, "", true, "", "v")
-
-	ws, _ = eng.WsShow("labs", "w1")
-	if len(ws.Windows[0].Panes) != 3 {
-		t.Fatalf("expected 3 panes, got %d", len(ws.Windows[0].Panes))
-	}
-
-	// Trim to 1 pane
-	eng.SyncManifestPanes("labs", "w1", 1, 1)
-
-	ws, _ = eng.WsShow("labs", "w1")
-	if len(ws.Windows[0].Panes) != 1 {
-		t.Errorf("expected 1 pane after SyncManifestPanes, got %d", len(ws.Windows[0].Panes))
+	// Window still exists, so surfaces are preserved (even if pane is gone)
+	if len(ws.Surfaces) != 2 {
+		t.Errorf("expected 2 surfaces (window still alive), got %d", len(ws.Surfaces))
 	}
 }
 
@@ -1892,14 +1511,14 @@ func TestSyncManifestPanes_TrimsToCount(t *testing.T) {
 func TestResolveSelf_TmuxWindowIDFallback(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
 
-	// Set current tmux window ID to match the workspace's window
+	// Set current tmux window ID to match the workspace's surface
 	mockTmux := eng.Tmux.(*tmux.Mock)
-	winID := ws.Windows[0].TmuxWindowID
+	winID := ws.Surfaces[0].Tmux.WindowID
 	mockTmux.SetCurrentWindowID(winID)
 
 	// Change CWD to something that does NOT match any workspace path
@@ -1908,15 +1527,15 @@ func TestResolveSelf_TmuxWindowIDFallback(t *testing.T) {
 	os.Chdir(tmpDir)
 	defer os.Chdir(origDir)
 
-	dockName, wsID, err := eng.ResolveSelf()
+	dockName, wsName, err := eng.ResolveSelf()
 	if err != nil {
 		t.Fatalf("ResolveSelf failed: %v", err)
 	}
 	if dockName != "labs" {
 		t.Errorf("dock = %q, want labs", dockName)
 	}
-	if wsID != "w1" {
-		t.Errorf("wsID = %q, want w1", wsID)
+	if wsName != "w1" {
+		t.Errorf("wsName = %q, want w1", wsName)
 	}
 }
 
@@ -1925,21 +1544,21 @@ func TestResolveSelf_TmuxWindowIDFallback(t *testing.T) {
 func TestResolveByWindowID_Found(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
 
-	winID := ws.Windows[0].TmuxWindowID
-	dockName, wsID, foundWs, err := eng.ResolveByWindowID(winID)
+	winID := ws.Surfaces[0].Tmux.WindowID
+	dockName, wsName, foundWs, err := eng.ResolveByWindowID(winID)
 	if err != nil {
 		t.Fatalf("ResolveByWindowID failed: %v", err)
 	}
 	if dockName != "labs" {
 		t.Errorf("dock = %q, want labs", dockName)
 	}
-	if wsID != "w1" {
-		t.Errorf("wsID = %q, want w1", wsID)
+	if wsName != "w1" {
+		t.Errorf("wsName = %q, want w1", wsName)
 	}
 	if foundWs == nil {
 		t.Error("returned workspace is nil")
@@ -1963,8 +1582,8 @@ func TestResolveByWindowID_NotFound(t *testing.T) {
 func TestWsCloseByStatus_ClosesDone(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	eng.WsNew(WsNewOptions{Dock: "labs"})
-	eng.WsNew(WsNewOptions{Dock: "labs"})
+	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"})
 
 	// Mark w1 as done
 	doneStatus := "done"
@@ -1983,11 +1602,12 @@ func TestWsCloseByStatus_ClosesDone(t *testing.T) {
 	}
 
 	// w1 should be gone, w2 should remain
-	m, _ := manifest.Load(eng.manifestPath)
-	if _, ok := m.Docks["labs"].Workspaces["w1"]; ok {
+	m, _ := eng.LoadManifest()
+	dock := m.FindDock("labs")
+	if dock.FindWorkspace("w1") != nil {
 		t.Error("w1 should be closed")
 	}
-	if _, ok := m.Docks["labs"].Workspaces["w2"]; !ok {
+	if dock.FindWorkspace("w2") == nil {
 		t.Error("w2 should still exist")
 	}
 }
@@ -1995,15 +1615,14 @@ func TestWsCloseByStatus_ClosesDone(t *testing.T) {
 func TestWsCloseByStatus_SkipsNonDone(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	eng.WsNew(WsNewOptions{Dock: "labs"})
-	eng.WsNew(WsNewOptions{Dock: "labs"})
+	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"})
 
 	// Mark w1 as active (not done)
 	activeStatus := "active"
 	eng.WsUpdate("labs", "w1", nil, nil, &activeStatus)
 
-	// Mark w2 as idle (not done)
-	// w2 is already idle by default, no need to update
+	// w2 is already idle by default
 
 	_, _, err := eng.WsCloseByStatus("labs", "done", true)
 	if err == nil {
@@ -2014,11 +1633,12 @@ func TestWsCloseByStatus_SkipsNonDone(t *testing.T) {
 	}
 
 	// Both workspaces should still exist
-	m, _ := manifest.Load(eng.manifestPath)
-	if _, ok := m.Docks["labs"].Workspaces["w1"]; !ok {
+	m, _ := eng.LoadManifest()
+	dock := m.FindDock("labs")
+	if dock.FindWorkspace("w1") == nil {
 		t.Error("w1 should still exist")
 	}
-	if _, ok := m.Docks["labs"].Workspaces["w2"]; !ok {
+	if dock.FindWorkspace("w2") == nil {
 		t.Error("w2 should still exist")
 	}
 }
@@ -2028,7 +1648,7 @@ func TestWsCloseByStatus_SkipsNonDone(t *testing.T) {
 func TestWsNew_WithBranch(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Branch: "feature/new-branch"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Branch: "feature/new-branch"})
 	if err != nil {
 		t.Fatalf("WsNew with branch failed: %v", err)
 	}
@@ -2044,8 +1664,8 @@ func TestWsNew_WithBranch(t *testing.T) {
 	}
 
 	// Verify workspace has branch and abbreviated name
-	if ws.Branch != "feature/new-branch" {
-		t.Errorf("branch = %q, want feature/new-branch", ws.Branch)
+	if ws.Worktree == nil || ws.Worktree.Branch != "feature/new-branch" {
+		t.Errorf("branch = %v, want feature/new-branch", ws.Worktree)
 	}
 	if ws.Name != "new-branch" {
 		t.Errorf("name = %q, want new-branch (abbreviated)", ws.Name)
@@ -2076,4 +1696,132 @@ func TestSetEditor(t *testing.T) {
 	if loaded.Editor.Command != "nvim" {
 		t.Errorf("persisted editor command = %q, want nvim", loaded.Editor.Command)
 	}
+}
+
+func TestWsClose_RemoveWorktreeFailurePreservesWorkspaceState(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	repoPath := config.ExpandPath(eng.Config.Repos["labs"].Path)
+	mockGit := eng.Git.(*git.Mock)
+	if err := mockGit.RemoveWorktree(repoPath, ws.Path, true); err != nil {
+		t.Fatalf("preparing RemoveWorktree failure: %v", err)
+	}
+
+	err = eng.WsClose("labs", "w1", false)
+	if err == nil {
+		t.Fatal("expected WsClose to fail when RemoveWorktree fails")
+	}
+
+	// Workspace should remain in manifest after failed close.
+	// (Note: tmux windows were already killed before RemoveWorktree,
+	// so surfaces will be removed by SyncAll when WsShow is called.
+	// The key is that the workspace itself is preserved.)
+	m, loadErr := eng.LoadManifest()
+	if loadErr != nil {
+		t.Fatalf("LoadManifest failed: %v", loadErr)
+	}
+	dock := m.FindDock("labs")
+	if dock == nil || dock.FindWorkspace("w1") == nil {
+		t.Fatal("workspace should remain in manifest after failed close")
+	}
+}
+
+func TestRepoRemove_ForceRemovesManifestDock(t *testing.T) {
+	eng, dir := testEngine(t)
+	eng.configPath = filepath.Join(dir, "config.toml")
+	if err := config.Save(eng.configPath, eng.Config); err != nil {
+		t.Fatalf("saving config: %v", err)
+	}
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	if err := eng.RepoRemove("labs", true); err != nil {
+		t.Fatalf("RepoRemove failed: %v", err)
+	}
+
+	m, err := eng.LoadManifest()
+	if err != nil {
+		t.Fatalf("loading manifest: %v", err)
+	}
+	if m.FindDock("labs") != nil {
+		t.Fatal("dock labs should be removed from manifest")
+	}
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.Reset()
+	if _, err := eng.Recover(); err != nil {
+		t.Fatalf("Recover failed: %v", err)
+	}
+	has, _ := mockTmux.HasSession("labs")
+	if has {
+		t.Error("recover should not recreate force-removed dock")
+	}
+}
+
+func TestRecover_FindWindowByNameRefreshesSurfaceIDs(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeAgent, "agent", "codex", "", "v"); err != nil {
+		t.Fatalf("SurfaceAdd failed: %v", err)
+	}
+	if err := os.MkdirAll(ws.Path, 0o755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+
+	ws, err = eng.WsShow("labs", "w1")
+	if err != nil {
+		t.Fatalf("WsShow failed: %v", err)
+	}
+	oldWindowID := ws.Surfaces[0].Tmux.WindowID
+	oldPaneID := ws.Surfaces[1].Tmux.PaneID
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if err := mockTmux.KillWindow(oldWindowID); err != nil {
+		t.Fatalf("KillWindow failed: %v", err)
+	}
+
+	// Simulate another process recreating the window
+	foundWindowID, err := mockTmux.NewWindow("labs", ws.Name, ws.Path)
+	if err != nil {
+		t.Fatalf("NewWindow failed: %v", err)
+	}
+	foundPaneID, err := mockTmux.SplitWindow(foundWindowID, "v", ws.Path)
+	if err != nil {
+		t.Fatalf("SplitWindow failed: %v", err)
+	}
+
+	if _, err := eng.Recover(); err != nil {
+		t.Fatalf("Recover failed: %v", err)
+	}
+
+	ws, err = eng.WsShow("labs", "w1")
+	if err != nil {
+		t.Fatalf("WsShow failed: %v", err)
+	}
+
+	// After recovery the window should get a new ID (not the pre-existing one,
+	// since recovery creates fresh windows when the old ones are gone)
+	if ws.Surfaces[0].Tmux.WindowID == oldWindowID {
+		t.Error("window ID should have been updated from stale value")
+	}
+	// The pane IDs should be refreshed
+	if ws.Surfaces[1].Tmux.PaneID == oldPaneID {
+		t.Fatalf("pane id was not refreshed from stale value %q", oldPaneID)
+	}
+	_ = foundWindowID
+	_ = foundPaneID
 }

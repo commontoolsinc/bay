@@ -107,14 +107,16 @@ func newDoctorCmd() *cobra.Command {
 				ok = false
 			} else {
 				missingCount := 0
-				for dockName, ds := range m.Docks {
-					for wsID, ws := range ds.Workspaces {
+				for i := range m.Docks {
+					dock := &m.Docks[i]
+					for j := range dock.Workspaces {
+						ws := &dock.Workspaces[j]
 						if ws.Path == "" {
 							continue
 						}
 						wsPath := config.ExpandPath(ws.Path)
 						if _, err := os.Stat(wsPath); err != nil {
-							fmt.Printf("[WARN] workspace %s:%s path missing: %s\n", dockName, wsID, wsPath)
+							fmt.Printf("[WARN] workspace %s:%s path missing: %s\n", dock.Name, ws.Name, wsPath)
 							missingCount++
 							ok = false
 						}
