@@ -124,26 +124,30 @@ func abbreviateBranch(branch string) string {
 	return result
 }
 
-// launchPaneInTmux determines the pane type and launches the appropriate
-// command in a tmux pane. Returns the pane metadata for the manifest.
-// Used by WsNew, WinOpen, and PaneAdd to avoid duplicating the switch logic.
-func (e *Engine) launchPaneInTmux(tmuxPaneID, dockName, agent string, shell bool, cmd string) (paneType manifest.PaneType, paneAgent, paneCmd string) {
-	dockCfg := e.Config.Docks[dockName]
+// launchSurfaceInTmux launches the appropriate command in a tmux pane
+// based on the surface type and returns a populated Surface.
+// Used by workspace creation and surface add operations.
+func (e *Engine) launchSurfaceInTmux(tmuxPaneID, dockName string, surfaceType manifest.SurfaceType, agent, cmd string) manifest.Surface {
+	s := manifest.Surface{
+		Type:    surfaceType,
+		Backend: manifest.SurfaceBackendTmux,
+		Tmux:    &manifest.TmuxAttrs{},
+	}
 
-	switch {
-	case shell:
-		paneType = manifest.PaneTypeShell
-	case cmd != "":
-		paneType = manifest.PaneTypeCmd
-		paneCmd = cmd
-		_ = e.Tmux.SendKeys(tmuxPaneID, cmd)
-	case agent != "":
-		paneType = manifest.PaneTypeAgent
-		paneAgent = agent
+	switch surfaceType {
+	case manifest.SurfaceTypeAgent:
+		s.Agent = &agent
+		dockCfg := e.Config.Docks[dockName]
 		agentCmd := e.buildAgentCommand(agent, dockCfg)
 		_ = e.Tmux.SendKeys(tmuxPaneID, agentCmd)
-	default:
-		paneType = manifest.PaneTypeShell
+	case manifest.SurfaceTypeCmd:
+		s.Command = &cmd
+		_ = e.Tmux.SendKeys(tmuxPaneID, cmd)
+	case manifest.SurfaceTypeShell:
+		// Shell — no command to send.
+	case manifest.SurfaceTypeEditor:
+		// Editor tmux surface — no command to send (editor launched separately).
 	}
-	return
+
+	return s
 }
