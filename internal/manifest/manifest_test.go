@@ -1,738 +1,825 @@
 package manifest
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
-// sampleManifestTOML returns a full manifest in TOML form for testing round-trips.
-func sampleManifestTOML() string {
-	return `
-[docks.labs.workspaces.w3]
-name = "mem-refactor"
-type = "worktree"
-repo = "labs"
-path = "~/projects/labs-worktrees/w3"
-branch = "feature/refactor-memory-access"
-pr = "234"
-status = "active"
-
-[[docks.labs.workspaces.w3.windows]]
-id = 1
-tmux_window_id = "@4"
-name = "mem-refactor"
-
-[[docks.labs.workspaces.w3.windows.panes]]
-id = 1
-type = "agent"
-agent = "claude"
-
-[[docks.labs.workspaces.w3.windows.panes]]
-id = 2
-type = "shell"
-split_from = 1
-split_dir = "h"
-
-[[docks.labs.workspaces.w3.windows]]
-id = 2
-tmux_window_id = "@9"
-name = "mem-refactor:2"
-
-[[docks.labs.workspaces.w3.windows.panes]]
-id = 1
-type = "shell"
-
-[docks.labs.workspaces.w4]
-name = "w4"
-type = "worktree"
-repo = "labs"
-path = "~/projects/labs-worktrees/w4"
-status = "idle"
-
-[docks.research.workspaces.w1]
-name = "perf-study"
-type = "external"
-path = "~/projects/research/perf"
-status = "idle"
-`
-}
-
-// --- Empty manifest handling ---
-
-func TestParse_EmptyManifest(t *testing.T) {
-	m, err := Parse("")
-	if err != nil {
-		t.Fatalf("Parse empty failed: %v", err)
+func TestNew_ReturnsEmptyManifest(t *testing.T) {
+	m := New()
+	if m.Version != CurrentVersion {
+		t.Errorf("version = %d, want %d", m.Version, CurrentVersion)
 	}
 	if m.Docks == nil {
-		t.Error("Docks map should be initialized, not nil")
+		t.Fatal("docks is nil")
 	}
 	if len(m.Docks) != 0 {
-		t.Errorf("expected 0 docks, got %d", len(m.Docks))
+		t.Errorf("docks length = %d, want 0", len(m.Docks))
 	}
 }
 
-func TestParse_InvalidTOML(t *testing.T) {
-	_, err := Parse("[bad toml = =")
+func TestParse_EmptyJSON(t *testing.T) {
+	m, err := Parse([]byte(`{"version":1,"docks":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Docks) != 0 {
+		t.Errorf("docks length = %d, want 0", len(m.Docks))
+	}
+}
+
+func TestParse_InvalidJSON(t *testing.T) {
+	_, err := Parse([]byte(`not json`))
 	if err == nil {
-		t.Error("expected error for invalid TOML")
+		t.Fatal("expected error for invalid JSON")
 	}
 }
 
-// --- Parse/serialize round-trip ---
+func TestParse_FullManifest(t *testing.T) {
+	data := []byte(`{
+		"version": 1,
+		"docks": [
+			{
+				"name": "labs",
+				"workspaces": [
+					{
+						"name": "auth-fix",
+						"type": "worktree",
+						"path": "/tmp/ws1",
+						"status": "active",
+						"last_focused": 1,
+						"worktree": {
+							"repo": "labs",
+							"branch": "fix-auth",
+							"pr": "52"
+						},
+						"surfaces": [
+							{
+								"id": 1,
+								"name": "agent",
+								"type": "agent",
+								"backend": "tmux-pane",
+								"agent": "claude-code",
+								"tmux": {
+									"pane_id": "%42",
+									"window_id": "@15",
+									"layout_group": 1
+								}
+							},
+							{
+								"id": 2,
+								"name": "shell",
+								"type": "shell",
+								"backend": "tmux-pane",
+								"tmux": {
+									"layout_group": 1,
+									"split_from": 1,
+									"split_dir": "h"
+								}
+							},
+							{
+								"id": 3,
+								"name": "editor",
+								"type": "editor",
+								"backend": "gui-app",
+								"gui": {
+									"app_command": "cursor",
+									"bundle_id": "com.todesktop.230313mzl4w4u92"
+								}
+							}
+						]
+					}
+				]
+			}
+		]
+	}`)
+
+	m, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(m.Docks) != 1 {
+		t.Fatalf("docks length = %d, want 1", len(m.Docks))
+	}
+
+	dock := &m.Docks[0]
+	if dock.Name != "labs" {
+		t.Errorf("dock name = %q, want %q", dock.Name, "labs")
+	}
+	if len(dock.Workspaces) != 1 {
+		t.Fatalf("workspaces length = %d, want 1", len(dock.Workspaces))
+	}
+
+	ws := &dock.Workspaces[0]
+	if ws.Name != "auth-fix" {
+		t.Errorf("workspace name = %q, want %q", ws.Name, "auth-fix")
+	}
+	if ws.Type != WorkspaceTypeWorktree {
+		t.Errorf("workspace type = %q, want %q", ws.Type, WorkspaceTypeWorktree)
+	}
+	if ws.Status != WorkspaceStatusActive {
+		t.Errorf("workspace status = %q, want %q", ws.Status, WorkspaceStatusActive)
+	}
+	if ws.LastFocused != 1 {
+		t.Errorf("last_focused = %d, want 1", ws.LastFocused)
+	}
+	if ws.Worktree == nil {
+		t.Fatal("worktree attrs is nil")
+	}
+	if ws.Worktree.Repo != "labs" {
+		t.Errorf("worktree repo = %q, want %q", ws.Worktree.Repo, "labs")
+	}
+	if ws.Worktree.Branch != "fix-auth" {
+		t.Errorf("worktree branch = %q, want %q", ws.Worktree.Branch, "fix-auth")
+	}
+	if ws.Worktree.PR != "52" {
+		t.Errorf("worktree pr = %q, want %q", ws.Worktree.PR, "52")
+	}
+
+	if len(ws.Surfaces) != 3 {
+		t.Fatalf("surfaces length = %d, want 3", len(ws.Surfaces))
+	}
+
+	// Agent surface
+	s := &ws.Surfaces[0]
+	if s.ID != 1 || s.Name != "agent" || s.Type != SurfaceTypeAgent || s.Backend != SurfaceBackendTmux {
+		t.Errorf("surface 0: got id=%d name=%q type=%q backend=%q", s.ID, s.Name, s.Type, s.Backend)
+	}
+	if s.Agent == nil || *s.Agent != "claude-code" {
+		t.Errorf("surface 0: agent = %v, want %q", s.Agent, "claude-code")
+	}
+	if s.Tmux == nil {
+		t.Fatal("surface 0: tmux attrs is nil")
+	}
+	if s.Tmux.PaneID != "%42" || s.Tmux.LayoutGroup != 1 {
+		t.Errorf("surface 0 tmux: pane_id=%q layout_group=%d", s.Tmux.PaneID, s.Tmux.LayoutGroup)
+	}
+
+	// Shell surface
+	s = &ws.Surfaces[1]
+	if s.Type != SurfaceTypeShell || s.Tmux.SplitFrom != 1 || s.Tmux.SplitDir != "h" {
+		t.Errorf("surface 1: type=%q split_from=%d split_dir=%q", s.Type, s.Tmux.SplitFrom, s.Tmux.SplitDir)
+	}
+
+	// Editor surface
+	s = &ws.Surfaces[2]
+	if s.Type != SurfaceTypeEditor || s.Backend != SurfaceBackendGUI {
+		t.Errorf("surface 2: type=%q backend=%q", s.Type, s.Backend)
+	}
+	if s.GUI == nil || s.GUI.AppCommand != "cursor" {
+		t.Errorf("surface 2: gui = %v", s.GUI)
+	}
+}
 
 func TestRoundTrip(t *testing.T) {
-	m, err := Parse(sampleManifestTOML())
+	agent := "claude-code"
+	original := &Manifest{
+		Version: CurrentVersion,
+		Docks: []Dock{
+			{
+				Name: "labs",
+				Workspaces: []Workspace{
+					{
+						Name:   "auth-fix",
+						Type:   WorkspaceTypeWorktree,
+						Path:   "/tmp/ws1",
+						Status: WorkspaceStatusActive,
+						Worktree: &WorktreeAttrs{
+							Repo:   "labs",
+							Branch: "fix-auth",
+							PR:     "52",
+						},
+						Surfaces: []Surface{
+							{
+								ID:      1,
+								Name:    "agent",
+								Type:    SurfaceTypeAgent,
+								Backend: SurfaceBackendTmux,
+								Agent:   &agent,
+								Tmux:    &TmuxAttrs{LayoutGroup: 1},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	data, err := json.Marshal(original)
 	if err != nil {
-		t.Fatalf("Parse failed: %v", err)
+		t.Fatal(err)
 	}
 
-	// Verify structure parsed correctly.
-	if len(m.Docks) != 2 {
-		t.Fatalf("expected 2 docks, got %d", len(m.Docks))
-	}
-
-	labs := m.Docks["labs"]
-	if len(labs.Workspaces) != 2 {
-		t.Fatalf("expected 2 workspaces in labs, got %d", len(labs.Workspaces))
-	}
-
-	w3 := labs.Workspaces["w3"]
-	if w3.Name != "mem-refactor" {
-		t.Errorf("w3 name = %q, want %q", w3.Name, "mem-refactor")
-	}
-	if w3.Type != WorkspaceTypeWorktree {
-		t.Errorf("w3 type = %q, want %q", w3.Type, WorkspaceTypeWorktree)
-	}
-	if w3.Repo != "labs" {
-		t.Errorf("w3 repo = %q, want %q", w3.Repo, "labs")
-	}
-	if w3.Path != "~/projects/labs-worktrees/w3" {
-		t.Errorf("w3 path = %q", w3.Path)
-	}
-	if w3.Branch != "feature/refactor-memory-access" {
-		t.Errorf("w3 branch = %q", w3.Branch)
-	}
-	if w3.PR != "234" {
-		t.Errorf("w3 pr = %q", w3.PR)
-	}
-	if w3.Status != WorkspaceStatusActive {
-		t.Errorf("w3 status = %q, want %q", w3.Status, WorkspaceStatusActive)
-	}
-
-	// Windows
-	if len(w3.Windows) != 2 {
-		t.Fatalf("w3 windows count = %d, want 2", len(w3.Windows))
-	}
-	win1 := w3.Windows[0]
-	if win1.ID != 1 {
-		t.Errorf("win1 id = %d", win1.ID)
-	}
-	if win1.TmuxWindowID != "@4" {
-		t.Errorf("win1 tmux_window_id = %q", win1.TmuxWindowID)
-	}
-	if win1.Name != "mem-refactor" {
-		t.Errorf("win1 name = %q", win1.Name)
-	}
-
-	// Panes
-	if len(win1.Panes) != 2 {
-		t.Fatalf("win1 panes count = %d, want 2", len(win1.Panes))
-	}
-	p1 := win1.Panes[0]
-	if p1.ID != 1 {
-		t.Errorf("p1 id = %d", p1.ID)
-	}
-	if p1.Type != PaneTypeAgent {
-		t.Errorf("p1 type = %q, want %q", p1.Type, PaneTypeAgent)
-	}
-	if p1.Agent != "claude" {
-		t.Errorf("p1 agent = %q", p1.Agent)
-	}
-	p2 := win1.Panes[1]
-	if p2.ID != 2 {
-		t.Errorf("p2 id = %d", p2.ID)
-	}
-	if p2.Type != PaneTypeShell {
-		t.Errorf("p2 type = %q", p2.Type)
-	}
-	if p2.SplitFrom != 1 {
-		t.Errorf("p2 split_from = %d", p2.SplitFrom)
-	}
-	if p2.SplitDir != "h" {
-		t.Errorf("p2 split_dir = %q", p2.SplitDir)
-	}
-
-	// Second window
-	win2 := w3.Windows[1]
-	if win2.ID != 2 {
-		t.Errorf("win2 id = %d", win2.ID)
-	}
-	if len(win2.Panes) != 1 {
-		t.Fatalf("win2 panes count = %d, want 1", len(win2.Panes))
-	}
-
-	// Research dock
-	research := m.Docks["research"]
-	if len(research.Workspaces) != 1 {
-		t.Fatalf("expected 1 workspace in research, got %d", len(research.Workspaces))
-	}
-	rw1 := research.Workspaces["w1"]
-	if rw1.Type != WorkspaceTypeExternal {
-		t.Errorf("research w1 type = %q, want %q", rw1.Type, WorkspaceTypeExternal)
-	}
-
-	// --- Save and re-load ---
-	dir := t.TempDir()
-	path := filepath.Join(dir, "manifest.toml")
-	if err := Save(path, m); err != nil {
-		t.Fatalf("Save failed: %v", err)
-	}
-
-	m2, err := Load(path)
+	restored, err := Parse(data)
 	if err != nil {
-		t.Fatalf("Load failed: %v", err)
+		t.Fatal(err)
 	}
 
-	// Spot check key fields survived the round trip.
-	w3b := m2.Docks["labs"].Workspaces["w3"]
-	if w3b.Name != "mem-refactor" {
-		t.Errorf("round-trip w3 name = %q", w3b.Name)
+	if len(restored.Docks) != 1 {
+		t.Fatalf("docks length = %d, want 1", len(restored.Docks))
 	}
-	if w3b.Status != WorkspaceStatusActive {
-		t.Errorf("round-trip w3 status = %q", w3b.Status)
+	if restored.Docks[0].Name != "labs" {
+		t.Errorf("dock name = %q, want %q", restored.Docks[0].Name, "labs")
 	}
-	if len(w3b.Windows) != 2 {
-		t.Errorf("round-trip w3 windows = %d, want 2", len(w3b.Windows))
+	ws := &restored.Docks[0].Workspaces[0]
+	if ws.Name != "auth-fix" {
+		t.Errorf("workspace name = %q, want %q", ws.Name, "auth-fix")
 	}
-	if len(w3b.Windows[0].Panes) != 2 {
-		t.Errorf("round-trip w3 win1 panes = %d, want 2", len(w3b.Windows[0].Panes))
-	}
-	if w3b.Windows[0].Panes[1].SplitDir != "h" {
-		t.Errorf("round-trip p2 split_dir = %q", w3b.Windows[0].Panes[1].SplitDir)
+	if ws.Surfaces[0].Agent == nil || *ws.Surfaces[0].Agent != "claude-code" {
+		t.Error("agent not round-tripped")
 	}
 }
 
-// --- Load/Save file operations ---
+func TestSaveAndLoad(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "manifest.json")
 
-func TestLoad_FileNotFound(t *testing.T) {
-	_, err := Load("/nonexistent/path/manifest.toml")
-	if err == nil {
-		t.Error("expected error for missing file")
+	original := New()
+	original.Docks = append(original.Docks, Dock{
+		Name: "test",
+		Workspaces: []Workspace{
+			{Name: "ws1", Type: WorkspaceTypeWorktree, Status: WorkspaceStatusIdle},
+		},
+	})
+
+	if err := Save(path, original); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(loaded.Docks) != 1 || loaded.Docks[0].Name != "test" {
+		t.Errorf("loaded dock: got %v", loaded.Docks)
+	}
+	if len(loaded.Docks[0].Workspaces) != 1 || loaded.Docks[0].Workspaces[0].Name != "ws1" {
+		t.Errorf("loaded workspace: got %v", loaded.Docks[0].Workspaces)
 	}
 }
 
 func TestSave_CreatesDirectories(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "sub", "dir", "manifest.toml")
-	m := New()
-	if err := Save(path, m); err != nil {
-		t.Fatalf("Save failed to create directories: %v", err)
+	path := filepath.Join(dir, "sub", "dir", "manifest.json")
+
+	if err := Save(path, New()); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := os.Stat(path); err != nil {
-		t.Errorf("saved file does not exist: %v", err)
+		t.Errorf("file not created: %v", err)
 	}
 }
 
-// --- NextWorkspaceID ---
+func TestSave_AtomicWrite(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "manifest.json")
 
-func TestNextWorkspaceID_EmptyDock(t *testing.T) {
+	// Save initial version
 	m := New()
-	m.Docks["labs"] = &DockState{
-		Workspaces: make(map[string]*Workspace),
+	m.Docks = append(m.Docks, Dock{Name: "first"})
+	if err := Save(path, m); err != nil {
+		t.Fatal(err)
 	}
-	id := NextWorkspaceID(m.Docks["labs"])
-	if id != "w1" {
-		t.Errorf("expected w1, got %q", id)
+
+	// No backup on first save
+	backup := path + ".bak"
+	if _, err := os.Stat(backup); !os.IsNotExist(err) {
+		t.Error("backup should not exist on first save")
+	}
+
+	// Save again — should create backup
+	m.Docks[0].Name = "second"
+	if err := Save(path, m); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(backup); err != nil {
+		t.Error("backup should exist after second save")
 	}
 }
 
-func TestNextWorkspaceID_ExistingWorkspaces(t *testing.T) {
+func TestLoad_FileNotFound(t *testing.T) {
+	_, err := Load("/nonexistent/manifest.json")
+	if err == nil {
+		t.Fatal("expected error for missing file")
+	}
+}
+
+func TestLockedUpdate(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "manifest.json")
+
+	// First update creates the manifest
+	err := LockedUpdate(path, func(m *Manifest) error {
+		m.Docks = append(m.Docks, Dock{Name: "labs"})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Second update modifies it
+	err = LockedUpdate(path, func(m *Manifest) error {
+		if len(m.Docks) != 1 || m.Docks[0].Name != "labs" {
+			t.Errorf("expected dock 'labs', got %v", m.Docks)
+		}
+		m.Docks = append(m.Docks, Dock{Name: "research"})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify final state
+	m, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Docks) != 2 {
+		t.Fatalf("docks length = %d, want 2", len(m.Docks))
+	}
+}
+
+// --- Dock operations ---
+
+func TestFindDock(t *testing.T) {
 	m := New()
-	m.Docks["labs"] = &DockState{
-		Workspaces: map[string]*Workspace{
-			"w1": {Name: "first"},
-			"w3": {Name: "third"},
-		},
+	m.Docks = []Dock{{Name: "labs"}, {Name: "research"}}
+
+	d := m.FindDock("labs")
+	if d == nil || d.Name != "labs" {
+		t.Errorf("FindDock(labs) = %v", d)
 	}
-	id := NextWorkspaceID(m.Docks["labs"])
-	if id != "w4" {
-		t.Errorf("expected w4, got %q", id)
+
+	d = m.FindDock("nonexistent")
+	if d != nil {
+		t.Errorf("FindDock(nonexistent) = %v, want nil", d)
 	}
 }
 
-func TestNextWorkspaceID_NilDock(t *testing.T) {
-	dock := &DockState{Workspaces: nil}
-	id := NextWorkspaceID(dock)
-	if id != "w1" {
-		t.Errorf("expected w1, got %q", id)
+func TestFindDock_ReturnsMutablePointer(t *testing.T) {
+	m := New()
+	m.Docks = []Dock{{Name: "labs"}}
+
+	d := m.FindDock("labs")
+	d.Workspaces = append(d.Workspaces, Workspace{Name: "ws1"})
+
+	if len(m.Docks[0].Workspaces) != 1 {
+		t.Error("mutation through FindDock pointer did not affect manifest")
 	}
 }
 
-// --- NextWindowID ---
+func TestAddDock(t *testing.T) {
+	m := New()
 
-func TestNextWindowID_EmptyWorkspace(t *testing.T) {
-	ws := &Workspace{}
-	id := NextWindowID(ws)
-	if id != 1 {
-		t.Errorf("expected 1, got %d", id)
+	if err := m.AddDock(Dock{Name: "labs"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Docks) != 1 || m.Docks[0].Name != "labs" {
+		t.Errorf("after add: %v", m.Docks)
 	}
 }
 
-func TestNextWindowID_ExistingWindows(t *testing.T) {
-	ws := &Workspace{
-		Windows: []Window{
-			{ID: 1},
-			{ID: 3},
-		},
-	}
-	id := NextWindowID(ws)
-	if id != 4 {
-		t.Errorf("expected 4, got %d", id)
+func TestAddDock_DuplicateName(t *testing.T) {
+	m := New()
+	m.Docks = []Dock{{Name: "labs"}}
+
+	err := m.AddDock(Dock{Name: "labs"})
+	if err == nil {
+		t.Fatal("expected error for duplicate dock name")
 	}
 }
 
-// --- NextPaneID ---
+func TestRemoveDock(t *testing.T) {
+	m := New()
+	m.Docks = []Dock{{Name: "labs"}, {Name: "research"}}
 
-func TestNextPaneID_EmptyWindow(t *testing.T) {
-	win := &Window{}
-	id := NextPaneID(win)
-	if id != 1 {
-		t.Errorf("expected 1, got %d", id)
+	if err := m.RemoveDock("labs"); err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Docks) != 1 || m.Docks[0].Name != "research" {
+		t.Errorf("after remove: %v", m.Docks)
 	}
 }
 
-func TestNextPaneID_ExistingPanes(t *testing.T) {
-	win := &Window{
-		Panes: []Pane{
-			{ID: 1},
-			{ID: 5},
-		},
-	}
-	id := NextPaneID(win)
-	if id != 6 {
-		t.Errorf("expected 6, got %d", id)
+func TestRemoveDock_NotFound(t *testing.T) {
+	m := New()
+	if err := m.RemoveDock("nonexistent"); err == nil {
+		t.Fatal("expected error for missing dock")
 	}
 }
 
-// --- AddWorkspace / RemoveWorkspace ---
+// --- Workspace operations ---
+
+func TestFindWorkspace(t *testing.T) {
+	d := &Dock{
+		Name:       "labs",
+		Workspaces: []Workspace{{Name: "auth-fix"}, {Name: "perf"}},
+	}
+
+	ws := d.FindWorkspace("auth-fix")
+	if ws == nil || ws.Name != "auth-fix" {
+		t.Errorf("FindWorkspace(auth-fix) = %v", ws)
+	}
+
+	ws = d.FindWorkspace("nonexistent")
+	if ws != nil {
+		t.Errorf("FindWorkspace(nonexistent) = %v, want nil", ws)
+	}
+}
 
 func TestAddWorkspace(t *testing.T) {
-	m := New()
-	ws := &Workspace{
-		Name:   "test-ws",
-		Type:   WorkspaceTypeWorktree,
-		Status: WorkspaceStatusIdle,
+	d := &Dock{Name: "labs"}
+
+	if err := d.AddWorkspace(Workspace{Name: "auth-fix", Status: WorkspaceStatusIdle}); err != nil {
+		t.Fatal(err)
 	}
-	id, err := m.AddWorkspace("labs", ws)
-	if err != nil {
-		t.Fatalf("AddWorkspace failed: %v", err)
+	if len(d.Workspaces) != 1 || d.Workspaces[0].Name != "auth-fix" {
+		t.Errorf("after add: %v", d.Workspaces)
 	}
-	if id != "w1" {
-		t.Errorf("expected w1, got %q", id)
+}
+
+func TestAddWorkspace_DuplicateName(t *testing.T) {
+	d := &Dock{
+		Name:       "labs",
+		Workspaces: []Workspace{{Name: "auth-fix"}},
 	}
 
-	// Verify it was added.
-	got, ok := m.Docks["labs"].Workspaces["w1"]
-	if !ok {
-		t.Fatal("workspace w1 not found in dock")
-	}
-	if got.Name != "test-ws" {
-		t.Errorf("workspace name = %q", got.Name)
-	}
-
-	// Add another.
-	ws2 := &Workspace{
-		Name:   "test-ws-2",
-		Type:   WorkspaceTypeExternal,
-		Status: WorkspaceStatusActive,
-	}
-	id2, err := m.AddWorkspace("labs", ws2)
-	if err != nil {
-		t.Fatalf("AddWorkspace second failed: %v", err)
-	}
-	if id2 != "w2" {
-		t.Errorf("expected w2, got %q", id2)
+	err := d.AddWorkspace(Workspace{Name: "auth-fix"})
+	if err == nil {
+		t.Fatal("expected error for duplicate workspace name")
 	}
 }
 
 func TestRemoveWorkspace(t *testing.T) {
-	m := New()
-	ws := &Workspace{Name: "to-remove", Type: WorkspaceTypeWorktree, Status: WorkspaceStatusIdle}
-	m.AddWorkspace("labs", ws)
-
-	err := m.RemoveWorkspace("labs", "w1")
-	if err != nil {
-		t.Fatalf("RemoveWorkspace failed: %v", err)
+	d := &Dock{
+		Name:       "labs",
+		Workspaces: []Workspace{{Name: "auth-fix"}, {Name: "perf"}},
 	}
-	if len(m.Docks["labs"].Workspaces) != 0 {
-		t.Error("workspace should have been removed")
+
+	if err := d.RemoveWorkspace("auth-fix"); err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Workspaces) != 1 || d.Workspaces[0].Name != "perf" {
+		t.Errorf("after remove: %v", d.Workspaces)
 	}
 }
 
 func TestRemoveWorkspace_NotFound(t *testing.T) {
-	m := New()
-	err := m.RemoveWorkspace("labs", "w1")
-	if err == nil {
-		t.Error("expected error removing from nonexistent dock")
-	}
-
-	m.Docks["labs"] = &DockState{Workspaces: make(map[string]*Workspace)}
-	err = m.RemoveWorkspace("labs", "w99")
-	if err == nil {
-		t.Error("expected error removing nonexistent workspace")
+	d := &Dock{Name: "labs"}
+	if err := d.RemoveWorkspace("nonexistent"); err == nil {
+		t.Fatal("expected error for missing workspace")
 	}
 }
 
-// --- GetWorkspace ---
+// --- Surface operations ---
 
-func TestGetWorkspace_ByDockAndID(t *testing.T) {
-	m := New()
-	ws := &Workspace{Name: "target", Type: WorkspaceTypeWorktree, Status: WorkspaceStatusActive}
-	m.AddWorkspace("labs", ws)
+func TestNextSurfaceID_Empty(t *testing.T) {
+	ws := &Workspace{}
+	if id := ws.NextSurfaceID(); id != 1 {
+		t.Errorf("NextSurfaceID() = %d, want 1", id)
+	}
+}
 
-	got, dock, id, err := m.GetWorkspace("labs:w1")
+func TestNextSurfaceID_WithExisting(t *testing.T) {
+	ws := &Workspace{
+		Surfaces: []Surface{{ID: 1}, {ID: 3}},
+	}
+	if id := ws.NextSurfaceID(); id != 4 {
+		t.Errorf("NextSurfaceID() = %d, want 4", id)
+	}
+}
+
+func TestFindSurface(t *testing.T) {
+	ws := &Workspace{
+		Surfaces: []Surface{{ID: 1, Name: "agent"}, {ID: 2, Name: "shell"}},
+	}
+
+	s := ws.FindSurface("agent")
+	if s == nil || s.Name != "agent" {
+		t.Errorf("FindSurface(agent) = %v", s)
+	}
+
+	s = ws.FindSurface("nonexistent")
+	if s != nil {
+		t.Errorf("FindSurface(nonexistent) = %v, want nil", s)
+	}
+}
+
+func TestFindSurfaceByID(t *testing.T) {
+	ws := &Workspace{
+		Surfaces: []Surface{{ID: 1, Name: "agent"}, {ID: 2, Name: "shell"}},
+	}
+
+	s := ws.FindSurfaceByID(2)
+	if s == nil || s.Name != "shell" {
+		t.Errorf("FindSurfaceByID(2) = %v", s)
+	}
+
+	s = ws.FindSurfaceByID(99)
+	if s != nil {
+		t.Errorf("FindSurfaceByID(99) = %v, want nil", s)
+	}
+}
+
+func TestAddSurface(t *testing.T) {
+	ws := &Workspace{}
+
+	id, err := ws.AddSurface(Surface{
+		Name:    "agent",
+		Type:    SurfaceTypeAgent,
+		Backend: SurfaceBackendTmux,
+	})
 	if err != nil {
-		t.Fatalf("GetWorkspace failed: %v", err)
+		t.Fatal(err)
 	}
-	if got.Name != "target" {
-		t.Errorf("name = %q", got.Name)
+	if id != 1 {
+		t.Errorf("assigned id = %d, want 1", id)
 	}
-	if dock != "labs" {
-		t.Errorf("dock = %q", dock)
+	if len(ws.Surfaces) != 1 || ws.Surfaces[0].ID != 1 {
+		t.Errorf("after add: %v", ws.Surfaces)
 	}
-	if id != "w1" {
-		t.Errorf("id = %q", id)
-	}
-}
 
-func TestGetWorkspace_BareID_Unambiguous(t *testing.T) {
-	m := New()
-	ws := &Workspace{Name: "only-one", Type: WorkspaceTypeWorktree, Status: WorkspaceStatusIdle}
-	m.AddWorkspace("labs", ws)
-
-	got, dock, id, err := m.GetWorkspace("w1")
+	// Add a second surface
+	id, err = ws.AddSurface(Surface{Name: "shell", Type: SurfaceTypeShell, Backend: SurfaceBackendTmux})
 	if err != nil {
-		t.Fatalf("GetWorkspace bare failed: %v", err)
+		t.Fatal(err)
 	}
-	if got.Name != "only-one" {
-		t.Errorf("name = %q", got.Name)
-	}
-	if dock != "labs" {
-		t.Errorf("dock = %q", dock)
-	}
-	if id != "w1" {
-		t.Errorf("id = %q", id)
+	if id != 2 {
+		t.Errorf("second id = %d, want 2", id)
 	}
 }
 
-func TestGetWorkspace_BareID_Ambiguous(t *testing.T) {
-	m := New()
-	m.AddWorkspace("labs", &Workspace{Name: "a", Type: WorkspaceTypeWorktree, Status: WorkspaceStatusIdle})
-	m.AddWorkspace("research", &Workspace{Name: "b", Type: WorkspaceTypeExternal, Status: WorkspaceStatusIdle})
+func TestAddSurface_DuplicateName(t *testing.T) {
+	ws := &Workspace{
+		Surfaces: []Surface{{ID: 1, Name: "agent"}},
+	}
 
-	_, _, _, err := m.GetWorkspace("w1")
+	_, err := ws.AddSurface(Surface{Name: "agent"})
 	if err == nil {
-		t.Error("expected ambiguous error")
+		t.Fatal("expected error for duplicate surface name")
 	}
 }
 
-func TestGetWorkspace_NotFound(t *testing.T) {
-	m := New()
-	_, _, _, err := m.GetWorkspace("labs:w99")
-	if err == nil {
-		t.Error("expected not-found error")
+func TestAddSurface_IDsNeverReused(t *testing.T) {
+	ws := &Workspace{
+		Surfaces: []Surface{{ID: 1, Name: "agent"}, {ID: 3, Name: "shell"}},
 	}
-}
 
-// --- GetWorkspaceByName ---
-
-func TestGetWorkspaceByName_Found(t *testing.T) {
-	m := New()
-	m.AddWorkspace("labs", &Workspace{Name: "mem-refactor", Type: WorkspaceTypeWorktree, Status: WorkspaceStatusActive})
-	m.AddWorkspace("labs", &Workspace{Name: "other", Type: WorkspaceTypeWorktree, Status: WorkspaceStatusIdle})
-
-	got, dock, id, err := m.GetWorkspaceByName("mem-refactor")
+	id, err := ws.AddSurface(Surface{Name: "editor"})
 	if err != nil {
-		t.Fatalf("GetWorkspaceByName failed: %v", err)
+		t.Fatal(err)
 	}
-	if got.Name != "mem-refactor" {
-		t.Errorf("name = %q", got.Name)
-	}
-	if dock != "labs" {
-		t.Errorf("dock = %q", dock)
-	}
-	if id != "w1" {
-		t.Errorf("id = %q", id)
+	if id != 4 {
+		t.Errorf("id = %d, want 4 (should not reuse 2)", id)
 	}
 }
 
-func TestGetWorkspaceByName_NotFound(t *testing.T) {
-	m := New()
-	_, _, _, err := m.GetWorkspaceByName("nonexistent")
-	if err == nil {
-		t.Error("expected not-found error")
+func TestRemoveSurface(t *testing.T) {
+	ws := &Workspace{
+		Surfaces: []Surface{
+			{ID: 1, Name: "agent"},
+			{ID: 2, Name: "shell"},
+			{ID: 3, Name: "editor"},
+		},
+	}
+
+	if err := ws.RemoveSurface("shell"); err != nil {
+		t.Fatal(err)
+	}
+	if len(ws.Surfaces) != 2 {
+		t.Fatalf("surfaces length = %d, want 2", len(ws.Surfaces))
+	}
+	if ws.Surfaces[0].Name != "agent" || ws.Surfaces[1].Name != "editor" {
+		t.Errorf("after remove: %v", ws.Surfaces)
 	}
 }
 
-func TestGetWorkspaceByName_Ambiguous(t *testing.T) {
-	m := New()
-	m.AddWorkspace("labs", &Workspace{Name: "dup", Type: WorkspaceTypeWorktree, Status: WorkspaceStatusIdle})
-	m.AddWorkspace("research", &Workspace{Name: "dup", Type: WorkspaceTypeExternal, Status: WorkspaceStatusIdle})
-
-	_, _, _, err := m.GetWorkspaceByName("dup")
-	if err == nil {
-		t.Error("expected ambiguous error")
+func TestRemoveSurface_NotFound(t *testing.T) {
+	ws := &Workspace{}
+	if err := ws.RemoveSurface("nonexistent"); err == nil {
+		t.Fatal("expected error for missing surface")
 	}
 }
 
-// --- ResolveWorkspace ---
+// --- Workspace resolution ---
 
-func TestResolveWorkspace_DockColonID(t *testing.T) {
-	m := New()
-	m.AddWorkspace("labs", &Workspace{Name: "ws1", Type: WorkspaceTypeWorktree, Status: WorkspaceStatusActive})
+func TestResolveWorkspace_ByDockColonName(t *testing.T) {
+	m := &Manifest{
+		Docks: []Dock{
+			{Name: "labs", Workspaces: []Workspace{{Name: "auth-fix"}}},
+		},
+	}
 
-	got, dock, id, err := m.ResolveWorkspace("labs:w1")
+	ws, dock, err := m.ResolveWorkspace("labs:auth-fix")
 	if err != nil {
-		t.Fatalf("ResolveWorkspace dock:id failed: %v", err)
+		t.Fatal(err)
 	}
-	if got.Name != "ws1" || dock != "labs" || id != "w1" {
-		t.Errorf("got name=%q dock=%q id=%q", got.Name, dock, id)
-	}
-}
-
-func TestResolveWorkspace_BareID(t *testing.T) {
-	m := New()
-	m.AddWorkspace("labs", &Workspace{Name: "ws1", Type: WorkspaceTypeWorktree, Status: WorkspaceStatusActive})
-
-	got, dock, id, err := m.ResolveWorkspace("w1")
-	if err != nil {
-		t.Fatalf("ResolveWorkspace bare id failed: %v", err)
-	}
-	if got.Name != "ws1" || dock != "labs" || id != "w1" {
-		t.Errorf("got name=%q dock=%q id=%q", got.Name, dock, id)
+	if ws.Name != "auth-fix" || dock.Name != "labs" {
+		t.Errorf("resolve = ws=%q dock=%q", ws.Name, dock.Name)
 	}
 }
 
 func TestResolveWorkspace_ByName(t *testing.T) {
-	m := New()
-	m.AddWorkspace("labs", &Workspace{Name: "mem-refactor", Type: WorkspaceTypeWorktree, Status: WorkspaceStatusActive})
-
-	got, dock, id, err := m.ResolveWorkspace("mem-refactor")
-	if err != nil {
-		t.Fatalf("ResolveWorkspace by name failed: %v", err)
+	m := &Manifest{
+		Docks: []Dock{
+			{Name: "labs", Workspaces: []Workspace{{Name: "auth-fix"}}},
+		},
 	}
-	if got.Name != "mem-refactor" || dock != "labs" || id != "w1" {
-		t.Errorf("got name=%q dock=%q id=%q", got.Name, dock, id)
+
+	ws, dock, err := m.ResolveWorkspace("auth-fix")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ws.Name != "auth-fix" || dock.Name != "labs" {
+		t.Errorf("resolve = ws=%q dock=%q", ws.Name, dock.Name)
 	}
 }
 
-func TestResolveWorkspace_Ambiguous(t *testing.T) {
-	m := New()
-	m.AddWorkspace("labs", &Workspace{Name: "dup", Type: WorkspaceTypeWorktree, Status: WorkspaceStatusIdle})
-	m.AddWorkspace("research", &Workspace{Name: "dup", Type: WorkspaceTypeExternal, Status: WorkspaceStatusIdle})
-
-	// Bare w1 is ambiguous across docks.
-	_, _, _, err := m.ResolveWorkspace("w1")
-	if err == nil {
-		t.Error("expected ambiguous error for bare w1")
+func TestResolveWorkspace_AmbiguousName(t *testing.T) {
+	m := &Manifest{
+		Docks: []Dock{
+			{Name: "labs", Workspaces: []Workspace{{Name: "shared"}}},
+			{Name: "research", Workspaces: []Workspace{{Name: "shared"}}},
+		},
 	}
 
-	// Name "dup" is ambiguous across docks.
-	_, _, _, err = m.ResolveWorkspace("dup")
+	_, _, err := m.ResolveWorkspace("shared")
 	if err == nil {
-		t.Error("expected ambiguous error for name dup")
+		t.Fatal("expected error for ambiguous name")
 	}
 }
 
 func TestResolveWorkspace_NotFound(t *testing.T) {
-	m := New()
-	_, _, _, err := m.ResolveWorkspace("nonexistent")
+	m := &Manifest{
+		Docks: []Dock{{Name: "labs", Workspaces: []Workspace{{Name: "auth-fix"}}}},
+	}
+
+	_, _, err := m.ResolveWorkspace("nonexistent")
 	if err == nil {
-		t.Error("expected not-found error")
+		t.Fatal("expected error for not found")
 	}
 }
 
-// --- AddWindow / RemoveWindow ---
+// --- AllWorkspaces ---
 
-func TestAddWindow(t *testing.T) {
-	m := New()
-	m.AddWorkspace("labs", &Workspace{Name: "ws1", Type: WorkspaceTypeWorktree, Status: WorkspaceStatusActive})
-
-	win := Window{
-		TmuxWindowID: "@10",
-		Name:         "ws1",
-	}
-	id, err := m.AddWindow("labs", "w1", win)
-	if err != nil {
-		t.Fatalf("AddWindow failed: %v", err)
-	}
-	if id != 1 {
-		t.Errorf("expected window id 1, got %d", id)
+func TestAllWorkspaces(t *testing.T) {
+	m := &Manifest{
+		Docks: []Dock{
+			{Name: "research", Workspaces: []Workspace{{Name: "beta"}, {Name: "alpha"}}},
+			{Name: "labs", Workspaces: []Workspace{{Name: "ws1"}}},
+		},
 	}
 
-	ws := m.Docks["labs"].Workspaces["w1"]
-	if len(ws.Windows) != 1 {
-		t.Fatalf("expected 1 window, got %d", len(ws.Windows))
+	refs := AllWorkspaces(m)
+	if len(refs) != 3 {
+		t.Fatalf("AllWorkspaces length = %d, want 3", len(refs))
 	}
-	if ws.Windows[0].TmuxWindowID != "@10" {
-		t.Errorf("tmux_window_id = %q", ws.Windows[0].TmuxWindowID)
+	// Sorted by dock then workspace name
+	if refs[0].Dock != "labs" || refs[0].Workspace.Name != "ws1" {
+		t.Errorf("refs[0] = %q/%q", refs[0].Dock, refs[0].Workspace.Name)
 	}
-
-	// Add a second window.
-	win2 := Window{TmuxWindowID: "@11", Name: "ws1:2"}
-	id2, err := m.AddWindow("labs", "w1", win2)
-	if err != nil {
-		t.Fatalf("AddWindow second failed: %v", err)
+	if refs[1].Dock != "research" || refs[1].Workspace.Name != "alpha" {
+		t.Errorf("refs[1] = %q/%q", refs[1].Dock, refs[1].Workspace.Name)
 	}
-	if id2 != 2 {
-		t.Errorf("expected window id 2, got %d", id2)
+	if refs[2].Dock != "research" || refs[2].Workspace.Name != "beta" {
+		t.Errorf("refs[2] = %q/%q", refs[2].Dock, refs[2].Workspace.Name)
 	}
 }
 
-func TestRemoveWindow(t *testing.T) {
-	m := New()
-	m.AddWorkspace("labs", &Workspace{Name: "ws1", Type: WorkspaceTypeWorktree, Status: WorkspaceStatusActive})
-	m.AddWindow("labs", "w1", Window{TmuxWindowID: "@10", Name: "ws1"})
-	m.AddWindow("labs", "w1", Window{TmuxWindowID: "@11", Name: "ws1:2"})
+func TestAllWorkspaces_ReturnsMutablePointers(t *testing.T) {
+	m := &Manifest{
+		Docks: []Dock{
+			{Name: "labs", Workspaces: []Workspace{{Name: "ws1", Status: WorkspaceStatusIdle}}},
+		},
+	}
 
-	err := m.RemoveWindow("labs", "w1", 1)
-	if err != nil {
-		t.Fatalf("RemoveWindow failed: %v", err)
-	}
-	ws := m.Docks["labs"].Workspaces["w1"]
-	if len(ws.Windows) != 1 {
-		t.Fatalf("expected 1 window after removal, got %d", len(ws.Windows))
-	}
-	if ws.Windows[0].ID != 2 {
-		t.Errorf("remaining window id = %d, want 2", ws.Windows[0].ID)
+	refs := AllWorkspaces(m)
+	refs[0].Workspace.Status = WorkspaceStatusActive
+
+	if m.Docks[0].Workspaces[0].Status != WorkspaceStatusActive {
+		t.Error("mutation through AllWorkspaces pointer did not affect manifest")
 	}
 }
 
-func TestRemoveWindow_NotFound(t *testing.T) {
-	m := New()
-	err := m.RemoveWindow("labs", "w1", 1)
-	if err == nil {
-		t.Error("expected error for nonexistent dock")
-	}
-}
+// --- LockedUpdate atomic write ---
 
-// --- AddPane / RemovePane ---
-
-func TestAddPane(t *testing.T) {
-	m := New()
-	m.AddWorkspace("labs", &Workspace{Name: "ws1", Type: WorkspaceTypeWorktree, Status: WorkspaceStatusActive})
-	m.AddWindow("labs", "w1", Window{TmuxWindowID: "@10", Name: "ws1"})
-
-	pane := Pane{Type: PaneTypeAgent, Agent: "claude"}
-	id, err := m.AddPane("labs", "w1", 1, pane)
-	if err != nil {
-		t.Fatalf("AddPane failed: %v", err)
-	}
-	if id != 1 {
-		t.Errorf("expected pane id 1, got %d", id)
-	}
-
-	pane2 := Pane{Type: PaneTypeShell, SplitFrom: 1, SplitDir: "h"}
-	id2, err := m.AddPane("labs", "w1", 1, pane2)
-	if err != nil {
-		t.Fatalf("AddPane second failed: %v", err)
-	}
-	if id2 != 2 {
-		t.Errorf("expected pane id 2, got %d", id2)
-	}
-
-	win := m.Docks["labs"].Workspaces["w1"].Windows[0]
-	if len(win.Panes) != 2 {
-		t.Fatalf("expected 2 panes, got %d", len(win.Panes))
-	}
-}
-
-func TestRemovePane(t *testing.T) {
-	m := New()
-	m.AddWorkspace("labs", &Workspace{Name: "ws1", Type: WorkspaceTypeWorktree, Status: WorkspaceStatusActive})
-	m.AddWindow("labs", "w1", Window{TmuxWindowID: "@10", Name: "ws1"})
-	m.AddPane("labs", "w1", 1, Pane{Type: PaneTypeAgent, Agent: "claude"})
-	m.AddPane("labs", "w1", 1, Pane{Type: PaneTypeShell, SplitFrom: 1, SplitDir: "v"})
-
-	err := m.RemovePane("labs", "w1", 1, 1)
-	if err != nil {
-		t.Fatalf("RemovePane failed: %v", err)
-	}
-	win := m.Docks["labs"].Workspaces["w1"].Windows[0]
-	if len(win.Panes) != 1 {
-		t.Fatalf("expected 1 pane after removal, got %d", len(win.Panes))
-	}
-	if win.Panes[0].ID != 2 {
-		t.Errorf("remaining pane id = %d, want 2", win.Panes[0].ID)
-	}
-}
-
-func TestRemovePane_NotFound(t *testing.T) {
-	m := New()
-	err := m.RemovePane("labs", "w1", 1, 1)
-	if err == nil {
-		t.Error("expected error for nonexistent dock")
-	}
-}
-
-// --- File locking ---
-
-func TestFileLock_BasicLockUnlock(t *testing.T) {
+func TestLockedUpdate_AtomicWrite(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "test.lock")
+	path := filepath.Join(dir, "manifest.json")
 
-	unlock, err := lockFile(path)
+	// First update — no backup expected
+	err := LockedUpdate(path, func(m *Manifest) error {
+		m.Docks = append(m.Docks, Dock{Name: "first"})
+		return nil
+	})
 	if err != nil {
-		t.Fatalf("lockFile failed: %v", err)
-	}
-	defer unlock()
-}
-
-func TestSave_UsesLock(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "manifest.toml")
-
-	m := New()
-	m.AddWorkspace("labs", &Workspace{Name: "test", Type: WorkspaceTypeWorktree, Status: WorkspaceStatusIdle})
-
-	if err := Save(path, m); err != nil {
-		t.Fatalf("Save failed: %v", err)
+		t.Fatal(err)
 	}
 
-	// Verify the lock file was created.
-	lockPath := path + ".lock"
-	if _, err := os.Stat(lockPath); err != nil {
-		t.Errorf("lock file should exist at %q: %v", lockPath, err)
+	backup := path + ".bak"
+	if _, err := os.Stat(backup); !os.IsNotExist(err) {
+		t.Error("backup should not exist after first LockedUpdate")
 	}
 
-	// Verify data was written.
-	loaded, err := Load(path)
+	// Second update — backup should be created
+	err = LockedUpdate(path, func(m *Manifest) error {
+		m.Docks[0].Name = "second"
+		return nil
+	})
 	if err != nil {
-		t.Fatalf("Load after Save failed: %v", err)
+		t.Fatal(err)
 	}
-	if loaded.Docks["labs"].Workspaces["w1"].Name != "test" {
-		t.Error("saved data not correct after reload")
+
+	if _, err := os.Stat(backup); err != nil {
+		t.Error("backup should exist after second LockedUpdate")
 	}
-}
 
-// --- PaneType constants ---
-
-func TestPaneTypeCmd(t *testing.T) {
-	if PaneTypeCmd != "cmd" {
-		t.Errorf("PaneTypeCmd = %q, want %q", PaneTypeCmd, "cmd")
+	// Verify the temp file was cleaned up
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Error("temp file should not exist after LockedUpdate")
 	}
 }
 
-// --- New helper ---
+// --- Validation ---
 
-func TestNew(t *testing.T) {
-	m := New()
-	if m == nil {
-		t.Fatal("New returned nil")
+func TestSurface_Validate_Valid(t *testing.T) {
+	agent := "claude-code"
+	s := Surface{
+		Name:    "agent",
+		Type:    SurfaceTypeAgent,
+		Backend: SurfaceBackendTmux,
+		Agent:   &agent,
+		Tmux:    &TmuxAttrs{LayoutGroup: 1},
 	}
-	if m.Docks == nil {
-		t.Error("Docks should be initialized")
+	if errs := s.Validate(); len(errs) != 0 {
+		t.Errorf("expected no errors, got %v", errs)
+	}
+}
+
+func TestSurface_Validate_MissingTmuxAttrs(t *testing.T) {
+	s := Surface{Name: "shell", Type: SurfaceTypeShell, Backend: SurfaceBackendTmux}
+	errs := s.Validate()
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %v", errs)
+	}
+}
+
+func TestSurface_Validate_MissingGUIAttrs(t *testing.T) {
+	s := Surface{Name: "editor", Type: SurfaceTypeEditor, Backend: SurfaceBackendGUI}
+	errs := s.Validate()
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %v", errs)
+	}
+}
+
+func TestSurface_Validate_BothBackendAttrs(t *testing.T) {
+	s := Surface{
+		Name:    "bad",
+		Type:    SurfaceTypeShell,
+		Backend: SurfaceBackendTmux,
+		Tmux:    &TmuxAttrs{},
+		GUI:     &GUIAttrs{AppCommand: "cursor"},
+	}
+	errs := s.Validate()
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %v", errs)
+	}
+}
+
+func TestSurface_Validate_AgentMissing(t *testing.T) {
+	s := Surface{Name: "agent", Type: SurfaceTypeAgent, Backend: SurfaceBackendTmux, Tmux: &TmuxAttrs{}}
+	errs := s.Validate()
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %v", errs)
+	}
+}
+
+func TestSurface_Validate_AgentOnWrongType(t *testing.T) {
+	agent := "claude"
+	s := Surface{Name: "shell", Type: SurfaceTypeShell, Backend: SurfaceBackendTmux, Tmux: &TmuxAttrs{}, Agent: &agent}
+	errs := s.Validate()
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %v", errs)
+	}
+}
+
+func TestResolveWorkspace_DockColonNotFound(t *testing.T) {
+	m := &Manifest{
+		Docks: []Dock{{Name: "labs", Workspaces: []Workspace{{Name: "auth-fix"}}}},
+	}
+
+	_, _, err := m.ResolveWorkspace("labs:nonexistent")
+	if err == nil {
+		t.Fatal("expected error for not found")
+	}
+
+	_, _, err = m.ResolveWorkspace("baddock:auth-fix")
+	if err == nil {
+		t.Fatal("expected error for bad dock")
 	}
 }
