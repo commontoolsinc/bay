@@ -219,14 +219,16 @@ Names must match `[a-zA-Z0-9_-]+`.
 
 ## Configuration
 
-Bay's config lives at `~/.config/bay/config.toml`. You can manage it
-entirely through CLI commands or edit it directly.
+Bay's config lives at `~/.config/bay/config.toml`. It holds user
+preferences and optional overrides — not instance state. Repos, docks,
+and workspaces are tracked in the manifest (`~/.local/share/bay/manifest.json`).
 
 ### Zero-config behavior
 
-If no config file exists, `bay ws new` auto-bootstraps: it detects the
-CWD git repo, creates a dock, probes for agents on PATH, and saves a
-minimal config. You only need a config file for customization.
+No config file is needed. `bay ws new` auto-bootstraps: it detects the
+CWD git repo, creates a dock, probes for agents on PATH, and starts
+working. A config file is only needed for customization (agent settings,
+editor preference, per-dock overrides).
 
 ### Agents
 
@@ -269,34 +271,27 @@ GUI editors (Cursor, VS Code, Zed) are detected automatically. When
 creating a tracked editor surface. Terminal editors run in the
 foreground.
 
-### Repos
+### Per-dock overrides
 
-```toml
-[repos.myproject]
-path = "~/projects/myproject"
-worktree_dir = "~/projects/myproject-worktrees"    # optional
-```
-
-`worktree_dir` is where bay creates worktrees. Defaults to
-`{path}-worktrees`.
-
-### Docks
+Docks are created by `bay dock new` and tracked in the manifest. To
+customize a dock's defaults, add an optional override section in config:
 
 ```toml
 [docks.dev]
-repo = "myproject"
-agent = "claude"
-agent_args = ["--add-dir", "~/shared-data"]
-terminal = "ghostty"
+agent = "codex"                                # override default agent
+agent_args = ["--add-dir", "~/shared-data"]    # extra agent arguments
+terminal = "ghostty"                           # host terminal app
 ```
 
-Fields:
-- `repo` -- default repo for workspaces in this dock.
-- `agent` -- default agent for `bay ws new --agent`.
-- `agent_args` -- extra arguments appended to the agent command.
-- `terminal` -- host terminal app (e.g., `ghostty`, `iterm2`). Bay
-  launches this terminal attached to the dock's tmux session on
-  `bay dock new` and `bay recover`.
+These override the dock's manifest defaults. Only set the fields you
+want to change — omitted fields use the defaults from when the dock
+was created.
+
+### Repos
+
+Repos are registered with `bay repo add` and tracked in the manifest.
+There is no `[repos]` section in config — repo paths and worktree
+directories are managed by bay commands.
 
 ### Monitor
 

@@ -48,9 +48,8 @@ workspaces, adding shells, navigating — happens inside this session.
 > **What just happened?** Bay detected your git repo, created a
 > worktree at `~/projects/bay-tutorial-worktrees/<name>`, and started
 > a tmux session called `bay-tutorial` with a window for your
-> workspace. If you didn't have a config file, bay created one
-> automatically. All of this is visible in `~/.config/bay/config.toml`
-> if you're curious, but you don't need to touch it.
+> workspace. Bay tracks all of this in its state file at
+> `~/.local/share/bay/manifest.json` — you don't need to touch it.
 
 ## 2. Work in your workspace
 
