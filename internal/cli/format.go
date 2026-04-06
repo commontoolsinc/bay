@@ -45,22 +45,17 @@ type ListView struct {
 type ListRow struct {
 	Repo                string `json:"repo"`
 	Dock                string `json:"dock,omitempty"`
-	WorkspaceID         string `json:"workspace_id,omitempty"`
 	WorkspaceName       string `json:"workspace_name,omitempty"`
 	WorkspaceBranch     string `json:"workspace_branch,omitempty"`
 	WorkspaceStatus     string `json:"workspace_status,omitempty"`
 	WorkspaceSyncStatus string `json:"workspace_sync_status,omitempty"`
 	WorkspaceWaiting    bool   `json:"workspace_waiting,omitempty"`
-	WindowID            int    `json:"window_id,omitempty"`
-	WindowName          string `json:"window_name,omitempty"`
-	WindowTmuxID        string `json:"window_tmux_id,omitempty"`
-	WindowStatus        string `json:"window_status,omitempty"`
-	PaneID              int    `json:"pane_id,omitempty"`
-	PaneTmuxID          string `json:"pane_tmux_id,omitempty"`
-	PaneType            string `json:"pane_type,omitempty"`
-	PaneAgent           string `json:"pane_agent,omitempty"`
-	PaneCommand         string `json:"pane_command,omitempty"`
-	PaneStatus          string `json:"pane_status,omitempty"`
+	SurfaceID           int    `json:"surface_id,omitempty"`
+	SurfaceName         string `json:"surface_name,omitempty"`
+	SurfaceType         string `json:"surface_type,omitempty"`
+	SurfaceAgent        string `json:"surface_agent,omitempty"`
+	SurfaceCommand      string `json:"surface_command,omitempty"`
+	SurfaceStatus       string `json:"surface_status,omitempty"`
 }
 
 func BuildListView(cfg *config.Config, docks []engine.DockInfo, opts ListViewOptions) ListView {
@@ -112,7 +107,7 @@ func BuildListView(cfg *config.Config, docks []engine.DockInfo, opts ListViewOpt
 			filtered.Workspaces = nil
 
 			for _, ws := range dock.Workspaces {
-				if focus.Kind == FocusWorkspace && focus.WorkspaceID != "" && focus.WorkspaceID != ws.ID {
+				if focus.Kind == FocusWorkspace && focus.WorkspaceID != "" && focus.WorkspaceID != ws.Name {
 					continue
 				}
 				filtered.Workspaces = append(filtered.Workspaces, trimWorkspace(ws, recursive))
@@ -163,7 +158,7 @@ func BuildListView(cfg *config.Config, docks []engine.DockInfo, opts ListViewOpt
 		filtered := dock
 		filtered.Workspaces = nil
 		for _, ws := range dock.Workspaces {
-			if focus.Kind == FocusWorkspace && focus.WorkspaceID != "" && focus.WorkspaceID != ws.ID {
+			if focus.Kind == FocusWorkspace && focus.WorkspaceID != "" && focus.WorkspaceID != ws.Name {
 				continue
 			}
 			filtered.Workspaces = append(filtered.Workspaces, trimWorkspace(ws, recursive))
@@ -182,11 +177,9 @@ func BuildListView(cfg *config.Config, docks []engine.DockInfo, opts ListViewOpt
 
 func trimWorkspace(ws engine.WorkspaceInfo, recursive bool) engine.WorkspaceInfo {
 	if recursive {
-		ws.WindowCount = len(ws.Windows)
 		return ws
 	}
-	ws.WindowCount = len(ws.Windows)
-	ws.Windows = nil
+	ws.Surfaces = nil
 	return ws
 }
 
@@ -195,11 +188,10 @@ func ListRows(view ListView) []ListRow {
 	for _, repo := range view.Repos {
 		for _, dock := range repo.Docks {
 			for _, ws := range dock.Workspaces {
-				if len(ws.Windows) == 0 {
+				if len(ws.Surfaces) == 0 {
 					rows = append(rows, ListRow{
 						Repo:                repo.Name,
 						Dock:                dock.Name,
-						WorkspaceID:         ws.ID,
 						WorkspaceName:       ws.Name,
 						WorkspaceBranch:     ws.Branch,
 						WorkspaceStatus:     ws.Status,
@@ -208,46 +200,22 @@ func ListRows(view ListView) []ListRow {
 					})
 					continue
 				}
-				for _, win := range ws.Windows {
-					if len(win.Panes) == 0 {
-						rows = append(rows, ListRow{
-							Repo:                repo.Name,
-							Dock:                dock.Name,
-							WorkspaceID:         ws.ID,
-							WorkspaceName:       ws.Name,
-							WorkspaceBranch:     ws.Branch,
-							WorkspaceStatus:     ws.Status,
-							WorkspaceSyncStatus: ws.SyncStatus,
-							WorkspaceWaiting:    ws.Waiting,
-							WindowID:            win.ID,
-							WindowName:          win.Name,
-							WindowTmuxID:        win.TmuxWindowID,
-							WindowStatus:        win.Status,
-						})
-						continue
-					}
-					for _, pane := range win.Panes {
-						rows = append(rows, ListRow{
-							Repo:                repo.Name,
-							Dock:                dock.Name,
-							WorkspaceID:         ws.ID,
-							WorkspaceName:       ws.Name,
-							WorkspaceBranch:     ws.Branch,
-							WorkspaceStatus:     ws.Status,
-							WorkspaceSyncStatus: ws.SyncStatus,
-							WorkspaceWaiting:    ws.Waiting,
-							WindowID:            win.ID,
-							WindowName:          win.Name,
-							WindowTmuxID:        win.TmuxWindowID,
-							WindowStatus:        win.Status,
-							PaneID:              pane.ID,
-							PaneTmuxID:          pane.TmuxPaneID,
-							PaneType:            pane.Type,
-							PaneAgent:           pane.Agent,
-							PaneCommand:         pane.Command,
-							PaneStatus:          pane.Status,
-						})
-					}
+				for _, s := range ws.Surfaces {
+					rows = append(rows, ListRow{
+						Repo:                repo.Name,
+						Dock:                dock.Name,
+						WorkspaceName:       ws.Name,
+						WorkspaceBranch:     ws.Branch,
+						WorkspaceStatus:     ws.Status,
+						WorkspaceSyncStatus: ws.SyncStatus,
+						WorkspaceWaiting:    ws.Waiting,
+						SurfaceID:           s.ID,
+						SurfaceName:         s.Name,
+						SurfaceType:         s.Type,
+						SurfaceAgent:        s.Agent,
+						SurfaceCommand:      s.Command,
+						SurfaceStatus:       s.Status,
+					})
 				}
 			}
 		}
@@ -294,13 +262,12 @@ func syncSuffix(sync string) []string {
 
 func workspaceMeta(ws engine.WorkspaceInfo, showCounts bool) string {
 	var parts []string
-	parts = appendMeta(parts, "id", ws.ID)
 	parts = appendMeta(parts, "branch", ws.Branch)
 	if ws.Status != "" && ws.Status != "idle" {
 		parts = appendMeta(parts, "status", ws.Status)
 	}
 	if showCounts {
-		parts = append(parts, kv("windows", fmt.Sprintf("%d", ws.WindowCount)))
+		parts = append(parts, kv("surfaces", fmt.Sprintf("%d", ws.SurfaceCount)))
 	}
 	parts = append(parts, syncSuffix(ws.SyncStatus)...)
 	if ws.Waiting {
@@ -309,29 +276,16 @@ func workspaceMeta(ws engine.WorkspaceInfo, showCounts bool) string {
 	return strings.Join(parts, " ")
 }
 
-func windowMeta(win engine.WindowInfo, long bool) string {
+func surfaceMeta(s engine.SurfaceInfo, long bool) string {
 	var parts []string
-	parts = appendMeta(parts, "title", win.Name)
-	if long {
-		parts = appendMeta(parts, "tmux", win.TmuxWindowID)
+	parts = appendMeta(parts, "type", s.Type)
+	if s.Agent != "" {
+		parts = appendMeta(parts, "agent", s.Agent)
 	}
-	parts = append(parts, syncSuffix(win.Status)...)
-	return strings.Join(parts, " ")
-}
-
-func paneMeta(pane engine.PaneInfo, long bool) string {
-	var parts []string
-	parts = appendMeta(parts, "kind", pane.Type)
-	if pane.Type == "agent" {
-		parts = appendMeta(parts, "agent", pane.Agent)
+	if s.Command != "" {
+		parts = appendMeta(parts, "command", truncateCommand(s.Command))
 	}
-	if pane.Type == "cmd" {
-		parts = appendMeta(parts, "command", truncateCommand(pane.Command))
-	}
-	if long {
-		parts = appendMeta(parts, "tmux", pane.TmuxPaneID)
-	}
-	parts = append(parts, syncSuffix(pane.Status)...)
+	parts = append(parts, syncSuffix(s.Status)...)
 	return strings.Join(parts, " ")
 }
 
@@ -365,11 +319,8 @@ func FormatListView(view ListView, long bool) string {
 				if !showChildren {
 					continue
 				}
-				for _, win := range ws.Windows {
-					writeIndentedLine(&b, 3, labelValue("window", fmt.Sprintf("%d", win.ID)), windowMeta(win, long))
-					for _, pane := range win.Panes {
-						writeIndentedLine(&b, 4, labelValue("pane", fmt.Sprintf("%d", pane.ID)), paneMeta(pane, long))
-					}
+				for _, s := range ws.Surfaces {
+					writeIndentedLine(&b, 3, labelValue("surface", s.Name), surfaceMeta(s, long))
 				}
 			}
 		}
@@ -379,13 +330,17 @@ func FormatListView(view ListView, long bool) string {
 
 func FormatWorkspaceShow(repoName, dockName string, ws *engine.WorkspaceInfo, long bool) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s (%s)\n", labelValue("workspace", ws.Name), ws.ID)
+	fmt.Fprintf(&b, "%s\n", labelValue("workspace", ws.Name))
 	fmt.Fprintf(&b, "%s\n", labelValue("repo", repoName))
 	fmt.Fprintf(&b, "%s\n", labelValue("dock", dockName))
 	fmt.Fprintf(&b, "%s\n", labelValue("type", ws.Type))
 	fmt.Fprintf(&b, "%s\n", labelValue("path", ws.Path))
-	fmt.Fprintf(&b, "%s\n", labelValue("branch", ws.Branch))
-	fmt.Fprintf(&b, "%s\n", labelValue("pr", ws.PR))
+	if ws.Branch != "" {
+		fmt.Fprintf(&b, "%s\n", labelValue("branch", ws.Branch))
+	}
+	if ws.PR != "" {
+		fmt.Fprintf(&b, "%s\n", labelValue("pr", ws.PR))
+	}
 	fmt.Fprintf(&b, "%s\n", labelValue("status", ws.Status))
 	if ws.DefaultAgent != "" {
 		fmt.Fprintf(&b, "%s\n", labelValue("default agent", ws.DefaultAgent))
@@ -393,11 +348,8 @@ func FormatWorkspaceShow(repoName, dockName string, ws *engine.WorkspaceInfo, lo
 	if ws.SyncStatus != "" && ws.SyncStatus != "ok" {
 		fmt.Fprintf(&b, "%s\n", labelValue("sync", ws.SyncStatus))
 	}
-	for _, win := range ws.Windows {
-		writeIndentedLine(&b, 0, labelValue("window", fmt.Sprintf("%d", win.ID)), windowMeta(win, long))
-		for _, pane := range win.Panes {
-			writeIndentedLine(&b, 1, labelValue("pane", fmt.Sprintf("%d", pane.ID)), paneMeta(pane, long))
-		}
+	for _, s := range ws.Surfaces {
+		writeIndentedLine(&b, 0, labelValue("surface", s.Name), surfaceMeta(s, long))
 	}
 	return b.String()
 }

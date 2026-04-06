@@ -26,6 +26,7 @@ type EditorConfig struct {
 }
 
 // AgentConfig defines an agent type.
+// TODO: remove ConfigFile (no longer generated), add ResumeArgs and ProjectFile per redesign plan.
 type AgentConfig struct {
 	Command    string `toml:"command"`
 	ConfigFile string `toml:"config_file"`
@@ -46,6 +47,7 @@ func (r RepoConfig) EffectiveWorktreeDir() string {
 }
 
 // DockConfig defines a dock (tmux session group).
+// TODO: remove AgentConfigTemplate (no longer used), add Terminal and Template per redesign plan.
 type DockConfig struct {
 	Repo                string   `toml:"repo"`
 	Agent               string   `toml:"agent"`

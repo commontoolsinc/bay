@@ -190,22 +190,19 @@ func workspaceCompletions() func(cmd *cobra.Command, args []string, toComplete s
 
 		for _, ref := range manifest.AllWorkspaces(m) {
 			ws := ref.Workspace
-			desc := ref.Dock + ":" + ref.ID
-			if ws.Branch != "" {
-				desc += " " + ws.Branch
-			}
-			if ws.PR != "" {
-				desc += " #" + ws.PR
+			desc := ref.Dock
+			if ws.Worktree != nil {
+				if ws.Worktree.Branch != "" {
+					desc += " " + ws.Worktree.Branch
+				}
+				if ws.Worktree.PR != "" {
+					desc += " #" + ws.Worktree.PR
+				}
 			}
 
-			// Only offer values that ResolveWorkspace can actually resolve:
-			// bare IDs (wN), qualified IDs (dock:wN), and display names.
-			// Branch/PR completions are only in goCompletions (fuzzy match).
-			add(ref.ID, desc)
-			add(ref.Dock+":"+ref.ID, ws.Name)
-			if ws.Name != "" && ws.Name != ref.ID {
-				add(ws.Name, desc)
-			}
+			// Offer workspace name and dock:name.
+			add(ws.Name, desc)
+			add(ref.Dock+":"+ws.Name, ws.Name)
 		}
 
 		add("self", "current workspace")
@@ -274,13 +271,14 @@ func goCompletions() func(cmd *cobra.Command, args []string, toComplete string) 
 		for _, ref := range manifest.AllWorkspaces(m) {
 			ws := ref.Workspace
 			add(ws.Name, ref.Dock+" "+string(ws.Status))
-			add(ref.ID, ref.Dock+" "+ws.Name)
 			add(ref.Dock, "dock")
-			if ws.Branch != "" {
-				add(ws.Branch, ref.Dock+" "+ws.Name)
-			}
-			if ws.PR != "" {
-				add("#"+ws.PR, ref.Dock+" "+ws.Name)
+			if ws.Worktree != nil {
+				if ws.Worktree.Branch != "" {
+					add(ws.Worktree.Branch, ref.Dock+" "+ws.Name)
+				}
+				if ws.Worktree.PR != "" {
+					add("#"+ws.Worktree.PR, ref.Dock+" "+ws.Name)
+				}
 			}
 		}
 

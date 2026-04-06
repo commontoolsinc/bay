@@ -52,16 +52,11 @@ func formatPWD(ctx *engine.Context) string {
 	if ctx.Dock != "" {
 		parts = append(parts, labelValue("dock", ctx.Dock))
 	}
-	if ctx.WorkspaceID != "" {
-		parts = append(parts, labelValue("workspace", ctx.WorkspaceID))
+	if ctx.Workspace != "" {
+		parts = append(parts, labelValue("workspace", ctx.Workspace))
 	}
-	if ctx.Window != "" {
-		parts = append(parts, labelValue("window", ctx.Window))
-	} else if ctx.WindowID != 0 {
-		parts = append(parts, labelValue("window", fmt.Sprintf("%d", ctx.WindowID)))
-	}
-	if ctx.PaneID != 0 {
-		parts = append(parts, labelValue("pane", fmt.Sprintf("%d", ctx.PaneID)))
+	if ctx.Surface != "" {
+		parts = append(parts, labelValue("surface", ctx.Surface))
 	}
 	return strings.Join(parts, dimmedSeparator(" / "))
 }

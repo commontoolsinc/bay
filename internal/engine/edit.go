@@ -7,8 +7,8 @@ import (
 )
 
 // Edit returns the workspace path for opening in an editor.
-func (e *Engine) Edit(dockName, wsID string) (string, error) {
-	ws, err := e.WsShow(dockName, wsID)
+func (e *Engine) Edit(dockName, wsName string) (string, error) {
+	ws, err := e.WsShow(dockName, wsName)
 	if err != nil {
 		return "", err
 	}
@@ -21,12 +21,12 @@ func (e *Engine) EditAll(dockName string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	dockState, ok := m.Docks[dockName]
-	if !ok {
+	dock := m.FindDock(dockName)
+	if dock == nil {
 		return nil, fmt.Errorf("unknown dock %q", dockName)
 	}
 	var paths []string
-	for _, ws := range dockState.Workspaces {
+	for _, ws := range dock.Workspaces {
 		if ws.Path != "" {
 			paths = append(paths, ws.Path)
 		}
@@ -35,8 +35,6 @@ func (e *Engine) EditAll(dockName string) ([]string, error) {
 }
 
 // EditAllParentDir returns the worktree parent directory for a dock's repo.
-// This is the directory containing all worktrees (e.g., ~/projects/myproject-worktrees/).
-// Useful for terminal editors that can browse a directory tree.
 func (e *Engine) EditAllParentDir(dockName string) (string, error) {
 	dockCfg, ok := e.Config.Docks[dockName]
 	if !ok {

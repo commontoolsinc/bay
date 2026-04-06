@@ -3,13 +3,14 @@ package cli
 import (
 	"fmt"
 
+	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/spf13/cobra"
 )
 
 func newPaneCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "pane",
-		Short: "Manage panes",
+		Short: "Manage panes (add surfaces to current window)",
 	}
 
 	cmd.AddCommand(newPaneAddCmd())
@@ -18,37 +19,57 @@ func newPaneCmd() *cobra.Command {
 }
 
 func newPaneAddCmd() *cobra.Command {
-	var agent, cmdStr, splitDir string
+	var agent, cmdStr, splitDir, name string
 	var shell bool
 
 	cmd := &cobra.Command{
 		Use:   "add",
-		Short: "Add a pane to the current window",
+		Short: "Add a surface to the current workspace (split from current pane)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
 				return err
 			}
 
-			dockName, wsID, err := eng.ResolveSelf()
+			dockName, wsName, err := eng.ResolveSelf()
 			if err != nil {
 				return err
 			}
 
-			// Find current window
-			ws, err := eng.WsShow(dockName, wsID)
-			if err != nil {
-				return err
-			}
-
-			winIDStr, _ := eng.Tmux.CurrentWindowID()
-			for _, w := range ws.Windows {
-				if w.TmuxWindowID == winIDStr {
-					return eng.PaneAdd(dockName, wsID, w.ID, agent, shell, cmdStr, splitDir)
+			// Determine surface type and name.
+			var surfaceType manifest.SurfaceType
+			surfaceName := name
+			switch {
+			case shell:
+				surfaceType = manifest.SurfaceTypeShell
+				if surfaceName == "" {
+					surfaceName = "shell"
+				}
+			case cmdStr != "":
+				surfaceType = manifest.SurfaceTypeCmd
+				if surfaceName == "" {
+					surfaceName = "cmd"
+				}
+			case agent != "":
+				surfaceType = manifest.SurfaceTypeAgent
+				if surfaceName == "" {
+					surfaceName = "agent"
+				}
+			default:
+				surfaceType = manifest.SurfaceTypeShell
+				if surfaceName == "" {
+					surfaceName = "shell"
 				}
 			}
 
-			return fmt.Errorf("current window not found in workspace")
+			if splitDir == "" {
+				splitDir = "v"
+			}
+
+			if err := eng.SurfaceAdd(dockName, wsName, surfaceType, surfaceName, agent, cmdStr, splitDir); err != nil {
+				return fmt.Errorf("adding surface: %w", err)
+			}
+			return nil
 		},
 	}
 
@@ -56,6 +77,7 @@ func newPaneAddCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&shell, "shell", false, "open a shell")
 	cmd.Flags().StringVar(&cmdStr, "cmd", "", "command to run")
 	cmd.Flags().StringVar(&splitDir, "split", "v", "split direction (h or v)")
+	cmd.Flags().StringVar(&name, "name", "", "surface name")
 
 	return cmd
 }

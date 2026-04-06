@@ -1,4 +1,4 @@
-// Package nav provides fuzzy workspace navigation for "bay go".
+// Package nav provides fuzzy workspace navigation for "bay go" and "bay ws go".
 package nav
 
 import (
@@ -10,79 +10,78 @@ import (
 	"github.com/commontoolsinc/bay/internal/tmux"
 )
 
-// Entry represents a single navigable target (one tmux window within a workspace).
+// Entry represents a navigable workspace.
 type Entry struct {
-	DockName     string
-	WsID         string
-	WsName       string
-	WindowName   string // tmux window name (e.g., "test-branch:2")
-	Branch       string
-	PR           string
-	Status       manifest.WorkspaceStatus
+	DockName string
+	WsName   string
+	Branch   string
+	PR       string
+	Status   manifest.WorkspaceStatus
+	Waiting  bool
+	// TmuxWindowID of any surface in this workspace (for focusing).
 	TmuxWindowID string
-	Waiting      bool
-	WindowType   string // "agent", "shell", "cmd", or "" if unknown
+	SurfaceCount int
 }
 
 // CollectEntries builds a list of all navigation entries from the manifest.
-// Each workspace window becomes one entry. The waiting status is determined
-// by querying the tmux @bay-waiting window option.
+// Each workspace becomes one entry.
 func CollectEntries(m *manifest.Manifest, tc tmux.Interface) []Entry {
 	var entries []Entry
 
-	// Sort dock names for deterministic output.
-	dockNames := make([]string, 0, len(m.Docks))
-	for name := range m.Docks {
-		dockNames = append(dockNames, name)
+	// Sort docks for deterministic output.
+	docks := make([]string, 0, len(m.Docks))
+	for i := range m.Docks {
+		docks = append(docks, m.Docks[i].Name)
 	}
-	sort.Strings(dockNames)
+	sort.Strings(docks)
 
-	for _, dockName := range dockNames {
-		dock := m.Docks[dockName]
-
-		// Sort workspace IDs for deterministic output.
-		wsIDs := make([]string, 0, len(dock.Workspaces))
-		for id := range dock.Workspaces {
-			wsIDs = append(wsIDs, id)
+	for _, dockName := range docks {
+		dock := m.FindDock(dockName)
+		if dock == nil {
+			continue
 		}
-		sort.Strings(wsIDs)
 
-		for _, wsID := range wsIDs {
-			ws := dock.Workspaces[wsID]
-			for _, win := range ws.Windows {
-				waiting := false
-				if win.TmuxWindowID != "" {
-					val, err := tc.GetWindowOption(win.TmuxWindowID, "@bay-waiting")
+		for i := range dock.Workspaces {
+			ws := &dock.Workspaces[i]
+
+			branch := ""
+			pr := ""
+			if ws.Worktree != nil {
+				branch = ws.Worktree.Branch
+				pr = ws.Worktree.PR
+			}
+
+			// Find the first tmux window ID and check waiting status.
+			var tmuxWindowID string
+			waiting := false
+			for _, s := range ws.Surfaces {
+				if s.Tmux != nil && s.Tmux.WindowID != "" {
+					if tmuxWindowID == "" {
+						tmuxWindowID = s.Tmux.WindowID
+					}
+					val, err := tc.GetWindowOption(s.Tmux.WindowID, "@bay-waiting")
 					if err == nil && val == "1" {
 						waiting = true
 					}
 				}
-				// Determine window type from the first pane.
-				winType := ""
-				if len(win.Panes) > 0 {
-					winType = string(win.Panes[0].Type)
-				}
-
-				entries = append(entries, Entry{
-					DockName:     dockName,
-					WsID:         wsID,
-					WsName:       ws.Name,
-					WindowName:   win.Name,
-					Branch:       ws.Branch,
-					PR:           ws.PR,
-					Status:       ws.Status,
-					TmuxWindowID: win.TmuxWindowID,
-					Waiting:      waiting,
-					WindowType:   winType,
-				})
 			}
+
+			entries = append(entries, Entry{
+				DockName:     dockName,
+				WsName:       ws.Name,
+				Branch:       branch,
+				PR:           pr,
+				Status:       ws.Status,
+				TmuxWindowID: tmuxWindowID,
+				Waiting:      waiting,
+				SurfaceCount: len(ws.Surfaces),
+			})
 		}
 	}
 	return entries
 }
 
-// FuzzyMatch filters entries by case-insensitive substring match against
-// WsName, Branch, PR, and DockName. An empty query returns all entries.
+// FuzzyMatch filters entries by case-insensitive substring match.
 func FuzzyMatch(entries []Entry, query string) []Entry {
 	if query == "" {
 		return entries
@@ -91,11 +90,9 @@ func FuzzyMatch(entries []Entry, query string) []Entry {
 	var matched []Entry
 	for _, e := range entries {
 		if strings.Contains(strings.ToLower(e.WsName), q) ||
-			strings.Contains(strings.ToLower(e.WindowName), q) ||
 			strings.Contains(strings.ToLower(e.Branch), q) ||
 			strings.Contains(strings.ToLower(e.PR), q) ||
-			strings.Contains(strings.ToLower(e.DockName), q) ||
-			strings.Contains(strings.ToLower(e.WindowType), q) {
+			strings.Contains(strings.ToLower(e.DockName), q) {
 			matched = append(matched, e)
 		}
 	}
@@ -113,15 +110,13 @@ func FilterWaiting(entries []Entry) []Entry {
 	return waiting
 }
 
-// NextWaiting returns the next waiting entry after the given current window,
-// cycling through the list. Returns nil if no entries are waiting.
+// NextWaiting returns the next waiting entry after the given current window.
 func NextWaiting(entries []Entry, currentWindowID string) *Entry {
 	waiting := FilterWaiting(entries)
 	if len(waiting) == 0 {
 		return nil
 	}
 
-	// Find current position among all entries.
 	currentIdx := -1
 	for i, e := range entries {
 		if e.TmuxWindowID == currentWindowID {
@@ -130,12 +125,10 @@ func NextWaiting(entries []Entry, currentWindowID string) *Entry {
 		}
 	}
 
-	// If current not found, return the first waiting entry.
 	if currentIdx == -1 {
 		return &waiting[0]
 	}
 
-	// Scan forward from current+1, wrapping around.
 	n := len(entries)
 	for offset := 1; offset <= n; offset++ {
 		idx := (currentIdx + offset) % n
@@ -154,21 +147,12 @@ func FormatEntry(e Entry) string {
 	if e.PR != "" {
 		pr = "#" + e.PR
 	}
-	tag := ""
-	if e.WindowType != "" {
-		tag = "  [" + e.WindowType + "]"
-	}
 	waiting := ""
 	if e.Waiting {
 		waiting = "  WAITING"
 	}
-	// Use WindowName if it differs from WsName (e.g., "test-branch:2")
-	displayName := e.WsName
-	if e.WindowName != "" && e.WindowName != e.WsName {
-		displayName = e.WindowName
-	}
-	return fmt.Sprintf("%s  %s  %s  %s  %s  %s%s%s",
-		e.DockName, e.WsID, displayName, e.Branch, pr, string(e.Status), tag, waiting)
+	return fmt.Sprintf("%s  %s  %s  %s  %s%s",
+		e.DockName, e.WsName, e.Branch, pr, string(e.Status), waiting)
 }
 
 // FormatEntries formats all entries with aligned columns.
@@ -177,29 +161,22 @@ func FormatEntries(entries []Entry) string {
 		return ""
 	}
 
-	// Collect column values.
 	type row struct {
 		dock    string
-		wsID    string
 		wsName  string
 		branch  string
 		pr      string
 		status  string
-		winType string
 		waiting string
 	}
 
 	rows := make([]row, len(entries))
-	maxDock, maxWsID, maxWsName, maxBranch, maxPR, maxStatus, maxWinType := 0, 0, 0, 0, 0, 0, 0
+	maxDock, maxWsName, maxBranch, maxPR, maxStatus := 0, 0, 0, 0, 0
 
 	for i, e := range entries {
 		pr := ""
 		if e.PR != "" {
 			pr = "#" + e.PR
-		}
-		winType := ""
-		if e.WindowType != "" {
-			winType = "[" + e.WindowType + "]"
 		}
 		waiting := ""
 		if e.Waiting {
@@ -207,21 +184,16 @@ func FormatEntries(entries []Entry) string {
 		}
 		r := row{
 			dock:    e.DockName,
-			wsID:    e.WsID,
 			wsName:  e.WsName,
 			branch:  e.Branch,
 			pr:      pr,
 			status:  string(e.Status),
-			winType: winType,
 			waiting: waiting,
 		}
 		rows[i] = r
 
 		if len(r.dock) > maxDock {
 			maxDock = len(r.dock)
-		}
-		if len(r.wsID) > maxWsID {
-			maxWsID = len(r.wsID)
 		}
 		if len(r.wsName) > maxWsName {
 			maxWsName = len(r.wsName)
@@ -235,24 +207,17 @@ func FormatEntries(entries []Entry) string {
 		if len(r.status) > maxStatus {
 			maxStatus = len(r.status)
 		}
-		if len(r.winType) > maxWinType {
-			maxWinType = len(r.winType)
-		}
 	}
 
 	var sb strings.Builder
 	for _, r := range rows {
-		line := fmt.Sprintf("%-*s  %-*s  %-*s  %-*s  %-*s  %-*s",
+		line := fmt.Sprintf("%-*s  %-*s  %-*s  %-*s  %-*s",
 			maxDock, r.dock,
-			maxWsID, r.wsID,
 			maxWsName, r.wsName,
 			maxBranch, r.branch,
 			maxPR, r.pr,
 			maxStatus, r.status,
 		)
-		if maxWinType > 0 {
-			line += fmt.Sprintf("  %-*s", maxWinType, r.winType)
-		}
 		if r.waiting != "" {
 			line += "  " + r.waiting
 		}

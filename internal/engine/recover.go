@@ -13,7 +13,7 @@ import (
 // RecoverResult holds the results of a recovery operation.
 type RecoverResult struct {
 	Dock      string
-	Recovered []string // workspace names that had windows recreated
+	Recovered []string // workspace names that had surfaces recreated
 	AttachCmd string
 }
 
@@ -23,6 +23,8 @@ type recoverOutcome struct {
 }
 
 // Recover reconstructs all tmux state from the manifest after reboot.
+// Note: agent config files are no longer generated during recovery.
+// Agents are relaunched directly; project-level CLAUDE.md provides bay awareness.
 func (e *Engine) Recover() ([]RecoverResult, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
@@ -32,25 +34,25 @@ func (e *Engine) Recover() ([]RecoverResult, error) {
 	var results []RecoverResult
 	var errs []string
 
-	for dockName, dockState := range m.Docks {
-		dockCfg, hasCfg := e.Config.Docks[dockName]
+	for i := range m.Docks {
+		dock := &m.Docks[i]
+		dockCfg, hasCfg := e.Config.Docks[dock.Name]
 
-		if err := e.ensureSession(dockName); err != nil {
+		if err := e.ensureSession(dock.Name); err != nil {
 			return nil, err
 		}
 
-		outcome := e.recoverDockWorkspaces(dockName, dockState, dockCfg, hasCfg)
-		e.cleanPlaceholders(dockName)
+		outcome := e.recoverDockWorkspaces(dock, dockCfg, hasCfg)
+		e.cleanPlaceholders(dock.Name)
 
 		results = append(results, RecoverResult{
-			Dock:      dockName,
+			Dock:      dock.Name,
 			Recovered: outcome.recovered,
-			AttachCmd: fmt.Sprintf("tmux attach -t %s", dockName),
+			AttachCmd: fmt.Sprintf("tmux attach -t %s", dock.Name),
 		})
 		errs = append(errs, outcome.errs...)
 	}
 
-	// Save updated manifest (with new tmux IDs)
 	if err := e.saveManifest(m); err != nil {
 		return nil, err
 	}
@@ -62,15 +64,14 @@ func (e *Engine) Recover() ([]RecoverResult, error) {
 }
 
 // DockRecover recovers a single dock by name.
-// Returns the names of workspaces that were recovered.
 func (e *Engine) DockRecover(name string) ([]string, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return nil, err
 	}
 
-	dockState, ok := m.Docks[name]
-	if !ok {
+	dock := m.FindDock(name)
+	if dock == nil {
 		return nil, fmt.Errorf("unknown dock %q in manifest", name)
 	}
 	dockCfg, hasCfg := e.Config.Docks[name]
@@ -79,7 +80,7 @@ func (e *Engine) DockRecover(name string) ([]string, error) {
 		return nil, err
 	}
 
-	outcome := e.recoverDockWorkspaces(name, dockState, dockCfg, hasCfg)
+	outcome := e.recoverDockWorkspaces(dock, dockCfg, hasCfg)
 	e.cleanPlaceholders(name)
 
 	if err := e.saveManifest(m); err != nil {
@@ -93,146 +94,128 @@ func (e *Engine) DockRecover(name string) ([]string, error) {
 }
 
 // recoverDockWorkspaces handles recovery for all workspaces in a dock.
-// Returns the names of workspaces that were recovered (had windows recreated).
-func (e *Engine) recoverDockWorkspaces(dockName string, dockState *manifest.DockState, dockCfg config.DockConfig, hasCfg bool) recoverOutcome {
+func (e *Engine) recoverDockWorkspaces(dock *manifest.Dock, dockCfg config.DockConfig, hasCfg bool) recoverOutcome {
 	outcome := recoverOutcome{}
-	for wsID, ws := range dockState.Workspaces {
-		// Verify workspace path exists
+
+	for i := range dock.Workspaces {
+		ws := &dock.Workspaces[i]
+
 		if _, err := os.Stat(ws.Path); err != nil {
 			continue
 		}
 
-		// Regenerate agent config for each agent type used in this workspace.
-		dockAgent := ""
-		if hasCfg {
-			dockAgent = dockCfg.Agent
-		}
-		failedAgents := map[string]bool{}
-		for agentName := range collectWorkspaceAgents(ws, dockAgent) {
-			if err := e.generateAgentConfig(dockName, agentName, wsID, ws.Name, ws.Path, ws.Type, ws.Repo); err != nil {
-				failedAgents[agentName] = true
-				outcome.errs = append(outcome.errs, fmt.Sprintf("%s:%s agent %s: %v", dockName, wsID, agentName, err))
-			}
-		}
-
 		wsRecovered := false
-		for i, win := range ws.Windows {
-			// Check if window still exists
-			windowExists := false
-			if win.TmuxWindowID != "" {
-				windowExists, _ = e.Tmux.WindowExists(win.TmuxWindowID)
-			}
 
-			// Try finding by name as fallback
-			if !windowExists {
-				foundID, err := e.Tmux.FindWindowByName(dockName, win.Name)
-				if err == nil && foundID != "" {
-					ws.Windows[i].TmuxWindowID = foundID
-					windowExists = true
+		// Group surfaces by layout group for recovery.
+		groups := groupSurfacesByLayout(ws)
+
+		for layoutGroup, surfaceIndices := range groups {
+			// Check if the tmux window for this group still exists.
+			var existingWindowID string
+			for _, idx := range surfaceIndices {
+				s := &ws.Surfaces[idx]
+				if s.Tmux != nil && s.Tmux.WindowID != "" {
+					exists, _ := e.Tmux.WindowExists(s.Tmux.WindowID)
+					if exists {
+						existingWindowID = s.Tmux.WindowID
+						break
+					}
 				}
 			}
 
-			if windowExists {
-				e.reconcileWindowPanes(ws.Windows[i].TmuxWindowID, &ws.Windows[i], ws.Path, dockCfg, hasCfg, failedAgents)
+			if existingWindowID != "" {
+				// Window exists — reconcile panes.
+				e.reconcileSurfaces(existingWindowID, ws, surfaceIndices, dockCfg, hasCfg)
 			} else {
+				// Window gone — recreate it.
 				wsRecovered = true
-				newID, err := e.Tmux.NewWindow(dockName, win.Name, ws.Path)
+				newWindowID, err := e.Tmux.NewWindow(dock.Name, ws.Name, ws.Path)
 				if err != nil {
 					continue
 				}
-				ws.Windows[i].TmuxWindowID = newID
-				_ = e.Tmux.SetWindowOption(newID, "remain-on-exit", "on")
+				_ = e.Tmux.SetWindowOption(newWindowID, "remain-on-exit", "on")
 
-				for j, pane := range win.Panes {
+				for j, idx := range surfaceIndices {
+					s := &ws.Surfaces[idx]
+					if s.Tmux == nil {
+						continue
+					}
+					s.Tmux.WindowID = newWindowID
+					s.Tmux.LayoutGroup = layoutGroup
+
 					if j == 0 {
-						ws.Windows[i].Panes[j].TmuxPaneID = ""
-						e.recoverPaneLaunch(pane, newID, "", dockCfg, hasCfg, true, failedAgents)
-						panes, err := e.Tmux.ListPanes(newID)
+						// First surface uses the window's initial pane.
+						panes, err := e.Tmux.ListPanes(newWindowID)
 						if err == nil && len(panes) > 0 {
-							ws.Windows[i].Panes[j].TmuxPaneID = panes[0].ID
+							s.Tmux.PaneID = panes[0].ID
 						}
-						continue
+						e.recoverSurfaceLaunch(s, s.Tmux.PaneID, dockCfg, hasCfg, true)
+					} else {
+						// Subsequent surfaces split from the window.
+						dir := s.Tmux.SplitDir
+						if dir == "" {
+							dir = "v"
+						}
+						newPaneID, err := e.Tmux.SplitWindow(newWindowID, dir, ws.Path)
+						if err != nil {
+							continue
+						}
+						s.Tmux.PaneID = newPaneID
+						e.recoverSurfaceLaunch(s, newPaneID, dockCfg, hasCfg, true)
 					}
-					dir := pane.SplitDir
-					if dir == "" {
-						dir = "v"
-					}
-					newPaneID, err := e.Tmux.SplitWindow(newID, dir, ws.Path)
-					if err != nil {
-						continue
-					}
-					ws.Windows[i].Panes[j].TmuxPaneID = newPaneID
-					e.recoverPaneLaunch(pane, "", newPaneID, dockCfg, hasCfg, true, failedAgents)
 				}
 			}
 		}
+
 		if wsRecovered {
-			name := ws.Name
-			if name == "" {
-				name = wsID
-			}
-			outcome.recovered = append(outcome.recovered, name)
+			outcome.recovered = append(outcome.recovered, ws.Name)
 		}
 	}
 	return outcome
 }
 
-// reconcileWindowPanes checks an existing window's panes against the manifest
-// and repairs missing ones. Panes with live foreground processes are skipped.
-func (e *Engine) reconcileWindowPanes(tmuxWindowID string, win *manifest.Window, wsPath string, dockCfg config.DockConfig, hasCfg bool, failedAgents map[string]bool) {
+// reconcileSurfaces checks existing panes against manifest surfaces and repairs missing ones.
+func (e *Engine) reconcileSurfaces(tmuxWindowID string, ws *manifest.Workspace, surfaceIndices []int, dockCfg config.DockConfig, hasCfg bool) {
 	tmuxPanes, err := e.Tmux.ListPanes(tmuxWindowID)
 	if err != nil {
 		return
 	}
 
-	for i := range win.Panes {
-		if i < len(tmuxPanes) {
-			win.Panes[i].TmuxPaneID = tmuxPanes[i].ID
+	// Update pane IDs for existing surfaces.
+	for i, idx := range surfaceIndices {
+		s := &ws.Surfaces[idx]
+		if s.Tmux != nil && i < len(tmuxPanes) {
+			s.Tmux.PaneID = tmuxPanes[i].ID
 		}
 	}
 
-	manifestPaneCount := len(win.Panes)
-	tmuxPaneCount := len(tmuxPanes)
-
-	if tmuxPaneCount >= manifestPaneCount {
-		return
-	}
-
-	for j := tmuxPaneCount; j < manifestPaneCount; j++ {
-		pane := win.Panes[j]
-		dir := pane.SplitDir
+	// Recreate missing panes.
+	for j := len(tmuxPanes); j < len(surfaceIndices); j++ {
+		s := &ws.Surfaces[surfaceIndices[j]]
+		if s.Tmux == nil {
+			continue
+		}
+		dir := s.Tmux.SplitDir
 		if dir == "" {
 			dir = "v"
 		}
-		newPaneID, err := e.Tmux.SplitWindow(tmuxWindowID, dir, wsPath)
+		newPaneID, err := e.Tmux.SplitWindow(tmuxWindowID, dir, ws.Path)
 		if err != nil {
 			continue
 		}
-		win.Panes[j].TmuxPaneID = newPaneID
-		e.recoverPaneLaunch(pane, "", newPaneID, dockCfg, hasCfg, true, failedAgents)
+		s.Tmux.PaneID = newPaneID
+		e.recoverSurfaceLaunch(s, newPaneID, dockCfg, hasCfg, true)
 	}
 }
 
-// recoverPaneLaunch sends the appropriate launch command to a recovered pane.
-// When newlyCreated is false (pane found in an existing window), skips panes
-// that have a live foreground process to avoid corrupting running agents.
-// When newlyCreated is true (pane just created by bay), always launches.
-func (e *Engine) recoverPaneLaunch(pane manifest.Pane, windowID string, tmuxPaneID string, dockCfg config.DockConfig, hasCfg bool, newlyCreated bool, failedAgents map[string]bool) {
-	var targetPaneID string
-	if tmuxPaneID != "" {
-		targetPaneID = tmuxPaneID
-	} else if windowID != "" {
-		panes, err := e.Tmux.ListPanes(windowID)
-		if err != nil || len(panes) == 0 {
-			return
-		}
-		targetPaneID = panes[0].ID
-	} else {
+// recoverSurfaceLaunch sends the appropriate launch command to a recovered surface.
+func (e *Engine) recoverSurfaceLaunch(s *manifest.Surface, tmuxPaneID string, dockCfg config.DockConfig, hasCfg bool, newlyCreated bool) {
+	if tmuxPaneID == "" {
 		return
 	}
 
 	if !newlyCreated {
-		pid, err := e.Tmux.GetPanePID(targetPaneID)
+		pid, err := e.Tmux.GetPanePID(tmuxPaneID)
 		if err == nil && pid > 0 {
 			if proc, findErr := os.FindProcess(pid); findErr == nil {
 				if proc.Signal(syscall.Signal(0)) == nil {
@@ -242,28 +225,35 @@ func (e *Engine) recoverPaneLaunch(pane manifest.Pane, windowID string, tmuxPane
 		}
 	}
 
-	switch pane.Type {
-	case manifest.PaneTypeAgent:
-		agentName := pane.Agent
-		if agentName == "" && hasCfg {
-			agentName = dockCfg.Agent
-		}
-		if agentName == "" {
+	switch s.Type {
+	case manifest.SurfaceTypeAgent:
+		if s.Agent == nil || *s.Agent == "" {
 			return
 		}
-		if failedAgents[agentName] {
-			return
-		}
+		agentName := *s.Agent
 		if _, ok := e.Config.Agents[agentName]; !ok {
 			return
 		}
 		agentCmd := e.buildAgentCommand(agentName, dockCfg)
-		_ = e.Tmux.SendKeys(targetPaneID, agentCmd)
-	case manifest.PaneTypeCmd:
-		if pane.Command != "" {
-			_ = e.Tmux.SendKeys(targetPaneID, pane.Command)
+		_ = e.Tmux.SendKeys(tmuxPaneID, agentCmd)
+	case manifest.SurfaceTypeCmd:
+		if s.Command != nil && *s.Command != "" {
+			_ = e.Tmux.SendKeys(tmuxPaneID, *s.Command)
 		}
-	case manifest.PaneTypeShell:
-		// Shell panes need no command
+	case manifest.SurfaceTypeShell:
+		// No command needed.
 	}
+}
+
+// groupSurfacesByLayout groups surface indices by their layout group.
+// Returns a map of layout group → slice of surface indices, ordered by group number.
+func groupSurfacesByLayout(ws *manifest.Workspace) map[int][]int {
+	groups := map[int][]int{}
+	for i, s := range ws.Surfaces {
+		if s.Tmux == nil {
+			continue
+		}
+		groups[s.Tmux.LayoutGroup] = append(groups[s.Tmux.LayoutGroup], i)
+	}
+	return groups
 }

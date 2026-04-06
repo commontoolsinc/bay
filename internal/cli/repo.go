@@ -140,8 +140,8 @@ func newRepoShowCmd() *cobra.Command {
 			wsCount := 0
 			if m != nil {
 				for _, dockName := range dockNames {
-					if ds, ok := m.Docks[dockName]; ok {
-						wsCount += len(ds.Workspaces)
+					if dock := m.FindDock(dockName); dock != nil {
+						wsCount += len(dock.Workspaces)
 					}
 				}
 			}

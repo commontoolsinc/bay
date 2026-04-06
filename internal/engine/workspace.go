@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/manifest"
@@ -21,7 +23,7 @@ type WsNewOptions struct {
 	Branch string // create and checkout this git branch
 }
 
-// WsNew creates a new workspace.
+// WsNew creates a new workspace with surfaces.
 func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	dockName := opts.Dock
 	dockCfg, ok := e.Config.Docks[dockName]
@@ -34,38 +36,33 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		return nil, err
 	}
 
-	// Ensure dock exists in manifest
-	if m.Docks == nil {
-		m.Docks = make(map[string]*manifest.DockState)
-	}
-	dockState, ok := m.Docks[dockName]
-	if !ok {
-		dockState = &manifest.DockState{
-			Workspaces: make(map[string]*manifest.Workspace),
+	// Ensure dock exists in manifest.
+	dock := m.FindDock(dockName)
+	if dock == nil {
+		if err := m.AddDock(manifest.Dock{Name: dockName}); err != nil {
+			return nil, err
 		}
-		m.Docks[dockName] = dockState
+		dock = m.FindDock(dockName)
 	}
 
-	// Allocate workspace ID
-	wsID := manifest.NextWorkspaceID(dockState)
-
-	// Determine workspace type and path
+	// Determine workspace type and path.
 	var wsType manifest.WorkspaceType
 	var wsPath string
+	var worktreeAttrs *manifest.WorktreeAttrs
 	repoName := opts.Repo
 	if repoName == "" {
 		repoName = dockCfg.Repo
 	}
 
 	if opts.Dir != "" {
-		// External workspace
+		// External workspace.
 		wsType = manifest.WorkspaceTypeExternal
 		wsPath = config.ExpandPath(opts.Dir)
 		if _, err := os.Stat(wsPath); err != nil {
 			return nil, fmt.Errorf("external directory %q: %w", wsPath, err)
 		}
 	} else {
-		// Worktree workspace
+		// Worktree workspace.
 		wsType = manifest.WorkspaceTypeWorktree
 		if repoName == "" {
 			return nil, fmt.Errorf("dock %q has no default repo; specify --repo or --dir", dockName)
@@ -74,39 +71,44 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		if !ok {
 			return nil, fmt.Errorf("unknown repo %q", repoName)
 		}
-		wtDir := repoCfg.EffectiveWorktreeDir()
-		wsPath = filepath.Join(wtDir, wsID)
+		worktreeAttrs = &manifest.WorktreeAttrs{Repo: repoName}
 
-		// Create worktree directory parent
+		// Use workspace name or a unique timestamp-based name for the worktree directory.
+		// Timestamp ensures no collisions even after workspaces are removed.
+		wtDir := repoCfg.EffectiveWorktreeDir()
+		dirName := opts.Name
+		if dirName == "" {
+			dirName = "ws-" + strconv.FormatInt(time.Now().UnixMilli(), 36)
+		}
+		wsPath = filepath.Join(wtDir, dirName)
+
 		if err := os.MkdirAll(wtDir, 0o755); err != nil {
 			return nil, fmt.Errorf("creating worktree dir: %w", err)
 		}
 
-		// Create git worktree
 		repoPath := config.ExpandPath(repoCfg.Path)
 		if err := e.Git.CreateWorktree(repoPath, wsPath); err != nil {
 			return nil, fmt.Errorf("creating worktree: %w", err)
 		}
 	}
 
-	// Determine display name before config generation so template gets it
+	// Determine display name.
 	displayName := opts.Name
 	if displayName == "" {
-		displayName = wsID // will be updated when branch is set
+		if opts.Branch != "" {
+			displayName = abbreviateBranch(opts.Branch)
+		} else {
+			displayName = filepath.Base(wsPath)
+		}
 	}
-	if displayName != "" && displayName != wsID {
-		if err := ValidateName(displayName); err != nil {
-			return nil, err
-		}
-		// Check uniqueness within dock
-		for id, other := range dockState.Workspaces {
-			if other.Name == displayName {
-				return nil, fmt.Errorf("name %q already in use by %s", displayName, id)
-			}
-		}
+	if err := ValidateName(displayName); err != nil {
+		return nil, err
+	}
+	if dock.FindWorkspace(displayName) != nil {
+		return nil, fmt.Errorf("workspace name %q already exists in dock %q", displayName, dockName)
 	}
 
-	// Determine agent
+	// Determine agent.
 	agentName := opts.Agent
 	if agentName == "" {
 		agentName = dockCfg.Agent
@@ -121,195 +123,187 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		}
 	}
 
-	// Generate agent config if an agent is being launched.
-	// For shell mode, skip — the user isn't using an agent yet. If they
-	// later add an agent pane, config will be generated at that point.
-	if agentName != "" && !opts.Shell {
-		if err := e.generateAgentConfig(dockName, agentName, wsID, displayName, wsPath, wsType, repoName); err != nil {
-			rollbackWorktree()
-			return nil, fmt.Errorf("generating agent config: %w", err)
-		}
-	}
-
-	// Ensure tmux session exists (default window tagged as placeholder)
+	// Ensure tmux session exists.
 	if err := e.ensureSession(dockName); err != nil {
 		rollbackWorktree()
 		return nil, err
 	}
 
-	// Create tmux window
-	windowName := displayName
-	windowID, err := e.Tmux.NewWindow(dockName, windowName, wsPath)
+	// Create tmux window.
+	windowID, err := e.Tmux.NewWindow(dockName, displayName, wsPath)
 	if err != nil {
 		rollbackWorktree()
 		return nil, fmt.Errorf("creating tmux window: %w", err)
 	}
-
-	// Set remain-on-exit
 	_ = e.Tmux.SetWindowOption(windowID, "remain-on-exit", "on")
-
-	// Clean up placeholder windows now that a real window exists
 	e.cleanPlaceholders(dockName)
 
-	// Launch into the first pane
+	// Get the first pane in the new window.
 	panes, _ := e.Tmux.ListPanes(windowID)
 	var tmuxPaneID string
 	if len(panes) > 0 {
 		tmuxPaneID = panes[0].ID
 	}
-	paneType, paneAgent, _ := e.launchPaneInTmux(tmuxPaneID, dockName, agentName, opts.Shell, "")
 
-	// Build workspace
-	ws := &manifest.Workspace{
-		Name:          displayName,
-		Type:          wsType,
-		Repo:          repoName,
-		AgentOverride: opts.Agent,
-		Path:          wsPath,
-		Status:        manifest.WorkspaceStatusIdle,
-		Windows: []manifest.Window{
-			{
-				ID:           1,
-				TmuxWindowID: windowID,
-				Name:         windowName,
-				Panes: []manifest.Pane{
-					{
-						ID:         1,
-						TmuxPaneID: tmuxPaneID,
-						Type:       paneType,
-						Agent:      paneAgent,
-					},
-				},
-			},
-		},
+	// Launch the initial surface.
+	var surfaceType manifest.SurfaceType
+	var surfaceName string
+	switch {
+	case opts.Shell:
+		surfaceType = manifest.SurfaceTypeShell
+		surfaceName = "shell"
+	case agentName != "":
+		surfaceType = manifest.SurfaceTypeAgent
+		surfaceName = "agent"
+	default:
+		surfaceType = manifest.SurfaceTypeShell
+		surfaceName = "shell"
 	}
 
-	// Save to manifest — if this fails, roll back everything
-	dockState.Workspaces[wsID] = ws
-	if err := e.saveManifest(m); err != nil {
+	surface := e.launchSurfaceInTmux(tmuxPaneID, dockName, surfaceType, agentName, "")
+	surface.Name = surfaceName
+	surface.Tmux.PaneID = tmuxPaneID
+	surface.Tmux.WindowID = windowID
+	surface.Tmux.LayoutGroup = 1
+
+	// Build workspace.
+	ws := manifest.Workspace{
+		Name:     displayName,
+		Type:     wsType,
+		Path:     wsPath,
+		Status:   manifest.WorkspaceStatusIdle,
+		Worktree: worktreeAttrs,
+		Surfaces: []manifest.Surface{},
+	}
+
+	// Add workspace to dock, then add surface (which assigns the ID).
+	if err := dock.AddWorkspace(ws); err != nil {
 		_ = e.Tmux.KillWindow(windowID)
 		rollbackWorktree()
-		delete(dockState.Workspaces, wsID)
+		return nil, err
+	}
+	addedWs := dock.FindWorkspace(displayName)
+	if _, err := addedWs.AddSurface(surface); err != nil {
+		_ = e.Tmux.KillWindow(windowID)
+		rollbackWorktree()
+		_ = dock.RemoveWorkspace(displayName)
 		return nil, err
 	}
 
-	// Create git branch if requested
-	if opts.Branch != "" {
-		if err := e.Git.CreateBranch(wsPath, opts.Branch); err != nil {
-			return ws, fmt.Errorf("workspace created but branch creation failed: %w", err)
-		}
-		// Update workspace metadata with branch info
-		branch := opts.Branch
-		if updateErr := e.WsUpdate(dockName, wsID, &branch, nil, nil); updateErr != nil {
-			return ws, fmt.Errorf("workspace created but metadata update failed: %w", updateErr)
-		}
-		// Reload workspace to reflect updates
-		ws, _ = e.WsShow(dockName, wsID)
+	// Save manifest.
+	if err := e.saveManifest(m); err != nil {
+		_ = e.Tmux.KillWindow(windowID)
+		rollbackWorktree()
+		_ = dock.RemoveWorkspace(displayName)
+		return nil, err
 	}
 
-	return ws, nil
+	// Create git branch if requested.
+	if opts.Branch != "" && addedWs.Worktree != nil {
+		if err := e.Git.CreateBranch(wsPath, opts.Branch); err != nil {
+			return addedWs, fmt.Errorf("workspace created but branch creation failed: %w", err)
+		}
+		addedWs.Worktree.Branch = opts.Branch
+		if !addedWs.NameOverridden {
+			addedWs.Name = abbreviateBranch(opts.Branch)
+			e.updateWindowNames(addedWs, addedWs.Name)
+		}
+		addedWs.Status = manifest.WorkspaceStatusActive
+		_ = e.saveManifest(m)
+	}
+
+	return addedWs, nil
 }
 
-// WsClose closes a workspace and all its windows/panes.
-func (e *Engine) WsClose(dockName, wsID string, force bool) error {
+// WsClose closes a workspace and all its surfaces.
+func (e *Engine) WsClose(dockName, wsName string, force bool) error {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return err
 	}
 
-	dockState, ok := m.Docks[dockName]
-	if !ok {
+	dock := m.FindDock(dockName)
+	if dock == nil {
 		return fmt.Errorf("unknown dock %q", dockName)
 	}
 
-	ws, ok := dockState.Workspaces[wsID]
-	if !ok {
-		return fmt.Errorf("workspace %s not found in dock %s", wsID, dockName)
+	ws := dock.FindWorkspace(wsName)
+	if ws == nil {
+		return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
 	}
 
-	// Safety checks for worktree workspaces
+	// Safety checks for worktree workspaces.
 	if ws.Type == manifest.WorkspaceTypeWorktree && !force {
-		// Only check if path exists — if deleted externally, nothing to protect
 		if _, statErr := os.Stat(ws.Path); statErr == nil {
 			dirty, err := e.Git.IsDirty(ws.Path)
 			if err != nil {
 				return fmt.Errorf("checking workspace state: %w", err)
 			}
 			if dirty {
-				return fmt.Errorf("workspace %s has uncommitted changes (use --force to override)", wsID)
+				return fmt.Errorf("workspace %q has uncommitted changes (use --force to override)", wsName)
 			}
 
 			unpushed, err := e.Git.HasUnpushedCommits(ws.Path)
 			if err != nil {
-				// Could not determine push status — refuse to be safe
-				return fmt.Errorf("workspace %s: could not verify push status: %w (use --force to override)", wsID, err)
+				return fmt.Errorf("workspace %q: could not verify push status: %w (use --force to override)", wsName, err)
 			}
 			if unpushed {
-				return fmt.Errorf("workspace %s has unpushed commits (use --force to override)", wsID)
+				return fmt.Errorf("workspace %q has unpushed commits (use --force to override)", wsName)
 			}
 		}
 	}
 
-	// Close all tmux windows. For each, check if it's the last real window
-	// in the session and create a placeholder to keep the session alive.
-	for _, win := range ws.Windows {
-		if win.TmuxWindowID != "" {
-			e.ensurePlaceholderIfLastWindow(dockName, win.TmuxWindowID)
-			_ = e.Tmux.KillWindow(win.TmuxWindowID)
+	// Close all tmux windows for this workspace's surfaces.
+	closedWindows := map[string]bool{}
+	for _, s := range ws.Surfaces {
+		if s.Tmux != nil && s.Tmux.WindowID != "" && !closedWindows[s.Tmux.WindowID] {
+			e.ensurePlaceholderIfLastWindow(dockName, s.Tmux.WindowID)
+			_ = e.Tmux.KillWindow(s.Tmux.WindowID)
+			closedWindows[s.Tmux.WindowID] = true
 		}
 	}
 
-	// Remove worktree if applicable
-	if ws.Type == manifest.WorkspaceTypeWorktree && ws.Repo != "" {
-		repoCfg, ok := e.Config.Repos[ws.Repo]
+	// Remove worktree if applicable.
+	if ws.Type == manifest.WorkspaceTypeWorktree && ws.Worktree != nil && ws.Worktree.Repo != "" {
+		repoCfg, ok := e.Config.Repos[ws.Worktree.Repo]
 		if ok {
 			repoPath := config.ExpandPath(repoCfg.Path)
 			if err := e.Git.RemoveWorktree(repoPath, ws.Path, force); err != nil {
 				if !force {
-					dockCfg, hasCfg := e.Config.Docks[dockName]
-					e.recoverDockWorkspaces(dockName, &manifest.DockState{
-						Workspaces: map[string]*manifest.Workspace{wsID: ws},
-					}, dockCfg, hasCfg)
-					_ = e.saveManifest(m)
 					return fmt.Errorf("removing worktree: %w", err)
 				}
 			}
-			// Clean up the worktree parent directory if it's now empty.
-			// os.Remove only succeeds on empty directories.
 			wtDir := repoCfg.EffectiveWorktreeDir()
 			_ = os.Remove(wtDir)
 		}
 	}
 
-	// Clean up agent config files after successful close work.
-	e.cleanupAgentConfig(dockName, ws)
-
-	// Move to archive
+	// Archive the workspace. Disambiguate name if it already exists
+	// in the archive (same workspace closed and recreated before).
 	archive, err := manifest.LoadArchive(e.archivePath)
 	if err != nil {
 		archive = manifest.New()
 	}
-	if archive.Docks == nil {
-		archive.Docks = make(map[string]*manifest.DockState)
+	archiveDock := archive.FindDock(dockName)
+	if archiveDock == nil {
+		_ = archive.AddDock(manifest.Dock{Name: dockName})
+		archiveDock = archive.FindDock(dockName)
 	}
-	if _, ok := archive.Docks[dockName]; !ok {
-		archive.Docks[dockName] = &manifest.DockState{
-			Workspaces: make(map[string]*manifest.Workspace),
-		}
+	archived := *ws
+	for i := 2; archiveDock.FindWorkspace(archived.Name) != nil; i++ {
+		archived.Name = fmt.Sprintf("%s-%d", ws.Name, i)
 	}
-	archive.Docks[dockName].Workspaces[wsID] = ws
-	if err := manifest.SaveArchive(e.archivePath, archive); err != nil {
-		return fmt.Errorf("saving archive: %w", err)
-	}
+	_ = archiveDock.AddWorkspace(archived)
+	_ = manifest.SaveArchive(e.archivePath, archive)
 
-	// Remove from manifest
-	delete(dockState.Workspaces, wsID)
+	// Remove from manifest.
+	if err := dock.RemoveWorkspace(wsName); err != nil {
+		return err
+	}
 	return e.saveManifest(m)
 }
 
-// WsCloseByStatus closes all workspaces with the given status across the specified
-// dock (or all docks if dockName is empty). Clean workspaces are closed; dirty ones
-// are skipped and reported. Returns lists of closed and skipped workspace identifiers.
+// WsCloseByStatus closes all workspaces with the given status.
 func (e *Engine) WsCloseByStatus(dockName, status string, force bool) (closed []string, skipped []string, err error) {
 	if err := ValidateStatus(status); err != nil {
 		return nil, nil, err
@@ -322,17 +316,19 @@ func (e *Engine) WsCloseByStatus(dockName, status string, force bool) (closed []
 
 	type target struct {
 		dock string
-		id   string
+		name string
 	}
 	var targets []target
 
-	for dn, ds := range m.Docks {
-		if dockName != "" && dn != dockName {
+	for i := range m.Docks {
+		d := &m.Docks[i]
+		if dockName != "" && d.Name != dockName {
 			continue
 		}
-		for wsID, ws := range ds.Workspaces {
+		for j := range d.Workspaces {
+			ws := &d.Workspaces[j]
 			if string(ws.Status) == status {
-				targets = append(targets, target{dock: dn, id: wsID})
+				targets = append(targets, target{dock: d.Name, name: ws.Name})
 			}
 		}
 	}
@@ -342,8 +338,8 @@ func (e *Engine) WsCloseByStatus(dockName, status string, force bool) (closed []
 	}
 
 	for _, t := range targets {
-		label := t.dock + ":" + t.id
-		if closeErr := e.WsClose(t.dock, t.id, force); closeErr != nil {
+		label := t.dock + ":" + t.name
+		if closeErr := e.WsClose(t.dock, t.name, force); closeErr != nil {
 			skipped = append(skipped, label+" ("+closeErr.Error()+")")
 		} else {
 			closed = append(closed, label)
@@ -352,22 +348,22 @@ func (e *Engine) WsCloseByStatus(dockName, status string, force bool) (closed []
 	return closed, skipped, nil
 }
 
-// WsUpdate updates workspace metadata.
-func (e *Engine) WsUpdate(dockName, wsID string, branch, pr, status *string) error {
+// WsUpdate updates workspace metadata (branch, PR, status).
+func (e *Engine) WsUpdate(dockName, wsName string, branch, pr, status *string) error {
 	return e.withManifest(func(m *manifest.Manifest) error {
-		dockState, ok := m.Docks[dockName]
-		if !ok {
+		dock := m.FindDock(dockName)
+		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws, ok := dockState.Workspaces[wsID]
-		if !ok {
-			return fmt.Errorf("workspace %s not found in dock %s", wsID, dockName)
+		ws := dock.FindWorkspace(wsName)
+		if ws == nil {
+			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
 		}
 
 		nameChanged := false
 
-		if branch != nil {
-			ws.Branch = *branch
+		if branch != nil && ws.Worktree != nil {
+			ws.Worktree.Branch = *branch
 			if !ws.NameOverridden {
 				ws.Name = abbreviateBranch(*branch)
 				nameChanged = true
@@ -376,8 +372,8 @@ func (e *Engine) WsUpdate(dockName, wsID string, branch, pr, status *string) err
 				ws.Status = manifest.WorkspaceStatusActive
 			}
 		}
-		if pr != nil {
-			ws.PR = *pr
+		if pr != nil && ws.Worktree != nil {
+			ws.Worktree.PR = *pr
 		}
 		if status != nil {
 			if err := ValidateStatus(*status); err != nil {
@@ -386,7 +382,6 @@ func (e *Engine) WsUpdate(dockName, wsID string, branch, pr, status *string) err
 			ws.Status = manifest.WorkspaceStatus(*status)
 		}
 
-		// Update tmux window names if display name changed
 		if nameChanged {
 			e.updateWindowNames(ws, ws.Name)
 		}
@@ -395,27 +390,25 @@ func (e *Engine) WsUpdate(dockName, wsID string, branch, pr, status *string) err
 	})
 }
 
-// WsRename renames a workspace display name (overrides auto-abbreviation).
-func (e *Engine) WsRename(dockName, wsID, newName string) error {
+// WsRename renames a workspace.
+func (e *Engine) WsRename(dockName, wsName, newName string) error {
 	if err := ValidateName(newName); err != nil {
 		return err
 	}
 
 	return e.withManifest(func(m *manifest.Manifest) error {
-		dockState, ok := m.Docks[dockName]
-		if !ok {
+		dock := m.FindDock(dockName)
+		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws, ok := dockState.Workspaces[wsID]
-		if !ok {
-			return fmt.Errorf("workspace %s not found in dock %s", wsID, dockName)
+		ws := dock.FindWorkspace(wsName)
+		if ws == nil {
+			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
 		}
 
-		// Check uniqueness within dock
-		for id, other := range dockState.Workspaces {
-			if id != wsID && other.Name == newName {
-				return fmt.Errorf("name %q already in use by %s", newName, id)
-			}
+		// Check uniqueness.
+		if existing := dock.FindWorkspace(newName); existing != nil {
+			return fmt.Errorf("name %q already in use", newName)
 		}
 
 		ws.Name = newName
@@ -427,34 +420,36 @@ func (e *Engine) WsRename(dockName, wsID, newName string) error {
 }
 
 // WsShow returns detailed information about a workspace.
-// Syncs git state before returning.
-func (e *Engine) WsShow(dockName, wsID string) (*manifest.Workspace, error) {
+func (e *Engine) WsShow(dockName, wsName string) (*manifest.Workspace, error) {
 	e.SyncAll()
 
 	m, err := e.LoadManifest()
 	if err != nil {
 		return nil, err
 	}
-	dockState, ok := m.Docks[dockName]
-	if !ok {
+	dock := m.FindDock(dockName)
+	if dock == nil {
 		return nil, fmt.Errorf("unknown dock %q", dockName)
 	}
-	ws, ok := dockState.Workspaces[wsID]
-	if !ok {
-		return nil, fmt.Errorf("workspace %s not found in dock %s", wsID, dockName)
+	ws := dock.FindWorkspace(wsName)
+	if ws == nil {
+		return nil, fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
 	}
 	return ws, nil
 }
 
-// ResolveWorkspace resolves a workspace query to (dockName, wsID).
-// Accepts: "dock:wN", bare "wN" (if unambiguous), or display name.
+// ResolveWorkspace resolves a workspace query to (dockName, wsName).
+// Accepts: "dock:name" or bare display name.
 func (e *Engine) ResolveWorkspace(query string) (string, string, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return "", "", err
 	}
-	_, dock, id, resolveErr := m.ResolveWorkspace(query)
-	return dock, id, resolveErr
+	ws, dock, resolveErr := m.ResolveWorkspace(query)
+	if resolveErr != nil {
+		return "", "", resolveErr
+	}
+	return dock.Name, ws.Name, nil
 }
 
 // ResolveSelf resolves the current workspace from CWD and tmux context.
@@ -464,27 +459,31 @@ func (e *Engine) ResolveSelf() (string, string, error) {
 		return "", "", err
 	}
 
-	// First try: match CWD against workspace paths
+	// First try: match CWD against workspace paths.
 	cwd, cwdErr := os.Getwd()
 	if cwdErr == nil {
-		for dockName, dockState := range m.Docks {
-			for wsID, ws := range dockState.Workspaces {
+		for i := range m.Docks {
+			dock := &m.Docks[i]
+			for j := range dock.Workspaces {
+				ws := &dock.Workspaces[j]
 				wsPath := config.ExpandPath(ws.Path)
 				if cwd == wsPath || strings.HasPrefix(cwd, wsPath+"/") {
-					return dockName, wsID, nil
+					return dock.Name, ws.Name, nil
 				}
 			}
 		}
 	}
 
-	// Fallback: match current tmux window ID against manifest
+	// Fallback: match current tmux window ID against surfaces.
 	winID, tmuxErr := e.Tmux.CurrentWindowID()
 	if tmuxErr == nil {
-		for dockName, dockState := range m.Docks {
-			for wsID, ws := range dockState.Workspaces {
-				for _, win := range ws.Windows {
-					if win.TmuxWindowID == winID {
-						return dockName, wsID, nil
+		for i := range m.Docks {
+			dock := &m.Docks[i]
+			for j := range dock.Workspaces {
+				ws := &dock.Workspaces[j]
+				for _, s := range ws.Surfaces {
+					if s.Tmux != nil && s.Tmux.WindowID == winID {
+						return dock.Name, ws.Name, nil
 					}
 				}
 			}
@@ -495,21 +494,46 @@ func (e *Engine) ResolveSelf() (string, string, error) {
 }
 
 // ResolveByWindowID finds the workspace that owns the given tmux window ID.
-// This is faster than ResolveSelf (no CWD stat calls) and works reliably in
-// tmux status-line contexts where CWD may not be set.
-func (e *Engine) ResolveByWindowID(tmuxWindowID string) (dockName, wsID string, ws *manifest.Workspace, err error) {
+func (e *Engine) ResolveByWindowID(tmuxWindowID string) (dockName, wsName string, ws *manifest.Workspace, err error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return "", "", nil, err
 	}
-	for dn, dockState := range m.Docks {
-		for wid, w := range dockState.Workspaces {
-			for _, win := range w.Windows {
-				if win.TmuxWindowID == tmuxWindowID {
-					return dn, wid, w, nil
+	for i := range m.Docks {
+		dock := &m.Docks[i]
+		for j := range dock.Workspaces {
+			w := &dock.Workspaces[j]
+			for _, s := range w.Surfaces {
+				if s.Tmux != nil && s.Tmux.WindowID == tmuxWindowID {
+					return dock.Name, w.Name, w, nil
 				}
 			}
 		}
 	}
 	return "", "", nil, fmt.Errorf("no workspace found for tmux window %s", tmuxWindowID)
+}
+
+// updateWindowNames renames all tmux windows for a workspace's surfaces.
+func (e *Engine) updateWindowNames(ws *manifest.Workspace, name string) {
+	seen := map[string]bool{}
+	for _, s := range ws.Surfaces {
+		if s.Tmux != nil && s.Tmux.WindowID != "" && !seen[s.Tmux.WindowID] {
+			_ = e.Tmux.RenameWindow(s.Tmux.WindowID, name)
+			seen[s.Tmux.WindowID] = true
+		}
+	}
+}
+
+// collectWorkspaceAgents returns a set of agent names used by a workspace's surfaces.
+func collectWorkspaceAgents(ws *manifest.Workspace, defaultAgent string) map[string]bool {
+	agents := map[string]bool{}
+	if defaultAgent != "" {
+		agents[defaultAgent] = true
+	}
+	for _, s := range ws.Surfaces {
+		if s.Agent != nil && *s.Agent != "" {
+			agents[*s.Agent] = true
+		}
+	}
+	return agents
 }

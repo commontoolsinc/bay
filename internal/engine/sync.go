@@ -9,43 +9,32 @@ import (
 
 // syncWorkspaceGitState checks the actual git branch of a workspace and
 // updates the manifest and tmux window names if the branch has changed.
-// Returns true if any changes were made.
 func (e *Engine) syncWorkspaceGitState(ws *manifest.Workspace) bool {
-	if ws.Path == "" {
+	if ws.Path == "" || ws.Worktree == nil {
 		return false
 	}
 
 	wsPath := config.ExpandPath(ws.Path)
 	if _, err := os.Stat(wsPath); err != nil {
-		return false // path missing, nothing to sync
+		return false
 	}
 
 	branch, err := e.Git.CurrentBranch(wsPath)
-	if err != nil {
+	if err != nil || branch == "" {
 		return false
 	}
 
-	// No change
-	if branch == ws.Branch {
+	if branch == ws.Worktree.Branch {
 		return false
 	}
 
-	// Don't overwrite a manually-set branch with empty (detached HEAD).
-	// Only update when git has an actual branch name.
-	if branch == "" {
-		return false
-	}
+	ws.Worktree.Branch = branch
 
-	// Branch changed — update manifest
-	ws.Branch = branch
-
-	// Auto-promote idle → active when a branch appears
-	if branch != "" && ws.Status == manifest.WorkspaceStatusIdle {
+	if ws.Status == manifest.WorkspaceStatusIdle {
 		ws.Status = manifest.WorkspaceStatusActive
 	}
 
-	// Auto-update display name if not manually overridden
-	if !ws.NameOverridden && branch != "" {
+	if !ws.NameOverridden {
 		ws.Name = abbreviateBranch(branch)
 		e.updateWindowNames(ws, ws.Name)
 	}
@@ -53,9 +42,8 @@ func (e *Engine) syncWorkspaceGitState(ws *manifest.Workspace) bool {
 	return true
 }
 
-// SyncAll checks git branches and tmux window/pane state for all workspaces
-// and updates the manifest if anything changed. Called by List() and WsShow()
-// to ensure displayed data is fresh.
+// SyncAll checks git branches and tmux surface state for all workspaces
+// and updates the manifest if anything changed.
 func (e *Engine) SyncAll() {
 	m, err := e.LoadManifest()
 	if err != nil {
@@ -63,12 +51,14 @@ func (e *Engine) SyncAll() {
 	}
 
 	changed := false
-	for _, dockState := range m.Docks {
-		for _, ws := range dockState.Workspaces {
+	for i := range m.Docks {
+		dock := &m.Docks[i]
+		for j := range dock.Workspaces {
+			ws := &dock.Workspaces[j]
 			if e.syncWorkspaceGitState(ws) {
 				changed = true
 			}
-			if e.syncWorkspacePaneIDs(ws) {
+			if e.syncSurfaceTmuxState(ws) {
 				changed = true
 			}
 		}
@@ -79,89 +69,27 @@ func (e *Engine) SyncAll() {
 	}
 }
 
-// syncWorkspacePaneIDs fills in missing tmux pane IDs for tracked panes
-// when the window still exists and the manifest pane order matches tmux.
-func (e *Engine) syncWorkspacePaneIDs(ws *manifest.Workspace) bool {
+// syncSurfaceTmuxState removes surfaces whose tmux windows no longer exist.
+func (e *Engine) syncSurfaceTmuxState(ws *manifest.Workspace) bool {
 	changed := false
-	for winIdx := range ws.Windows {
-		win := &ws.Windows[winIdx]
-		if win.TmuxWindowID == "" {
-			continue
-		}
-		exists, err := e.Tmux.WindowExists(win.TmuxWindowID)
-		if err != nil || !exists {
-			continue
-		}
-		tmuxPanes, err := e.Tmux.ListPanes(win.TmuxWindowID)
-		if err != nil {
-			continue
-		}
-		for paneIdx := range win.Panes {
-			if win.Panes[paneIdx].TmuxPaneID == "" && paneIdx < len(tmuxPanes) {
-				win.Panes[paneIdx].TmuxPaneID = tmuxPanes[paneIdx].ID
-				changed = true
-			}
-		}
-	}
-	return changed
-}
+	var live []manifest.Surface
 
-// syncWorkspaceTmuxState reconciles the manifest's window and pane lists
-// with actual tmux state. Removes windows that no longer exist and trims
-// pane lists to match actual counts.
-func (e *Engine) syncWorkspaceTmuxState(ws *manifest.Workspace) bool {
-	changed := false
-
-	// Check each window
-	var liveWindows []manifest.Window
-	for _, win := range ws.Windows {
-		if win.TmuxWindowID == "" {
-			liveWindows = append(liveWindows, win)
+	for _, s := range ws.Surfaces {
+		if s.Tmux == nil || s.Tmux.WindowID == "" {
+			live = append(live, s)
 			continue
 		}
 
-		exists, _ := e.Tmux.WindowExists(win.TmuxWindowID)
-		if !exists {
-			// Window is gone — drop it from manifest
-			changed = true
-			continue
-		}
-
-		// Window exists — check pane count
-		tmuxPanes, err := e.Tmux.ListPanes(win.TmuxWindowID)
-		if err == nil && len(tmuxPanes) < len(win.Panes) {
-			win.Panes = win.Panes[:len(tmuxPanes)]
+		exists, _ := e.Tmux.WindowExists(s.Tmux.WindowID)
+		if exists {
+			live = append(live, s)
+		} else {
 			changed = true
 		}
-
-		liveWindows = append(liveWindows, win)
 	}
 
 	if changed {
-		ws.Windows = liveWindows
+		ws.Surfaces = live
 	}
 	return changed
-}
-
-// SyncManifestPanes trims a window's pane list to match the actual tmux pane count.
-func (e *Engine) SyncManifestPanes(dockName, wsID string, winID, actualCount int) {
-	_ = e.withManifest(func(m *manifest.Manifest) error {
-		ds, ok := m.Docks[dockName]
-		if !ok {
-			return nil
-		}
-		ws, ok := ds.Workspaces[wsID]
-		if !ok {
-			return nil
-		}
-		for i := range ws.Windows {
-			if ws.Windows[i].ID == winID {
-				if len(ws.Windows[i].Panes) > actualCount {
-					ws.Windows[i].Panes = ws.Windows[i].Panes[:actualCount]
-				}
-				return nil
-			}
-		}
-		return nil
-	})
 }
