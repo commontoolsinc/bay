@@ -98,7 +98,7 @@ bay shell
 Run a long-lived command in its own pane:
 
 ```
-bay sf new --cmd "npm run dev" --name server
+bay sf new --cmd "top" --name monitor
 ```
 
 (`sf` is short for `surface`.)
@@ -113,7 +113,7 @@ Bay auto-detects your editor (Cursor, VS Code, Zed, nvim, vim). For
 GUI editors, it tracks the window so you can jump back to it with the
 same navigation keys as everything else.
 
-Now your workspace has a shell, a dev server, and an editor — all
+Now your workspace has a shell, a system monitor, and an editor — all
 navigable.
 
 ## 4. Navigate
@@ -178,7 +178,7 @@ repo myproject
   dock myproject
     workspace login-bug  status=active
       surface shell  type=shell
-      surface server type=cmd
+      surface monitor type=cmd
     workspace review     status=idle
       surface agent  type=agent
       surface shell  type=shell
