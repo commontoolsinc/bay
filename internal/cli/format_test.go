@@ -19,8 +19,8 @@ func stripANSI(s string) string {
 func testConfig() *config.Config {
 	return &config.Config{
 		Agents: map[string]config.AgentConfig{
-			"claude": {Command: "claude", ConfigFile: "CLAUDE.local.md"},
-			"codex":  {Command: "codex", ConfigFile: "AGENTS.local.md"},
+			"claude": {Command: "claude"},
+			"codex":  {Command: "codex"},
 		},
 		Repos: map[string]config.RepoConfig{
 			"bay":   {Path: "~/projects/bay"},

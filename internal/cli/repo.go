@@ -51,10 +51,6 @@ Use --force to add a directory that is not a git repo.`,
 				return err
 			}
 			fmt.Printf("Repo %q added (%s)\n", args[0], args[1])
-
-			// Check gitignore for agent config files
-			printGitignoreAdvice(eng, args[0])
-
 			return nil
 		},
 	}
@@ -103,24 +99,9 @@ func newRepoShowCmd() *cobra.Command {
 				return fmt.Errorf("repo %q not found", name)
 			}
 
-			repoPath := config.ExpandPath(repo.Path)
 			fmt.Printf("Repo: %s\n", name)
 			fmt.Printf("  path:         %s\n", repo.Path)
 			fmt.Printf("  worktree_dir: %s\n", repo.EffectiveWorktreeDir())
-
-			// Gitignore status for each agent
-			fmt.Println("  gitignore:")
-			for agentName, agent := range eng.Config.Agents {
-				if agent.ConfigFile == "" {
-					continue
-				}
-				ignored, gitErr := eng.Git.IsIgnored(repoPath, agent.ConfigFile)
-				status := "\u2717" // ✗
-				if gitErr == nil && ignored {
-					status = "\u2713" // ✓
-				}
-				fmt.Printf("    %s %s (%s)\n", status, agent.ConfigFile, agentName)
-			}
 
 			// Docks using this repo
 			var dockNames []string
@@ -195,33 +176,3 @@ func newRepoRemoveCmd() *cobra.Command {
 	return cmd
 }
 
-// printGitignoreAdvice checks if a repo's .gitignore covers agent config files
-// and advises the user about any missing entries.
-func printGitignoreAdvice(eng *engine.Engine, repoName string) {
-	repoCfg, ok := eng.Config.Repos[repoName]
-	if !ok {
-		return
-	}
-	repoPath := config.ExpandPath(repoCfg.Path)
-
-	var missing []string
-	for agentName, agent := range eng.Config.Agents {
-		if agent.ConfigFile == "" {
-			continue
-		}
-		ignored, err := eng.Git.IsIgnored(repoPath, agent.ConfigFile)
-		if err != nil || !ignored {
-			missing = append(missing, fmt.Sprintf("  echo %q >> %s/.gitignore  # for %s",
-				agent.ConfigFile, repoPath, agentName))
-		}
-	}
-
-	if len(missing) == 0 {
-		return
-	}
-
-	fmt.Println("\nTo use agents with this repo, add to .gitignore:")
-	for _, m := range missing {
-		fmt.Println(m)
-	}
-}

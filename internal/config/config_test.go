@@ -10,11 +10,11 @@ func TestParse_FullConfig(t *testing.T) {
 	data := `
 [agents.claude]
 command = "claude"
-config_file = "CLAUDE.local.md"
+resume_args = "--continue"
+project_file = "CLAUDE.md"
 
 [agents.codex]
 command = "codex"
-config_file = "AGENTS.local.md"
 
 [repos.labs]
 path = "~/projects/labs"
@@ -27,7 +27,8 @@ path = "~/projects/ct-server"
 repo = "labs"
 agent = "claude"
 agent_args = ["--add-dir", "~/crew/projects/assistant"]
-agent_config_template = "~/.config/bay/templates/labs.md"
+terminal = "ghostty"
+template = "default"
 
 [docks.research]
 repo = "labs"
@@ -48,8 +49,11 @@ interval_seconds = 3
 	if cfg.Agents["claude"].Command != "claude" {
 		t.Errorf("claude command = %q", cfg.Agents["claude"].Command)
 	}
-	if cfg.Agents["claude"].ConfigFile != "CLAUDE.local.md" {
-		t.Errorf("claude config_file = %q", cfg.Agents["claude"].ConfigFile)
+	if cfg.Agents["claude"].ResumeArgs != "--continue" {
+		t.Errorf("claude resume_args = %q, want --continue", cfg.Agents["claude"].ResumeArgs)
+	}
+	if cfg.Agents["claude"].ProjectFile != "CLAUDE.md" {
+		t.Errorf("claude project_file = %q, want CLAUDE.md", cfg.Agents["claude"].ProjectFile)
 	}
 
 	// Repos
@@ -69,6 +73,12 @@ interval_seconds = 3
 	}
 	if len(cfg.Docks["labs"].AgentArgs) != 2 {
 		t.Errorf("labs dock agent_args len = %d", len(cfg.Docks["labs"].AgentArgs))
+	}
+	if cfg.Docks["labs"].Terminal != "ghostty" {
+		t.Errorf("labs dock terminal = %q, want ghostty", cfg.Docks["labs"].Terminal)
+	}
+	if cfg.Docks["labs"].Template != "default" {
+		t.Errorf("labs dock template = %q, want default", cfg.Docks["labs"].Template)
 	}
 
 	// Monitor
@@ -150,13 +160,13 @@ func TestLoadAndSave(t *testing.T) {
 
 	cfg := &Config{
 		Agents: map[string]AgentConfig{
-			"claude": {Command: "claude", ConfigFile: "CLAUDE.local.md"},
+			"claude": {Command: "claude", ResumeArgs: "--continue", ProjectFile: "CLAUDE.md"},
 		},
 		Repos: map[string]RepoConfig{
 			"labs": {Path: "/projects/labs"},
 		},
 		Docks: map[string]DockConfig{
-			"labs": {Repo: "labs", Agent: "claude"},
+			"labs": {Repo: "labs", Agent: "claude", Terminal: "ghostty", Template: "default"},
 		},
 	}
 
@@ -172,11 +182,23 @@ func TestLoadAndSave(t *testing.T) {
 	if loaded.Agents["claude"].Command != "claude" {
 		t.Errorf("loaded agent command = %q", loaded.Agents["claude"].Command)
 	}
+	if loaded.Agents["claude"].ResumeArgs != "--continue" {
+		t.Errorf("loaded agent resume_args = %q", loaded.Agents["claude"].ResumeArgs)
+	}
+	if loaded.Agents["claude"].ProjectFile != "CLAUDE.md" {
+		t.Errorf("loaded agent project_file = %q", loaded.Agents["claude"].ProjectFile)
+	}
 	if loaded.Repos["labs"].Path != "/projects/labs" {
 		t.Errorf("loaded repo path = %q", loaded.Repos["labs"].Path)
 	}
 	if loaded.Docks["labs"].Repo != "labs" {
 		t.Errorf("loaded dock repo = %q", loaded.Docks["labs"].Repo)
+	}
+	if loaded.Docks["labs"].Terminal != "ghostty" {
+		t.Errorf("loaded dock terminal = %q", loaded.Docks["labs"].Terminal)
+	}
+	if loaded.Docks["labs"].Template != "default" {
+		t.Errorf("loaded dock template = %q", loaded.Docks["labs"].Template)
 	}
 }
 

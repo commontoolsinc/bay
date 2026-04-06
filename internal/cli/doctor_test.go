@@ -19,7 +19,7 @@ func TestMissingKeybindings(t *testing.T) {
 func TestCheckManifestConsistency(t *testing.T) {
 	cfg := &config.Config{
 		Agents: map[string]config.AgentConfig{
-			"claude": {Command: "claude", ConfigFile: "CLAUDE.local.md"},
+			"claude": {Command: "claude"},
 		},
 	}
 	m := manifest.New()
