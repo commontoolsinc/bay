@@ -107,8 +107,9 @@ func registerCompletions(root *cobra.Command) {
 		cmd.ValidArgsFunction = repoCompletionsFunc()
 	}
 
-	// bay go
-	if cmd := findCmd(root, "go"); cmd != nil {
+	// bay go (surface-scoped, no completions needed — surfaces are within workspace)
+	// bay ws go (workspace-scoped fuzzy match)
+	if cmd := findCmd(root, "ws go"); cmd != nil {
 		cmd.ValidArgsFunction = goCompl
 	}
 

@@ -60,7 +60,7 @@ func TestSurfaceSubcommands(t *testing.T) {
 		t.Fatalf("finding surface: %v", err)
 	}
 
-	expected := []string{"new", "close", "restart"}
+	expected := []string{"new", "close", "restart", "go", "next", "prev"}
 	found := map[string]bool{}
 	for _, cmd := range sf.Commands() {
 		found[cmd.Name()] = true
@@ -111,7 +111,7 @@ func TestWsSubcommands(t *testing.T) {
 		t.Fatalf("finding ws: %v", err)
 	}
 
-	expected := []string{"new", "close", "show", "update", "rename"}
+	expected := []string{"new", "close", "show", "update", "rename", "go", "next", "prev"}
 	found := map[string]bool{}
 	for _, cmd := range ws.Commands() {
 		found[cmd.Name()] = true
