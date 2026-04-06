@@ -510,9 +510,10 @@ workspaces as needed.
 
 - Phase 5c: bay repo init (bay awareness, .worktreeinclude) — PR #62
 
+- Phase 5e: setup/doctor updates (remove stale fields, add agent/repo checks) — PR #63
+
 **Next:**
 - Phase 5d: documentation rewrite
-- Phase 5e: setup/doctor updates
 - Phase 2: GUI integration (editor surfaces, dock host terminal)
 
 ## What's NOT in scope

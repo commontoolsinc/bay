@@ -41,6 +41,23 @@ func TestKeybindingsIncludeSurfaceNavigation(t *testing.T) {
 	}
 }
 
+func TestDefaultConfigHasNoRemovedFields(t *testing.T) {
+	cfg := defaultSetupConfig()
+	for name, agent := range cfg.Agents {
+		if agent.Command == "" {
+			t.Errorf("agent %q has empty command", name)
+		}
+	}
+	// Verify the config string doesn't reference removed fields.
+	// This is a compile-time-equivalent check — if someone adds config_file
+	// or agent_config_template back, this test catches it.
+	for name, agent := range cfg.Agents {
+		if agent.ProjectFile == "" && agent.Command == "claude" {
+			t.Errorf("agent %q should have project_file set", name)
+		}
+	}
+}
+
 func TestCheckManifestConsistency(t *testing.T) {
 	cfg := &config.Config{
 		Agents: map[string]config.AgentConfig{

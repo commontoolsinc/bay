@@ -23,7 +23,7 @@ func newSetupCmd() *cobra.Command {
 			configPath := p.ConfigFile
 
 			// Create directories
-			for _, dir := range []string{p.ConfigDir, p.DataDir, filepath.Join(p.ConfigDir, "templates")} {
+			for _, dir := range []string{p.ConfigDir, p.DataDir} {
 				if err := os.MkdirAll(dir, 0o755); err != nil {
 					return fmt.Errorf("creating directory %s: %w", dir, err)
 				}
@@ -80,34 +80,8 @@ func newSetupCmd() *cobra.Command {
 			}
 
 			if writeConfig {
-				defaultConfig := `# Bay configuration
-# See: bay doctor
-
-[agents.claude]
-command = "claude"
-config_file = "CLAUDE.local.md"
-
-[agents.codex]
-command = "codex"
-config_file = "AGENTS.local.md"
-
-[agents.gemini]
-command = "gemini"
-config_file = "GEMINI.local.md"
-
-# [repos.myproject]
-# path = "~/projects/myproject"
-# worktree_dir = "~/projects/myproject-worktrees"  # optional
-
-# [docks.dev]
-# repo = "myproject"
-# agent = "claude"
-# agent_config_template = "~/.config/bay/templates/dev.md"
-
-[monitor]
-interval_seconds = 3
-`
-				if err := os.WriteFile(configPath, []byte(defaultConfig), 0o644); err != nil {
+				cfg := defaultSetupConfig()
+				if err := config.Save(configPath, cfg); err != nil {
 					return fmt.Errorf("writing config: %w", err)
 				}
 				fmt.Printf("Config written to %s\n", configPath)
@@ -152,10 +126,26 @@ Do you want to proceed
 			configureEditor(reader, configPath)
 
 			fmt.Println("\nSetup complete. Next steps:")
-			fmt.Println("  1. Add a repo:  bay repo add <name> <path>")
-			fmt.Println("  2. Create a dock:  bay dock new <name> --repo <repo>")
+			fmt.Println("  Run bay ws new in any git repo to create your first workspace.")
+			fmt.Println("  Or add repos explicitly:  bay repo add <name> <path>")
 
 			return nil
+		},
+	}
+}
+
+// defaultSetupConfig returns the default config for new installations.
+func defaultSetupConfig() *config.Config {
+	return &config.Config{
+		Agents: map[string]config.AgentConfig{
+			"claude": {Command: "claude", ProjectFile: "CLAUDE.md"},
+			"codex":  {Command: "codex"},
+			"gemini": {Command: "gemini"},
+		},
+		Repos: map[string]config.RepoConfig{},
+		Docks: map[string]config.DockConfig{},
+		Monitor: config.MonitorConfig{
+			IntervalSeconds: 3,
 		},
 	}
 }
