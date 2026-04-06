@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 )
@@ -216,14 +217,65 @@ func LockedUpdate(path string, fn func(m *Manifest) error) error {
 		return err
 	}
 
+	// Backup existing file before overwriting.
+	if readErr == nil {
+		backupPath := path + ".bak"
+		if copyErr := copyFile(path, backupPath); copyErr != nil {
+			return fmt.Errorf("creating backup: %w", copyErr)
+		}
+	}
+
 	encoded, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encoding manifest: %w", err)
 	}
-	if err := os.WriteFile(path, encoded, 0o644); err != nil {
+
+	// Atomic write: write to temp, then rename.
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, encoded, 0o644); err != nil {
 		return fmt.Errorf("writing manifest: %w", err)
 	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("renaming manifest: %w", err)
+	}
 	return nil
+}
+
+// LoadArchive reads the archive file.
+func LoadArchive(path string) (*Manifest, error) {
+	return Load(path)
+}
+
+// SaveArchive writes the archive file with locking.
+func SaveArchive(path string, m *Manifest) error {
+	return Save(path, m)
+}
+
+// AllWorkspaces returns all workspaces across all docks, sorted by dock then workspace name.
+func AllWorkspaces(m *Manifest) []WorkspaceRef {
+	var refs []WorkspaceRef
+	for i := range m.Docks {
+		dock := &m.Docks[i]
+		for j := range dock.Workspaces {
+			refs = append(refs, WorkspaceRef{
+				Dock:      dock.Name,
+				Workspace: &dock.Workspaces[j],
+			})
+		}
+	}
+	sort.Slice(refs, func(i, j int) bool {
+		if refs[i].Dock != refs[j].Dock {
+			return refs[i].Dock < refs[j].Dock
+		}
+		return refs[i].Workspace.Name < refs[j].Workspace.Name
+	})
+	return refs
+}
+
+// WorkspaceRef is a reference to a workspace within its dock.
+type WorkspaceRef struct {
+	Dock      string
+	Workspace *Workspace
 }
 
 // --- Dock operations ---
@@ -394,6 +446,35 @@ func (m *Manifest) ResolveWorkspace(query string) (*Workspace, *Dock, error) {
 		}
 		return nil, nil, fmt.Errorf("workspace %q is ambiguous; found in docks: %s", query, strings.Join(docks, ", "))
 	}
+}
+
+// --- Validation ---
+
+// Validate checks the manifest for structural errors.
+func (s *Surface) Validate() []string {
+	var errs []string
+	if s.Backend == SurfaceBackendTmux && s.Tmux == nil {
+		errs = append(errs, fmt.Sprintf("surface %q: backend is %q but tmux attrs is nil", s.Name, s.Backend))
+	}
+	if s.Backend == SurfaceBackendGUI && s.GUI == nil {
+		errs = append(errs, fmt.Sprintf("surface %q: backend is %q but gui attrs is nil", s.Name, s.Backend))
+	}
+	if s.Tmux != nil && s.GUI != nil {
+		errs = append(errs, fmt.Sprintf("surface %q: both tmux and gui attrs are set", s.Name))
+	}
+	if s.Type == SurfaceTypeAgent && s.Agent == nil {
+		errs = append(errs, fmt.Sprintf("surface %q: type is %q but agent is nil", s.Name, s.Type))
+	}
+	if s.Type == SurfaceTypeCmd && s.Command == nil {
+		errs = append(errs, fmt.Sprintf("surface %q: type is %q but command is nil", s.Name, s.Type))
+	}
+	if s.Type != SurfaceTypeAgent && s.Agent != nil {
+		errs = append(errs, fmt.Sprintf("surface %q: type is %q but agent is set", s.Name, s.Type))
+	}
+	if s.Type != SurfaceTypeCmd && s.Command != nil {
+		errs = append(errs, fmt.Sprintf("surface %q: type is %q but command is set", s.Name, s.Type))
+	}
+	return errs
 }
 
 // --- Private helpers ---

@@ -665,6 +665,149 @@ func TestResolveWorkspace_NotFound(t *testing.T) {
 	}
 }
 
+// --- AllWorkspaces ---
+
+func TestAllWorkspaces(t *testing.T) {
+	m := &Manifest{
+		Docks: []Dock{
+			{Name: "research", Workspaces: []Workspace{{Name: "beta"}, {Name: "alpha"}}},
+			{Name: "labs", Workspaces: []Workspace{{Name: "ws1"}}},
+		},
+	}
+
+	refs := AllWorkspaces(m)
+	if len(refs) != 3 {
+		t.Fatalf("AllWorkspaces length = %d, want 3", len(refs))
+	}
+	// Sorted by dock then workspace name
+	if refs[0].Dock != "labs" || refs[0].Workspace.Name != "ws1" {
+		t.Errorf("refs[0] = %q/%q", refs[0].Dock, refs[0].Workspace.Name)
+	}
+	if refs[1].Dock != "research" || refs[1].Workspace.Name != "alpha" {
+		t.Errorf("refs[1] = %q/%q", refs[1].Dock, refs[1].Workspace.Name)
+	}
+	if refs[2].Dock != "research" || refs[2].Workspace.Name != "beta" {
+		t.Errorf("refs[2] = %q/%q", refs[2].Dock, refs[2].Workspace.Name)
+	}
+}
+
+func TestAllWorkspaces_ReturnsMutablePointers(t *testing.T) {
+	m := &Manifest{
+		Docks: []Dock{
+			{Name: "labs", Workspaces: []Workspace{{Name: "ws1", Status: WorkspaceStatusIdle}}},
+		},
+	}
+
+	refs := AllWorkspaces(m)
+	refs[0].Workspace.Status = WorkspaceStatusActive
+
+	if m.Docks[0].Workspaces[0].Status != WorkspaceStatusActive {
+		t.Error("mutation through AllWorkspaces pointer did not affect manifest")
+	}
+}
+
+// --- LockedUpdate atomic write ---
+
+func TestLockedUpdate_AtomicWrite(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "manifest.json")
+
+	// First update — no backup expected
+	err := LockedUpdate(path, func(m *Manifest) error {
+		m.Docks = append(m.Docks, Dock{Name: "first"})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	backup := path + ".bak"
+	if _, err := os.Stat(backup); !os.IsNotExist(err) {
+		t.Error("backup should not exist after first LockedUpdate")
+	}
+
+	// Second update — backup should be created
+	err = LockedUpdate(path, func(m *Manifest) error {
+		m.Docks[0].Name = "second"
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(backup); err != nil {
+		t.Error("backup should exist after second LockedUpdate")
+	}
+
+	// Verify the temp file was cleaned up
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Error("temp file should not exist after LockedUpdate")
+	}
+}
+
+// --- Validation ---
+
+func TestSurface_Validate_Valid(t *testing.T) {
+	agent := "claude-code"
+	s := Surface{
+		Name:    "agent",
+		Type:    SurfaceTypeAgent,
+		Backend: SurfaceBackendTmux,
+		Agent:   &agent,
+		Tmux:    &TmuxAttrs{LayoutGroup: 1},
+	}
+	if errs := s.Validate(); len(errs) != 0 {
+		t.Errorf("expected no errors, got %v", errs)
+	}
+}
+
+func TestSurface_Validate_MissingTmuxAttrs(t *testing.T) {
+	s := Surface{Name: "shell", Type: SurfaceTypeShell, Backend: SurfaceBackendTmux}
+	errs := s.Validate()
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %v", errs)
+	}
+}
+
+func TestSurface_Validate_MissingGUIAttrs(t *testing.T) {
+	s := Surface{Name: "editor", Type: SurfaceTypeEditor, Backend: SurfaceBackendGUI}
+	errs := s.Validate()
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %v", errs)
+	}
+}
+
+func TestSurface_Validate_BothBackendAttrs(t *testing.T) {
+	s := Surface{
+		Name:    "bad",
+		Type:    SurfaceTypeShell,
+		Backend: SurfaceBackendTmux,
+		Tmux:    &TmuxAttrs{},
+		GUI:     &GUIAttrs{AppCommand: "cursor"},
+	}
+	errs := s.Validate()
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %v", errs)
+	}
+}
+
+func TestSurface_Validate_AgentMissing(t *testing.T) {
+	s := Surface{Name: "agent", Type: SurfaceTypeAgent, Backend: SurfaceBackendTmux, Tmux: &TmuxAttrs{}}
+	errs := s.Validate()
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %v", errs)
+	}
+}
+
+func TestSurface_Validate_AgentOnWrongType(t *testing.T) {
+	agent := "claude"
+	s := Surface{Name: "shell", Type: SurfaceTypeShell, Backend: SurfaceBackendTmux, Tmux: &TmuxAttrs{}, Agent: &agent}
+	errs := s.Validate()
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %v", errs)
+	}
+}
+
 func TestResolveWorkspace_DockColonNotFound(t *testing.T) {
 	m := &Manifest{
 		Docks: []Dock{{Name: "labs", Workspaces: []Workspace{{Name: "auth-fix"}}}},
