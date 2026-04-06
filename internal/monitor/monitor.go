@@ -93,26 +93,27 @@ func (m *Monitor) CheckOnce() error {
 	// Collect the set of windows we visit this cycle, so we can clear stale entries.
 	visited := make(map[string]bool)
 
-	for _, dock := range mf.Docks {
-		for _, ws := range dock.Workspaces {
-			for _, win := range ws.Windows {
-				if win.TmuxWindowID == "" {
+	for i := range mf.Docks {
+		dock := &mf.Docks[i]
+		for j := range dock.Workspaces {
+			ws := &dock.Workspaces[j]
+			for _, s := range ws.Surfaces {
+				if s.Tmux == nil || s.Tmux.WindowID == "" {
 					continue
 				}
-				if !hasAgentOrCmdPane(win) {
+				if !hasMonitorableSurface(s) {
 					continue
 				}
 
-				visited[win.TmuxWindowID] = true
-				waiting := m.checkWindow(win.TmuxWindowID, patterns)
+				visited[s.Tmux.WindowID] = true
+				waiting := m.checkWindow(s.Tmux.WindowID, patterns)
 
 				if waiting {
-					if err := m.setHighlight(win.TmuxWindowID); err != nil {
-						// Non-fatal; window may have been closed.
+					if err := m.setHighlight(s.Tmux.WindowID); err != nil {
 						continue
 					}
 				} else {
-					if err := m.clearHighlight(win.TmuxWindowID); err != nil {
+					if err := m.clearHighlight(s.Tmux.WindowID); err != nil {
 						continue
 					}
 				}
@@ -130,14 +131,9 @@ func (m *Monitor) CheckOnce() error {
 	return nil
 }
 
-// hasAgentOrCmdPane returns true if the manifest window has at least one agent or cmd pane.
-func hasAgentOrCmdPane(win manifest.Window) bool {
-	for _, p := range win.Panes {
-		if p.Type == manifest.PaneTypeAgent || p.Type == manifest.PaneTypeCmd {
-			return true
-		}
-	}
-	return false
+// hasMonitorableSurface returns true if the surface is an agent or cmd that should be monitored.
+func hasMonitorableSurface(s manifest.Surface) bool {
+	return s.Type == manifest.SurfaceTypeAgent || s.Type == manifest.SurfaceTypeCmd
 }
 
 // checkWindow captures all panes in a tmux window and returns true if any match a pattern.

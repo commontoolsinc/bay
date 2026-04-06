@@ -8,46 +8,6 @@ import (
 	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
-// configuredWorkspaceAgent returns the configured workspace agent:
-// a workspace-specific override when present, otherwise the dock default.
-func configuredWorkspaceAgent(ws *manifest.Workspace, dockAgent string) string {
-	if ws.AgentOverride != "" {
-		return ws.AgentOverride
-	}
-	return dockAgent
-}
-
-// collectWorkspaceAgents returns all unique agent names used across a workspace's panes,
-// falling back to the dock default if none found.
-func collectWorkspaceAgents(ws *manifest.Workspace, dockAgent string) map[string]bool {
-	agents := map[string]bool{}
-	for _, win := range ws.Windows {
-		for _, pane := range win.Panes {
-			if pane.Type == manifest.PaneTypeAgent && pane.Agent != "" {
-				agents[pane.Agent] = true
-			}
-		}
-	}
-	if len(agents) == 0 && dockAgent != "" {
-		agents[dockAgent] = true
-	}
-	return agents
-}
-
-// updateWindowNames sets each window's Name in the manifest and renames in tmux.
-func (e *Engine) updateWindowNames(ws *manifest.Workspace, displayName string) {
-	for i := range ws.Windows {
-		winName := displayName
-		if ws.Windows[i].ID > 1 {
-			winName = fmt.Sprintf("%s:%d", displayName, ws.Windows[i].ID)
-		}
-		ws.Windows[i].Name = winName
-		if ws.Windows[i].TmuxWindowID != "" {
-			_ = e.Tmux.RenameWindow(ws.Windows[i].TmuxWindowID, winName)
-		}
-	}
-}
-
 // DockInfo holds summary information about a dock.
 type DockInfo struct {
 	Name       string          `json:"name"`
@@ -56,42 +16,32 @@ type DockInfo struct {
 	Workspaces []WorkspaceInfo `json:"workspaces"`
 }
 
-// WindowInfo holds runtime information about a tracked tmux window.
-type WindowInfo struct {
-	ID           int        `json:"id"`
-	Name         string     `json:"name"`
-	TmuxWindowID string     `json:"tmux_window_id,omitempty"`
-	Status       string     `json:"status"`
-	Panes        []PaneInfo `json:"panes,omitempty"`
-}
-
-// PaneInfo holds runtime information about a tracked tmux pane.
-type PaneInfo struct {
-	ID         int    `json:"id"`
-	TmuxPaneID string `json:"tmux_pane_id,omitempty"`
-	Type       string `json:"type"`
-	Agent      string `json:"agent,omitempty"`
-	Command    string `json:"command,omitempty"`
-	Status     string `json:"status"`
+// SurfaceInfo holds runtime information about a tracked surface.
+type SurfaceInfo struct {
+	ID      int    `json:"id"`
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Backend string `json:"backend"`
+	Agent   string `json:"agent,omitempty"`
+	Command string `json:"command,omitempty"`
+	Status  string `json:"status"`
 }
 
 // WorkspaceInfo holds summary information about a workspace.
 type WorkspaceInfo struct {
-	ID           string       `json:"id"`
-	Name         string       `json:"name"`
-	Type         string       `json:"type"`
-	Path         string       `json:"path,omitempty"`
-	Branch       string       `json:"branch,omitempty"`
-	PR           string       `json:"pr,omitempty"`
-	Status       string       `json:"status"`
-	Waiting      bool         `json:"waiting,omitempty"`
-	Missing      bool         `json:"missing,omitempty"`
-	Stale        bool         `json:"stale,omitempty"`
-	Agent        string       `json:"agent,omitempty"`
-	DefaultAgent string       `json:"default_agent,omitempty"`
-	SyncStatus   string       `json:"sync_status"`
-	WindowCount  int          `json:"window_count"`
-	Windows      []WindowInfo `json:"windows,omitempty"`
+	Name         string        `json:"name"`
+	Type         string        `json:"type"`
+	Path         string        `json:"path,omitempty"`
+	Branch       string        `json:"branch,omitempty"`
+	PR           string        `json:"pr,omitempty"`
+	Status       string        `json:"status"`
+	Waiting      bool          `json:"waiting,omitempty"`
+	Missing      bool          `json:"missing,omitempty"`
+	Stale        bool          `json:"stale,omitempty"`
+	DefaultAgent string        `json:"default_agent,omitempty"`
+	SyncStatus   string        `json:"sync_status"`
+	SurfaceCount int           `json:"surface_count"`
+	Surfaces     []SurfaceInfo `json:"surfaces,omitempty"`
 }
 
 // DockNew creates a new dock configuration and tmux session.
@@ -103,7 +53,6 @@ func (e *Engine) DockNew(name, repo, agent, template string) error {
 		return fmt.Errorf("dock %q already exists", name)
 	}
 
-	// Validate references
 	if repo != "" {
 		if _, ok := e.Config.Repos[repo]; !ok {
 			return fmt.Errorf("unknown repo %q", repo)
@@ -115,7 +64,6 @@ func (e *Engine) DockNew(name, repo, agent, template string) error {
 		}
 	}
 
-	// Check tmux session doesn't already exist
 	exists, err := e.Tmux.HasSession(name)
 	if err != nil {
 		return fmt.Errorf("checking tmux session: %w", err)
@@ -124,16 +72,13 @@ func (e *Engine) DockNew(name, repo, agent, template string) error {
 		return fmt.Errorf("tmux session %q already exists and is not a bay dock", name)
 	}
 
-	// Create tmux session (default window is tagged as placeholder)
 	if err := e.ensureSession(name); err != nil {
 		return err
 	}
 
-	// Add dock to config and save to disk
 	e.Config.Docks[name] = config.DockConfig{
-		Repo:                repo,
-		Agent:               agent,
-		AgentConfigTemplate: template,
+		Repo:  repo,
+		Agent: agent,
 	}
 	if e.configPath != "" {
 		if err := config.Save(e.configPath, e.Config); err != nil {
@@ -141,38 +86,31 @@ func (e *Engine) DockNew(name, repo, agent, template string) error {
 		}
 	}
 
-	// Initialize dock in manifest
 	return e.withManifest(func(m *manifest.Manifest) error {
-		if m.Docks == nil {
-			m.Docks = make(map[string]*manifest.DockState)
-		}
-		if _, exists := m.Docks[name]; !exists {
-			m.Docks[name] = &manifest.DockState{
-				Workspaces: make(map[string]*manifest.Workspace),
-			}
+		if m.FindDock(name) == nil {
+			return m.AddDock(manifest.Dock{Name: name})
 		}
 		return nil
 	})
 }
 
-// DockCloseWorkspaces closes all workspaces in a dock but does not
-// kill the tmux session. Used by RepoRemove which needs to save
-// config before killing sessions.
+// DockCloseWorkspaces closes all workspaces in a dock.
 func (e *Engine) DockCloseWorkspaces(name string, force bool) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return
 	}
-	dockState, ok := m.Docks[name]
-	if !ok {
+	dock := m.FindDock(name)
+	if dock == nil {
 		return
 	}
-	var wsIDs []string
-	for wsID := range dockState.Workspaces {
-		wsIDs = append(wsIDs, wsID)
+	// Collect names first to avoid modifying slice during iteration.
+	var names []string
+	for _, ws := range dock.Workspaces {
+		names = append(names, ws.Name)
 	}
-	for _, wsID := range wsIDs {
-		_ = e.WsClose(name, wsID, force)
+	for _, wsName := range names {
+		_ = e.WsClose(name, wsName, force)
 	}
 }
 
@@ -183,34 +121,29 @@ func (e *Engine) DockClose(name string, force bool) error {
 		return err
 	}
 
-	dockState, ok := m.Docks[name]
-	if !ok {
+	dock := m.FindDock(name)
+	if dock == nil {
 		return fmt.Errorf("unknown dock %q", name)
 	}
 
-	// Collect workspace IDs first to avoid stale-map iteration
-	var wsIDs []string
-	for wsID := range dockState.Workspaces {
-		wsIDs = append(wsIDs, wsID)
+	var names []string
+	for _, ws := range dock.Workspaces {
+		names = append(names, ws.Name)
 	}
 
-	// Close each workspace
-	for _, wsID := range wsIDs {
-		if err := e.WsClose(name, wsID, force); err != nil {
+	for _, wsName := range names {
+		if err := e.WsClose(name, wsName, force); err != nil {
 			if !force {
-				return fmt.Errorf("workspace %s: %w", wsID, err)
+				return fmt.Errorf("workspace %q: %w", wsName, err)
 			}
 		}
 	}
 
-	// Kill the tmux session (placeholders and all)
 	_ = e.Tmux.KillSession(name)
-
 	return nil
 }
 
-// List returns all workspaces across all docks with waiting status.
-// Syncs git state (branches) before building the output.
+// List returns all docks and workspaces with runtime status.
 func (e *Engine) List() ([]DockInfo, error) {
 	e.SyncAll()
 
@@ -220,98 +153,74 @@ func (e *Engine) List() ([]DockInfo, error) {
 	}
 
 	var docks []DockInfo
-	for name, dockCfg := range e.Config.Docks {
+	for cfgName, dockCfg := range e.Config.Docks {
 		info := DockInfo{
-			Name:  name,
+			Name:  cfgName,
 			Agent: dockCfg.Agent,
 			Repo:  dockCfg.Repo,
 		}
-		if ds, ok := m.Docks[name]; ok {
-			for id, ws := range ds.Workspaces {
+
+		dock := m.FindDock(cfgName)
+		if dock != nil {
+			for i := range dock.Workspaces {
+				ws := &dock.Workspaces[i]
 				wsPath := config.ExpandPath(ws.Path)
 				_, statErr := os.Stat(wsPath)
+
+				branch := ""
+				pr := ""
+				if ws.Worktree != nil {
+					branch = ws.Worktree.Branch
+					pr = ws.Worktree.PR
+				}
+
 				wsInfo := WorkspaceInfo{
-					ID:           id,
 					Name:         ws.Name,
 					Type:         string(ws.Type),
 					Path:         ws.Path,
-					Branch:       ws.Branch,
-					PR:           ws.PR,
+					Branch:       branch,
+					PR:           pr,
 					Status:       string(ws.Status),
 					Missing:      ws.Path != "" && statErr != nil,
-					Agent:        configuredWorkspaceAgent(ws, dockCfg.Agent),
-					DefaultAgent: configuredWorkspaceAgent(ws, dockCfg.Agent),
+					DefaultAgent: dockCfg.Agent,
 					SyncStatus:   "ok",
-					WindowCount:  len(ws.Windows),
+					SurfaceCount: len(ws.Surfaces),
 				}
 
 				if wsInfo.Missing {
 					wsInfo.SyncStatus = "missing"
 				}
 
-				for _, win := range ws.Windows {
-					winInfo := WindowInfo{
-						ID:           win.ID,
-						Name:         win.Name,
-						TmuxWindowID: win.TmuxWindowID,
-						Status:       "ok",
+				for _, s := range ws.Surfaces {
+					sInfo := SurfaceInfo{
+						ID:      s.ID,
+						Name:    s.Name,
+						Type:    string(s.Type),
+						Backend: string(s.Backend),
+						Status:  "ok",
+					}
+					if s.Agent != nil {
+						sInfo.Agent = *s.Agent
+					}
+					if s.Command != nil {
+						sInfo.Command = *s.Command
 					}
 
-					var livePaneIDs map[string]bool
-					if win.TmuxWindowID != "" {
-						exists, _ := e.Tmux.WindowExists(win.TmuxWindowID)
+					// Check liveness for tmux surfaces.
+					if s.Tmux != nil && s.Tmux.WindowID != "" {
+						exists, _ := e.Tmux.WindowExists(s.Tmux.WindowID)
 						if !exists {
-							winInfo.Status = "stale"
+							sInfo.Status = "stale"
 							wsInfo.Stale = true
 						} else {
-							tmuxPanes, err := e.Tmux.ListPanes(win.TmuxWindowID)
-							if err == nil {
-								livePaneIDs = make(map[string]bool, len(tmuxPanes))
-								for _, tmuxPane := range tmuxPanes {
-									livePaneIDs[tmuxPane.ID] = true
-								}
-							}
-							val, err := e.Tmux.GetWindowOption(win.TmuxWindowID, "@bay-waiting")
+							val, err := e.Tmux.GetWindowOption(s.Tmux.WindowID, "@bay-waiting")
 							if err == nil && val == "1" {
 								wsInfo.Waiting = true
 							}
 						}
 					}
 
-					for paneIdx, pane := range win.Panes {
-						paneInfo := PaneInfo{
-							ID:         pane.ID,
-							TmuxPaneID: pane.TmuxPaneID,
-							Type:       string(pane.Type),
-							Agent:      pane.Agent,
-							Command:    pane.Command,
-							Status:     "ok",
-						}
-
-						if winInfo.Status == "stale" {
-							paneInfo.Status = "stale"
-						} else if paneInfo.TmuxPaneID != "" {
-							if livePaneIDs != nil && !livePaneIDs[paneInfo.TmuxPaneID] {
-								paneInfo.Status = "stale"
-								winInfo.Status = "stale"
-								wsInfo.Stale = true
-							}
-						} else if win.TmuxWindowID != "" {
-							tmuxPanes, err := e.Tmux.ListPanes(win.TmuxWindowID)
-							if err == nil && paneIdx >= len(tmuxPanes) {
-								paneInfo.Status = "stale"
-								winInfo.Status = "stale"
-								wsInfo.Stale = true
-							}
-						}
-
-						winInfo.Panes = append(winInfo.Panes, paneInfo)
-					}
-
-					if winInfo.Status == "stale" {
-						wsInfo.Stale = true
-					}
-					wsInfo.Windows = append(wsInfo.Windows, winInfo)
+					wsInfo.Surfaces = append(wsInfo.Surfaces, sInfo)
 				}
 
 				if wsInfo.Missing {
@@ -328,8 +237,8 @@ func (e *Engine) List() ([]DockInfo, error) {
 	return docks, nil
 }
 
-// WorkspaceInfo returns the tree/runtime view for a single workspace.
-func (e *Engine) WorkspaceInfo(dockName, wsID string) (*WorkspaceInfo, error) {
+// WorkspaceInfo returns the runtime view for a single workspace.
+func (e *Engine) WorkspaceInfoByName(dockName, wsName string) (*WorkspaceInfo, error) {
 	docks, err := e.List()
 	if err != nil {
 		return nil, err
@@ -338,12 +247,12 @@ func (e *Engine) WorkspaceInfo(dockName, wsID string) (*WorkspaceInfo, error) {
 		if dock.Name != dockName {
 			continue
 		}
-		for _, ws := range dock.Workspaces {
-			if ws.ID == wsID {
-				return &ws, nil
+		for i := range dock.Workspaces {
+			if dock.Workspaces[i].Name == wsName {
+				return &dock.Workspaces[i], nil
 			}
 		}
-		return nil, fmt.Errorf("workspace %s not found in dock %s", wsID, dockName)
+		return nil, fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
 	}
 	return nil, fmt.Errorf("unknown dock %q", dockName)
 }

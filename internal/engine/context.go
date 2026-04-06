@@ -11,14 +11,12 @@ import (
 
 // Context describes the current Bay location resolved from cwd and tmux.
 type Context struct {
-	Repo        string `json:"repo,omitempty"`
-	Dock        string `json:"dock,omitempty"`
-	WorkspaceID string `json:"workspace_id,omitempty"`
-	Workspace   string `json:"workspace,omitempty"`
-	Window      string `json:"window,omitempty"`
-	WindowID    int    `json:"window_id,omitempty"`
-	PaneID      int    `json:"pane_id,omitempty"`
-	Path        string `json:"path,omitempty"`
+	Repo      string `json:"repo,omitempty"`
+	Dock      string `json:"dock,omitempty"`
+	Workspace string `json:"workspace,omitempty"`
+	Surface   string `json:"surface,omitempty"`
+	SurfaceID int    `json:"surface_id,omitempty"`
+	Path      string `json:"path,omitempty"`
 }
 
 // CurrentContext resolves the current Bay context from cwd and tmux state.
@@ -44,30 +42,29 @@ func (e *Engine) CurrentContext() (*Context, error) {
 	currentWindowID, _ := e.Tmux.CurrentWindowID()
 	currentPaneID, _ := e.Tmux.CurrentPaneID()
 
-	for dockName, dockState := range m.Docks {
-		for wsID, ws := range dockState.Workspaces {
+	// Try matching CWD against workspace paths.
+	for i := range m.Docks {
+		dock := &m.Docks[i]
+		for j := range dock.Workspaces {
+			ws := &dock.Workspaces[j]
 			wsPath := config.ExpandPath(ws.Path)
 			if resolved, err := filepath.EvalSymlinks(wsPath); err == nil {
 				wsPath = resolved
 			}
 			if cwd != "" && (cwd == wsPath || strings.HasPrefix(cwd, wsPath+"/")) {
-				ctx.Dock = dockName
-				ctx.WorkspaceID = wsID
+				ctx.Dock = dock.Name
 				ctx.Workspace = ws.Name
-				ctx.Repo = ws.Repo
-				if ctx.Repo == "" {
-					ctx.Repo = e.Config.Docks[dockName].Repo
+				if ws.Worktree != nil {
+					ctx.Repo = ws.Worktree.Repo
 				}
-				for _, win := range ws.Windows {
-					if win.TmuxWindowID == currentWindowID {
-						ctx.Window = win.Name
-						ctx.WindowID = win.ID
-						for _, pane := range win.Panes {
-							if pane.TmuxPaneID == currentPaneID {
-								ctx.PaneID = pane.ID
-								break
-							}
-						}
+				if ctx.Repo == "" {
+					ctx.Repo = e.Config.Docks[dock.Name].Repo
+				}
+				// Find current surface from tmux pane.
+				for _, s := range ws.Surfaces {
+					if s.Tmux != nil && s.Tmux.PaneID == currentPaneID {
+						ctx.Surface = s.Name
+						ctx.SurfaceID = s.ID
 						break
 					}
 				}
@@ -76,28 +73,31 @@ func (e *Engine) CurrentContext() (*Context, error) {
 		}
 	}
 
+	// Fallback: match current tmux window/pane against surfaces.
 	if currentWindowID != "" {
-		for dockName, dockState := range m.Docks {
-			for wsID, ws := range dockState.Workspaces {
-				for _, win := range ws.Windows {
-					if win.TmuxWindowID != currentWindowID {
+		for i := range m.Docks {
+			dock := &m.Docks[i]
+			for j := range dock.Workspaces {
+				ws := &dock.Workspaces[j]
+				for _, s := range ws.Surfaces {
+					if s.Tmux == nil {
 						continue
 					}
-					ctx.Dock = dockName
-					ctx.WorkspaceID = wsID
-					ctx.Workspace = ws.Name
-					ctx.Window = win.Name
-					ctx.WindowID = win.ID
-					ctx.Repo = ws.Repo
-					if ctx.Repo == "" {
-						ctx.Repo = e.Config.Docks[dockName].Repo
+					if s.Tmux.WindowID != currentWindowID {
+						continue
 					}
+					ctx.Dock = dock.Name
+					ctx.Workspace = ws.Name
 					ctx.Path = config.ExpandPath(ws.Path)
-					for _, pane := range win.Panes {
-						if pane.TmuxPaneID == currentPaneID {
-							ctx.PaneID = pane.ID
-							break
-						}
+					if ws.Worktree != nil {
+						ctx.Repo = ws.Worktree.Repo
+					}
+					if ctx.Repo == "" {
+						ctx.Repo = e.Config.Docks[dock.Name].Repo
+					}
+					if s.Tmux.PaneID == currentPaneID {
+						ctx.Surface = s.Name
+						ctx.SurfaceID = s.ID
 					}
 					return ctx, nil
 				}
@@ -105,6 +105,7 @@ func (e *Engine) CurrentContext() (*Context, error) {
 		}
 	}
 
+	// Fallback: match tmux session to a dock.
 	if currentSession != "" {
 		if dockCfg, ok := e.Config.Docks[currentSession]; ok {
 			ctx.Dock = currentSession
@@ -113,6 +114,7 @@ func (e *Engine) CurrentContext() (*Context, error) {
 		}
 	}
 
+	// Fallback: match CWD to a repo.
 	for repoName, repoCfg := range e.Config.Repos {
 		repoPath := config.ExpandPath(repoCfg.Path)
 		if resolved, err := filepath.EvalSymlinks(repoPath); err == nil {

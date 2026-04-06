@@ -127,7 +127,7 @@ func (e *Engine) RepoRemove(name string, force bool) error {
 	if len(affectedDockNames) > 0 {
 		if err := e.withManifest(func(m *manifest.Manifest) error {
 			for _, dockName := range affectedDockNames {
-				delete(m.Docks, dockName)
+				_ = m.RemoveDock(dockName)
 			}
 			return nil
 		}); err != nil {
