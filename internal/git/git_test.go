@@ -237,6 +237,25 @@ func TestMock_CreateBranch(t *testing.T) {
 	}
 }
 
+func TestMock_RepoRoot(t *testing.T) {
+	m := NewMock()
+	m.SetRepoRoot("/projects/myrepo/src", "/projects/myrepo")
+
+	root, err := m.RepoRoot("/projects/myrepo/src")
+	if err != nil {
+		t.Fatalf("RepoRoot: %v", err)
+	}
+	if root != "/projects/myrepo" {
+		t.Errorf("root = %q, want /projects/myrepo", root)
+	}
+
+	// Unknown path returns error.
+	_, err = m.RepoRoot("/unknown")
+	if err == nil {
+		t.Error("expected error for unknown path")
+	}
+}
+
 func TestMock_CreateWorktree_DuplicateError(t *testing.T) {
 	m := NewMock()
 	m.SetDefaultBranch("/repo", "main")

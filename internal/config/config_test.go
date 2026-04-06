@@ -88,6 +88,19 @@ interval_seconds = 3
 
 }
 
+func TestDefaultConfig_HasInitializedMaps(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Agents == nil {
+		t.Error("Agents map should be initialized")
+	}
+	if cfg.Repos == nil {
+		t.Error("Repos map should be initialized")
+	}
+	if cfg.Docks == nil {
+		t.Error("Docks map should be initialized")
+	}
+}
+
 func TestParse_EmptyConfig(t *testing.T) {
 	cfg, err := Parse("")
 	if err != nil {

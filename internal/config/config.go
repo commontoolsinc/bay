@@ -69,6 +69,15 @@ func (m MonitorConfig) EffectiveInterval() int {
 }
 
 
+// DefaultConfig returns an empty config with initialized maps.
+func DefaultConfig() *Config {
+	return &Config{
+		Agents: make(map[string]AgentConfig),
+		Repos:  make(map[string]RepoConfig),
+		Docks:  make(map[string]DockConfig),
+	}
+}
+
 // DefaultConfigDir returns the default config directory.
 func DefaultConfigDir() string {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {

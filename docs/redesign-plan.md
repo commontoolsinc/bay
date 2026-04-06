@@ -506,8 +506,10 @@ workspaces as needed.
 
 - Phase 4a: automatic PR detection via `gh pr view` during sync — PR #59
 
+- Phase 5a: zero-config (auto-bootstrap from CWD, agent probing) — PR #60
+
 **Next:**
-- Phase 5: zero-config, templates, docs rewrite
+- Phase 5b-e: templates, repo init, docs rewrite, setup/doctor updates
 - Phase 2: GUI integration (editor surfaces, dock host terminal)
 
 ## What's NOT in scope

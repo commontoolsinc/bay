@@ -6,6 +6,7 @@ type Interface interface {
 	// Repo operations
 	Clone(url string, destPath string) error
 	IsGitRepo(path string) bool
+	RepoRoot(path string) (string, error)
 
 	// Worktree operations
 	CreateWorktree(repoPath string, worktreePath string) error

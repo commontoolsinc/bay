@@ -32,6 +32,15 @@ func (r *Real) IsGitRepo(path string) bool {
 	return cmd.Run() == nil
 }
 
+func (r *Real) RepoRoot(path string) (string, error) {
+	cmd := exec.Command("git", "-C", path, "rev-parse", "--show-toplevel")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("not a git repository: %s", path)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 func (r *Real) CreateWorktree(repoPath, worktreePath string) error {
 	branch, err := r.DefaultBranch(repoPath)
 	if err != nil {
