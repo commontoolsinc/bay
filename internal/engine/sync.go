@@ -2,6 +2,7 @@ package engine
 
 import (
 	"os"
+	"syscall"
 
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/manifest"
@@ -58,7 +59,7 @@ func (e *Engine) SyncAll() {
 			if e.syncWorkspaceGitState(ws) {
 				changed = true
 			}
-			if e.syncSurfaceTmuxState(ws) {
+			if e.syncSurfaceState(ws) {
 				changed = true
 			}
 		}
@@ -69,22 +70,37 @@ func (e *Engine) SyncAll() {
 	}
 }
 
-// syncSurfaceTmuxState removes surfaces whose tmux windows no longer exist.
-func (e *Engine) syncSurfaceTmuxState(ws *manifest.Workspace) bool {
+// syncSurfaceState removes dead surfaces — tmux surfaces whose windows
+// no longer exist, and GUI surfaces whose processes have exited.
+func (e *Engine) syncSurfaceState(ws *manifest.Workspace) bool {
 	changed := false
 	var live []manifest.Surface
 
 	for _, s := range ws.Surfaces {
-		if s.Tmux == nil || s.Tmux.WindowID == "" {
-			live = append(live, s)
-			continue
-		}
+		switch {
+		case s.Tmux != nil && s.Tmux.WindowID != "":
+			exists, _ := e.Tmux.WindowExists(s.Tmux.WindowID)
+			if exists {
+				live = append(live, s)
+			} else {
+				changed = true
+			}
 
-		exists, _ := e.Tmux.WindowExists(s.Tmux.WindowID)
-		if exists {
-			live = append(live, s)
-		} else {
-			changed = true
+		case s.GUI != nil && s.GUI.PID > 0:
+			if processAlive(s.GUI.PID) {
+				live = append(live, s)
+			} else {
+				changed = true
+			}
+
+		default:
+			// No tmux window and no trackable PID — remove.
+			// This covers GUI surfaces with PID 0 (untracked).
+			if s.GUI != nil {
+				changed = true
+			} else {
+				live = append(live, s)
+			}
 		}
 	}
 
@@ -92,4 +108,13 @@ func (e *Engine) syncSurfaceTmuxState(ws *manifest.Workspace) bool {
 		ws.Surfaces = live
 	}
 	return changed
+}
+
+// processAlive checks if a process with the given PID is still running.
+func processAlive(pid int) bool {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return proc.Signal(syscall.Signal(0)) == nil
 }

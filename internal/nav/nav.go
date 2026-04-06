@@ -231,13 +231,14 @@ func FormatEntries(entries []Entry) string {
 
 // SurfaceEntry represents a navigable surface within a workspace.
 type SurfaceEntry struct {
-	ID       int
-	Name     string
-	Type     string // "agent", "editor", "shell", "cmd"
-	PaneID   string // tmux pane ID (empty for GUI surfaces)
-	WindowID string // tmux window ID
-	Waiting  bool
-	Current  bool // true if this is the currently focused surface
+	ID         int
+	Name       string
+	Type       string // "agent", "editor", "shell", "cmd"
+	PaneID     string // tmux pane ID (empty for GUI surfaces)
+	WindowID   string // tmux window ID
+	AppCommand string // GUI app launch command (empty for tmux surfaces)
+	Waiting    bool
+	Current    bool // true if this is the currently focused surface
 }
 
 // CollectSurfaces builds a list of surface entries for a workspace.
@@ -255,13 +256,15 @@ func CollectSurfaces(ws *manifest.Workspace, tc tmux.Interface, currentPaneID st
 			if e.PaneID == currentPaneID && currentPaneID != "" {
 				e.Current = true
 			}
-			// Check waiting status on the window.
 			if e.WindowID != "" {
 				val, err := tc.GetWindowOption(e.WindowID, "@bay-waiting")
 				if err == nil && val == "1" {
 					e.Waiting = true
 				}
 			}
+		}
+		if s.GUI != nil {
+			e.AppCommand = s.GUI.AppCommand
 		}
 		entries = append(entries, e)
 	}
