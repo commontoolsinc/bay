@@ -112,9 +112,6 @@ func newDockShowCmd() *cobra.Command {
 			if len(dock.AgentArgs) > 0 {
 				fmt.Printf("  agent_args: %s\n", strings.Join(dock.AgentArgs, " "))
 			}
-			if dock.Template != "" {
-				fmt.Printf("  template: %s\n", dock.Template)
-			}
 			if dock.Terminal != "" {
 				fmt.Printf("  terminal: %s\n", dock.Terminal)
 			}
