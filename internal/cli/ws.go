@@ -407,6 +407,7 @@ func newWsLsCmd() *cobra.Command {
 				Focus:     ListFocus{Kind: FocusDock, Repo: repo, Dock: currentSession},
 				Recursive: false,
 			})
+			view.SetCurrentContext(eng)
 
 			fmt.Print(FormatListView(view, false))
 			return nil
@@ -446,6 +447,7 @@ func newWsTreeCmd() *cobra.Command {
 				Focus:     ListFocus{Kind: FocusDock, Repo: repo, Dock: currentSession},
 				Recursive: true,
 			})
+			view.SetCurrentContext(eng)
 
 			fmt.Print(FormatListView(view, longOutput))
 			return nil

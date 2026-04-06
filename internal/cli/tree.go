@@ -27,6 +27,8 @@ func newTreeCmd() *cobra.Command {
 				Recursive: true,
 			})
 
+			view.SetCurrentContext(eng)
+
 			fmt.Print(FormatListView(view, longOutput))
 			return nil
 		},

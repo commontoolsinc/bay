@@ -37,9 +37,22 @@ type RepoInfo struct {
 }
 
 type ListView struct {
-	Focus     ListFocus  `json:"focus"`
-	Recursive bool       `json:"recursive"`
-	Repos     []RepoInfo `json:"repos"`
+	Focus        ListFocus  `json:"focus"`
+	Recursive    bool       `json:"recursive"`
+	Repos        []RepoInfo `json:"repos"`
+	CurrentDock  string     `json:"-"` // for highlighting; not serialized
+	CurrentWs    string     `json:"-"`
+}
+
+// SetCurrentContext populates the current dock/workspace for highlighting.
+func (v *ListView) SetCurrentContext(eng *engine.Engine) {
+	if session, err := eng.Tmux.CurrentSession(); err == nil {
+		v.CurrentDock = session
+	}
+	if dock, ws, err := eng.ResolveSelf(); err == nil {
+		v.CurrentDock = dock
+		v.CurrentWs = ws
+	}
 }
 
 type ListRow struct {
@@ -308,14 +321,22 @@ func FormatListView(view ListView, long bool) string {
 			continue
 		}
 		for _, dock := range repo.Docks {
-			writeIndentedLine(&b, 1, labelValue("dock", dock.Name), "")
+			dockMarker := ""
+			if dock.Name == view.CurrentDock {
+				dockMarker = " *"
+			}
+			writeIndentedLine(&b, 1, labelValue("dock", dock.Name+dockMarker), "")
 			if len(dock.Workspaces) == 0 {
 				writeIndentedLine(&b, 2, "(no workspaces)", "")
 				continue
 			}
 			showChildren := view.Recursive || view.Focus.Kind == FocusWorkspace
 			for _, ws := range dock.Workspaces {
-				writeIndentedLine(&b, 2, labelValue("workspace", ws.Name), workspaceMeta(ws, !showChildren))
+				wsName := ws.Name
+				if dock.Name == view.CurrentDock && ws.Name == view.CurrentWs {
+					wsName += " *"
+				}
+				writeIndentedLine(&b, 2, labelValue("workspace", wsName), workspaceMeta(ws, !showChildren))
 				if !showChildren {
 					continue
 				}
