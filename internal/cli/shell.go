@@ -14,9 +14,9 @@ func newShellCmd() *cobra.Command {
 		Short: "Open a shell surface for a workspace",
 		Long: `Open a shell for a workspace.
 
-  bay shell             split pane in current window
+  bay shell             split in current workspace
   bay shell auth-fix    new surface for that workspace
-  bay shell --window    new window for current workspace`,
+  bay shell --window    new tmux window for current workspace`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -48,7 +48,7 @@ func newShellCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVar(&window, "window", false, "open as new window instead of split pane")
+	cmd.Flags().BoolVar(&window, "window", false, "open as new tmux window instead of split")
 	cmd.Flags().StringVar(&name, "name", "", "surface name")
 
 	return cmd
