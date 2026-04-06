@@ -35,6 +35,30 @@ func TestFindCmd(t *testing.T) {
 	}
 }
 
+func TestGoCmd_HasNextWaitingFlag(t *testing.T) {
+	root := NewRootCmd("test")
+	cmd := findCmd(root, "go")
+	if cmd == nil {
+		t.Fatal("go command not found")
+	}
+	f := cmd.Flags().Lookup("next-waiting")
+	if f == nil {
+		t.Error("bay go missing --next-waiting flag")
+	}
+}
+
+func TestSurfaceGoCmd_HasNextWaitingFlag(t *testing.T) {
+	root := NewRootCmd("test")
+	cmd := findCmd(root, "surface go")
+	if cmd == nil {
+		t.Fatal("surface go command not found")
+	}
+	f := cmd.Flags().Lookup("next-waiting")
+	if f == nil {
+		t.Error("bay surface go missing --next-waiting flag")
+	}
+}
+
 func TestCompletionsRegistered(t *testing.T) {
 	root := NewRootCmd("test")
 

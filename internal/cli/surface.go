@@ -171,6 +171,7 @@ func newSurfaceRestartCmd() *cobra.Command {
 
 func newSurfaceGoCmd() *cobra.Command {
 	var index int
+	var nextWaiting bool
 
 	cmd := &cobra.Command{
 		Use:   "go [query]",
@@ -181,11 +182,12 @@ func newSurfaceGoCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return surfaceGo(eng, args, index)
+			return surfaceGo(eng, args, index, nextWaiting)
 		},
 	}
 
 	cmd.Flags().IntVar(&index, "index", 0, "jump to surface by 1-based index")
+	cmd.Flags().BoolVar(&nextWaiting, "next-waiting", false, "jump to next waiting surface")
 
 	return cmd
 }
@@ -219,7 +221,7 @@ func newSurfacePrevCmd() *cobra.Command {
 }
 
 // surfaceGo implements the surface picker / direct jump logic.
-func surfaceGo(eng *engine.Engine, args []string, index int) error {
+func surfaceGo(eng *engine.Engine, args []string, index int, nextWaiting bool) error {
 	dockName, wsName, err := eng.ResolveSelf()
 	if err != nil {
 		return fmt.Errorf("not in a bay workspace")
@@ -235,6 +237,26 @@ func surfaceGo(eng *engine.Engine, args []string, index int) error {
 
 	if len(entries) == 0 {
 		fmt.Println("No surfaces in this workspace.")
+		return nil
+	}
+
+	// Jump to next waiting surface.
+	if nextWaiting {
+		cur := -1
+		for i, e := range entries {
+			if e.Current {
+				cur = i
+				break
+			}
+		}
+		n := len(entries)
+		for offset := 1; offset <= n; offset++ {
+			idx := (cur + offset) % n
+			if entries[idx].Waiting {
+				return focusSurface(eng, &entries[idx])
+			}
+		}
+		fmt.Println("No waiting surfaces in this workspace.")
 		return nil
 	}
 

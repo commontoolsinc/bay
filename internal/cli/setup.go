@@ -216,10 +216,32 @@ var bayKeybindings = []struct {
 	desc     string
 	tmuxVerb string // "run-shell" or "display-popup -E" (for interactive commands)
 }{
-	{"M-w", "bay close-pane", "Option+w: close current pane (or window if only pane)", "run-shell"},
-	{"M-s", "bay shell", "Option+s: split a shell pane in the current workspace", "run-shell"},
-	{"M-g", "bay go", "Option+g: fuzzy-pick any workspace window", "display-popup -E"},
-	{"M-a", "bay go --next-waiting", "Option+a: jump to the next agent waiting for input", "run-shell"},
+	// Surface navigation (intra-workspace)
+	{"M-j", "bay surface next", "Option+j: next surface in workspace", "run-shell"},
+	{"M-k", "bay surface prev", "Option+k: prev surface in workspace", "run-shell"},
+	{"M-g", "bay go", "Option+g: pick surface in workspace", "display-popup -E"},
+	{"M-a", "bay go --next-waiting", "Option+a: next waiting surface", "run-shell"},
+
+	// Workspace navigation (intra-dock)
+	{"M-J", "bay ws next", "Option+J: next workspace in dock", "run-shell"},
+	{"M-K", "bay ws prev", "Option+K: prev workspace in dock", "run-shell"},
+	{"M-G", "bay ws go", "Option+G: pick workspace in dock", "display-popup -E"},
+	{"M-A", "bay ws go --next-waiting", "Option+A: next waiting workspace", "run-shell"},
+
+	// Surface by index
+	{"M-1", "bay go --index 1", "Option+1: surface 1", "run-shell"},
+	{"M-2", "bay go --index 2", "Option+2: surface 2", "run-shell"},
+	{"M-3", "bay go --index 3", "Option+3: surface 3", "run-shell"},
+	{"M-4", "bay go --index 4", "Option+4: surface 4", "run-shell"},
+	{"M-5", "bay go --index 5", "Option+5: surface 5", "run-shell"},
+	{"M-6", "bay go --index 6", "Option+6: surface 6", "run-shell"},
+	{"M-7", "bay go --index 7", "Option+7: surface 7", "run-shell"},
+	{"M-8", "bay go --index 8", "Option+8: surface 8", "run-shell"},
+	{"M-9", "bay go --index 9", "Option+9: surface 9", "run-shell"},
+
+	// Utility
+	{"M-w", "bay close-pane", "Option+w: close current pane", "run-shell"},
+	{"M-s", "bay shell", "Option+s: split a shell pane", "run-shell"},
 }
 
 func installKeybindings(reader *bufio.Reader) {

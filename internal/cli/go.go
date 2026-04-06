@@ -6,6 +6,7 @@ import (
 
 func newGoCmd() *cobra.Command {
 	var index int
+	var nextWaiting bool
 
 	cmd := &cobra.Command{
 		Use:   "go [query]",
@@ -13,20 +14,22 @@ func newGoCmd() *cobra.Command {
 		Long: `Fuzzy find and switch to a surface within the current workspace.
 This is an alias for "bay surface go".
 
-  bay go             pick from surfaces in current workspace
-  bay go shell       jump to the shell surface
-  bay go --index 2   jump to surface #2`,
+  bay go                  pick from surfaces in current workspace
+  bay go shell            jump to the shell surface
+  bay go --index 2        jump to surface #2
+  bay go --next-waiting   jump to next waiting surface`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
 				return err
 			}
-			return surfaceGo(eng, args, index)
+			return surfaceGo(eng, args, index, nextWaiting)
 		},
 	}
 
 	cmd.Flags().IntVar(&index, "index", 0, "jump to surface by 1-based index")
+	cmd.Flags().BoolVar(&nextWaiting, "next-waiting", false, "jump to next waiting surface")
 
 	return cmd
 }
