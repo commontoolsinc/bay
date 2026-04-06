@@ -68,6 +68,7 @@ type Workspace struct {
 	Status         WorkspaceStatus `json:"status"`                    // "idle", "active", or "done"
 	NameOverridden bool            `json:"name_overridden,omitempty"` // true if user explicitly renamed
 	LastFocused    int             `json:"last_focused,omitempty"`    // surface ID; 0 = none yet
+	LastActive     int64           `json:"last_active,omitempty"`     // unix timestamp; updated by bay commands
 	Surfaces       []Surface       `json:"surfaces"`
 	Worktree       *WorktreeAttrs  `json:"worktree,omitempty"` // type=worktree only
 }

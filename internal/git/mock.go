@@ -17,6 +17,7 @@ type repoState struct {
 	ignored       map[string]bool
 	worktrees     map[string]bool
 	prs           map[string]string // branch → PR number
+	merged        map[string]bool   // branch → merged
 	repoRoot      string
 }
 
@@ -42,6 +43,7 @@ func (m *Mock) repo(path string) *repoState {
 			ignored:   make(map[string]bool),
 			worktrees: make(map[string]bool),
 			prs:       make(map[string]string),
+			merged:    make(map[string]bool),
 		}
 		m.repos[path] = r
 	}
@@ -208,6 +210,21 @@ func (m *Mock) PRForBranch(path, branch string) (string, error) {
 // SetPR configures the PR number for a branch in a repo.
 func (m *Mock) SetPR(path, branch, pr string) {
 	m.repo(path).prs[branch] = pr
+}
+
+func (m *Mock) Fetch(path string) error {
+	m.record("Fetch", path)
+	return nil
+}
+
+func (m *Mock) IsMergedIntoDefault(path, branch string) (bool, error) {
+	m.record("IsMergedIntoDefault", path, branch)
+	return m.repo(path).merged[branch], nil
+}
+
+// SetMerged configures whether a branch is merged in a repo.
+func (m *Mock) SetMerged(path, branch string, merged bool) {
+	m.repo(path).merged[branch] = merged
 }
 
 func (m *Mock) DefaultBranch(repoPath string) (string, error) {

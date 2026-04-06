@@ -168,12 +168,13 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 
 	// Build workspace.
 	ws := manifest.Workspace{
-		Name:     displayName,
-		Type:     wsType,
-		Path:     wsPath,
-		Status:   manifest.WorkspaceStatusIdle,
-		Worktree: worktreeAttrs,
-		Surfaces: []manifest.Surface{},
+		Name:       displayName,
+		Type:       wsType,
+		Path:       wsPath,
+		Status:     manifest.WorkspaceStatusIdle,
+		LastActive: time.Now().Unix(),
+		Worktree:   worktreeAttrs,
+		Surfaces:   []manifest.Surface{},
 	}
 
 	// Add workspace to dock, then add surface (which assigns the ID).
@@ -360,6 +361,7 @@ func (e *Engine) WsUpdate(dockName, wsName string, branch, pr, status *string) e
 			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
 		}
 
+		ws.LastActive = time.Now().Unix()
 		nameChanged := false
 
 		if branch != nil && ws.Worktree != nil {

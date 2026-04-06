@@ -27,6 +27,10 @@ type Interface interface {
 	// PR detection
 	PRForBranch(path, branch string) (string, error)
 
+	// Merge detection
+	Fetch(path string) error
+	IsMergedIntoDefault(path, branch string) (bool, error)
+
 	// Default branch
 	DefaultBranch(repoPath string) (string, error)
 }
