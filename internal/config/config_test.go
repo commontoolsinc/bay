@@ -28,7 +28,6 @@ repo = "labs"
 agent = "claude"
 agent_args = ["--add-dir", "~/crew/projects/assistant"]
 terminal = "ghostty"
-template = "default"
 
 [docks.research]
 repo = "labs"
@@ -76,9 +75,6 @@ interval_seconds = 3
 	}
 	if cfg.Docks["labs"].Terminal != "ghostty" {
 		t.Errorf("labs dock terminal = %q, want ghostty", cfg.Docks["labs"].Terminal)
-	}
-	if cfg.Docks["labs"].Template != "default" {
-		t.Errorf("labs dock template = %q, want default", cfg.Docks["labs"].Template)
 	}
 
 	// Monitor
@@ -179,7 +175,7 @@ func TestLoadAndSave(t *testing.T) {
 			"labs": {Path: "/projects/labs"},
 		},
 		Docks: map[string]DockConfig{
-			"labs": {Repo: "labs", Agent: "claude", Terminal: "ghostty", Template: "default"},
+			"labs": {Repo: "labs", Agent: "claude", Terminal: "ghostty"},
 		},
 	}
 
@@ -209,9 +205,6 @@ func TestLoadAndSave(t *testing.T) {
 	}
 	if loaded.Docks["labs"].Terminal != "ghostty" {
 		t.Errorf("loaded dock terminal = %q", loaded.Docks["labs"].Terminal)
-	}
-	if loaded.Docks["labs"].Template != "default" {
-		t.Errorf("loaded dock template = %q", loaded.Docks["labs"].Template)
 	}
 }
 

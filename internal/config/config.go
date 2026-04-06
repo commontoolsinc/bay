@@ -52,7 +52,6 @@ type DockConfig struct {
 	Agent     string   `toml:"agent"`
 	AgentArgs []string `toml:"agent_args"`
 	Terminal  string   `toml:"terminal,omitempty"`
-	Template  string   `toml:"template,omitempty"`
 }
 
 // MonitorConfig configures the pane monitor.
