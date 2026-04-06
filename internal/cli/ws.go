@@ -336,17 +336,16 @@ func autoBootstrap(eng *engine.Engine) (string, error) {
 	}
 
 	// Create dock if not already configured.
-	// DockNew handles adding to Config.Docks and creating the tmux session.
+	// DockNew handles adding to Config.Docks, saving config, and creating the tmux session.
 	if _, ok := eng.Config.Docks[dockName]; !ok {
 		if err := eng.DockNew(dockName, repoName, agentName, ""); err != nil {
 			return "", err
 		}
-	}
-
-	// Save config for future commands.
-	p := bayPaths()
-	if err := config.Save(p.ConfigFile, eng.Config); err != nil {
-		return "", fmt.Errorf("saving config: %w", err)
+	} else {
+		// Dock exists but we may have added repo/agent above — save config.
+		if err := eng.SaveConfig(); err != nil {
+			return "", fmt.Errorf("saving config: %w", err)
+		}
 	}
 
 	fmt.Printf("Auto-configured: repo %s, dock %s", repoName, dockName)
