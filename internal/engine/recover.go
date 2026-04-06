@@ -142,7 +142,6 @@ func (e *Engine) recoverDockWorkspaces(dock *manifest.Dock, agentArgs []string) 
 				if err != nil {
 					continue
 				}
-				_ = e.Tmux.SetWindowOption(newWindowID, "remain-on-exit", "on")
 
 				for j, idx := range surfaceIndices {
 					s := &ws.Surfaces[idx]

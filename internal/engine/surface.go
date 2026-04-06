@@ -71,7 +71,6 @@ func (e *Engine) SurfaceAdd(dockName, wsName string, surfaceType manifest.Surfac
 		if err != nil {
 			return fmt.Errorf("creating tmux window: %w", err)
 		}
-		_ = e.Tmux.SetWindowOption(winID, "remain-on-exit", "on")
 		e.cleanPlaceholders(dockName)
 
 		tmuxWindowID = winID
