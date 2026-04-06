@@ -243,7 +243,7 @@ func (e *Engine) recoverSurfaceLaunch(s *manifest.Surface, tmuxPaneID string, do
 		if _, ok := e.Config.Agents[agentName]; !ok {
 			return
 		}
-		agentCmd := e.buildAgentCommand(agentName, dockCfg)
+		agentCmd := e.buildAgentResumeCommand(agentName, dockCfg)
 		_ = e.Tmux.SendKeys(tmuxPaneID, agentCmd)
 	case manifest.SurfaceTypeCmd:
 		if s.Command != nil && *s.Command != "" {

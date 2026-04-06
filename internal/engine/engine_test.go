@@ -1009,6 +1009,35 @@ func TestSurfaceRestartUsesPerSurfaceAgent(t *testing.T) {
 	}
 }
 
+func TestSurfaceRestart_UsesResumeArgs(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	// Configure agent with resume_args.
+	eng.Config.Agents["claude"] = config.AgentConfig{
+		Command:    "claude",
+		ResumeArgs: "--continue",
+	}
+
+	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Agent: "claude"})
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.Calls = nil
+
+	eng.SurfaceRestart("labs", "w1", "agent")
+
+	// RespawnPane should include --continue.
+	for _, call := range mockTmux.Calls {
+		if call.Method == "RespawnPane" && len(call.Args) >= 3 {
+			if strings.Contains(call.Args[2], "--continue") {
+				return // correct
+			}
+			t.Errorf("RespawnPane command = %q, want to contain --continue", call.Args[2])
+			return
+		}
+	}
+	t.Error("expected RespawnPane call")
+}
+
 func TestWsUpdate_InvalidStatus(t *testing.T) {
 	eng, _ := testEngine(t)
 	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
