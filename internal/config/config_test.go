@@ -16,21 +16,12 @@ project_file = "CLAUDE.md"
 [agents.codex]
 command = "codex"
 
-[repos.labs]
-path = "~/projects/labs"
-worktree_dir = "~/projects/labs-worktrees"
-
-[repos.ct-server]
-path = "~/projects/ct-server"
-
 [docks.labs]
-repo = "labs"
 agent = "claude"
 agent_args = ["--add-dir", "~/crew/projects/assistant"]
 terminal = "ghostty"
 
 [docks.research]
-repo = "labs"
 agent = "claude"
 
 [monitor]
@@ -55,20 +46,9 @@ interval_seconds = 3
 		t.Errorf("claude project_file = %q, want CLAUDE.md", cfg.Agents["claude"].ProjectFile)
 	}
 
-	// Repos
-	if len(cfg.Repos) != 2 {
-		t.Errorf("expected 2 repos, got %d", len(cfg.Repos))
-	}
-	if cfg.Repos["labs"].WorktreeDir != "~/projects/labs-worktrees" {
-		t.Errorf("labs worktree_dir = %q", cfg.Repos["labs"].WorktreeDir)
-	}
-
 	// Docks
 	if len(cfg.Docks) != 2 {
 		t.Errorf("expected 2 docks, got %d", len(cfg.Docks))
-	}
-	if cfg.Docks["labs"].Repo != "labs" {
-		t.Errorf("labs dock repo = %q", cfg.Docks["labs"].Repo)
 	}
 	if len(cfg.Docks["labs"].AgentArgs) != 2 {
 		t.Errorf("labs dock agent_args len = %d", len(cfg.Docks["labs"].AgentArgs))
@@ -89,9 +69,6 @@ func TestDefaultConfig_HasInitializedMaps(t *testing.T) {
 	if cfg.Agents == nil {
 		t.Error("Agents map should be initialized")
 	}
-	if cfg.Repos == nil {
-		t.Error("Repos map should be initialized")
-	}
 	if cfg.Docks == nil {
 		t.Error("Docks map should be initialized")
 	}
@@ -102,7 +79,7 @@ func TestParse_EmptyConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
-	if cfg.Agents == nil || cfg.Repos == nil || cfg.Docks == nil {
+	if cfg.Agents == nil || cfg.Docks == nil {
 		t.Error("maps should be initialized, not nil")
 	}
 }
@@ -111,20 +88,6 @@ func TestParse_InvalidTOML(t *testing.T) {
 	_, err := Parse("[invalid toml = =")
 	if err == nil {
 		t.Error("expected error for invalid TOML")
-	}
-}
-
-func TestRepoConfig_EffectiveWorktreeDir(t *testing.T) {
-	// Explicit worktree_dir
-	r := RepoConfig{Path: "/projects/labs", WorktreeDir: "/custom/worktrees"}
-	if got := r.EffectiveWorktreeDir(); got != "/custom/worktrees" {
-		t.Errorf("expected /custom/worktrees, got %q", got)
-	}
-
-	// Default: path + "-worktrees"
-	r2 := RepoConfig{Path: "/projects/labs"}
-	if got := r2.EffectiveWorktreeDir(); got != "/projects/labs-worktrees" {
-		t.Errorf("expected /projects/labs-worktrees, got %q", got)
 	}
 }
 
@@ -139,22 +102,9 @@ func TestMonitorConfig_EffectiveInterval(t *testing.T) {
 	}
 }
 
-func TestValidate_UnknownRepo(t *testing.T) {
-	cfg := &Config{
-		Agents: map[string]AgentConfig{"claude": {Command: "claude"}},
-		Repos:  map[string]RepoConfig{},
-		Docks:  map[string]DockConfig{"labs": {Repo: "nonexistent", Agent: "claude"}},
-	}
-	errs := cfg.Validate()
-	if len(errs) != 1 {
-		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
-	}
-}
-
 func TestValidate_UnknownAgent(t *testing.T) {
 	cfg := &Config{
 		Agents: map[string]AgentConfig{},
-		Repos:  map[string]RepoConfig{},
 		Docks:  map[string]DockConfig{"labs": {Agent: "nonexistent"}},
 	}
 	errs := cfg.Validate()
@@ -171,11 +121,8 @@ func TestLoadAndSave(t *testing.T) {
 		Agents: map[string]AgentConfig{
 			"claude": {Command: "claude", ResumeArgs: "--continue", ProjectFile: "CLAUDE.md"},
 		},
-		Repos: map[string]RepoConfig{
-			"labs": {Path: "/projects/labs"},
-		},
 		Docks: map[string]DockConfig{
-			"labs": {Repo: "labs", Agent: "claude", Terminal: "ghostty"},
+			"labs": {Agent: "claude", Terminal: "ghostty"},
 		},
 	}
 
@@ -196,12 +143,6 @@ func TestLoadAndSave(t *testing.T) {
 	}
 	if loaded.Agents["claude"].ProjectFile != "CLAUDE.md" {
 		t.Errorf("loaded agent project_file = %q", loaded.Agents["claude"].ProjectFile)
-	}
-	if loaded.Repos["labs"].Path != "/projects/labs" {
-		t.Errorf("loaded repo path = %q", loaded.Repos["labs"].Path)
-	}
-	if loaded.Docks["labs"].Repo != "labs" {
-		t.Errorf("loaded dock repo = %q", loaded.Docks["labs"].Repo)
 	}
 	if loaded.Docks["labs"].Terminal != "ghostty" {
 		t.Errorf("loaded dock terminal = %q", loaded.Docks["labs"].Terminal)
@@ -236,25 +177,25 @@ func TestExpandPath(t *testing.T) {
 func TestNormalizePath(t *testing.T) {
 	home, _ := os.UserHomeDir()
 
-	// Absolute path under home → ~/...
+	// Absolute path under home -> ~/...
 	got := NormalizePath(filepath.Join(home, "projects", "foo"))
 	if got != "~/projects/foo" {
 		t.Errorf("NormalizePath(home/projects/foo) = %q, want ~/projects/foo", got)
 	}
 
-	// Already ~/...  → stays ~/...
+	// Already ~/...  -> stays ~/...
 	got = NormalizePath("~/projects/bar")
 	if got != "~/projects/bar" {
 		t.Errorf("NormalizePath(~/projects/bar) = %q, want ~/projects/bar", got)
 	}
 
-	// Absolute path outside home → stays absolute
+	// Absolute path outside home -> stays absolute
 	got = NormalizePath("/tmp/repo")
 	if got != "/tmp/repo" {
 		t.Errorf("NormalizePath(/tmp/repo) = %q, want /tmp/repo", got)
 	}
 
-	// Relative path → resolved to absolute
+	// Relative path -> resolved to absolute
 	got = NormalizePath("relative/path")
 	if !filepath.IsAbs(ExpandPath(got)) {
 		t.Errorf("NormalizePath(relative/path) = %q, should resolve to absolute", got)
@@ -292,5 +233,27 @@ func TestDefaultPaths(t *testing.T) {
 	// ConfigFile should be under ConfigDir
 	if !filepath.HasPrefix(p.ConfigFile, p.ConfigDir) {
 		t.Errorf("ConfigFile %q not under ConfigDir %q", p.ConfigFile, p.ConfigDir)
+	}
+}
+
+func TestResolvedDockAgent(t *testing.T) {
+	cfg := &Config{
+		Agents: map[string]AgentConfig{"claude": {Command: "claude"}},
+		Docks:  map[string]DockConfig{"labs": {Agent: "claude"}},
+	}
+
+	// Config override wins
+	if got := cfg.ResolvedDockAgent("labs", "codex"); got != "claude" {
+		t.Errorf("expected config override 'claude', got %q", got)
+	}
+
+	// Falls through to manifest default
+	if got := cfg.ResolvedDockAgent("other", "codex"); got != "codex" {
+		t.Errorf("expected manifest default 'codex', got %q", got)
+	}
+
+	// No config override, no manifest default
+	if got := cfg.ResolvedDockAgent("other", ""); got != "" {
+		t.Errorf("expected empty, got %q", got)
 	}
 }

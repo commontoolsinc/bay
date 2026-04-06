@@ -79,11 +79,24 @@ func newRepoLsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if len(eng.Config.Repos) == 0 {
+			repos, repoErr := eng.RepoList()
+			if repoErr != nil {
+				return repoErr
+			}
+			if len(repos) == 0 {
 				fmt.Println("No repos configured.")
 				return nil
 			}
-			fmt.Print(FormatRepoTree(eng.Config))
+			var repoInfos []engine.RepoInfo
+			for _, r := range repos {
+				repoInfos = append(repoInfos, engine.RepoInfo{
+					Name:        r.Name,
+					Path:        r.Path,
+					WorktreeDir: r.EffectiveWorktreeDir(),
+				})
+			}
+			docks, _ := eng.List()
+			fmt.Print(FormatRepoTree(repoInfos, docks))
 			return nil
 		},
 	}
@@ -102,8 +115,12 @@ func newRepoShowCmd() *cobra.Command {
 			}
 
 			name := args[0]
-			repo, ok := eng.Config.Repos[name]
-			if !ok {
+			m, mErr := eng.LoadManifest()
+			if mErr != nil {
+				return mErr
+			}
+			repo := m.FindRepo(name)
+			if repo == nil {
 				return fmt.Errorf("repo %q not found", name)
 			}
 
@@ -113,9 +130,9 @@ func newRepoShowCmd() *cobra.Command {
 
 			// Docks using this repo
 			var dockNames []string
-			for dockName, dock := range eng.Config.Docks {
-				if dock.Repo == name {
-					dockNames = append(dockNames, dockName)
+			for i := range m.Docks {
+				if m.Docks[i].Repo == name {
+					dockNames = append(dockNames, m.Docks[i].Name)
 				}
 			}
 			if len(dockNames) > 0 {
@@ -125,13 +142,10 @@ func newRepoShowCmd() *cobra.Command {
 			}
 
 			// Active worktree count
-			m, _ := eng.LoadManifest()
 			wsCount := 0
-			if m != nil {
-				for _, dockName := range dockNames {
-					if dock := m.FindDock(dockName); dock != nil {
-						wsCount += len(dock.Workspaces)
-					}
+			for _, dockName := range dockNames {
+				if dock := m.FindDock(dockName); dock != nil {
+					wsCount += len(dock.Workspaces)
 				}
 			}
 			fmt.Printf("  active worktrees: %d\n", wsCount)
@@ -155,10 +169,13 @@ func newRepoRemoveCmd() *cobra.Command {
 				return err
 			}
 
-			// Save repo path before removal (config is gone after)
+			// Save repo path before removal (manifest is gone after)
 			var repoPath string
-			if repo, ok := eng.Config.Repos[args[0]]; ok {
-				repoPath = config.ExpandPath(repo.Path)
+			m, _ := eng.LoadManifest()
+			if m != nil {
+				if repo := m.FindRepo(args[0]); repo != nil {
+					repoPath = config.ExpandPath(repo.Path)
+				}
 			}
 
 			if err := eng.RepoRemove(args[0], force); err != nil {
@@ -166,7 +183,7 @@ func newRepoRemoveCmd() *cobra.Command {
 					fmt.Fprintf(cmd.ErrOrStderr(),
 						"Cannot remove repo %q. Use --force to also remove:\n%s",
 						args[0],
-						FormatSubtreeForRemoval(eng.Config, inUse.RepoName, inUse.AffectedDocks))
+						FormatSubtreeForRemoval(inUse.RepoName, inUse.AffectedDocks))
 					return fmt.Errorf("repo %q is in use", args[0])
 				}
 				return err
@@ -216,9 +233,10 @@ line if not already present. Creates .worktreeinclude if missing.
 					return fmt.Errorf("not in a git repository")
 				}
 				// Find repo by path.
-				for name, repo := range eng.Config.Repos {
+				repos, _ := eng.RepoList()
+				for _, repo := range repos {
 					if config.ExpandPath(repo.Path) == root {
-						repoName = name
+						repoName = repo.Name
 						break
 					}
 				}

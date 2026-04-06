@@ -22,7 +22,7 @@ func newTreeCmd() *cobra.Command {
 				return err
 			}
 
-			view := BuildListView(eng.Config, docks, ListViewOptions{
+			view := BuildListView(docks, ListViewOptions{
 				Focus:     ListFocus{Kind: FocusAll},
 				Recursive: true,
 			})

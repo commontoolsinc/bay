@@ -8,6 +8,7 @@ import (
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/engine"
 	"github.com/commontoolsinc/bay/internal/git"
+	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/commontoolsinc/bay/internal/tmux"
 )
 
@@ -19,13 +20,7 @@ func testListEngine(t *testing.T) (*engine.Engine, string) {
 		Agents: map[string]config.AgentConfig{
 			"claude": {Command: "claude"},
 		},
-		Repos: map[string]config.RepoConfig{
-			"labs": {Path: filepath.Join(dir, "repos", "labs")},
-		},
-		Docks: map[string]config.DockConfig{
-			"labs": {Repo: "labs", Agent: "claude"},
-			"web":  {Repo: "labs", Agent: "claude"},
-		},
+		Docks: map[string]config.DockConfig{},
 	}
 
 	repoDir := filepath.Join(dir, "repos", "labs")
@@ -37,10 +32,22 @@ func testListEngine(t *testing.T) (*engine.Engine, string) {
 	mockGit := git.NewMock()
 	mockGit.SetGlobalIgnored(true)
 
+	manifestPath := filepath.Join(dir, "manifest.json")
+	manifest.Save(manifestPath, &manifest.Manifest{
+		Version: manifest.CurrentVersion,
+		Repos: []manifest.Repo{
+			{Name: "labs", Path: repoDir},
+		},
+		Docks: []manifest.Dock{
+			{Name: "labs", Repo: "labs", Agent: "claude", Workspaces: []manifest.Workspace{}},
+			{Name: "web", Repo: "labs", Agent: "claude", Workspaces: []manifest.Workspace{}},
+		},
+	})
+
 	return engine.New(
 		cfg,
 		filepath.Join(dir, "config.toml"),
-		filepath.Join(dir, "manifest.json"),
+		manifestPath,
 		filepath.Join(dir, "archive.json"),
 		mockTmux,
 		mockGit,

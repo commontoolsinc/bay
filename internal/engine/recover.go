@@ -6,7 +6,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
@@ -36,19 +35,20 @@ func (e *Engine) Recover() ([]RecoverResult, error) {
 
 	for i := range m.Docks {
 		dock := &m.Docks[i]
-		dockCfg, hasCfg := e.Config.Docks[dock.Name]
+		agentArgs := e.resolvedDockAgentArgs(dock.Name, m)
 
 		if err := e.ensureSession(dock.Name); err != nil {
 			return nil, err
 		}
 
-		outcome := e.recoverDockWorkspaces(dock, dockCfg, hasCfg)
+		outcome := e.recoverDockWorkspaces(dock, agentArgs)
 		e.cleanPlaceholders(dock.Name)
 
 		// Recover host terminal if configured and dead.
-		if dock.Host != nil && hasCfg && dockCfg.Terminal != "" {
+		terminal := e.Config.ResolvedDockTerminal(dock.Name)
+		if dock.Host != nil && terminal != "" {
 			if dock.Host.PID == 0 || !processAlive(dock.Host.PID) {
-				if pid, err := launchTerminal(dockCfg.Terminal, dock.Name); err == nil {
+				if pid, err := launchTerminal(terminal, dock.Name); err == nil {
 					dock.Host.PID = pid
 				}
 			}
@@ -83,13 +83,13 @@ func (e *Engine) DockRecover(name string) ([]string, error) {
 	if dock == nil {
 		return nil, fmt.Errorf("unknown dock %q in manifest", name)
 	}
-	dockCfg, hasCfg := e.Config.Docks[name]
+	agentArgs := e.resolvedDockAgentArgs(name, m)
 
 	if err := e.ensureSession(name); err != nil {
 		return nil, err
 	}
 
-	outcome := e.recoverDockWorkspaces(dock, dockCfg, hasCfg)
+	outcome := e.recoverDockWorkspaces(dock, agentArgs)
 	e.cleanPlaceholders(name)
 
 	if err := e.saveManifest(m); err != nil {
@@ -103,7 +103,7 @@ func (e *Engine) DockRecover(name string) ([]string, error) {
 }
 
 // recoverDockWorkspaces handles recovery for all workspaces in a dock.
-func (e *Engine) recoverDockWorkspaces(dock *manifest.Dock, dockCfg config.DockConfig, hasCfg bool) recoverOutcome {
+func (e *Engine) recoverDockWorkspaces(dock *manifest.Dock, agentArgs []string) recoverOutcome {
 	outcome := recoverOutcome{}
 
 	for i := range dock.Workspaces {
@@ -134,7 +134,7 @@ func (e *Engine) recoverDockWorkspaces(dock *manifest.Dock, dockCfg config.DockC
 
 			if existingWindowID != "" {
 				// Window exists — reconcile panes.
-				e.reconcileSurfaces(existingWindowID, ws, surfaceIndices, dockCfg, hasCfg)
+				e.reconcileSurfaces(existingWindowID, ws, surfaceIndices, agentArgs)
 			} else {
 				// Window gone — recreate it.
 				wsRecovered = true
@@ -158,7 +158,7 @@ func (e *Engine) recoverDockWorkspaces(dock *manifest.Dock, dockCfg config.DockC
 						if err == nil && len(panes) > 0 {
 							s.Tmux.PaneID = panes[0].ID
 						}
-						e.recoverSurfaceLaunch(s, s.Tmux.PaneID, dockCfg, hasCfg, true)
+						e.recoverSurfaceLaunch(s, s.Tmux.PaneID, agentArgs, true)
 					} else {
 						// Subsequent surfaces split from the window.
 						dir := s.Tmux.SplitDir
@@ -170,7 +170,7 @@ func (e *Engine) recoverDockWorkspaces(dock *manifest.Dock, dockCfg config.DockC
 							continue
 						}
 						s.Tmux.PaneID = newPaneID
-						e.recoverSurfaceLaunch(s, newPaneID, dockCfg, hasCfg, true)
+						e.recoverSurfaceLaunch(s, newPaneID, agentArgs, true)
 					}
 				}
 			}
@@ -184,7 +184,7 @@ func (e *Engine) recoverDockWorkspaces(dock *manifest.Dock, dockCfg config.DockC
 }
 
 // reconcileSurfaces checks existing panes against manifest surfaces and repairs missing ones.
-func (e *Engine) reconcileSurfaces(tmuxWindowID string, ws *manifest.Workspace, surfaceIndices []int, dockCfg config.DockConfig, hasCfg bool) {
+func (e *Engine) reconcileSurfaces(tmuxWindowID string, ws *manifest.Workspace, surfaceIndices []int, agentArgs []string) {
 	tmuxPanes, err := e.Tmux.ListPanes(tmuxWindowID)
 	if err != nil {
 		return
@@ -213,12 +213,12 @@ func (e *Engine) reconcileSurfaces(tmuxWindowID string, ws *manifest.Workspace, 
 			continue
 		}
 		s.Tmux.PaneID = newPaneID
-		e.recoverSurfaceLaunch(s, newPaneID, dockCfg, hasCfg, true)
+		e.recoverSurfaceLaunch(s, newPaneID, agentArgs, true)
 	}
 }
 
 // recoverSurfaceLaunch sends the appropriate launch command to a recovered surface.
-func (e *Engine) recoverSurfaceLaunch(s *manifest.Surface, tmuxPaneID string, dockCfg config.DockConfig, hasCfg bool, newlyCreated bool) {
+func (e *Engine) recoverSurfaceLaunch(s *manifest.Surface, tmuxPaneID string, agentArgs []string, newlyCreated bool) {
 	if tmuxPaneID == "" {
 		return
 	}
@@ -243,7 +243,7 @@ func (e *Engine) recoverSurfaceLaunch(s *manifest.Surface, tmuxPaneID string, do
 		if _, ok := e.Config.Agents[agentName]; !ok {
 			return
 		}
-		agentCmd := e.buildAgentResumeCommand(agentName, dockCfg)
+		agentCmd := e.buildAgentResumeCommand(agentName, agentArgs)
 		_ = e.Tmux.SendKeys(tmuxPaneID, agentCmd)
 	case manifest.SurfaceTypeCmd:
 		if s.Command != nil && *s.Command != "" {
@@ -255,7 +255,7 @@ func (e *Engine) recoverSurfaceLaunch(s *manifest.Surface, tmuxPaneID string, do
 }
 
 // groupSurfacesByLayout groups surface indices by their layout group.
-// Returns a map of layout group → slice of surface indices, ordered by group number.
+// Returns a map of layout group -> slice of surface indices, ordered by group number.
 func groupSurfacesByLayout(ws *manifest.Workspace) map[int][]int {
 	groups := map[int][]int{}
 	for i, s := range ws.Surfaces {

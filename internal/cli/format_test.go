@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/engine"
 )
 
@@ -14,24 +13,6 @@ var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
 
 func stripANSI(s string) string {
 	return ansiRE.ReplaceAllString(s, "")
-}
-
-func testConfig() *config.Config {
-	return &config.Config{
-		Agents: map[string]config.AgentConfig{
-			"claude": {Command: "claude"},
-			"codex":  {Command: "codex"},
-		},
-		Repos: map[string]config.RepoConfig{
-			"bay":   {Path: "~/projects/bay"},
-			"other": {Path: "~/projects/other"},
-		},
-		Docks: map[string]config.DockConfig{
-			"api": {Repo: "bay", Agent: "claude"},
-			"web": {Repo: "bay", Agent: "codex"},
-			"ops": {Repo: "other"},
-		},
-	}
 }
 
 func testDocks() []engine.DockInfo {
@@ -103,7 +84,7 @@ func testDocks() []engine.DockInfo {
 }
 
 func TestBuildListView_DefaultIncludesRepos(t *testing.T) {
-	view := BuildListView(testConfig(), testDocks(), ListViewOptions{})
+	view := BuildListView(testDocks(), ListViewOptions{})
 	if len(view.Repos) != 2 {
 		t.Fatalf("repos = %d, want 2", len(view.Repos))
 	}
@@ -113,7 +94,7 @@ func TestBuildListView_DefaultIncludesRepos(t *testing.T) {
 }
 
 func TestBuildListView_DockFocusStopsAtWorkspacesByDefault(t *testing.T) {
-	view := BuildListView(testConfig(), testDocks(), ListViewOptions{
+	view := BuildListView(testDocks(), ListViewOptions{
 		Focus: ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
 	})
 	out := stripANSI(FormatListView(view, false))
@@ -130,7 +111,7 @@ func TestBuildListView_DockFocusStopsAtWorkspacesByDefault(t *testing.T) {
 }
 
 func TestBuildListView_WorkspaceFocusShowsFullTree(t *testing.T) {
-	view := BuildListView(testConfig(), testDocks(), ListViewOptions{
+	view := BuildListView(testDocks(), ListViewOptions{
 		Focus: ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "auth-fix"},
 	})
 	out := stripANSI(FormatListView(view, false))
@@ -151,7 +132,7 @@ func TestBuildListView_WorkspaceFocusShowsFullTree(t *testing.T) {
 }
 
 func TestBuildListView_WorkspaceFocusRestrictsToDock(t *testing.T) {
-	view := BuildListView(testConfig(), testDocks(), ListViewOptions{
+	view := BuildListView(testDocks(), ListViewOptions{
 		Focus: ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "auth-fix"},
 	})
 	out := stripANSI(FormatListView(view, false))
@@ -162,7 +143,7 @@ func TestBuildListView_WorkspaceFocusRestrictsToDock(t *testing.T) {
 }
 
 func TestFormatListView_SuppressesSyncOKAndShowsStale(t *testing.T) {
-	view := BuildListView(testConfig(), testDocks(), ListViewOptions{
+	view := BuildListView(testDocks(), ListViewOptions{
 		Focus: ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
 	})
 	out := stripANSI(FormatListView(view, false))
@@ -213,7 +194,7 @@ func TestLabelValueFormatsHumanReadableLabels(t *testing.T) {
 }
 
 func TestFormatListRows_DenormalizesSurfaceRows(t *testing.T) {
-	view := BuildListView(testConfig(), testDocks(), ListViewOptions{
+	view := BuildListView(testDocks(), ListViewOptions{
 		Focus:     ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "auth-fix"},
 		Recursive: true,
 	})
@@ -237,7 +218,7 @@ func TestFormatListRows_DenormalizesSurfaceRows(t *testing.T) {
 }
 
 func TestBuildListView_FocusRepoFiltersRepos(t *testing.T) {
-	view := BuildListView(testConfig(), testDocks(), ListViewOptions{
+	view := BuildListView(testDocks(), ListViewOptions{
 		Focus: ListFocus{Kind: FocusRepo, Repo: "bay"},
 	})
 	out := stripANSI(FormatListView(view, false))
@@ -251,18 +232,18 @@ func TestBuildListView_FocusRepoFiltersRepos(t *testing.T) {
 }
 
 func TestFormatListView_ShowsWaitingIndicator(t *testing.T) {
-	view := BuildListView(testConfig(), testDocks(), ListViewOptions{
+	view := BuildListView(testDocks(), ListViewOptions{
 		Focus: ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
 	})
 	out := stripANSI(FormatListView(view, false))
 
-	if !strings.Contains(out, "⏳") {
+	if !strings.Contains(out, "\u23f3") {
 		t.Fatalf("expected waiting indicator in output:\n%s", out)
 	}
 }
 
 func TestFormatListView_HighlightsCurrentContext(t *testing.T) {
-	view := BuildListView(testConfig(), testDocks(), ListViewOptions{
+	view := BuildListView(testDocks(), ListViewOptions{
 		Focus: ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
 	})
 	view.CurrentDock = "api"
@@ -283,7 +264,7 @@ func TestFormatListView_HighlightsCurrentContext(t *testing.T) {
 }
 
 func TestFormatListView_NoHighlightWithoutContext(t *testing.T) {
-	view := BuildListView(testConfig(), testDocks(), ListViewOptions{
+	view := BuildListView(testDocks(), ListViewOptions{
 		Focus: ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
 	})
 	// No CurrentDock/CurrentWs set.
@@ -296,14 +277,6 @@ func TestFormatListView_NoHighlightWithoutContext(t *testing.T) {
 }
 
 func TestFormatDockTree_IncludesNoRepoDocks(t *testing.T) {
-	cfg := &config.Config{
-		Repos: map[string]config.RepoConfig{
-			"bay": {Path: "~/projects/bay"},
-		},
-		Docks: map[string]config.DockConfig{
-			"tools": {},
-		},
-	}
 	docks := []engine.DockInfo{
 		{
 			Name: "tools",
@@ -313,7 +286,7 @@ func TestFormatDockTree_IncludesNoRepoDocks(t *testing.T) {
 		},
 	}
 
-	out := stripANSI(FormatListView(BuildListView(cfg, docks, ListViewOptions{}), false))
+	out := stripANSI(FormatListView(BuildListView(docks, ListViewOptions{}), false))
 	if !strings.Contains(out, "repo (no repo)") {
 		t.Fatalf("missing synthetic no-repo container:\n%s", out)
 	}

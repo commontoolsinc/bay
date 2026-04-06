@@ -37,28 +37,38 @@ func newSetupCmd() *cobra.Command {
 			if _, err := os.Stat(configPath); err == nil {
 				// Load existing config to show what would be lost
 				existingCfg, loadErr := config.Load(configPath)
-				hasContent := loadErr == nil && (len(existingCfg.Repos) > 0 || len(existingCfg.Docks) > 0)
+				hasContent := loadErr == nil && len(existingCfg.Docks) > 0
+
+				// Also check manifest for repos/docks content
+				eng, engErr := newEngine()
+				if engErr == nil {
+					docks, listErr := eng.List()
+					repos, repoErr := eng.RepoList()
+					if listErr == nil && len(docks) > 0 {
+						hasContent = true
+					}
+					if repoErr == nil && len(repos) > 0 {
+						hasContent = true
+					}
+				}
 
 				if hasContent {
 					fmt.Printf("Config exists at %s with:\n", configPath)
 
-					eng, engErr := newEngine()
 					if engErr == nil {
 						docks, listErr := eng.List()
 						if listErr == nil && len(docks) > 0 {
-							fmt.Print(FormatFullTree(existingCfg, docks))
+							fmt.Print(FormatFullTree(docks))
 						} else {
-							for name := range existingCfg.Repos {
-								fmt.Printf("  repo %s (%s)\n", name, existingCfg.Repos[name].Path)
+							repos, _ := eng.RepoList()
+							for _, repo := range repos {
+								fmt.Printf("  repo %s (%s)\n", repo.Name, repo.Path)
 							}
 							for name := range existingCfg.Docks {
 								fmt.Printf("  dock %s\n", name)
 							}
 						}
 					} else {
-						for name := range existingCfg.Repos {
-							fmt.Printf("  repo %s (%s)\n", name, existingCfg.Repos[name].Path)
-						}
 						for name := range existingCfg.Docks {
 							fmt.Printf("  dock %s\n", name)
 						}
@@ -148,7 +158,6 @@ func defaultSetupConfig() *config.Config {
 			"codex":  {Command: "codex"},
 			"gemini": {Command: "gemini"},
 		},
-		Repos: map[string]config.RepoConfig{},
 		Docks: map[string]config.DockConfig{},
 		Monitor: config.MonitorConfig{
 			IntervalSeconds: 3,

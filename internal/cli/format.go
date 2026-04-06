@@ -5,7 +5,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/engine"
 )
 
@@ -76,37 +75,50 @@ type ListRow struct {
 	SurfaceStatus       string `json:"surface_status,omitempty"`
 }
 
-func BuildListView(cfg *config.Config, docks []engine.DockInfo, opts ListViewOptions) ListView {
+// BuildListView builds the repo -> dock -> workspace hierarchy from DockInfo data.
+// Repos and dock-repo assignments come from the DockInfo.Repo field (set by engine.List).
+func BuildListView(docks []engine.DockInfo, opts ListViewOptions) ListView {
 	focus := opts.Focus
 	if focus.Kind == "" {
 		focus.Kind = FocusAll
 	}
 	recursive := opts.Recursive || focus.Kind == FocusWorkspace
 
+	// Group docks by repo.
 	dockMap := map[string]engine.DockInfo{}
+	repoSet := map[string]bool{}
+	dockToRepo := map[string]string{}
 	for _, dock := range docks {
 		dockMap[dock.Name] = dock
+		repo := dock.Repo
+		if repo == "" {
+			repo = "(no repo)"
+		}
+		repoSet[repo] = true
+		dockToRepo[dock.Name] = repo
 	}
-	assignedDocks := map[string]bool{}
 
-	repoNames := make([]string, 0, len(cfg.Repos))
-	for name := range cfg.Repos {
+	repoNames := make([]string, 0, len(repoSet))
+	for name := range repoSet {
 		repoNames = append(repoNames, name)
 	}
 	sort.Strings(repoNames)
 
+	assignedDocks := map[string]bool{}
 	view := ListView{Focus: focus, Recursive: recursive}
 
 	for _, repoName := range repoNames {
+		if repoName == "(no repo)" {
+			continue // handled below
+		}
 		if (focus.Kind == FocusRepo || focus.Kind == FocusDock || focus.Kind == FocusWorkspace) && focus.Repo != "" && focus.Repo != repoName {
 			continue
 		}
-		repoCfg := cfg.Repos[repoName]
-		repoInfo := RepoInfo{Name: repoName, Path: repoCfg.Path}
+		repoInfo := RepoInfo{Name: repoName}
 
-		dockNames := make([]string, 0, len(cfg.Docks))
-		for dockName, dockCfg := range cfg.Docks {
-			if dockCfg.Repo == repoName {
+		var dockNames []string
+		for dockName, repo := range dockToRepo {
+			if repo == repoName {
 				dockNames = append(dockNames, dockName)
 			}
 		}
@@ -117,10 +129,7 @@ func BuildListView(cfg *config.Config, docks []engine.DockInfo, opts ListViewOpt
 				continue
 			}
 			assignedDocks[dockName] = true
-			dock, ok := dockMap[dockName]
-			if !ok {
-				dock = engine.DockInfo{Name: dockName, Repo: repoName}
-			}
+			dock := dockMap[dockName]
 			filtered := dock
 			filtered.Workspaces = nil
 
@@ -148,19 +157,18 @@ func BuildListView(cfg *config.Config, docks []engine.DockInfo, opts ListViewOpt
 		}
 	}
 
+	// Orphan docks (no repo).
 	orphanRepo := RepoInfo{Name: "(no repo)"}
-	orphanNames := make([]string, 0)
-	for dockName, dock := range cfg.Docks {
+	var orphanNames []string
+	for dockName, repo := range dockToRepo {
 		if assignedDocks[dockName] {
 			continue
 		}
 		if focus.Kind == FocusRepo {
 			continue
 		}
-		if dock.Repo != "" {
-			if _, ok := cfg.Repos[dock.Repo]; ok {
-				continue
-			}
+		if repo != "(no repo)" {
+			continue
 		}
 		orphanNames = append(orphanNames, dockName)
 	}
@@ -169,10 +177,7 @@ func BuildListView(cfg *config.Config, docks []engine.DockInfo, opts ListViewOpt
 		if (focus.Kind == FocusDock || focus.Kind == FocusWorkspace) && focus.Dock != "" && focus.Dock != dockName {
 			continue
 		}
-		dock, ok := dockMap[dockName]
-		if !ok {
-			dock = engine.DockInfo{Name: dockName}
-		}
+		dock := dockMap[dockName]
 		filtered := dock
 		filtered.Workspaces = nil
 		for _, ws := range dock.Workspaces {
@@ -289,7 +294,7 @@ func workspaceMeta(ws engine.WorkspaceInfo, showCounts bool) string {
 	}
 	parts = append(parts, syncSuffix(ws.SyncStatus)...)
 	if ws.Waiting {
-		parts = append(parts, "⏳")
+		parts = append(parts, "\u23f3")
 	}
 	return strings.Join(parts, " ")
 }
@@ -384,46 +389,29 @@ func FormatWorkspaceShow(repoName, dockName string, ws *engine.WorkspaceInfo, lo
 	return b.String()
 }
 
-// FormatFullTree formats the full repo → dock → workspace hierarchy.
-func FormatFullTree(cfg *config.Config, docks []engine.DockInfo) string {
-	return FormatListView(BuildListView(cfg, docks, ListViewOptions{}), false)
+// FormatFullTree formats the full repo -> dock -> workspace hierarchy.
+func FormatFullTree(docks []engine.DockInfo) string {
+	return FormatListView(BuildListView(docks, ListViewOptions{}), false)
 }
 
-// FormatDockTree formats dock → workspace hierarchy for one or more docks.
+// FormatDockTree formats dock -> workspace hierarchy for one or more docks.
 func FormatDockTree(docks []engine.DockInfo) string {
-	cfg := &config.Config{
-		Repos: map[string]config.RepoConfig{},
-		Docks: map[string]config.DockConfig{},
-	}
-	for _, dock := range docks {
-		cfg.Docks[dock.Name] = config.DockConfig{Repo: dock.Repo, Agent: dock.Agent}
-		if dock.Repo != "" {
-			cfg.Repos[dock.Repo] = config.RepoConfig{}
-		}
-	}
 	focus := ListFocus{Kind: FocusAll}
 	if len(docks) == 1 {
 		focus = ListFocus{Kind: FocusDock, Repo: docks[0].Repo, Dock: docks[0].Name}
 	}
-	return FormatListView(BuildListView(cfg, docks, ListViewOptions{Focus: focus}), false)
+	return FormatListView(BuildListView(docks, ListViewOptions{Focus: focus}), false)
 }
 
-// FormatRepoTree formats repo → docks summary.
-func FormatRepoTree(cfg *config.Config) string {
+// FormatRepoTree formats repos with their docks (from manifest data).
+func FormatRepoTree(repos []engine.RepoInfo, docks []engine.DockInfo) string {
 	var b strings.Builder
-	repoNames := make([]string, 0, len(cfg.Repos))
-	for name := range cfg.Repos {
-		repoNames = append(repoNames, name)
-	}
-	sort.Strings(repoNames)
-	for _, name := range repoNames {
-		repo := cfg.Repos[name]
-		wtDir := repo.EffectiveWorktreeDir()
-		fmt.Fprintf(&b, "%s  %s  (worktrees: %s)\n", name, repo.Path, wtDir)
+	for _, repo := range repos {
+		fmt.Fprintf(&b, "%s  %s  (worktrees: %s)\n", repo.Name, repo.Path, repo.WorktreeDir)
 		var dockNames []string
-		for dockName, dock := range cfg.Docks {
-			if dock.Repo == name {
-				dockNames = append(dockNames, dockName)
+		for _, dock := range docks {
+			if dock.Repo == repo.Name {
+				dockNames = append(dockNames, dock.Name)
 			}
 		}
 		sort.Strings(dockNames)
@@ -434,10 +422,10 @@ func FormatRepoTree(cfg *config.Config) string {
 	return b.String()
 }
 
-// FormatSubtreeForRemoval formats the repo → dock → workspace hierarchy
+// FormatSubtreeForRemoval formats the repo -> dock -> workspace hierarchy
 // for items that would be removed. Used by repo remove's error message.
-func FormatSubtreeForRemoval(cfg *config.Config, repoName string, docks []engine.DockInfo) string {
-	view := BuildListView(cfg, docks, ListViewOptions{
+func FormatSubtreeForRemoval(repoName string, docks []engine.DockInfo) string {
+	view := BuildListView(docks, ListViewOptions{
 		Focus: ListFocus{Kind: FocusRepo, Repo: repoName},
 	})
 	return indentBlock(FormatListView(view, false), 1)

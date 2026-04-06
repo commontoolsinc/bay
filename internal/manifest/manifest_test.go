@@ -21,12 +21,15 @@ func TestNew_ReturnsEmptyManifest(t *testing.T) {
 }
 
 func TestParse_EmptyJSON(t *testing.T) {
-	m, err := Parse([]byte(`{"version":1,"docks":[]}`))
+	m, err := Parse([]byte(`{"version":2,"repos":[],"docks":[]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(m.Docks) != 0 {
 		t.Errorf("docks length = %d, want 0", len(m.Docks))
+	}
+	if len(m.Repos) != 0 {
+		t.Errorf("repos length = %d, want 0", len(m.Repos))
 	}
 }
 
@@ -821,5 +824,120 @@ func TestResolveWorkspace_DockColonNotFound(t *testing.T) {
 	_, _, err = m.ResolveWorkspace("baddock:auth-fix")
 	if err == nil {
 		t.Fatal("expected error for bad dock")
+	}
+}
+
+// --- Repo operations ---
+
+func TestFindRepo(t *testing.T) {
+	m := New()
+	m.Repos = []Repo{{Name: "labs", Path: "/p/labs"}, {Name: "other", Path: "/p/other"}}
+
+	r := m.FindRepo("labs")
+	if r == nil || r.Name != "labs" {
+		t.Errorf("FindRepo(labs) = %v", r)
+	}
+
+	r = m.FindRepo("nonexistent")
+	if r != nil {
+		t.Errorf("FindRepo(nonexistent) = %v, want nil", r)
+	}
+}
+
+func TestAddRepo(t *testing.T) {
+	m := New()
+
+	if err := m.AddRepo(Repo{Name: "labs", Path: "/p/labs"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Repos) != 1 || m.Repos[0].Name != "labs" {
+		t.Errorf("after add: %v", m.Repos)
+	}
+}
+
+func TestAddRepo_Duplicate(t *testing.T) {
+	m := New()
+	m.Repos = []Repo{{Name: "labs", Path: "/p/labs"}}
+
+	err := m.AddRepo(Repo{Name: "labs", Path: "/p/labs2"})
+	if err == nil {
+		t.Fatal("expected error for duplicate repo name")
+	}
+}
+
+func TestRemoveRepo(t *testing.T) {
+	m := New()
+	m.Repos = []Repo{{Name: "labs", Path: "/p/labs"}, {Name: "other", Path: "/p/other"}}
+
+	if err := m.RemoveRepo("labs"); err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Repos) != 1 || m.Repos[0].Name != "other" {
+		t.Errorf("after remove: %v", m.Repos)
+	}
+}
+
+func TestRemoveRepo_NotFound(t *testing.T) {
+	m := New()
+	if err := m.RemoveRepo("nonexistent"); err == nil {
+		t.Fatal("expected error for missing repo")
+	}
+}
+
+func TestDockRepoAndAgentRoundTrip(t *testing.T) {
+	original := &Manifest{
+		Version: CurrentVersion,
+		Repos:   []Repo{{Name: "labs", Path: "/p/labs"}},
+		Docks: []Dock{
+			{
+				Name:       "dev",
+				Repo:       "labs",
+				Agent:      "claude",
+				AgentArgs:  []string{"--add-dir", "/extra"},
+				Workspaces: []Workspace{},
+			},
+		},
+	}
+
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	restored, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(restored.Repos) != 1 || restored.Repos[0].Name != "labs" {
+		t.Errorf("repos not round-tripped: %v", restored.Repos)
+	}
+
+	dock := restored.FindDock("dev")
+	if dock == nil {
+		t.Fatal("dock not found")
+	}
+	if dock.Repo != "labs" {
+		t.Errorf("dock.Repo = %q, want labs", dock.Repo)
+	}
+	if dock.Agent != "claude" {
+		t.Errorf("dock.Agent = %q, want claude", dock.Agent)
+	}
+	if len(dock.AgentArgs) != 2 || dock.AgentArgs[0] != "--add-dir" {
+		t.Errorf("dock.AgentArgs = %v, want [--add-dir /extra]", dock.AgentArgs)
+	}
+}
+
+func TestRepoEffectiveWorktreeDir(t *testing.T) {
+	// Explicit worktree_dir
+	r := Repo{Name: "labs", Path: "/projects/labs", WorktreeDir: "/custom/worktrees"}
+	if got := r.EffectiveWorktreeDir(); got != "/custom/worktrees" {
+		t.Errorf("expected /custom/worktrees, got %q", got)
+	}
+
+	// Default: path + "-worktrees"
+	r2 := Repo{Name: "labs", Path: "/projects/labs"}
+	if got := r2.EffectiveWorktreeDir(); got != "/projects/labs-worktrees" {
+		t.Errorf("expected /projects/labs-worktrees, got %q", got)
 	}
 }

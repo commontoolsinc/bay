@@ -22,12 +22,7 @@ func testNavEngine(t *testing.T) (*engine.Engine, *tmux.Mock, *git.Mock, string)
 			"claude": {Command: "claude"},
 			"codex":  {Command: "codex"},
 		},
-		Repos: map[string]config.RepoConfig{
-			"labs": {Path: filepath.Join(dir, "repos", "labs")},
-		},
-		Docks: map[string]config.DockConfig{
-			"labs": {Repo: "labs", Agent: "claude"},
-		},
+		Docks: map[string]config.DockConfig{},
 	}
 
 	repoDir := filepath.Join(dir, "repos", "labs")
@@ -37,10 +32,21 @@ func testNavEngine(t *testing.T) (*engine.Engine, *tmux.Mock, *git.Mock, string)
 	mockGit := git.NewMock()
 	mockGit.SetGlobalIgnored(true)
 
+	manifestPath := filepath.Join(dir, "manifest.json")
+	manifest.Save(manifestPath, &manifest.Manifest{
+		Version: manifest.CurrentVersion,
+		Repos: []manifest.Repo{
+			{Name: "labs", Path: repoDir},
+		},
+		Docks: []manifest.Dock{
+			{Name: "labs", Repo: "labs", Agent: "claude", Workspaces: []manifest.Workspace{}},
+		},
+	})
+
 	eng := engine.New(
 		cfg,
 		filepath.Join(dir, "config.toml"),
-		filepath.Join(dir, "manifest.json"),
+		manifestPath,
 		filepath.Join(dir, "archive.json"),
 		mockTmux,
 		mockGit,
@@ -459,20 +465,13 @@ func TestAutoBootstrap_CreatesRepoAndDock(t *testing.T) {
 	if dockName != "myproject" {
 		t.Errorf("dockName = %q, want myproject", dockName)
 	}
-	if _, ok := eng.Config.Repos["myproject"]; !ok {
-		t.Error("repo not added to config")
+	// Repo and dock should be in the manifest.
+	m, _ := eng.LoadManifest()
+	if m.FindRepo("myproject") == nil {
+		t.Error("repo not added to manifest")
 	}
-	if _, ok := eng.Config.Docks["myproject"]; !ok {
-		t.Error("dock not added to config")
-	}
-
-	// Config should be saved to disk.
-	loaded, err := config.Load(configPath)
-	if err != nil {
-		t.Fatalf("loading saved config: %v", err)
-	}
-	if _, ok := loaded.Docks["myproject"]; !ok {
-		t.Error("dock not persisted to config file")
+	if m.FindDock("myproject") == nil {
+		t.Error("dock not added to manifest")
 	}
 }
 
@@ -512,17 +511,27 @@ func TestAutoBootstrap_SkipsExistingDock(t *testing.T) {
 
 	cfg := &config.Config{
 		Agents: map[string]config.AgentConfig{},
-		Repos:  map[string]config.RepoConfig{"myproject": {Path: resolvedRepo}},
-		Docks:  map[string]config.DockConfig{"myproject": {Repo: "myproject"}},
+		Docks:  map[string]config.DockConfig{},
 	}
 	mockTmux := tmux.NewMock()
 	mockGit := git.NewMock()
 	mockGit.SetRepoRoot(resolvedRepo, resolvedRepo)
 
+	manifestPath := filepath.Join(dir, "manifest.json")
+	manifest.Save(manifestPath, &manifest.Manifest{
+		Version: manifest.CurrentVersion,
+		Repos: []manifest.Repo{
+			{Name: "myproject", Path: resolvedRepo},
+		},
+		Docks: []manifest.Dock{
+			{Name: "myproject", Repo: "myproject", Workspaces: []manifest.Workspace{}},
+		},
+	})
+
 	eng := engine.New(
 		cfg,
 		filepath.Join(dir, "config.toml"),
-		filepath.Join(dir, "manifest.json"),
+		manifestPath,
 		filepath.Join(dir, "archive.json"),
 		mockTmux,
 		mockGit,

@@ -100,23 +100,40 @@ func newDockShowCmd() *cobra.Command {
 			}
 
 			name := args[0]
-			dock, ok := eng.Config.Docks[name]
-			if !ok {
+
+			m, _ := eng.LoadManifest()
+			if m == nil {
+				return fmt.Errorf("dock %q not found", name)
+			}
+			mDock := m.FindDock(name)
+			if mDock == nil {
 				return fmt.Errorf("dock %q not found", name)
 			}
 
 			fmt.Printf("Dock: %s\n", name)
-			if dock.Repo != "" {
-				fmt.Printf("  repo:     %s\n", dock.Repo)
+			if mDock.Repo != "" {
+				fmt.Printf("  repo:     %s\n", mDock.Repo)
 			}
-			if dock.Agent != "" {
-				fmt.Printf("  agent:    %s\n", dock.Agent)
+			agent := mDock.Agent
+			if dc, ok := eng.Config.Docks[name]; ok && dc.Agent != "" {
+				agent = dc.Agent
 			}
-			if len(dock.AgentArgs) > 0 {
-				fmt.Printf("  agent_args: %s\n", strings.Join(dock.AgentArgs, " "))
+			if agent != "" {
+				fmt.Printf("  agent:    %s\n", agent)
 			}
-			if dock.Terminal != "" {
-				fmt.Printf("  terminal: %s\n", dock.Terminal)
+			agentArgs := mDock.AgentArgs
+			if dc, ok := eng.Config.Docks[name]; ok && len(dc.AgentArgs) > 0 {
+				agentArgs = dc.AgentArgs
+			}
+			if len(agentArgs) > 0 {
+				fmt.Printf("  agent_args: %s\n", strings.Join(agentArgs, " "))
+			}
+			terminal := ""
+			if dc, ok := eng.Config.Docks[name]; ok {
+				terminal = dc.Terminal
+			}
+			if terminal != "" {
+				fmt.Printf("  terminal: %s\n", terminal)
 			}
 
 			// Session status
@@ -128,38 +145,33 @@ func newDockShowCmd() *cobra.Command {
 			}
 
 			// Workspace summary
-			m, _ := eng.LoadManifest()
-			if m != nil {
-				if dock := m.FindDock(name); dock != nil {
-					idle, active, done := 0, 0, 0
-					for _, ws := range dock.Workspaces {
-						switch ws.Status {
-						case "idle":
-							idle++
-						case "active":
-							active++
-						case "done":
-							done++
-						}
-					}
-					total := len(dock.Workspaces)
-					fmt.Printf("  workspaces: %d", total)
-					if total > 0 {
-						var parts []string
-						if active > 0 {
-							parts = append(parts, fmt.Sprintf("%d active", active))
-						}
-						if idle > 0 {
-							parts = append(parts, fmt.Sprintf("%d idle", idle))
-						}
-						if done > 0 {
-							parts = append(parts, fmt.Sprintf("%d done", done))
-						}
-						fmt.Printf(" (%s)", strings.Join(parts, ", "))
-					}
-					fmt.Println()
+			idle, active, done := 0, 0, 0
+			for _, ws := range mDock.Workspaces {
+				switch ws.Status {
+				case "idle":
+					idle++
+				case "active":
+					active++
+				case "done":
+					done++
 				}
 			}
+			total := len(mDock.Workspaces)
+			fmt.Printf("  workspaces: %d", total)
+			if total > 0 {
+				var parts []string
+				if active > 0 {
+					parts = append(parts, fmt.Sprintf("%d active", active))
+				}
+				if idle > 0 {
+					parts = append(parts, fmt.Sprintf("%d idle", idle))
+				}
+				if done > 0 {
+					parts = append(parts, fmt.Sprintf("%d done", done))
+				}
+				fmt.Printf(" (%s)", strings.Join(parts, ", "))
+			}
+			fmt.Println()
 
 			return nil
 		},
@@ -180,18 +192,24 @@ func newDockTreeCmd() *cobra.Command {
 			}
 
 			dockName := args[0]
-			if _, ok := eng.Config.Docks[dockName]; !ok {
-				return fmt.Errorf("dock %q not found", dockName)
-			}
 
 			docks, err := eng.List()
 			if err != nil {
 				return err
 			}
 
-			dockCfg := eng.Config.Docks[dockName]
-			view := BuildListView(eng.Config, docks, ListViewOptions{
-				Focus:     ListFocus{Kind: FocusDock, Repo: dockCfg.Repo, Dock: dockName},
+			repo := ""
+			m, _ := eng.LoadManifest()
+			if m != nil {
+				if dock := m.FindDock(dockName); dock != nil {
+					repo = dock.Repo
+				} else {
+					return fmt.Errorf("dock %q not found", dockName)
+				}
+			}
+
+			view := BuildListView(docks, ListViewOptions{
+				Focus:     ListFocus{Kind: FocusDock, Repo: repo, Dock: dockName},
 				Recursive: true,
 			})
 

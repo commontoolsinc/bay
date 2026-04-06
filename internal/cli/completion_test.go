@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/spf13/cobra"
 )
@@ -150,23 +149,20 @@ func TestWorkspaceCompletions(t *testing.T) {
 func TestDockCompletions(t *testing.T) {
 	dir := t.TempDir()
 
-	// Write a config file
-	cfg := &config.Config{
-		Agents: map[string]config.AgentConfig{"claude": {Command: "claude"}},
-		Repos:  map[string]config.RepoConfig{"labs": {Path: "/projects/labs"}},
-		Docks: map[string]config.DockConfig{
-			"dev":      {Repo: "labs", Agent: "claude"},
-			"research": {Agent: "claude"},
-		},
+	// Write a manifest file with docks
+	m := manifest.New()
+	m.Docks = []manifest.Dock{
+		{Name: "dev", Repo: "labs", Agent: "claude", Workspaces: []manifest.Workspace{}},
+		{Name: "research", Agent: "claude", Workspaces: []manifest.Workspace{}},
 	}
 
-	origXDG := os.Getenv("XDG_CONFIG_HOME")
-	os.Setenv("XDG_CONFIG_HOME", dir)
-	defer os.Setenv("XDG_CONFIG_HOME", origXDG)
+	origXDG := os.Getenv("XDG_DATA_HOME")
+	os.Setenv("XDG_DATA_HOME", dir)
+	defer os.Setenv("XDG_DATA_HOME", origXDG)
 
 	bayDir := filepath.Join(dir, "bay")
 	os.MkdirAll(bayDir, 0o755)
-	config.Save(filepath.Join(bayDir, "config.toml"), cfg)
+	manifest.Save(filepath.Join(bayDir, "manifest.json"), m)
 
 	fn := dockCompletions()
 	completions, _ := fn(nil, nil, "")

@@ -58,7 +58,7 @@ func (e *Engine) CurrentContext() (*Context, error) {
 					ctx.Repo = ws.Worktree.Repo
 				}
 				if ctx.Repo == "" {
-					ctx.Repo = e.Config.Docks[dock.Name].Repo
+					ctx.Repo = dock.Repo
 				}
 				// Find current surface from tmux pane.
 				for _, s := range ws.Surfaces {
@@ -93,7 +93,7 @@ func (e *Engine) CurrentContext() (*Context, error) {
 						ctx.Repo = ws.Worktree.Repo
 					}
 					if ctx.Repo == "" {
-						ctx.Repo = e.Config.Docks[dock.Name].Repo
+						ctx.Repo = dock.Repo
 					}
 					if s.Tmux.PaneID == currentPaneID {
 						ctx.Surface = s.Name
@@ -107,21 +107,22 @@ func (e *Engine) CurrentContext() (*Context, error) {
 
 	// Fallback: match tmux session to a dock.
 	if currentSession != "" {
-		if dockCfg, ok := e.Config.Docks[currentSession]; ok {
+		dock := m.FindDock(currentSession)
+		if dock != nil {
 			ctx.Dock = currentSession
-			ctx.Repo = dockCfg.Repo
+			ctx.Repo = dock.Repo
 			return ctx, nil
 		}
 	}
 
 	// Fallback: match CWD to a repo.
-	for repoName, repoCfg := range e.Config.Repos {
-		repoPath := config.ExpandPath(repoCfg.Path)
+	for _, repo := range m.Repos {
+		repoPath := config.ExpandPath(repo.Path)
 		if resolved, err := filepath.EvalSymlinks(repoPath); err == nil {
 			repoPath = resolved
 		}
 		if cwd != "" && (cwd == repoPath || strings.HasPrefix(cwd, repoPath+"/")) {
-			ctx.Repo = repoName
+			ctx.Repo = repo.Name
 			return ctx, nil
 		}
 	}

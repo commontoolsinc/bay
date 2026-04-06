@@ -73,6 +73,40 @@ func (e *Engine) SaveConfig() error {
 	return config.Save(e.configPath, e.Config)
 }
 
+// findRepo loads the manifest and looks up a repo by name.
+func (e *Engine) findRepo(name string) (*manifest.Repo, error) {
+	m, err := e.LoadManifest()
+	if err != nil {
+		return nil, err
+	}
+	r := m.FindRepo(name)
+	if r == nil {
+		return nil, fmt.Errorf("repo %q not found", name)
+	}
+	return r, nil
+}
+
+// resolvedDockAgent returns the effective agent for a dock,
+// checking config overrides first, then the manifest default.
+func (e *Engine) resolvedDockAgent(dockName string, m *manifest.Manifest) string {
+	dock := m.FindDock(dockName)
+	manifestDefault := ""
+	if dock != nil {
+		manifestDefault = dock.Agent
+	}
+	return e.Config.ResolvedDockAgent(dockName, manifestDefault)
+}
+
+// resolvedDockAgentArgs returns the effective agent args for a dock.
+func (e *Engine) resolvedDockAgentArgs(dockName string, m *manifest.Manifest) []string {
+	dock := m.FindDock(dockName)
+	var manifestDefault []string
+	if dock != nil {
+		manifestDefault = dock.AgentArgs
+	}
+	return e.Config.ResolvedDockAgentArgs(dockName, manifestDefault)
+}
+
 var validNameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 var validStatuses = map[manifest.WorkspaceStatus]bool{
@@ -135,7 +169,7 @@ func abbreviateBranch(branch string) string {
 // launchSurfaceInTmux launches the appropriate command in a tmux pane
 // based on the surface type and returns a populated Surface.
 // Used by workspace creation and surface add operations.
-func (e *Engine) launchSurfaceInTmux(tmuxPaneID, dockName string, surfaceType manifest.SurfaceType, agent, cmd string) manifest.Surface {
+func (e *Engine) launchSurfaceInTmux(tmuxPaneID, dockName string, surfaceType manifest.SurfaceType, agent, cmd string, agentArgs []string) manifest.Surface {
 	s := manifest.Surface{
 		Type:    surfaceType,
 		Backend: manifest.SurfaceBackendTmux,
@@ -145,8 +179,7 @@ func (e *Engine) launchSurfaceInTmux(tmuxPaneID, dockName string, surfaceType ma
 	switch surfaceType {
 	case manifest.SurfaceTypeAgent:
 		s.Agent = &agent
-		dockCfg := e.Config.Docks[dockName]
-		agentCmd := e.buildAgentCommand(agent, dockCfg)
+		agentCmd := e.buildAgentCommand(agent, agentArgs)
 		_ = e.Tmux.SendKeys(tmuxPaneID, agentCmd)
 	case manifest.SurfaceTypeCmd:
 		s.Command = &cmd

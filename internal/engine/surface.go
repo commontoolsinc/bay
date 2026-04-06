@@ -83,8 +83,12 @@ func (e *Engine) SurfaceAdd(dockName, wsName string, surfaceType manifest.Surfac
 		}
 	}
 
+	// Resolve agent args for the dock.
+	m2, _ := e.LoadManifest()
+	agentArgs := e.resolvedDockAgentArgs(dockName, m2)
+
 	// Launch the surface process.
-	surface := e.launchSurfaceInTmux(tmuxPaneID, dockName, surfaceType, agent, cmd)
+	surface := e.launchSurfaceInTmux(tmuxPaneID, dockName, surfaceType, agent, cmd, agentArgs)
 	surface.Name = uniqueSurfaceName(ws, name)
 	surface.Tmux.PaneID = tmuxPaneID
 	surface.Tmux.WindowID = tmuxWindowID
@@ -197,14 +201,14 @@ func (e *Engine) SurfaceRestart(dockName, wsName, surfaceName string) error {
 		return fmt.Errorf("surface %q has no tmux pane to restart", surfaceName)
 	}
 
-	dockCfg := e.Config.Docks[dockName]
+	agentArgs := e.resolvedDockAgentArgs(dockName, m)
 	var respawnCmd string
 
 	switch s.Type {
 	case manifest.SurfaceTypeAgent:
 		if s.Agent != nil && *s.Agent != "" {
 			if _, ok := e.Config.Agents[*s.Agent]; ok {
-				respawnCmd = e.buildAgentResumeCommand(*s.Agent, dockCfg)
+				respawnCmd = e.buildAgentResumeCommand(*s.Agent, agentArgs)
 			}
 		}
 	case manifest.SurfaceTypeCmd:

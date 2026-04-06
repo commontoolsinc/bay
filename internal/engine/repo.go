@@ -10,18 +10,24 @@ import (
 	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
-// RepoAdd adds a repo to the configuration.
+// RepoAdd adds a repo to the manifest.
 // If cloneURL is non-empty and the path does not exist, the repo is cloned first.
 // If force is false and the path is not a git repo, an error is returned.
 func (e *Engine) RepoAdd(name, path, worktreeDir, cloneURL string, force bool) error {
 	if err := ValidateName(name); err != nil {
 		return err
 	}
-	if _, exists := e.Config.Repos[name]; exists {
+
+	// Check for duplicate name in manifest.
+	m, err := e.LoadManifest()
+	if err != nil {
+		return err
+	}
+	if m.FindRepo(name) != nil {
 		return fmt.Errorf("repo %q already exists", name)
 	}
 
-	// Normalize to absolute path for config storage
+	// Normalize to absolute path for storage
 	normalizedPath := config.NormalizePath(path)
 	expandedPath := config.ExpandPath(normalizedPath)
 
@@ -53,16 +59,13 @@ func (e *Engine) RepoAdd(name, path, worktreeDir, cloneURL string, force bool) e
 		worktreeDir = config.NormalizePath(worktreeDir)
 	}
 
-	e.Config.Repos[name] = config.RepoConfig{
-		Path:        normalizedPath,
-		WorktreeDir: worktreeDir,
-	}
-	if e.configPath != "" {
-		if err := config.Save(e.configPath, e.Config); err != nil {
-			return fmt.Errorf("saving config: %w", err)
-		}
-	}
-	return nil
+	return e.withManifest(func(m *manifest.Manifest) error {
+		return m.AddRepo(manifest.Repo{
+			Name:        name,
+			Path:        normalizedPath,
+			WorktreeDir: worktreeDir,
+		})
+	})
 }
 
 // RepoInUseError is returned when a repo cannot be removed because docks reference it.
@@ -76,19 +79,23 @@ func (e *RepoInUseError) Error() string {
 	return fmt.Sprintf("repo %q is in use by %d dock(s)", e.RepoName, len(e.AffectedDocks))
 }
 
-// RepoRemove removes a repo from the configuration.
+// RepoRemove removes a repo from the manifest.
 // If force is true, also closes and removes any docks that reference this repo.
 // Returns *RepoInUseError if the repo is in use and force is false.
 func (e *Engine) RepoRemove(name string, force bool) error {
-	if _, exists := e.Config.Repos[name]; !exists {
+	m, err := e.LoadManifest()
+	if err != nil {
+		return err
+	}
+	if m.FindRepo(name) == nil {
 		return fmt.Errorf("repo %q not found", name)
 	}
 
 	// Find all docks that reference this repo
 	var affectedDockNames []string
-	for dockName, dock := range e.Config.Docks {
-		if dock.Repo == name {
-			affectedDockNames = append(affectedDockNames, dockName)
+	for i := range m.Docks {
+		if m.Docks[i].Repo == name {
+			affectedDockNames = append(affectedDockNames, m.Docks[i].Name)
 		}
 	}
 
@@ -107,37 +114,29 @@ func (e *Engine) RepoRemove(name string, force bool) error {
 	}
 
 	// Force path: close all workspaces in affected docks.
-	// DockClose handles workspace iteration, manifest saves, and
-	// session kills. But killing a session we're inside would
-	// terminate us before we save config. So we split the work:
-	// 1. Close workspaces (DockCloseWorkspaces — no session kill)
-	// 2. Save config
-	// 3. Kill sessions
-
 	for _, dockName := range affectedDockNames {
 		e.DockCloseWorkspaces(dockName, true)
+	}
+
+	// Remove repo and affected docks from manifest.
+	if err := e.withManifest(func(m *manifest.Manifest) error {
+		for _, dockName := range affectedDockNames {
+			_ = m.RemoveDock(dockName)
+		}
+		return m.RemoveRepo(name)
+	}); err != nil {
+		return fmt.Errorf("saving manifest: %w", err)
+	}
+
+	// Remove config overrides for affected docks.
+	for _, dockName := range affectedDockNames {
 		delete(e.Config.Docks, dockName)
 	}
-
-	delete(e.Config.Repos, name)
-	if e.configPath != "" {
-		if err := config.Save(e.configPath, e.Config); err != nil {
-			return fmt.Errorf("saving config: %w", err)
-		}
+	if len(affectedDockNames) > 0 && e.configPath != "" {
+		_ = config.Save(e.configPath, e.Config)
 	}
 
-	if len(affectedDockNames) > 0 {
-		if err := e.withManifest(func(m *manifest.Manifest) error {
-			for _, dockName := range affectedDockNames {
-				_ = m.RemoveDock(dockName)
-			}
-			return nil
-		}); err != nil {
-			return fmt.Errorf("saving manifest: %w", err)
-		}
-	}
-
-	// Now kill the tmux sessions (safe — config is saved)
+	// Now kill the tmux sessions (safe — manifest is saved)
 	for _, dockName := range affectedDockNames {
 		_ = e.Tmux.KillSession(dockName)
 	}
@@ -149,11 +148,11 @@ func (e *Engine) RepoRemove(name string, force bool) error {
 // - Appends bay awareness line to each agent's project_file if missing.
 // - Creates .worktreeinclude if it doesn't exist.
 func (e *Engine) RepoInit(name string) error {
-	repoCfg, ok := e.Config.Repos[name]
-	if !ok {
-		return fmt.Errorf("repo %q not found", name)
+	repo, err := e.findRepo(name)
+	if err != nil {
+		return err
 	}
-	repoPath := config.ExpandPath(repoCfg.Path)
+	repoPath := config.ExpandPath(repo.Path)
 
 	// Bay awareness: for each agent with a project_file, ensure it mentions bay.
 	for _, agent := range e.Config.Agents {
@@ -201,7 +200,11 @@ func ensureBayAwareness(path string) error {
 	return err
 }
 
-// RepoList returns all configured repos.
-func (e *Engine) RepoList() map[string]config.RepoConfig {
-	return e.Config.Repos
+// RepoList returns all repos from the manifest.
+func (e *Engine) RepoList() ([]manifest.Repo, error) {
+	m, err := e.LoadManifest()
+	if err != nil {
+		return nil, err
+	}
+	return m.Repos, nil
 }
