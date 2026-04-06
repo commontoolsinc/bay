@@ -520,8 +520,9 @@ workspaces as needed.
 
 - Phase 4b: merge detection (activity-gated fetch, status→done) — PR #68
 
+- Phase 4c: agent session resumption (resume_args on restart/recovery) — PR #69
+
 **Next:**
-- Phase 4c: agent session resumption
 - Phase 5d: documentation rewrite
 
 ## What's NOT in scope

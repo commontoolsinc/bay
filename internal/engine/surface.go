@@ -204,7 +204,7 @@ func (e *Engine) SurfaceRestart(dockName, wsName, surfaceName string) error {
 	case manifest.SurfaceTypeAgent:
 		if s.Agent != nil && *s.Agent != "" {
 			if _, ok := e.Config.Agents[*s.Agent]; ok {
-				respawnCmd = e.buildAgentCommand(*s.Agent, dockCfg)
+				respawnCmd = e.buildAgentResumeCommand(*s.Agent, dockCfg)
 			}
 		}
 	case manifest.SurfaceTypeCmd:
