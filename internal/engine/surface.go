@@ -6,6 +6,20 @@ import (
 	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
+// uniqueSurfaceName returns a name that doesn't collide with existing surfaces.
+// If "shell" is taken, tries "shell-2", "shell-3", etc.
+func uniqueSurfaceName(ws *manifest.Workspace, name string) string {
+	if ws.FindSurface(name) == nil {
+		return name
+	}
+	for i := 2; ; i++ {
+		candidate := fmt.Sprintf("%s-%d", name, i)
+		if ws.FindSurface(candidate) == nil {
+			return candidate
+		}
+	}
+}
+
 // SurfaceAdd adds a new surface to a workspace.
 func (e *Engine) SurfaceAdd(dockName, wsName string, surfaceType manifest.SurfaceType, name, agent, cmd, splitDir string) error {
 	m, err := e.LoadManifest()
@@ -71,7 +85,7 @@ func (e *Engine) SurfaceAdd(dockName, wsName string, surfaceType manifest.Surfac
 
 	// Launch the surface process.
 	surface := e.launchSurfaceInTmux(tmuxPaneID, dockName, surfaceType, agent, cmd)
-	surface.Name = name
+	surface.Name = uniqueSurfaceName(ws, name)
 	surface.Tmux.PaneID = tmuxPaneID
 	surface.Tmux.WindowID = tmuxWindowID
 	surface.Tmux.LayoutGroup = layoutGroup

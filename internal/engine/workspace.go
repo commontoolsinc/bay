@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/manifest"
@@ -71,11 +73,12 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		}
 		worktreeAttrs = &manifest.WorktreeAttrs{Repo: repoName}
 
-		// Use workspace name or a generated name for the worktree directory.
+		// Use workspace name or a unique timestamp-based name for the worktree directory.
+		// Timestamp ensures no collisions even after workspaces are removed.
 		wtDir := repoCfg.EffectiveWorktreeDir()
 		dirName := opts.Name
 		if dirName == "" {
-			dirName = fmt.Sprintf("ws-%d", len(dock.Workspaces)+1)
+			dirName = "ws-" + strconv.FormatInt(time.Now().UnixMilli(), 36)
 		}
 		wsPath = filepath.Join(wtDir, dirName)
 
@@ -275,7 +278,8 @@ func (e *Engine) WsClose(dockName, wsName string, force bool) error {
 		}
 	}
 
-	// Archive the workspace.
+	// Archive the workspace. Disambiguate name if it already exists
+	// in the archive (same workspace closed and recreated before).
 	archive, err := manifest.LoadArchive(e.archivePath)
 	if err != nil {
 		archive = manifest.New()
@@ -285,7 +289,11 @@ func (e *Engine) WsClose(dockName, wsName string, force bool) error {
 		_ = archive.AddDock(manifest.Dock{Name: dockName})
 		archiveDock = archive.FindDock(dockName)
 	}
-	_ = archiveDock.AddWorkspace(*ws)
+	archived := *ws
+	for i := 2; archiveDock.FindWorkspace(archived.Name) != nil; i++ {
+		archived.Name = fmt.Sprintf("%s-%d", ws.Name, i)
+	}
+	_ = archiveDock.AddWorkspace(archived)
 	_ = manifest.SaveArchive(e.archivePath, archive)
 
 	// Remove from manifest.
