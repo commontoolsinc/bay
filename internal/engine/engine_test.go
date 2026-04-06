@@ -247,6 +247,36 @@ func TestWsNew_Worktree(t *testing.T) {
 	}
 }
 
+func TestWsNew_SequentialDefaultNames(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws1, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("first WsNew: %v", err)
+	}
+	if ws1.Name != "w1" {
+		t.Errorf("first workspace name = %q, want w1", ws1.Name)
+	}
+
+	ws2, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("second WsNew: %v", err)
+	}
+	if ws2.Name != "w2" {
+		t.Errorf("second workspace name = %q, want w2", ws2.Name)
+	}
+
+	// Close w1, create another — should get w3, not reuse w1.
+	eng.WsClose("labs", "w1", true)
+	ws3, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("third WsNew: %v", err)
+	}
+	if ws3.Name != "w1" {
+		t.Errorf("third workspace name = %q, want w1 (reuse after close)", ws3.Name)
+	}
+}
+
 func TestSurfaceAdd_PersistsTmuxPaneID(t *testing.T) {
 	eng, _ := testEngine(t)
 
