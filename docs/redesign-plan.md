@@ -500,9 +500,12 @@ workspaces as needed.
   ResumeArgs/ProjectFile/Terminal/Template — PR #54
 
 - Phase 1c: CLI restructure — surface/sf command, removed win/pane commands — PR #55
+- Phase 1d: navigation infrastructure (picker, SelectPane, surface entries) — PR #56
+- Phase 1d: navigation commands (surface go/next/prev, ws go/next/prev) — PR #57
+- Phase 1d: keybindings (21 bindings: surface/ws nav, index jump, utility) — PR #58
 
 **Next:**
-- Phase 1d: navigation rewrite (built-in picker, scoped nav)
+- Phase 2: GUI integration (editor surfaces, dock host terminal)
 
 ## What's NOT in scope
 
