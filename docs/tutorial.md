@@ -81,8 +81,8 @@ A teammate pings you for a review? Create a third:
 bay ws new --name review
 ```
 
-Switch between all of them with `Option+J` / `Option+K` (or
-`bay ws go`). Each workspace remembers exactly where you left off.
+Switch between all of them with `Option+Shift+j` / `Option+Shift+k` (or
+`bay ws go`).
 
 ## 3. Add tools to your workspace
 
@@ -126,11 +126,11 @@ navigable.
 
 **Between workspaces**:
 
-- `Option+J` / `Option+K` — next / previous workspace
-- `Option+G` — fuzzy picker for workspaces
+- `Option+Shift+j` / `Option+Shift+k` — next / previous workspace
+- `Option+Shift+g` — fuzzy picker for workspaces
 
-The pattern: **lowercase = within your current task, uppercase = switch
-tasks.**
+The pattern: **without Shift = within your current task, with Shift =
+switch tasks.**
 
 All of these work without the Option-key shortcuts too:
 
