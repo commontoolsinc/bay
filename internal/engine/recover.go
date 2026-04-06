@@ -45,6 +45,15 @@ func (e *Engine) Recover() ([]RecoverResult, error) {
 		outcome := e.recoverDockWorkspaces(dock, dockCfg, hasCfg)
 		e.cleanPlaceholders(dock.Name)
 
+		// Recover host terminal if configured and dead.
+		if dock.Host != nil && hasCfg && dockCfg.Terminal != "" {
+			if dock.Host.PID == 0 || !processAlive(dock.Host.PID) {
+				if pid, err := launchTerminal(dockCfg.Terminal, dock.Name); err == nil {
+					dock.Host.PID = pid
+				}
+			}
+		}
+
 		results = append(results, RecoverResult{
 			Dock:      dock.Name,
 			Recovered: outcome.recovered,
