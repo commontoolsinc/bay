@@ -72,10 +72,8 @@ func NewRootCmd(version string) *cobra.Command {
 	// Workspace commands
 	wsCmd := newWsCmd()
 	wsCmd.GroupID = "workspace"
-	winCmd := newWinCmd()
-	winCmd.GroupID = "workspace"
-	paneCmd := newPaneCmd()
-	paneCmd.GroupID = "workspace"
+	surfaceCmd := newSurfaceCmd()
+	surfaceCmd.GroupID = "workspace"
 	shellCmd := newShellCmd()
 	shellCmd.GroupID = "workspace"
 	editCmd := newEditCmd()
@@ -113,8 +111,7 @@ func NewRootCmd(version string) *cobra.Command {
 
 	root.AddCommand(
 		wsCmd,
-		winCmd,
-		paneCmd,
+		surfaceCmd,
 		shellCmd,
 		editCmd,
 		goCmd,

@@ -12,7 +12,7 @@ func TestNewRootCmd(t *testing.T) {
 
 	// Verify all subcommands are registered (including hidden ones)
 	expected := map[string]bool{
-		"dock": false, "repo": false, "ws": false, "win": false, "pane": false,
+		"dock": false, "repo": false, "ws": false, "surface": false,
 		"go": false, "ls": false, "pwd": false, "recover": false, "doctor": false,
 		"setup": false, "monitor": false, "add-prompt": false, "version": false,
 		"shell": false, "edit": false, "status-line": false, "close-pane": false,
@@ -37,6 +37,51 @@ func TestNewRootCmd(t *testing.T) {
 			}
 			break
 		}
+	}
+}
+
+func TestNewRootCmd_OldCommandsRemoved(t *testing.T) {
+	root := NewRootCmd("test")
+
+	removed := []string{"win", "pane"}
+	for _, cmd := range root.Commands() {
+		for _, name := range removed {
+			if cmd.Name() == name {
+				t.Errorf("old command %q should be removed", name)
+			}
+		}
+	}
+}
+
+func TestSurfaceSubcommands(t *testing.T) {
+	root := NewRootCmd("test")
+	sf, _, err := root.Find([]string{"surface"})
+	if err != nil {
+		t.Fatalf("finding surface: %v", err)
+	}
+
+	expected := []string{"new", "close", "restart"}
+	found := map[string]bool{}
+	for _, cmd := range sf.Commands() {
+		found[cmd.Name()] = true
+	}
+	for _, name := range expected {
+		if !found[name] {
+			t.Errorf("surface subcommand %q not found", name)
+		}
+	}
+}
+
+func TestSurfaceAlias(t *testing.T) {
+	root := NewRootCmd("test")
+
+	// "sf" should resolve to the surface command
+	cmd, _, err := root.Find([]string{"sf"})
+	if err != nil {
+		t.Fatalf("finding sf alias: %v", err)
+	}
+	if cmd.Name() != "surface" {
+		t.Errorf("sf should resolve to surface, got %q", cmd.Name())
 	}
 }
 
@@ -74,25 +119,6 @@ func TestWsSubcommands(t *testing.T) {
 	for _, name := range expected {
 		if !found[name] {
 			t.Errorf("ws subcommand %q not found", name)
-		}
-	}
-}
-
-func TestWinSubcommands(t *testing.T) {
-	root := NewRootCmd("test")
-	win, _, err := root.Find([]string{"win"})
-	if err != nil {
-		t.Fatalf("finding win: %v", err)
-	}
-
-	expected := []string{"open", "close", "restart"}
-	found := map[string]bool{}
-	for _, cmd := range win.Commands() {
-		found[cmd.Name()] = true
-	}
-	for _, name := range expected {
-		if !found[name] {
-			t.Errorf("win subcommand %q not found", name)
 		}
 	}
 }
