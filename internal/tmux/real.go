@@ -256,8 +256,12 @@ func (r *Real) GetPanePID(paneID string) (int, error) {
 }
 
 func (r *Real) PaneExists(paneID string) (bool, error) {
-	err := runSilent("display-message", "-t", paneID, "-p", "#{pane_id}")
-	return err == nil, nil
+	out, err := run("display-message", "-t", paneID, "-p", "#{pane_dead}")
+	if err != nil {
+		return false, nil // pane doesn't exist at all
+	}
+	// pane_dead is "1" for dead panes (remain-on-exit), "0" for live
+	return strings.TrimSpace(out) == "0", nil
 }
 
 func (r *Real) GetPaneCursorY(paneID string) (int, error) {
