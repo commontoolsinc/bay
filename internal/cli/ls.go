@@ -39,6 +39,8 @@ func newLsCmd() *cobra.Command {
 				Recursive: recursive,
 			})
 
+			view.SetCurrentContext(eng)
+
 			if jsonOutput {
 				var payload interface{} = view
 				if rowsOutput {

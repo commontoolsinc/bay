@@ -261,6 +261,40 @@ func TestFormatListView_ShowsWaitingIndicator(t *testing.T) {
 	}
 }
 
+func TestFormatListView_HighlightsCurrentContext(t *testing.T) {
+	view := BuildListView(testConfig(), testDocks(), ListViewOptions{
+		Focus: ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
+	})
+	view.CurrentDock = "api"
+	view.CurrentWs = "auth-fix"
+
+	out := stripANSI(FormatListView(view, false))
+
+	if !strings.Contains(out, "dock api *") {
+		t.Fatalf("current dock should have * marker:\n%s", out)
+	}
+	if !strings.Contains(out, "workspace auth-fix *") {
+		t.Fatalf("current workspace should have * marker:\n%s", out)
+	}
+	// Non-current workspace should NOT have marker.
+	if strings.Contains(out, "workspace cleanup *") {
+		t.Fatalf("non-current workspace should not have * marker:\n%s", out)
+	}
+}
+
+func TestFormatListView_NoHighlightWithoutContext(t *testing.T) {
+	view := BuildListView(testConfig(), testDocks(), ListViewOptions{
+		Focus: ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
+	})
+	// No CurrentDock/CurrentWs set.
+
+	out := stripANSI(FormatListView(view, false))
+
+	if strings.Contains(out, " *") {
+		t.Fatalf("should have no * markers without current context:\n%s", out)
+	}
+}
+
 func TestFormatDockTree_IncludesNoRepoDocks(t *testing.T) {
 	cfg := &config.Config{
 		Repos: map[string]config.RepoConfig{
