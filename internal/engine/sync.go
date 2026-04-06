@@ -78,8 +78,8 @@ func (e *Engine) syncSurfaceState(ws *manifest.Workspace) bool {
 
 	for _, s := range ws.Surfaces {
 		switch {
-		case s.Tmux != nil && s.Tmux.WindowID != "":
-			exists, _ := e.Tmux.WindowExists(s.Tmux.WindowID)
+		case s.Tmux != nil && s.Tmux.PaneID != "":
+			exists, _ := e.Tmux.PaneExists(s.Tmux.PaneID)
 			if exists {
 				live = append(live, s)
 			} else {

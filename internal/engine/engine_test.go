@@ -1848,9 +1848,9 @@ func TestList_MarksStaleWorkspace(t *testing.T) {
 	}
 }
 
-func TestSyncAll_RemovesStaleSurfacesForSplitPanes(t *testing.T) {
-	// When a tmux window is killed, all surfaces in that window
-	// (including split panes) should be removed.
+func TestSyncAll_RemovesDeadPaneSurface(t *testing.T) {
+	// When a tmux pane is killed, its surface should be removed
+	// even if the window still exists.
 	eng, _ := testEngine(t)
 
 	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
@@ -1874,13 +1874,11 @@ func TestSyncAll_RemovesStaleSurfacesForSplitPanes(t *testing.T) {
 	}
 	mockTmux.KillPane(panes[1].ID)
 
-	// SyncAll should keep surfaces since the window still exists
 	eng.SyncAll()
 
 	ws, _ = eng.WsShow("labs", "w1")
-	// Window still exists, so surfaces are preserved (even if pane is gone)
-	if len(ws.Surfaces) != 2 {
-		t.Errorf("expected 2 surfaces (window still alive), got %d", len(ws.Surfaces))
+	if len(ws.Surfaces) != 1 {
+		t.Errorf("expected 1 surface after killing pane, got %d", len(ws.Surfaces))
 	}
 }
 

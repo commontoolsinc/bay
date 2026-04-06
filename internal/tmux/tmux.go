@@ -32,6 +32,7 @@ type Interface interface {
 	GetPanePID(paneID string) (int, error)
 
 	// Pane state
+	PaneExists(paneID string) (bool, error)
 	GetPaneCursorY(paneID string) (int, error)
 
 	// Current context
