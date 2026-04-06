@@ -508,8 +508,11 @@ workspaces as needed.
 
 - Phase 5a: zero-config (auto-bootstrap from CWD, agent probing) — PR #60
 
+- Phase 5c: bay repo init (bay awareness, .worktreeinclude) — PR #62
+
 **Next:**
-- Phase 5b-e: templates, repo init, docs rewrite, setup/doctor updates
+- Phase 5d: documentation rewrite
+- Phase 5e: setup/doctor updates
 - Phase 2: GUI integration (editor surfaces, dock host terminal)
 
 ## What's NOT in scope

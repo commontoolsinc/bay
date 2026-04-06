@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/commontoolsinc/bay/internal/config"
@@ -20,6 +21,7 @@ func newRepoCmd() *cobra.Command {
 		newRepoLsCmd(),
 		newRepoShowCmd(),
 		newRepoRemoveCmd(),
+		newRepoInitCmd(),
 	)
 
 	return cmd
@@ -51,6 +53,11 @@ Use --force to add a directory that is not a git repo.`,
 				return err
 			}
 			fmt.Printf("Repo %q added (%s)\n", args[0], args[1])
+
+			// Auto-init bay awareness.
+			if initErr := eng.RepoInit(args[0]); initErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: repo init: %v\n", initErr)
+			}
 			return nil
 		},
 	}
@@ -174,5 +181,57 @@ func newRepoRemoveCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&force, "force", false, "also close and remove docks that use this repo")
 
 	return cmd
+}
+
+func newRepoInitCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "init [name]",
+		Short: "Set up bay awareness in a repo (idempotent)",
+		Long: `Set up bay awareness in a repo's project files.
+
+For each configured agent with a project_file, appends a bay awareness
+line if not already present. Creates .worktreeinclude if missing.
+
+  bay repo init labs    init by repo name
+  bay repo init         infer repo from CWD`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine()
+			if err != nil {
+				return err
+			}
+
+			var repoName string
+			if len(args) > 0 {
+				repoName = args[0]
+			} else {
+				// Infer from CWD.
+				cwd, cwdErr := os.Getwd()
+				if cwdErr != nil {
+					return fmt.Errorf("cannot determine working directory")
+				}
+				root, rootErr := eng.Git.RepoRoot(cwd)
+				if rootErr != nil {
+					return fmt.Errorf("not in a git repository")
+				}
+				// Find repo by path.
+				for name, repo := range eng.Config.Repos {
+					if config.ExpandPath(repo.Path) == root {
+						repoName = name
+						break
+					}
+				}
+				if repoName == "" {
+					return fmt.Errorf("current repo not in bay config; use bay repo add first")
+				}
+			}
+
+			if err := eng.RepoInit(repoName); err != nil {
+				return err
+			}
+			fmt.Printf("Repo %q initialized for bay.\n", repoName)
+			return nil
+		},
+	}
 }
 

@@ -3,6 +3,8 @@ package engine
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/manifest"
@@ -141,6 +143,62 @@ func (e *Engine) RepoRemove(name string, force bool) error {
 	}
 
 	return nil
+}
+
+// RepoInit performs idempotent project setup for a repo:
+// - Appends bay awareness line to each agent's project_file if missing.
+// - Creates .worktreeinclude if it doesn't exist.
+func (e *Engine) RepoInit(name string) error {
+	repoCfg, ok := e.Config.Repos[name]
+	if !ok {
+		return fmt.Errorf("repo %q not found", name)
+	}
+	repoPath := config.ExpandPath(repoCfg.Path)
+
+	// Bay awareness: for each agent with a project_file, ensure it mentions bay.
+	for _, agent := range e.Config.Agents {
+		if agent.ProjectFile == "" {
+			continue
+		}
+		filePath := filepath.Join(repoPath, agent.ProjectFile)
+		if err := ensureBayAwareness(filePath); err != nil {
+			return fmt.Errorf("updating %s: %w", agent.ProjectFile, err)
+		}
+	}
+
+	// .worktreeinclude: create with a comment if it doesn't exist.
+	wtIncludePath := filepath.Join(repoPath, ".worktreeinclude")
+	if _, err := os.Stat(wtIncludePath); os.IsNotExist(err) {
+		content := "# Files to copy into new worktrees (gitignore pattern syntax).\n# Example: .env\n"
+		if err := os.WriteFile(wtIncludePath, []byte(content), 0o644); err != nil {
+			return fmt.Errorf("creating .worktreeinclude: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// ensureBayAwareness checks if a project file mentions bay and appends
+// an awareness line if not. Creates the file if it doesn't exist.
+func ensureBayAwareness(path string) error {
+	const marker = "bay agent-guide"
+
+	data, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if strings.Contains(string(data), marker) {
+		return nil // already present
+	}
+
+	line := "\nThis project uses bay for workspace management. Run `bay agent-guide` for commands.\n"
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.WriteString(line)
+	return err
 }
 
 // RepoList returns all configured repos.
