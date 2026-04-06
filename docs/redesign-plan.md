@@ -522,8 +522,7 @@ workspaces as needed.
 
 - Phase 4c: agent session resumption (resume_args on restart/recovery) — PR #69
 
-**Next:**
-- Phase 5d: documentation rewrite
+- Phase 5d: documentation rewrite (tutorial, human guide, agent guide) — PR #70
 
 ## What's NOT in scope
 
