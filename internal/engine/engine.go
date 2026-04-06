@@ -65,6 +65,14 @@ func (e *Engine) withManifest(fn func(m *manifest.Manifest) error) error {
 	return manifest.LockedUpdate(e.manifestPath, fn)
 }
 
+// SaveConfig writes the current config to disk.
+func (e *Engine) SaveConfig() error {
+	if e.configPath == "" {
+		return nil
+	}
+	return config.Save(e.configPath, e.Config)
+}
+
 var validNameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 var validStatuses = map[manifest.WorkspaceStatus]bool{
