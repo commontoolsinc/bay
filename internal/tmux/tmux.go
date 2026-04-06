@@ -21,6 +21,7 @@ type Interface interface {
 	SelectWindow(windowID string) error
 
 	// Panes
+	SelectPane(paneID string) error
 	SplitWindow(windowID string, dir string, cwd string) (string, error) // returns pane ID
 	KillPane(paneID string) error
 	SendKeys(paneID string, keys string) error

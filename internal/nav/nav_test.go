@@ -424,3 +424,144 @@ func TestFormatEntries_Empty(t *testing.T) {
 		t.Errorf("expected empty string for nil entries, got %q", s)
 	}
 }
+
+// --- Surface-level navigation tests ---
+
+func buildSurfaceWorkspace() *manifest.Workspace {
+	agent := "claude"
+	cmd := "npm test"
+	return &manifest.Workspace{
+		Name: "auth-fix",
+		Surfaces: []manifest.Surface{
+			{ID: 1, Name: "agent", Type: manifest.SurfaceTypeAgent, Backend: manifest.SurfaceBackendTmux, Agent: &agent, Tmux: &manifest.TmuxAttrs{PaneID: "%1", WindowID: "@1", LayoutGroup: 1}},
+			{ID: 2, Name: "shell", Type: manifest.SurfaceTypeShell, Backend: manifest.SurfaceBackendTmux, Tmux: &manifest.TmuxAttrs{PaneID: "%2", WindowID: "@1", LayoutGroup: 1}},
+			{ID: 3, Name: "tests", Type: manifest.SurfaceTypeCmd, Backend: manifest.SurfaceBackendTmux, Command: &cmd, Tmux: &manifest.TmuxAttrs{PaneID: "%3", WindowID: "@2", LayoutGroup: 2}},
+		},
+	}
+}
+
+func TestCollectSurfaces(t *testing.T) {
+	ws := buildSurfaceWorkspace()
+	mock := tmux.NewMock()
+
+	entries := CollectSurfaces(ws, mock, "%2")
+
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 surface entries, got %d", len(entries))
+	}
+	if entries[0].Name != "agent" || entries[0].Type != "agent" {
+		t.Errorf("entry 0: name=%q type=%q", entries[0].Name, entries[0].Type)
+	}
+	if entries[1].Name != "shell" || !entries[1].Current {
+		t.Errorf("entry 1: name=%q current=%v, want shell/true", entries[1].Name, entries[1].Current)
+	}
+	if entries[2].Name != "tests" || entries[2].Type != "cmd" {
+		t.Errorf("entry 2: name=%q type=%q", entries[2].Name, entries[2].Type)
+	}
+}
+
+func TestCollectSurfaces_NoCurrent(t *testing.T) {
+	ws := buildSurfaceWorkspace()
+	mock := tmux.NewMock()
+
+	entries := CollectSurfaces(ws, mock, "%999")
+
+	for _, e := range entries {
+		if e.Current {
+			t.Errorf("no entry should be current when pane ID doesn't match, got %q", e.Name)
+		}
+	}
+}
+
+func TestNextSurface(t *testing.T) {
+	ws := buildSurfaceWorkspace()
+	mock := tmux.NewMock()
+	entries := CollectSurfaces(ws, mock, "%1") // current = agent (index 0)
+
+	next := NextSurface(entries)
+	if next == nil {
+		t.Fatal("expected non-nil")
+	}
+	if next.Name != "shell" {
+		t.Errorf("next after agent should be shell, got %q", next.Name)
+	}
+}
+
+func TestNextSurface_WrapsAround(t *testing.T) {
+	ws := buildSurfaceWorkspace()
+	mock := tmux.NewMock()
+	entries := CollectSurfaces(ws, mock, "%3") // current = tests (index 2, last)
+
+	next := NextSurface(entries)
+	if next == nil {
+		t.Fatal("expected non-nil")
+	}
+	if next.Name != "agent" {
+		t.Errorf("next after last should wrap to agent, got %q", next.Name)
+	}
+}
+
+func TestPrevSurface(t *testing.T) {
+	ws := buildSurfaceWorkspace()
+	mock := tmux.NewMock()
+	entries := CollectSurfaces(ws, mock, "%2") // current = shell (index 1)
+
+	prev := PrevSurface(entries)
+	if prev == nil {
+		t.Fatal("expected non-nil")
+	}
+	if prev.Name != "agent" {
+		t.Errorf("prev before shell should be agent, got %q", prev.Name)
+	}
+}
+
+func TestPrevSurface_WrapsAround(t *testing.T) {
+	ws := buildSurfaceWorkspace()
+	mock := tmux.NewMock()
+	entries := CollectSurfaces(ws, mock, "%1") // current = agent (index 0, first)
+
+	prev := PrevSurface(entries)
+	if prev == nil {
+		t.Fatal("expected non-nil")
+	}
+	if prev.Name != "tests" {
+		t.Errorf("prev before first should wrap to tests, got %q", prev.Name)
+	}
+}
+
+func TestSurfaceByIndex(t *testing.T) {
+	ws := buildSurfaceWorkspace()
+	mock := tmux.NewMock()
+	entries := CollectSurfaces(ws, mock, "")
+
+	s := SurfaceByIndex(entries, 1)
+	if s == nil || s.Name != "agent" {
+		t.Errorf("index 1 should be agent, got %v", s)
+	}
+	s = SurfaceByIndex(entries, 3)
+	if s == nil || s.Name != "tests" {
+		t.Errorf("index 3 should be tests, got %v", s)
+	}
+	s = SurfaceByIndex(entries, 0)
+	if s != nil {
+		t.Error("index 0 should be nil (1-based)")
+	}
+	s = SurfaceByIndex(entries, 4)
+	if s != nil {
+		t.Error("index 4 should be nil (out of range)")
+	}
+}
+
+func TestNextSurface_NoCurrent(t *testing.T) {
+	ws := buildSurfaceWorkspace()
+	mock := tmux.NewMock()
+	entries := CollectSurfaces(ws, mock, "%999") // no match
+
+	next := NextSurface(entries)
+	if next == nil {
+		t.Fatal("expected non-nil")
+	}
+	if next.Name != "agent" {
+		t.Errorf("with no current, next should be first entry, got %q", next.Name)
+	}
+}
