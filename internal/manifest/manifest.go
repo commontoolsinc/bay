@@ -450,7 +450,7 @@ func (m *Manifest) ResolveWorkspace(query string) (*Workspace, *Dock, error) {
 
 // --- Validation ---
 
-// Validate checks the manifest for structural errors.
+// Validate checks the surface for structural errors.
 func (s *Surface) Validate() []string {
 	var errs []string
 	if s.Backend == SurfaceBackendTmux && s.Tmux == nil {
