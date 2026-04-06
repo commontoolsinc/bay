@@ -8,6 +8,7 @@ import (
 
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/engine"
+	"github.com/commontoolsinc/bay/internal/picker"
 	gitpkg "github.com/commontoolsinc/bay/internal/git"
 	tmuxpkg "github.com/commontoolsinc/bay/internal/tmux"
 	"github.com/spf13/cobra"
@@ -16,6 +17,10 @@ import (
 // cfgPath is set by cobra's --config persistent flag binding.
 // Package-level var is required by cobra's StringVar API.
 var cfgPath string
+
+// defaultPicker is the picker implementation used by navigation commands.
+// Can be replaced for testing or to swap in an alternative (e.g. fzf).
+var defaultPicker picker.Interface = &picker.Builtin{}
 
 // bayPaths returns the standard paths, respecting the --config flag.
 func bayPaths() config.Paths {

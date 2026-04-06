@@ -22,6 +22,20 @@ type Options struct {
 	Prompt string // filter prompt text (default: "> ")
 }
 
+// Interface defines a fuzzy picker. Implementations include the built-in
+// terminal picker and potentially external tools like fzf.
+type Interface interface {
+	Pick(items []Item, opts Options) (int, error)
+}
+
+// Builtin is the built-in terminal picker.
+type Builtin struct{}
+
+// Pick runs the built-in interactive picker on stdin/stdout.
+func (b *Builtin) Pick(items []Item, opts Options) (int, error) {
+	return Run(items, opts, os.Stdin, os.Stdout)
+}
+
 // key constants returned by readKey.
 const (
 	keyEnter     = -1
