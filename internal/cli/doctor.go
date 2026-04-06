@@ -5,9 +5,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/commontoolsinc/bay/internal/config"
+	"github.com/commontoolsinc/bay/internal/focus"
 	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/spf13/cobra"
 )
@@ -136,6 +138,23 @@ func newDoctorCmd() *cobra.Command {
 					ok = false
 				} else {
 					fmt.Println("[OK] tmux keybindings installed")
+				}
+			}
+
+			// Check bay-focus helper (macOS only)
+			if runtime.GOOS == "darwin" {
+				helperPath := focus.HelperPath()
+				if focus.HelperAvailable(helperPath) {
+					fmt.Printf("[OK] bay-focus helper available (%s)\n", helperPath)
+					// Check Accessibility.
+					cmd := exec.Command(helperPath, "--check")
+					if err := cmd.Run(); err != nil {
+						fmt.Println("[INFO] bay-focus: Accessibility permission not granted (Space switching disabled)")
+					} else {
+						fmt.Println("[OK] bay-focus: Accessibility granted")
+					}
+				} else {
+					fmt.Println("[INFO] bay-focus helper not compiled (run bay setup to compile)")
 				}
 			}
 
