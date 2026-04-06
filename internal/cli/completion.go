@@ -88,8 +88,8 @@ func registerCompletions(root *cobra.Command) {
 		}
 	}
 
-	// Window commands: win open, win close, win restart
-	for _, path := range []string{"win open", "win close", "win restart"} {
+	// Surface commands: surface new, surface close, surface restart
+	for _, path := range []string{"surface new", "surface close", "surface restart"} {
 		if cmd := findCmd(root, path); cmd != nil {
 			cmd.ValidArgsFunction = wsCompl
 		}
@@ -125,10 +125,7 @@ func registerCompletions(root *cobra.Command) {
 	if cmd := findCmd(root, "ws update"); cmd != nil {
 		cmd.RegisterFlagCompletionFunc("status", statusCompletions)
 	}
-	if cmd := findCmd(root, "win open"); cmd != nil {
-		cmd.RegisterFlagCompletionFunc("agent", agentCompletions)
-	}
-	if cmd := findCmd(root, "pane add"); cmd != nil {
+	if cmd := findCmd(root, "surface new"); cmd != nil {
 		cmd.RegisterFlagCompletionFunc("agent", agentCompletions)
 		cmd.RegisterFlagCompletionFunc("split", splitCompletions)
 	}

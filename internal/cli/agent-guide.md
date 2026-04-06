@@ -53,9 +53,9 @@ escapes (e.g., `!bay ws update self ...` in Claude Code). The keyword
 `self` resolves based on CWD.
 
 **How `self` works**: `self` resolves to the current **workspace** by
-matching CWD against known workspace paths. For window-level commands
-(`bay win close self`, `bay win restart self`), it additionally matches
-the tmux window ID to identify which window.
+matching CWD against known workspace paths. For surface-level commands
+(`bay surface close`, `bay surface restart`), it additionally matches
+the tmux pane ID to identify which surface.
 
 Commands an agent inside a workspace typically uses:
 - `bay pwd` — confirm bay context and what `self` means here
@@ -238,15 +238,15 @@ These defaults are important for agent behavior:
 | `bay ws new [dock]` | current tmux session name, if it is a bay dock |
 | `bay pwd` | current bay context |
 | `bay ws show [name|self]` | `self` |
-| `bay win open [workspace]` | `self` |
-| `bay win close [self|workspace]` | `self` |
-| `bay win restart [self|workspace]` | `self` |
+| `bay surface new [workspace]` | `self` |
+| `bay surface close [workspace]` | `self` |
+| `bay surface restart [workspace]` | `self` |
 | `bay edit [name|self]` | `self` |
 | `bay shell` | current workspace, split pane |
 
 ## Commands
 
-Commands use explicit nouns: `ws` (workspace), `win` (window), `dock`.
+Commands use explicit nouns: `ws` (workspace), `surface`/`sf` (surface), `dock`.
 `ls` is shorthand for list.
 
 ### Workspace commands
@@ -326,49 +326,37 @@ bay ws rename w3 mem-refactor
 bay ws rename self mem-refactor
 ```
 
-### Window commands
+### Surface commands
 
-#### `bay win open <workspace> [--agent TYPE|--shell|--cmd "..."]`
+#### `bay surface new [workspace] [--agent TYPE|--shell|--cmd "..."] [--window|--split h|v]`
 
-Add a new window to an existing workspace. Defaults to a plain shell.
-Use `--agent` to launch an agent or `--cmd` for a specific command.
-
-```
-bay win open mem-refactor --shell        # shell window alongside agent
-bay win open mem-refactor --agent codex  # different agent type
-bay win open mem-refactor --cmd "npm test --watch"
-```
-
-#### `bay win close [self|name]`
-
-Close a window without affecting the workspace or other windows.
+Add a surface (pane) to a workspace. Defaults to a vertical split in the
+current window. Use `--window` for a new tmux window instead of a split.
 
 ```
-bay win close self
+bay surface new --shell                     # shell pane (split)
+bay surface new --window --agent codex      # agent in new window
+bay surface new auth-fix --cmd "npm test"   # cmd in another workspace
+bay sf new --split h                        # horizontal split (sf is alias)
 ```
 
-#### `bay win restart [self|name]`
+#### `bay surface close [workspace] [--surface NAME]`
 
-Kill all panes in the window, regenerate the config file from the
-current dock template, and respawn each pane. Useful after template
-changes or if an agent gets stuck. The worktree and all git state are
-preserved.
+Close a surface. Defaults to current pane if in a workspace.
 
 ```
-bay win restart self
-bay win restart mem-refactor
+bay surface close
+bay sf close --surface shell
 ```
 
-### Pane commands
+#### `bay surface restart [workspace] [--surface NAME]`
 
-#### `bay pane add [--agent TYPE|--shell|--cmd "..."] [--split h|v]`
-
-Add a pane to the current window by splitting. Defaults to horizontal
-split.
+Respawn a surface's process. Useful if an agent gets stuck. The worktree
+and all git state are preserved.
 
 ```
-bay pane add --shell --split v           # vertical shell pane
-bay pane add --cmd "tail -f app.log"     # log tail pane
+bay surface restart
+bay sf restart --surface agent
 ```
 
 ### Navigation
@@ -465,16 +453,16 @@ bay ws update self --status done
 
 ### Open a shell alongside your agent
 
-From outside, add a shell window to work in the same worktree:
+From outside, add a shell surface to work in the same worktree:
 
 ```
-bay win open auth-fix --shell
+bay surface new auth-fix --shell --window
 ```
 
-Or add a shell pane within the agent's window:
+Or add a shell pane split within the agent's window:
 
 ```
-bay pane add --shell --split v
+bay surface new --shell --split v
 ```
 
 ### Check on all active work

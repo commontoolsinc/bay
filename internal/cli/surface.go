@@ -8,41 +8,48 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newWinCmd() *cobra.Command {
+func newSurfaceCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "win",
-		Aliases: []string{"window"},
-		Short:   "Manage surfaces (legacy alias for surface operations)",
+		Use:     "surface",
+		Aliases: []string{"sf"},
+		Short:   "Manage surfaces (agent, shell, cmd panes within a workspace)",
 	}
 
 	cmd.AddCommand(
-		newWinOpenCmd(),
-		newWinCloseCmd(),
-		newWinRestartCmd(),
+		newSurfaceNewCmd(),
+		newSurfaceCloseCmd(),
+		newSurfaceRestartCmd(),
 	)
 
 	return cmd
 }
 
-func newWinOpenCmd() *cobra.Command {
-	var agent, cmdStr, name string
-	var shell bool
+func newSurfaceNewCmd() *cobra.Command {
+	var agent, cmdStr, name, splitDir string
+	var shell, window bool
 
 	cmd := &cobra.Command{
-		Use:   "open [workspace]",
-		Short: "Add a surface to a workspace in a new window",
-		Args:  cobra.MaximumNArgs(1),
+		Use:   "new [workspace]",
+		Short: "Add a surface to a workspace",
+		Long: `Add a surface to a workspace.
+
+  bay surface new              split pane in current workspace
+  bay surface new --window     new tmux window in current workspace
+  bay surface new auth-fix     new surface for that workspace
+  bay sf new --agent codex     add an agent surface`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
 				return err
 			}
 
-			target := "self"
+			var dockName, wsName string
 			if len(args) > 0 {
-				target = args[0]
+				dockName, wsName, err = resolveTarget(eng, args[0])
+			} else {
+				dockName, wsName, err = eng.ResolveSelf()
 			}
-			dockName, wsName, err := resolveTarget(eng, target)
 			if err != nil {
 				return err
 			}
@@ -72,24 +79,32 @@ func newWinOpenCmd() *cobra.Command {
 				}
 			}
 
-			// Empty splitDir = new window (not a split)
-			return eng.SurfaceAdd(dockName, wsName, surfaceType, surfaceName, agent, cmdStr, "")
+			dir := splitDir
+			if window {
+				dir = "" // empty = new tmux window
+			} else if dir == "" {
+				dir = "v" // default split direction
+			}
+
+			return eng.SurfaceAdd(dockName, wsName, surfaceType, surfaceName, agent, cmdStr, dir)
 		},
 	}
 
 	cmd.Flags().StringVar(&agent, "agent", "", "agent type")
 	cmd.Flags().BoolVar(&shell, "shell", false, "open a shell")
 	cmd.Flags().StringVar(&cmdStr, "cmd", "", "command to run")
+	cmd.Flags().StringVar(&splitDir, "split", "", "split direction (h or v)")
+	cmd.Flags().BoolVar(&window, "window", false, "open as new tmux window instead of split")
 	cmd.Flags().StringVar(&name, "name", "", "surface name")
 
 	return cmd
 }
 
-func newWinCloseCmd() *cobra.Command {
+func newSurfaceCloseCmd() *cobra.Command {
 	var surfaceName string
 
 	cmd := &cobra.Command{
-		Use:   "close [self|workspace]",
+		Use:   "close [workspace]",
 		Short: "Close a surface",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -116,11 +131,11 @@ func newWinCloseCmd() *cobra.Command {
 	return cmd
 }
 
-func newWinRestartCmd() *cobra.Command {
+func newSurfaceRestartCmd() *cobra.Command {
 	var surfaceName string
 
 	cmd := &cobra.Command{
-		Use:   "restart [self|workspace]",
+		Use:   "restart [workspace]",
 		Short: "Restart a surface's process",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

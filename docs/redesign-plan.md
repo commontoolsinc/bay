@@ -499,8 +499,9 @@ workspaces as needed.
 - Config cleanup: removed ConfigFile/AgentConfigTemplate, added
   ResumeArgs/ProjectFile/Terminal/Template — PR #54
 
+- Phase 1c: CLI restructure — surface/sf command, removed win/pane commands — PR #55
+
 **Next:**
-- Phase 1c completion: new CLI command structure (surface/sf noun, remove old win/pane/close-pane)
 - Phase 1d: navigation rewrite (built-in picker, scoped nav)
 
 ## What's NOT in scope
