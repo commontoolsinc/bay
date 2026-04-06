@@ -32,11 +32,13 @@ func newDoctorCmd() *cobra.Command {
 				fmt.Println("[OK] tmux installed")
 			}
 
-			// Check fzf installed (optional)
-			if _, err := exec.LookPath("fzf"); err != nil {
-				fmt.Println("[INFO] fzf not found in PATH (optional, used by bay go)")
-			} else {
-				fmt.Println("[OK] fzf installed")
+			// Check agents on PATH
+			for name, agent := range eng.Config.Agents {
+				if _, err := exec.LookPath(agent.Command); err != nil {
+					fmt.Printf("[INFO] agent %q (%s) not found in PATH\n", name, agent.Command)
+				} else {
+					fmt.Printf("[OK] agent %q available\n", name)
+				}
 			}
 
 			// Check configured editor
@@ -60,18 +62,30 @@ func newDoctorCmd() *cobra.Command {
 				fmt.Println("[OK] config valid")
 			}
 
-			// Check repo paths exist
+			// Check repo paths exist and bay awareness
 			for name, repo := range eng.Config.Repos {
 				path := config.ExpandPath(repo.Path)
 				if _, err := os.Stat(path); err != nil {
 					fmt.Printf("[WARN] repo %q path %s not accessible\n", name, path)
 					ok = false
-				} else {
-					fmt.Printf("[OK] repo %q accessible\n", name)
+					continue
+				}
+				fmt.Printf("[OK] repo %q accessible\n", name)
+
+				// Check bay awareness in agent project files.
+				for agentName, agent := range eng.Config.Agents {
+					if agent.ProjectFile == "" {
+						continue
+					}
+					pf := filepath.Join(path, agent.ProjectFile)
+					data, readErr := os.ReadFile(pf)
+					if readErr != nil {
+						fmt.Printf("[INFO] repo %q: %s not found (run bay repo init %s)\n", name, agent.ProjectFile, name)
+					} else if !strings.Contains(string(data), "bay agent-guide") {
+						fmt.Printf("[INFO] repo %q: %s missing bay awareness for %s (run bay repo init %s)\n", name, agent.ProjectFile, agentName, name)
+					}
 				}
 			}
-
-
 
 			// Check workspace paths in manifest
 			m, loadErr := eng.LoadManifest()
