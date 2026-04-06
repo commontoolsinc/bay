@@ -3,8 +3,11 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/commontoolsinc/bay/internal/engine"
+	"github.com/commontoolsinc/bay/internal/nav"
+	"github.com/commontoolsinc/bay/internal/picker"
 	"github.com/spf13/cobra"
 )
 
@@ -21,6 +24,9 @@ func newWsCmd() *cobra.Command {
 		newWsShowCmd(),
 		newWsUpdateCmd(),
 		newWsRenameCmd(),
+		newWsGoCmd(),
+		newWsNextCmd(),
+		newWsPrevCmd(),
 	)
 
 	return cmd
@@ -289,4 +295,175 @@ func resolveTarget(eng *engine.Engine, target string) (string, string, error) {
 		return eng.ResolveSelf()
 	}
 	return eng.ResolveWorkspace(target)
+}
+
+func newWsGoCmd() *cobra.Command {
+	var waiting, nextWaiting bool
+
+	cmd := &cobra.Command{
+		Use:   "go [query]",
+		Short: "Fuzzy find and switch to a workspace in the current dock",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine()
+			if err != nil {
+				return err
+			}
+			return wsGo(eng, args, waiting, nextWaiting)
+		},
+	}
+
+	cmd.Flags().BoolVar(&waiting, "waiting", false, "filter to waiting workspaces")
+	cmd.Flags().BoolVar(&nextWaiting, "next-waiting", false, "jump to next waiting workspace")
+
+	return cmd
+}
+
+func newWsNextCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "next",
+		Short: "Switch to the next workspace in the current dock",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine()
+			if err != nil {
+				return err
+			}
+			return wsCycle(eng, true)
+		},
+	}
+}
+
+func newWsPrevCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "prev",
+		Short: "Switch to the previous workspace in the current dock",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine()
+			if err != nil {
+				return err
+			}
+			return wsCycle(eng, false)
+		},
+	}
+}
+
+// wsGo implements workspace picker scoped to the current dock.
+func wsGo(eng *engine.Engine, args []string, waiting, nextWaiting bool) error {
+	currentSession, err := eng.Tmux.CurrentSession()
+	if err != nil {
+		return fmt.Errorf("bay ws go requires tmux — use bay ls to see workspaces")
+	}
+
+	m, err := eng.LoadManifest()
+	if err != nil {
+		return err
+	}
+
+	entries := nav.CollectEntries(m, eng.Tmux)
+
+	// Filter to current dock.
+	var dockEntries []nav.Entry
+	for _, e := range entries {
+		if e.DockName == currentSession {
+			dockEntries = append(dockEntries, e)
+		}
+	}
+	entries = dockEntries
+
+	if nextWaiting {
+		currentWinID, _ := eng.Tmux.CurrentWindowID()
+		entry := nav.NextWaiting(entries, currentWinID)
+		if entry == nil {
+			fmt.Println("No waiting workspaces in this dock.")
+			return nil
+		}
+		return eng.Tmux.SelectWindow(entry.TmuxWindowID)
+	}
+
+	if waiting {
+		entries = nav.FilterWaiting(entries)
+	}
+
+	query := ""
+	if len(args) > 0 {
+		query = args[0]
+	}
+	if query != "" {
+		entries = nav.FuzzyMatch(entries, query)
+	}
+
+	switch len(entries) {
+	case 0:
+		fmt.Println("No matching workspaces.")
+		return nil
+	case 1:
+		return eng.Tmux.SelectWindow(entries[0].TmuxWindowID)
+	default:
+		return pickWorkspace(eng, entries)
+	}
+}
+
+// wsCycle moves to next/prev workspace in the current dock.
+func wsCycle(eng *engine.Engine, forward bool) error {
+	currentSession, err := eng.Tmux.CurrentSession()
+	if err != nil {
+		return fmt.Errorf("not in a tmux session")
+	}
+
+	m, err := eng.LoadManifest()
+	if err != nil {
+		return err
+	}
+
+	entries := nav.CollectEntries(m, eng.Tmux)
+
+	var dockEntries []nav.Entry
+	for _, e := range entries {
+		if e.DockName == currentSession {
+			dockEntries = append(dockEntries, e)
+		}
+	}
+
+	if len(dockEntries) < 2 {
+		return nil
+	}
+
+	currentWinID, _ := eng.Tmux.CurrentWindowID()
+	cur := -1
+	for i, e := range dockEntries {
+		if e.TmuxWindowID == currentWinID {
+			cur = i
+			break
+		}
+	}
+
+	var next int
+	if forward {
+		next = (cur + 1) % len(dockEntries)
+	} else {
+		if cur == -1 {
+			next = len(dockEntries) - 1
+		} else {
+			next = (cur - 1 + len(dockEntries)) % len(dockEntries)
+		}
+	}
+
+	return eng.Tmux.SelectWindow(dockEntries[next].TmuxWindowID)
+}
+
+// pickWorkspace shows the built-in picker for workspace selection.
+func pickWorkspace(eng *engine.Engine, entries []nav.Entry) error {
+	items := make([]picker.Item, len(entries))
+	for i, e := range entries {
+		items[i] = picker.Item{
+			Display: nav.FormatEntry(e),
+			Value:   i,
+		}
+	}
+
+	selected, err := picker.Run(items, picker.Options{Prompt: "workspace> "}, os.Stdin, os.Stdout)
+	if err != nil || selected < 0 {
+		return nil
+	}
+	return eng.Tmux.SelectWindow(entries[selected].TmuxWindowID)
 }

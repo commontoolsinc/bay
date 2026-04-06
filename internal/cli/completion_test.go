@@ -41,8 +41,8 @@ func TestCompletionsRegistered(t *testing.T) {
 	// These commands should have ValidArgsFunction set
 	withCompletions := []string{
 		"ws close", "ws show", "ws update", "ws rename",
+		"ws go",
 		"dock close", "dock recover",
-		"go",
 		"ws new",
 	}
 	for _, path := range withCompletions {

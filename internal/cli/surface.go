@@ -2,9 +2,13 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/commontoolsinc/bay/internal/engine"
 	"github.com/commontoolsinc/bay/internal/manifest"
+	"github.com/commontoolsinc/bay/internal/nav"
+	"github.com/commontoolsinc/bay/internal/picker"
 	"github.com/spf13/cobra"
 )
 
@@ -19,6 +23,9 @@ func newSurfaceCmd() *cobra.Command {
 		newSurfaceNewCmd(),
 		newSurfaceCloseCmd(),
 		newSurfaceRestartCmd(),
+		newSurfaceGoCmd(),
+		newSurfaceNextCmd(),
+		newSurfacePrevCmd(),
 	)
 
 	return cmd
@@ -160,6 +167,190 @@ func newSurfaceRestartCmd() *cobra.Command {
 	cmd.Flags().StringVar(&surfaceName, "surface", "", "surface name")
 
 	return cmd
+}
+
+func newSurfaceGoCmd() *cobra.Command {
+	var index int
+
+	cmd := &cobra.Command{
+		Use:   "go [query]",
+		Short: "Navigate to a surface within the current workspace",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine()
+			if err != nil {
+				return err
+			}
+			return surfaceGo(eng, args, index)
+		},
+	}
+
+	cmd.Flags().IntVar(&index, "index", 0, "jump to surface by 1-based index")
+
+	return cmd
+}
+
+func newSurfaceNextCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "next",
+		Short: "Switch to the next surface in the current workspace",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine()
+			if err != nil {
+				return err
+			}
+			return surfaceCycle(eng, true)
+		},
+	}
+}
+
+func newSurfacePrevCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "prev",
+		Short: "Switch to the previous surface in the current workspace",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine()
+			if err != nil {
+				return err
+			}
+			return surfaceCycle(eng, false)
+		},
+	}
+}
+
+// surfaceGo implements the surface picker / direct jump logic.
+func surfaceGo(eng *engine.Engine, args []string, index int) error {
+	dockName, wsName, err := eng.ResolveSelf()
+	if err != nil {
+		return fmt.Errorf("not in a bay workspace")
+	}
+
+	ws, err := eng.WsShow(dockName, wsName)
+	if err != nil {
+		return err
+	}
+
+	currentPaneID, _ := eng.Tmux.CurrentPaneID()
+	entries := nav.CollectSurfaces(ws, eng.Tmux, currentPaneID)
+
+	if len(entries) == 0 {
+		fmt.Println("No surfaces in this workspace.")
+		return nil
+	}
+
+	// Direct jump by index.
+	if index > 0 {
+		target := nav.SurfaceByIndex(entries, index)
+		if target == nil {
+			return fmt.Errorf("no surface at index %d (workspace has %d surfaces)", index, len(entries))
+		}
+		return focusSurface(eng, target)
+	}
+
+	// Filter by query.
+	query := ""
+	if len(args) > 0 {
+		query = args[0]
+	}
+	if query != "" {
+		entries = filterSurfaceEntries(entries, query)
+	}
+
+	switch len(entries) {
+	case 0:
+		fmt.Println("No matching surfaces.")
+		return nil
+	case 1:
+		return focusSurface(eng, &entries[0])
+	default:
+		return pickSurface(eng, entries)
+	}
+}
+
+// surfaceCycle moves to next/prev surface in the current workspace.
+func surfaceCycle(eng *engine.Engine, forward bool) error {
+	dockName, wsName, err := eng.ResolveSelf()
+	if err != nil {
+		return fmt.Errorf("not in a bay workspace")
+	}
+
+	ws, err := eng.WsShow(dockName, wsName)
+	if err != nil {
+		return err
+	}
+
+	currentPaneID, _ := eng.Tmux.CurrentPaneID()
+	entries := nav.CollectSurfaces(ws, eng.Tmux, currentPaneID)
+
+	if len(entries) < 2 {
+		return nil // nothing to cycle to
+	}
+
+	var target *nav.SurfaceEntry
+	if forward {
+		target = nav.NextSurface(entries)
+	} else {
+		target = nav.PrevSurface(entries)
+	}
+	if target == nil {
+		return nil
+	}
+	return focusSurface(eng, target)
+}
+
+// focusSurface switches tmux focus to a surface's pane.
+func focusSurface(eng *engine.Engine, entry *nav.SurfaceEntry) error {
+	if entry.WindowID != "" {
+		if err := eng.Tmux.SelectWindow(entry.WindowID); err != nil {
+			return err
+		}
+	}
+	if entry.PaneID != "" {
+		return eng.Tmux.SelectPane(entry.PaneID)
+	}
+	return nil
+}
+
+// pickSurface shows the built-in picker for surface selection.
+func pickSurface(eng *engine.Engine, entries []nav.SurfaceEntry) error {
+	items := make([]picker.Item, len(entries))
+	for i, e := range entries {
+		items[i] = picker.Item{
+			Display: formatSurfaceEntry(e),
+			Value:   i,
+		}
+	}
+
+	selected, err := picker.Run(items, picker.Options{Prompt: "surface> "}, os.Stdin, os.Stdout)
+	if err != nil || selected < 0 {
+		return nil // cancelled
+	}
+	return focusSurface(eng, &entries[selected])
+}
+
+// formatSurfaceEntry formats a surface entry for picker display.
+func formatSurfaceEntry(e nav.SurfaceEntry) string {
+	s := fmt.Sprintf("%-10s %s", e.Name, e.Type)
+	if e.Current {
+		s += "  *"
+	}
+	if e.Waiting {
+		s += "  WAITING"
+	}
+	return s
+}
+
+// filterSurfaceEntries filters surfaces by name or type substring.
+func filterSurfaceEntries(entries []nav.SurfaceEntry, query string) []nav.SurfaceEntry {
+	q := strings.ToLower(query)
+	var result []nav.SurfaceEntry
+	for _, e := range entries {
+		if strings.Contains(strings.ToLower(e.Name), q) ||
+			strings.Contains(strings.ToLower(e.Type), q) {
+			result = append(result, e)
+		}
+	}
+	return result
 }
 
 // resolveSurfaceTarget resolves a target to (dock, workspace, surface name).
