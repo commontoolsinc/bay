@@ -95,7 +95,7 @@ bay go                      # pick a surface (agent/shell/editor)
 bay ws go                   # pick a workspace
 ```
 
-Or use keybindings: Option+j/k to cycle surfaces, Option+J/K to cycle
+Or use keybindings: Option+j/k to cycle surfaces, Option+Shift+j/K to cycle
 workspaces.
 
 ### Check on things
@@ -498,10 +498,10 @@ tmux prefix required -- just press the key combo directly.
 
 | Key | Action |
 |-----|--------|
-| `Option+J` | Next workspace in dock |
-| `Option+K` | Previous workspace in dock |
-| `Option+G` | Workspace picker (interactive popup) |
-| `Option+A` | Next waiting workspace |
+| `Option+Shift+j` | Next workspace in dock |
+| `Option+Shift+k` | Previous workspace in dock |
+| `Option+Shift+g` | Workspace picker (interactive popup) |
+| `Option+Shift+a` | Next waiting workspace |
 
 ### Index jump
 
@@ -518,8 +518,8 @@ tmux prefix required -- just press the key combo directly.
 
 ### Pattern
 
-Lowercase = intra-workspace. Uppercase = intra-dock. The pickers
-(`Option+g`, `Option+G`) open in a tmux popup with fuzzy filtering.
+Without Shift = intra-workspace. With Shift = intra-dock. The pickers
+(`Option+g`, `Option+Shift+g`) open in a tmux popup with fuzzy filtering.
 
 ### Installing and updating
 
@@ -576,7 +576,7 @@ Approve\? \(y/n
 Do you want to proceed
 ```
 
-When you see a prompt the monitor does not catch, press `Option+P` or
+When you see a prompt the monitor does not catch, press `Option+Shift+p` or
 run `bay add-prompt` to capture the current pane text and add it as a
 pattern. Edit the file afterward to generalize it to a regex.
 
