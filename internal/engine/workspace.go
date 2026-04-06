@@ -98,7 +98,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		if opts.Branch != "" {
 			displayName = abbreviateBranch(opts.Branch)
 		} else {
-			displayName = filepath.Base(wsPath)
+			displayName = nextWorkspaceName(dock)
 		}
 	}
 	if err := ValidateName(displayName); err != nil {
@@ -522,6 +522,16 @@ func (e *Engine) updateWindowNames(ws *manifest.Workspace, name string) {
 		if s.Tmux != nil && s.Tmux.WindowID != "" && !seen[s.Tmux.WindowID] {
 			_ = e.Tmux.RenameWindow(s.Tmux.WindowID, name)
 			seen[s.Tmux.WindowID] = true
+		}
+	}
+}
+
+// nextWorkspaceName returns the next available sequential name (w1, w2, ...) in a dock.
+func nextWorkspaceName(dock *manifest.Dock) string {
+	for i := 1; ; i++ {
+		name := fmt.Sprintf("w%d", i)
+		if dock.FindWorkspace(name) == nil {
+			return name
 		}
 	}
 }
