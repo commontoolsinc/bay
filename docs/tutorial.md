@@ -152,17 +152,28 @@ bay ls
 This shows the full hierarchy — repos, docks, and workspaces:
 
 ```
-repo tutorial (~/projects/bay-tutorial)
+repo tutorial
   dock tutorial
-    ID NAME BRANCH PR STATUS AGENT
-    w1 w1   —         idle   claude
+    workspace w1 id=w1
+      window 1 title=w1
+        pane 1 kind=shell
 ```
 
-The column headers make the layout clear: `w1` is both the ID and the
-display name (they match until you set a branch). The workspace is
-`idle` (no branch yet). `AGENT` shows the workspace's configured agent,
-which defaults to the dock's agent even if the current window is just a
-shell.
+Because you're inside the workspace, `bay ls` focuses that workspace by
+default and expands its windows and panes. `w1` is both the ID and the
+display name for now. The only pane is a shell.
+
+If you want a quick orientation check without the tree, run:
+
+```
+bay pwd
+```
+
+Which will show your current Bay location, for example:
+
+```
+repo tutorial / dock tutorial / workspace w1 / window w1
+```
 
 ## 8. Create a branch
 
@@ -180,15 +191,17 @@ automatically (stripping prefixes like `feature/`).
 Run `bay ls` to confirm:
 
 ```
-repo tutorial (~/projects/bay-tutorial)
+repo tutorial
   dock tutorial
-    ID NAME        BRANCH      PR STATUS AGENT
-    w1 test-branch test-branch    active claude
+    workspace test-branch id=w1 branch=test-branch status=active
+      window 1 title=test-branch
+        pane 1 kind=shell
 ```
 
-The status changed from `idle` to `active` automatically because a
-branch appeared. No `bay ws update` needed — bay reads the branch
-from git directly.
+The workspace display name changed from `w1` to `test-branch`, and the
+status changed from `idle` to `active` automatically because a branch
+appeared. No `bay ws update` needed — bay reads the branch from git
+directly.
 
 You can still manually set a PR number or status:
 
@@ -266,18 +279,26 @@ bay ws show self
 Shows the full details:
 
 ```
-Workspace: test-branch (w1)
-  Dock:   tutorial
-  Type:   worktree
-  Path:   ~/projects/bay-tutorial-worktrees/w1
-  Branch: test-branch
-  PR:     1
-  Status: active
-  Windows: 3
-    [1] test-branch (tmux: @N, panes: 1)
-    [2] test-branch:2 (tmux: @N, panes: 1)
-    [3] test-branch:3 (tmux: @N, panes: 1)
+workspace test-branch (w1)
+repo tutorial
+dock tutorial
+type worktree
+path ~/projects/bay-tutorial-worktrees/w1
+branch test-branch
+pr 1
+status active
+default agent claude
+window 1 title=test-branch
+  pane 1 kind=shell
+window 2 title=test-branch:2
+  pane 1 kind=shell
+window 3 title=test-branch:3
+  pane 1 kind=shell
 ```
+
+`bay ws show` is the detailed inspector. Unlike `bay ls`, it always
+shows the full workspace detail and includes workspace defaults like the
+default agent.
 
 ## 13. Rename a workspace
 

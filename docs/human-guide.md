@@ -112,10 +112,13 @@ bay ws update self --pr 347
 bay ls
 ```
 
-Shows the full hierarchy: repos, docks, and workspaces with status,
-branch, PR, and configured agent. The `AGENT` column shows the
-workspace's configured agent: the dock default unless the workspace was
-created with an explicit `--agent` override.
+Shows Bay's hierarchy. The exact scope depends on where you run it:
+
+- inside a workspace or pane: the current workspace, expanded to windows and panes
+- inside a dock but outside a workspace: that dock's workspaces
+- outside Bay context: all repos and docks, compact by default
+
+Use `bay pwd` when you want a compact answer to "where am I?".
 
 ### 6. Clean up
 
@@ -505,8 +508,13 @@ set -g status-right '#(bay status-line full)'
 ### Global
 
 ```
-bay ls                                      # full repo/dock/workspace tree
-bay ls --json                               # machine-readable JSON output
+bay pwd                                     # show current Bay context
+bay pwd --json                              # machine-readable context
+bay ls                                      # context-sensitive tree view
+bay ls -R                                   # recurse fully from current focus
+bay ls -l                                   # show tmux ids and extended detail
+bay ls --json                               # machine-readable tree output
+bay ls --json --rows                        # denormalized row output
 bay recover                                 # reconstruct after reboot
 bay doctor                                  # health checks
 bay setup                                   # first-time setup
@@ -518,16 +526,38 @@ bay completion bash|zsh|fish                # generate completion script
 
 ## Listing views
 
-`bay ls` shows the full hierarchy:
+`bay pwd` shows your current Bay location:
 
 ```
-repo myproject (~/projects/myproject)
-  dock dev
-    w1  auth          feature/auth  #42  active  [shell]
-    w2  w2            —                  idle    [agent]
-  dock staging
-    w1  deploy        release/v2    #87  done    [shell]
+repo myproject / dock dev / workspace w1 / window auth
 ```
+
+`bay ls` is context-sensitive.
+
+Inside a workspace, it shows that workspace and expands windows/panes:
+
+```
+repo myproject
+  dock dev
+    workspace auth id=w1 branch=feature/auth status=active
+      window 1 title=auth
+        pane 1 kind=shell
+        pane 2 kind=cmd command=go test ./...
+```
+
+From outside Bay context, it stays compact by default:
+
+```
+repo myproject
+  dock dev
+    workspace auth id=w1 branch=feature/auth status=active windows=2
+    workspace w2 id=w2 windows=1 ⏳
+  dock staging
+    workspace deploy id=w1 branch=release/v2 status=done windows=1
+```
+
+Use `bay ls -R` to recurse fully from repo or dock focus, and `bay ls -l`
+to include tmux IDs.
 
 `bay dock ls` shows just docks (narrows to current dock if inside one):
 
@@ -546,13 +576,20 @@ myproject  ~/projects/myproject  (worktrees: ~/projects/myproject-worktrees)
 
 ## Machine-readable output
 
-Both `bay ls` and `bay ws show` accept a `--json` flag for scripting
-and orchestration. The JSON output includes the same information as the
-human-readable view but in a structured format suitable for piping to
-`jq` or consuming from other tools.
+`bay pwd`, `bay ls`, and `bay ws show` all accept `--json`.
+
+- `bay pwd --json` returns the current resolved context.
+- `bay ls --json` returns a tree object with `focus`, `recursive`, and
+  nested `repos -> docks -> workspaces -> windows -> panes`.
+- `bay ls --json --rows` returns denormalized rows, which can be easier
+  to filter.
+- `bay ws show --json` returns detailed workspace metadata and its
+  windows/panes.
 
 ```
-bay ls --json | jq '.[] | .workspaces[] | select(.waiting)'
+bay pwd --json | jq '.workspace_id'
+bay ls --json | jq '.repos[].docks[].workspaces[] | select(.waiting)'
+bay ls --json --rows | jq '.[] | select(.workspace_waiting)'
 bay ws show auth-fix --json | jq '.branch'
 ```
 
