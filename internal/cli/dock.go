@@ -127,9 +127,9 @@ func newDockShowCmd() *cobra.Command {
 			// Workspace summary
 			m, _ := eng.LoadManifest()
 			if m != nil {
-				if ds, ok := m.Docks[name]; ok {
+				if dock := m.FindDock(name); dock != nil {
 					idle, active, done := 0, 0, 0
-					for _, ws := range ds.Workspaces {
+					for _, ws := range dock.Workspaces {
 						switch ws.Status {
 						case "idle":
 							idle++
@@ -139,7 +139,7 @@ func newDockShowCmd() *cobra.Command {
 							done++
 						}
 					}
-					total := len(ds.Workspaces)
+					total := len(dock.Workspaces)
 					fmt.Printf("  workspaces: %d", total)
 					if total > 0 {
 						var parts []string

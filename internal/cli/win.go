@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/commontoolsinc/bay/internal/engine"
+	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/spf13/cobra"
 )
 
@@ -11,7 +12,7 @@ func newWinCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "win",
 		Aliases: []string{"window"},
-		Short:   "Manage windows",
+		Short:   "Manage surfaces (legacy alias for surface operations)",
 	}
 
 	cmd.AddCommand(
@@ -24,12 +25,12 @@ func newWinCmd() *cobra.Command {
 }
 
 func newWinOpenCmd() *cobra.Command {
-	var agent, cmdStr string
+	var agent, cmdStr, name string
 	var shell bool
 
 	cmd := &cobra.Command{
 		Use:   "open [workspace]",
-		Short: "Add a window to a workspace (default: current)",
+		Short: "Add a surface to a workspace in a new window",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -41,31 +42,56 @@ func newWinOpenCmd() *cobra.Command {
 			if len(args) > 0 {
 				target = args[0]
 			}
-			dockName, wsID, err := resolveTarget(eng, target)
+			dockName, wsName, err := resolveTarget(eng, target)
 			if err != nil {
 				return err
 			}
 
-			return eng.WinOpen(dockName, wsID, agent, shell, cmdStr)
+			var surfaceType manifest.SurfaceType
+			surfaceName := name
+			switch {
+			case shell:
+				surfaceType = manifest.SurfaceTypeShell
+				if surfaceName == "" {
+					surfaceName = "shell"
+				}
+			case cmdStr != "":
+				surfaceType = manifest.SurfaceTypeCmd
+				if surfaceName == "" {
+					surfaceName = "cmd"
+				}
+			case agent != "":
+				surfaceType = manifest.SurfaceTypeAgent
+				if surfaceName == "" {
+					surfaceName = "agent"
+				}
+			default:
+				surfaceType = manifest.SurfaceTypeShell
+				if surfaceName == "" {
+					surfaceName = "shell"
+				}
+			}
+
+			// Empty splitDir = new window (not a split)
+			return eng.SurfaceAdd(dockName, wsName, surfaceType, surfaceName, agent, cmdStr, "")
 		},
 	}
 
 	cmd.Flags().StringVar(&agent, "agent", "", "agent type")
 	cmd.Flags().BoolVar(&shell, "shell", false, "open a shell")
 	cmd.Flags().StringVar(&cmdStr, "cmd", "", "command to run")
+	cmd.Flags().StringVar(&name, "name", "", "surface name")
 
 	return cmd
 }
 
 func newWinCloseCmd() *cobra.Command {
-	var winFlag int
+	var surfaceName string
 
 	cmd := &cobra.Command{
 		Use:   "close [self|workspace]",
-		Short: "Close a window (not the workspace)",
-		Long: `Close a window. With "self" (default), closes the current tmux window.
-With a workspace name/id, closes the primary window (or use --window N).`,
-		Args: cobra.MaximumNArgs(1),
+		Short: "Close a surface",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
@@ -76,30 +102,27 @@ With a workspace name/id, closes the primary window (or use --window N).`,
 			if len(args) > 0 {
 				target = args[0]
 			}
-
-			dockName, wsID, winID, err := resolveWindowTarget(eng, target, winFlag)
+			dockName, wsName, sName, err := resolveSurfaceTarget(eng, target, surfaceName)
 			if err != nil {
 				return err
 			}
 
-			return eng.WinClose(dockName, wsID, winID)
+			return eng.SurfaceClose(dockName, wsName, sName)
 		},
 	}
 
-	cmd.Flags().IntVar(&winFlag, "window", 0, "window ID within workspace (default: current or primary)")
+	cmd.Flags().StringVar(&surfaceName, "surface", "", "surface name")
 
 	return cmd
 }
 
 func newWinRestartCmd() *cobra.Command {
-	var winFlag int
+	var surfaceName string
 
 	cmd := &cobra.Command{
 		Use:   "restart [self|workspace]",
-		Short: "Kill agent and respawn with fresh config",
-		Long: `Restart a window's agent. With "self" (default), restarts the current tmux window.
-With a workspace name/id, restarts the primary window (or use --window N).`,
-		Args: cobra.MaximumNArgs(1),
+		Short: "Restart a surface's process",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
@@ -110,62 +133,54 @@ With a workspace name/id, restarts the primary window (or use --window N).`,
 			if len(args) > 0 {
 				target = args[0]
 			}
-
-			dockName, wsID, winID, err := resolveWindowTarget(eng, target, winFlag)
+			dockName, wsName, sName, err := resolveSurfaceTarget(eng, target, surfaceName)
 			if err != nil {
 				return err
 			}
 
-			return eng.WinRestart(dockName, wsID, winID)
+			return eng.SurfaceRestart(dockName, wsName, sName)
 		},
 	}
 
-	cmd.Flags().IntVar(&winFlag, "window", 0, "window ID within workspace (default: current or primary)")
+	cmd.Flags().StringVar(&surfaceName, "surface", "", "surface name")
 
 	return cmd
 }
 
-// resolveWindowTarget resolves a target to (dock, wsID, windowID).
-// If target is "self", uses the current tmux window. Otherwise resolves to
-// the workspace and uses the explicit --window flag or the primary window.
-func resolveWindowTarget(eng *engine.Engine, target string, explicitWinID int) (string, string, int, error) {
-	dockName, wsID, err := resolveTarget(eng, target)
+// resolveSurfaceTarget resolves a target to (dock, workspace, surface name).
+func resolveSurfaceTarget(eng *engine.Engine, target, explicitSurface string) (string, string, string, error) {
+	dockName, wsName, err := resolveTarget(eng, target)
 	if err != nil {
-		return "", "", 0, err
+		return "", "", "", err
 	}
 
-	ws, err := eng.WsShow(dockName, wsID)
+	ws, err := eng.WsShow(dockName, wsName)
 	if err != nil {
-		return "", "", 0, err
+		return "", "", "", err
 	}
-	if len(ws.Windows) == 0 {
-		return "", "", 0, fmt.Errorf("no windows in workspace %s", wsID)
+	if len(ws.Surfaces) == 0 {
+		return "", "", "", fmt.Errorf("no surfaces in workspace %q", wsName)
 	}
 
-	// Explicit --window flag
-	if explicitWinID > 0 {
-		for _, w := range ws.Windows {
-			if w.ID == explicitWinID {
-				return dockName, wsID, w.ID, nil
-			}
+	if explicitSurface != "" {
+		if ws.FindSurface(explicitSurface) == nil {
+			return "", "", "", fmt.Errorf("surface %q not found in workspace %q", explicitSurface, wsName)
 		}
-		return "", "", 0, fmt.Errorf("window %d not found in workspace %s", explicitWinID, wsID)
+		return dockName, wsName, explicitSurface, nil
 	}
 
-	// "self" — match current tmux window
+	// Match current tmux pane.
 	if target == "self" {
-		winIDStr, tmuxErr := eng.Tmux.CurrentWindowID()
+		paneID, tmuxErr := eng.Tmux.CurrentPaneID()
 		if tmuxErr == nil {
-			for _, w := range ws.Windows {
-				if w.TmuxWindowID == winIDStr {
-					return dockName, wsID, w.ID, nil
+			for _, s := range ws.Surfaces {
+				if s.Tmux != nil && s.Tmux.PaneID == paneID {
+					return dockName, wsName, s.Name, nil
 				}
 			}
 		}
-		// If we resolved via CWD but can't match tmux window, fall through to primary
 	}
 
-	// Default: primary (first) window
-	return dockName, wsID, ws.Windows[0].ID, nil
+	// Default: first surface.
+	return dockName, wsName, ws.Surfaces[0].Name, nil
 }
-

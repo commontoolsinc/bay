@@ -1,21 +1,21 @@
 package cli
 
 import (
-	"fmt"
-
+	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/spf13/cobra"
 )
 
 func newShellCmd() *cobra.Command {
 	var window bool
+	var name string
 
 	cmd := &cobra.Command{
-		Use:   "shell [name]",
-		Short: "Open a shell pane or window for a workspace",
+		Use:   "shell [workspace]",
+		Short: "Open a shell surface for a workspace",
 		Long: `Open a shell for a workspace.
 
   bay shell             split pane in current window
-  bay shell auth-fix    new window for that workspace
+  bay shell auth-fix    new surface for that workspace
   bay shell --window    new window for current workspace`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -24,48 +24,32 @@ func newShellCmd() *cobra.Command {
 				return err
 			}
 
+			var dockName, wsName string
 			if len(args) > 0 {
-				// Named workspace: open new window with shell
-				dockName, wsID, resolveErr := resolveTarget(eng, args[0])
-				if resolveErr != nil {
-					return resolveErr
-				}
-				return eng.WinOpen(dockName, wsID, "", true, "")
+				dockName, wsName, err = resolveTarget(eng, args[0])
+			} else {
+				dockName, wsName, err = eng.ResolveSelf()
 			}
-
-			// No args: resolve current workspace
-			dockName, wsID, err := eng.ResolveSelf()
 			if err != nil {
 				return err
 			}
 
+			surfaceName := name
+			if surfaceName == "" {
+				surfaceName = "shell"
+			}
+
+			splitDir := "v"
 			if window {
-				// --window: new window for current workspace
-				return eng.WinOpen(dockName, wsID, "", true, "")
+				splitDir = "" // empty = new window
 			}
 
-			// Default: split pane in current window
-			ws, err := eng.WsShow(dockName, wsID)
-			if err != nil {
-				return err
-			}
-
-			winIDStr, tmuxErr := eng.Tmux.CurrentWindowID()
-			if tmuxErr != nil {
-				return fmt.Errorf("cannot determine current tmux window")
-			}
-
-			for _, w := range ws.Windows {
-				if w.TmuxWindowID == winIDStr {
-					return eng.PaneAdd(dockName, wsID, w.ID, "", true, "", "v")
-				}
-			}
-
-			return fmt.Errorf("current window not found in workspace")
+			return eng.SurfaceAdd(dockName, wsName, manifest.SurfaceTypeShell, surfaceName, "", "", splitDir)
 		},
 	}
 
 	cmd.Flags().BoolVar(&window, "window", false, "open as new window instead of split pane")
+	cmd.Flags().StringVar(&name, "name", "", "surface name")
 
 	return cmd
 }

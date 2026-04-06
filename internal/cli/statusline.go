@@ -39,10 +39,12 @@ Fields: name, branch, pr, status, dock, full`,
 			case "name":
 				out = ws.Name
 			case "branch":
-				out = ws.Branch
+				if ws.Worktree != nil {
+					out = ws.Worktree.Branch
+				}
 			case "pr":
-				if ws.PR != "" {
-					out = "#" + ws.PR
+				if ws.Worktree != nil && ws.Worktree.PR != "" {
+					out = "#" + ws.Worktree.PR
 				}
 			case "status":
 				out = string(ws.Status)
@@ -50,10 +52,10 @@ Fields: name, branch, pr, status, dock, full`,
 				out = dockName
 			case "full":
 				parts := []string{ws.Name}
-				if ws.Branch != "" {
-					branchPart := ws.Branch
-					if ws.PR != "" {
-						branchPart += " #" + ws.PR
+				if ws.Worktree != nil && ws.Worktree.Branch != "" {
+					branchPart := ws.Worktree.Branch
+					if ws.Worktree.PR != "" {
+						branchPart += " #" + ws.Worktree.PR
 					}
 					parts = append(parts, branchPart)
 				}

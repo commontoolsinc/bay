@@ -202,38 +202,31 @@ func tmuxConfPath() string {
 func checkManifestConsistency(m *manifest.Manifest, cfg *config.Config) []string {
 	var warnings []string
 
-	for dockName, ds := range m.Docks {
-		seenNames := map[string]string{}
-		for wsID, ws := range ds.Workspaces {
+	for i := range m.Docks {
+		dock := &m.Docks[i]
+		seenNames := map[string]bool{}
+		for j := range dock.Workspaces {
+			ws := &dock.Workspaces[j]
 			if ws.Name != "" {
-				if other, ok := seenNames[ws.Name]; ok {
-					warnings = append(warnings, fmt.Sprintf("dock %s has duplicate workspace name %q (%s, %s)", dockName, ws.Name, other, wsID))
-				} else {
-					seenNames[ws.Name] = wsID
+				if seenNames[ws.Name] {
+					warnings = append(warnings, fmt.Sprintf("dock %s has duplicate workspace name %q", dock.Name, ws.Name))
 				}
-			}
-			if ws.AgentOverride != "" {
-				if _, ok := cfg.Agents[ws.AgentOverride]; !ok {
-					warnings = append(warnings, fmt.Sprintf("workspace %s:%s references unknown agent override %q", dockName, wsID, ws.AgentOverride))
-				}
+				seenNames[ws.Name] = true
 			}
 
-			seenWindowIDs := map[int]bool{}
-			for _, win := range ws.Windows {
-				if seenWindowIDs[win.ID] {
-					warnings = append(warnings, fmt.Sprintf("workspace %s:%s has duplicate window id %d", dockName, wsID, win.ID))
+			seenSurfaceIDs := map[int]bool{}
+			seenSurfaceNames := map[string]bool{}
+			for _, s := range ws.Surfaces {
+				if seenSurfaceIDs[s.ID] {
+					warnings = append(warnings, fmt.Sprintf("workspace %s:%s has duplicate surface id %d", dock.Name, ws.Name, s.ID))
 				}
-				seenWindowIDs[win.ID] = true
-				if len(win.Panes) == 0 {
-					warnings = append(warnings, fmt.Sprintf("workspace %s:%s window %d has no panes", dockName, wsID, win.ID))
-					continue
+				seenSurfaceIDs[s.ID] = true
+				if seenSurfaceNames[s.Name] {
+					warnings = append(warnings, fmt.Sprintf("workspace %s:%s has duplicate surface name %q", dock.Name, ws.Name, s.Name))
 				}
-				seenPaneIDs := map[int]bool{}
-				for _, pane := range win.Panes {
-					if seenPaneIDs[pane.ID] {
-						warnings = append(warnings, fmt.Sprintf("workspace %s:%s window %d has duplicate pane id %d", dockName, wsID, win.ID, pane.ID))
-					}
-					seenPaneIDs[pane.ID] = true
+				seenSurfaceNames[s.Name] = true
+				for _, e := range s.Validate() {
+					warnings = append(warnings, fmt.Sprintf("workspace %s:%s: %s", dock.Name, ws.Name, e))
 				}
 			}
 		}

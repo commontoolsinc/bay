@@ -169,24 +169,27 @@ func newWsShowCmd() *cobra.Command {
 				return err
 			}
 
-			ws, err := eng.WsShow(dockName, wsID)
+			wsInfo, err := eng.WorkspaceInfoByName(dockName, wsID)
 			if err != nil {
 				return err
 			}
-			wsInfo, err := eng.WorkspaceInfo(dockName, wsID)
-			if err != nil {
-				return err
-			}
-			wsInfo.DefaultAgent = ws.AgentOverride
 			if wsInfo.DefaultAgent == "" {
 				wsInfo.DefaultAgent = eng.Config.Docks[dockName].Agent
 			}
 
+			repoName := ""
+			ws, wsErr := eng.WsShow(dockName, wsID)
+			if wsErr == nil && ws.Worktree != nil {
+				repoName = ws.Worktree.Repo
+			}
+			if repoName == "" {
+				repoName = eng.Config.Docks[dockName].Repo
+			}
+
 			if jsonOutput {
 				out := map[string]interface{}{
-					"id":            wsID,
 					"name":          wsInfo.Name,
-					"repo":          ws.Repo,
+					"repo":          repoName,
 					"dock":          dockName,
 					"type":          wsInfo.Type,
 					"path":          wsInfo.Path,
@@ -195,7 +198,7 @@ func newWsShowCmd() *cobra.Command {
 					"status":        wsInfo.Status,
 					"sync_status":   wsInfo.SyncStatus,
 					"default_agent": wsInfo.DefaultAgent,
-					"windows":       wsInfo.Windows,
+					"surfaces":      wsInfo.Surfaces,
 				}
 				data, err := json.MarshalIndent(out, "", "  ")
 				if err != nil {
@@ -205,7 +208,7 @@ func newWsShowCmd() *cobra.Command {
 				return nil
 			}
 
-			fmt.Print(FormatWorkspaceShow(ws.Repo, dockName, wsInfo, false))
+			fmt.Print(FormatWorkspaceShow(repoName, dockName, wsInfo, false))
 			return nil
 		},
 	}
