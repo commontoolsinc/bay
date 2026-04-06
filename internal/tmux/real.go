@@ -52,6 +52,10 @@ func (r *Real) KillSession(name string) error {
 	return runSilent("kill-session", "-t", name)
 }
 
+func (r *Real) RenameSession(oldName string, newName string) error {
+	return runSilent("rename-session", "-t", oldName, newName)
+}
+
 func (r *Real) ListSessions() ([]Session, error) {
 	out, err := run("list-sessions", "-F", "#{session_name}")
 	if err != nil {

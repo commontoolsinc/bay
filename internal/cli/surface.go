@@ -24,6 +24,9 @@ func newSurfaceCmd() *cobra.Command {
 		newSurfaceNewCmd(),
 		newSurfaceCloseCmd(),
 		newSurfaceRestartCmd(),
+		newSurfaceLsCmd(),
+		newSurfaceShowCmd(),
+		newSurfaceRenameCmd(),
 		newSurfaceGoCmd(),
 		newSurfaceNextCmd(),
 		newSurfacePrevCmd(),
@@ -112,8 +115,9 @@ func newSurfaceCloseCmd() *cobra.Command {
 	var surfaceName string
 
 	cmd := &cobra.Command{
-		Use:   "close [workspace]",
-		Short: "Close a surface (or current tmux pane if not bay-managed)",
+		Use:     "close [workspace]",
+		Aliases: []string{"rm"},
+		Short:   "Close a surface (or current tmux pane if not bay-managed)",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -222,6 +226,118 @@ func newSurfacePrevCmd() *cobra.Command {
 				return err
 			}
 			return surfaceCycle(eng, false)
+		},
+	}
+}
+
+func newSurfaceLsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "ls",
+		Aliases: []string{"list"},
+		Short:   "List surfaces in the current workspace",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine()
+			if err != nil {
+				return err
+			}
+
+			dockName, wsName, err := eng.ResolveSelf()
+			if err != nil {
+				return fmt.Errorf("not in a bay workspace")
+			}
+
+			ws, err := eng.WsShow(dockName, wsName)
+			if err != nil {
+				return err
+			}
+
+			if len(ws.Surfaces) == 0 {
+				fmt.Println("No surfaces in this workspace.")
+				return nil
+			}
+
+			for _, s := range ws.Surfaces {
+				line := fmt.Sprintf("%-12s %s", s.Name, string(s.Type))
+				if s.Agent != nil && *s.Agent != "" {
+					line += fmt.Sprintf("  agent=%s", *s.Agent)
+				}
+				if s.Command != nil && *s.Command != "" {
+					line += fmt.Sprintf("  cmd=%s", *s.Command)
+				}
+				fmt.Println(line)
+			}
+			return nil
+		},
+	}
+}
+
+func newSurfaceShowCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "show <name>",
+		Aliases: []string{"cat"},
+		Short:   "Show surface details",
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine()
+			if err != nil {
+				return err
+			}
+
+			dockName, wsName, err := eng.ResolveSelf()
+			if err != nil {
+				return fmt.Errorf("not in a bay workspace")
+			}
+
+			ws, err := eng.WsShow(dockName, wsName)
+			if err != nil {
+				return err
+			}
+
+			s := ws.FindSurface(args[0])
+			if s == nil {
+				return fmt.Errorf("surface %q not found in workspace %q", args[0], wsName)
+			}
+
+			fmt.Printf("Surface: %s\n", s.Name)
+			fmt.Printf("  type:    %s\n", s.Type)
+			fmt.Printf("  backend: %s\n", s.Backend)
+			if s.Tmux != nil {
+				if s.Tmux.WindowID != "" {
+					fmt.Printf("  window:  %s\n", s.Tmux.WindowID)
+				}
+				if s.Tmux.PaneID != "" {
+					fmt.Printf("  pane:    %s\n", s.Tmux.PaneID)
+				}
+			}
+			if s.Agent != nil && *s.Agent != "" {
+				fmt.Printf("  agent:   %s\n", *s.Agent)
+			}
+			if s.Command != nil && *s.Command != "" {
+				fmt.Printf("  command: %s\n", *s.Command)
+			}
+			return nil
+		},
+	}
+}
+
+func newSurfaceRenameCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "rename <old> <new>",
+		Aliases: []string{"mv"},
+		Short:   "Rename a surface",
+		Args:    cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine()
+			if err != nil {
+				return err
+			}
+
+			dockName, wsName, err := eng.ResolveSelf()
+			if err != nil {
+				return fmt.Errorf("not in a bay workspace")
+			}
+
+			return eng.SurfaceRename(dockName, wsName, args[0], args[1])
 		},
 	}
 }

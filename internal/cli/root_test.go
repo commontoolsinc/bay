@@ -13,7 +13,7 @@ func TestNewRootCmd(t *testing.T) {
 	// Verify all subcommands are registered (including hidden ones)
 	expected := map[string]bool{
 		"dock": false, "repo": false, "ws": false, "surface": false,
-		"go": false, "ls": false, "pwd": false, "recover": false, "doctor": false,
+		"go": false, "ls": false, "tree": false, "pwd": false, "recover": false, "doctor": false,
 		"setup": false, "monitor": false, "add-prompt": false, "version": false,
 		"shell": false, "edit": false, "restart": false, "status-line": false,
 		"agent-guide": false,
@@ -71,7 +71,7 @@ func TestSurfaceSubcommands(t *testing.T) {
 		t.Fatalf("finding surface: %v", err)
 	}
 
-	expected := []string{"new", "close", "restart", "go", "next", "prev"}
+	expected := []string{"new", "close", "restart", "ls", "show", "rename", "go", "next", "prev"}
 	found := map[string]bool{}
 	for _, cmd := range sf.Commands() {
 		found[cmd.Name()] = true
@@ -122,7 +122,7 @@ func TestDockSubcommands(t *testing.T) {
 		t.Fatalf("finding dock: %v", err)
 	}
 
-	expected := []string{"new", "ls", "close", "recover"}
+	expected := []string{"new", "ls", "show", "tree", "rename", "close", "recover"}
 	found := map[string]bool{}
 	for _, cmd := range dock.Commands() {
 		found[cmd.Name()] = true
@@ -134,6 +134,17 @@ func TestDockSubcommands(t *testing.T) {
 	}
 }
 
+func TestTreeCommandExists(t *testing.T) {
+	root := NewRootCmd("test")
+	cmd, _, err := root.Find([]string{"tree"})
+	if err != nil {
+		t.Fatalf("finding tree: %v", err)
+	}
+	if cmd.Name() != "tree" {
+		t.Errorf("expected tree, got %q", cmd.Name())
+	}
+}
+
 func TestWsSubcommands(t *testing.T) {
 	root := NewRootCmd("test")
 	ws, _, err := root.Find([]string{"ws"})
@@ -141,7 +152,7 @@ func TestWsSubcommands(t *testing.T) {
 		t.Fatalf("finding ws: %v", err)
 	}
 
-	expected := []string{"new", "close", "show", "update", "rename", "go", "next", "prev"}
+	expected := []string{"new", "close", "show", "update", "rename", "ls", "tree", "go", "next", "prev"}
 	found := map[string]bool{}
 	for _, cmd := range ws.Commands() {
 		found[cmd.Name()] = true

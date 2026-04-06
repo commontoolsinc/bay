@@ -54,15 +54,17 @@ func newLsCmd() *cobra.Command {
 
 			fmt.Print(FormatListView(view, longOutput))
 
-			// Print advice for stale or missing workspaces
+			// Print advice for stale or missing workspaces visible in the output.
 			hasStale, hasMissing := false, false
-			for _, d := range docks {
-				for _, ws := range d.Workspaces {
-					if ws.SyncStatus == "stale" {
-						hasStale = true
-					}
-					if ws.SyncStatus == "missing" {
-						hasMissing = true
+			for _, repo := range view.Repos {
+				for _, d := range repo.Docks {
+					for _, ws := range d.Workspaces {
+						if ws.SyncStatus == "stale" {
+							hasStale = true
+						}
+						if ws.SyncStatus == "missing" {
+							hasMissing = true
+						}
 					}
 				}
 			}

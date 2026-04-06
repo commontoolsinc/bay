@@ -67,8 +67,7 @@ Quick start:
   bay shell               open shell
   bay restart             restart current surface
 
-Run 'bay help <command>' for details on any command.
-Run 'bay help --all' for a complete command list.
+Run 'bay help' for all commands, or 'bay help <command>' for details.
 `
 
 // NewRootCmd creates the root bay command.
@@ -78,23 +77,10 @@ func NewRootCmd(version string) *cobra.Command {
 		Short:         "Multi-session workspace management for tmux and git worktrees",
 		SilenceUsage:  true,
 		SilenceErrors: true,
-	}
-
-	var helpAll bool
-	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		if helpAll {
-			// Full cobra help.
-			cmd.SetHelpTemplate(cmd.UsageTemplate())
-			cmd.Help()
-		} else if cmd == root {
-			// Focused help for root command.
+		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Fprint(cmd.OutOrStdout(), bayHelpTemplate)
-		} else {
-			// Default help for subcommands.
-			cmd.Help()
-		}
-	})
-	root.Flags().BoolVar(&helpAll, "all", false, "show all commands")
+		},
+	}
 	root.PersistentFlags().StringVar(&cfgPath, "config", "", "config file path (default ~/.config/bay/config.toml)")
 
 	// Define command groups
@@ -122,6 +108,8 @@ func NewRootCmd(version string) *cobra.Command {
 	goCmd.GroupID = "navigation"
 	lsCmd := newLsCmd()
 	lsCmd.GroupID = "navigation"
+	treeCmd := newTreeCmd()
+	treeCmd.GroupID = "navigation"
 	pwdCmd := newPwdCmd()
 	pwdCmd.GroupID = "navigation"
 	statusLineCmd := newStatusLineCmd()
@@ -155,6 +143,7 @@ func NewRootCmd(version string) *cobra.Command {
 		restartCmd,
 		goCmd,
 		lsCmd,
+		treeCmd,
 		pwdCmd,
 		statusLineCmd,
 		dockCmd,

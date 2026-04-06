@@ -84,8 +84,11 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		worktreeAttrs = &manifest.WorktreeAttrs{Repo: repoName}
 
 		wtDir := repoCfg.EffectiveWorktreeDir()
-		dirSuffix := strconv.FormatInt(time.Now().UnixMilli(), 36)
-		wsPath = filepath.Join(wtDir, displayName+"-"+dirSuffix)
+		wsPath = filepath.Join(wtDir, displayName)
+		// If the directory already exists (name reused after close), add a timestamp suffix.
+		if _, err := os.Stat(wsPath); err == nil {
+			wsPath = wsPath + "-" + strconv.FormatInt(time.Now().UnixMilli(), 36)
+		}
 
 		if err := os.MkdirAll(wtDir, 0o755); err != nil {
 			return nil, fmt.Errorf("creating worktree dir: %w", err)

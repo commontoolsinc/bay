@@ -91,9 +91,10 @@ func newRepoLsCmd() *cobra.Command {
 
 func newRepoShowCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "show <name>",
-		Short: "Show repo details",
-		Args:  cobra.ExactArgs(1),
+		Use:     "show <name>",
+		Aliases: []string{"cat"},
+		Short:   "Show repo details",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {

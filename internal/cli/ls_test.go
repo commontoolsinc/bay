@@ -40,8 +40,8 @@ func testListEngine(t *testing.T) (*engine.Engine, string) {
 	return engine.New(
 		cfg,
 		filepath.Join(dir, "config.toml"),
-		filepath.Join(dir, "manifest.toml"),
-		filepath.Join(dir, "archive.toml"),
+		filepath.Join(dir, "manifest.json"),
+		filepath.Join(dir, "archive.json"),
 		mockTmux,
 		mockGit,
 	), dir
