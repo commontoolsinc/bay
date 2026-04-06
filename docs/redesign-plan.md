@@ -518,7 +518,10 @@ workspaces as needed.
 
 - Phase 2c: bay-focus Swift helper (compile, doctor check, Accessibility) — PR #66
 
+- Phase 4b: merge detection (activity-gated fetch, status→done) — PR #68
+
 **Next:**
+- Phase 4c: agent session resumption
 - Phase 5d: documentation rewrite
 
 ## What's NOT in scope

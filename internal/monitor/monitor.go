@@ -39,6 +39,14 @@ const (
 	// PRCheckCycles is how many check cycles between PR detection runs.
 	// With a default 3-second interval, 20 cycles = ~60 seconds.
 	PRCheckCycles = 20
+
+	// MergeCheckCycles is how many check cycles between merge detection runs.
+	// With a default 3-second interval, 100 cycles = ~5 minutes.
+	MergeCheckCycles = 100
+
+	// activityWindow is how long a workspace must have been active to
+	// trigger fetch + merge checks (2 hours in seconds).
+	activityWindow = 2 * 60 * 60
 )
 
 // Monitor watches agent panes for input prompts and highlights their tmux windows.
@@ -145,12 +153,24 @@ func (m *Monitor) CheckOnce() error {
 		}
 	}
 
-	// Periodic PR detection (slower cadence than prompt checking).
+	// Periodic background tasks (slower cadence than prompt checking).
 	m.cycle++
+	manifestDirty := false
+
 	if m.git != nil && m.cycle%PRCheckCycles == 0 {
 		if m.detectPRs(mf) {
-			_ = manifest.Save(m.manifestPath, mf)
+			manifestDirty = true
 		}
+	}
+
+	if m.git != nil && m.cycle%MergeCheckCycles == 0 {
+		if m.detectMerges(mf) {
+			manifestDirty = true
+		}
+	}
+
+	if manifestDirty {
+		_ = manifest.Save(m.manifestPath, mf)
 	}
 
 	return nil
@@ -175,6 +195,49 @@ func (m *Monitor) detectPRs(mf *manifest.Manifest) bool {
 				continue
 			}
 			ws.Worktree.PR = pr
+			changed = true
+		}
+	}
+	return changed
+}
+
+// detectMerges checks active workspaces for branches merged into default.
+// Only checks workspaces with recent activity (within activityWindow).
+// Performs git fetch before merge check. Returns true if any status changed.
+func (m *Monitor) detectMerges(mf *manifest.Manifest) bool {
+	now := time.Now().Unix()
+	changed := false
+
+	// Collect repos that need fetching (deduplicate).
+	fetched := map[string]bool{}
+
+	for i := range mf.Docks {
+		dock := &mf.Docks[i]
+		for j := range dock.Workspaces {
+			ws := &dock.Workspaces[j]
+			if ws.Worktree == nil || ws.Worktree.Branch == "" || ws.Path == "" {
+				continue
+			}
+			if ws.Status == manifest.WorkspaceStatusDone {
+				continue
+			}
+			// Activity gate: skip workspaces not active recently.
+			if ws.LastActive == 0 || (now-ws.LastActive) > activityWindow {
+				continue
+			}
+
+			// Fetch once per repo path.
+			if !fetched[ws.Path] {
+				_ = m.git.Fetch(ws.Path)
+				fetched[ws.Path] = true
+			}
+
+			merged, err := m.git.IsMergedIntoDefault(ws.Path, ws.Worktree.Branch)
+			if err != nil || !merged {
+				continue
+			}
+
+			ws.Status = manifest.WorkspaceStatusDone
 			changed = true
 		}
 	}

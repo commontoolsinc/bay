@@ -623,6 +623,98 @@ func TestCheckOnce_SkipsPRDetectionForWorkspaceWithNoPath(t *testing.T) {
 	}
 }
 
+// --- Merge detection tests ---
+
+func TestCheckOnce_DetectsMergedBranch(t *testing.T) {
+	dir := t.TempDir()
+	mock := tmux.NewMock()
+	mockGit := git.NewMock()
+
+	// Workspace with active branch that has been merged.
+	m := manifest.New()
+	m.Docks = []manifest.Dock{
+		{
+			Name: "dev",
+			Workspaces: []manifest.Workspace{
+				{
+					Name:       "feature-ws",
+					Path:       "/tmp",
+					Status:     manifest.WorkspaceStatusActive,
+					LastActive: time.Now().Unix(), // recently active
+					Worktree:   &manifest.WorktreeAttrs{Repo: "labs", Branch: "feature/done"},
+				},
+			},
+		},
+	}
+	manifestPath := filepath.Join(dir, "manifest.toml")
+	manifest.Save(manifestPath, m)
+
+	// Configure: branch is merged into default.
+	mockGit.SetMerged("/tmp", "feature/done", true)
+
+	patternsPath := filepath.Join(dir, "bay-prompts.txt")
+	os.WriteFile(patternsPath, []byte(""), 0o644)
+	pidPath := filepath.Join(dir, "monitor.pid")
+
+	mon := NewWithGit(mock, mockGit, manifestPath, patternsPath, pidPath, 1)
+
+	// Run enough cycles to trigger merge check.
+	for i := 0; i < MergeCheckCycles+1; i++ {
+		mon.CheckOnce()
+	}
+
+	// Workspace status should be updated to done.
+	updated, _ := manifest.Load(manifestPath)
+	dock := updated.FindDock("dev")
+	ws := dock.FindWorkspace("feature-ws")
+	if ws.Status != manifest.WorkspaceStatusDone {
+		t.Errorf("status = %q, want done", ws.Status)
+	}
+}
+
+func TestCheckOnce_SkipsMergeCheckForInactiveWorkspace(t *testing.T) {
+	dir := t.TempDir()
+	mock := tmux.NewMock()
+	mockGit := git.NewMock()
+
+	// Workspace with no recent activity (LastActive = 0).
+	m := manifest.New()
+	m.Docks = []manifest.Dock{
+		{
+			Name: "dev",
+			Workspaces: []manifest.Workspace{
+				{
+					Name:     "old-ws",
+					Path:     "/tmp",
+					Status:   manifest.WorkspaceStatusActive,
+					Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "feature/old"},
+				},
+			},
+		},
+	}
+	manifestPath := filepath.Join(dir, "manifest.toml")
+	manifest.Save(manifestPath, m)
+
+	mockGit.SetMerged("/tmp", "feature/old", true)
+
+	patternsPath := filepath.Join(dir, "bay-prompts.txt")
+	os.WriteFile(patternsPath, []byte(""), 0o644)
+	pidPath := filepath.Join(dir, "monitor.pid")
+
+	mon := NewWithGit(mock, mockGit, manifestPath, patternsPath, pidPath, 1)
+
+	for i := 0; i < MergeCheckCycles+1; i++ {
+		mon.CheckOnce()
+	}
+
+	// Should NOT be marked done — workspace is inactive.
+	updated, _ := manifest.Load(manifestPath)
+	ws := updated.FindDock("dev").FindWorkspace("old-ws")
+	if ws.Status != manifest.WorkspaceStatusActive {
+		t.Errorf("status = %q, want active (inactive workspace should be skipped)", ws.Status)
+	}
+}
+
 func TestStatus_NotRunning(t *testing.T) {
 	dir := t.TempDir()
 	pidPath := filepath.Join(dir, "monitor.pid")

@@ -256,6 +256,39 @@ func TestMock_RepoRoot(t *testing.T) {
 	}
 }
 
+func TestMock_IsMergedIntoDefault(t *testing.T) {
+	m := NewMock()
+	m.SetMerged("/repo", "feature/done", true)
+
+	merged, err := m.IsMergedIntoDefault("/repo", "feature/done")
+	if err != nil {
+		t.Fatalf("IsMergedIntoDefault: %v", err)
+	}
+	if !merged {
+		t.Error("expected merged=true")
+	}
+
+	// Unset branch defaults to not merged.
+	merged, err = m.IsMergedIntoDefault("/repo", "feature/open")
+	if err != nil {
+		t.Fatalf("IsMergedIntoDefault: %v", err)
+	}
+	if merged {
+		t.Error("expected merged=false for unknown branch")
+	}
+}
+
+func TestMock_Fetch(t *testing.T) {
+	m := NewMock()
+	if err := m.Fetch("/repo"); err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	calls := m.Calls("Fetch")
+	if len(calls) != 1 {
+		t.Errorf("expected 1 Fetch call, got %d", len(calls))
+	}
+}
+
 func TestMock_CreateWorktree_DuplicateError(t *testing.T) {
 	m := NewMock()
 	m.SetDefaultBranch("/repo", "main")

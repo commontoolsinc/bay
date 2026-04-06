@@ -156,6 +156,31 @@ func (r *Real) PRForBranch(path, branch string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+func (r *Real) Fetch(path string) error {
+	cmd := exec.Command("git", "-C", path, "fetch", "--quiet")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git fetch: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func (r *Real) IsMergedIntoDefault(path, branch string) (bool, error) {
+	defaultBranch, err := r.DefaultBranch(path)
+	if err != nil {
+		return false, err
+	}
+	// Check if branch is an ancestor of the default branch.
+	cmd := exec.Command("git", "-C", path, "merge-base", "--is-ancestor", branch, "origin/"+defaultBranch)
+	err = cmd.Run()
+	if err == nil {
+		return true, nil // branch is merged
+	}
+	if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+		return false, nil // not merged
+	}
+	return false, fmt.Errorf("git merge-base: %w", err)
+}
+
 func (r *Real) DefaultBranch(repoPath string) (string, error) {
 	// Try the remote HEAD symref first.
 	cmd := exec.Command("git", "-C", repoPath, "symbolic-ref", "refs/remotes/origin/HEAD")
