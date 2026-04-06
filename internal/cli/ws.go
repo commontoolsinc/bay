@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 
+	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/engine"
 	"github.com/commontoolsinc/bay/internal/nav"
 	"github.com/commontoolsinc/bay/internal/picker"
@@ -49,15 +52,22 @@ func newWsNewCmd() *cobra.Command {
 			if len(args) > 0 {
 				opts.Dock = args[0]
 			} else {
-				// Infer dock from current tmux session
+				// Try: infer dock from current tmux session.
 				dock, tmuxErr := eng.Tmux.CurrentSession()
-				if tmuxErr != nil {
-					return fmt.Errorf("not in a tmux session; specify dock name explicitly")
+				if tmuxErr == nil {
+					if _, ok := eng.Config.Docks[dock]; ok {
+						opts.Dock = dock
+					}
 				}
-				if _, ok := eng.Config.Docks[dock]; !ok {
-					return fmt.Errorf("current tmux session %q is not a bay dock; specify dock name explicitly", dock)
+
+				// Fallback: auto-bootstrap from CWD.
+				if opts.Dock == "" {
+					dockName, bootstrapErr := autoBootstrap(eng)
+					if bootstrapErr != nil {
+						return bootstrapErr
+					}
+					opts.Dock = dockName
 				}
-				opts.Dock = dock
 			}
 
 			// Shell-first default: if neither --agent nor --shell was
@@ -287,6 +297,70 @@ func newWsRenameCmd() *cobra.Command {
 			return eng.WsRename(dockName, wsID, args[1])
 		},
 	}
+}
+
+// autoBootstrap detects the CWD git repo, creates a dock and repo config,
+// and saves the config. Returns the dock name to use for ws new.
+func autoBootstrap(eng *engine.Engine) (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("cannot determine working directory")
+	}
+
+	repoRoot, err := eng.Git.RepoRoot(cwd)
+	if err != nil {
+		return "", fmt.Errorf("not in a git repository; specify dock name or run from a git repo")
+	}
+
+	repoName := filepath.Base(repoRoot)
+	dockName := repoName
+
+	// Add repo if not already configured.
+	if _, ok := eng.Config.Repos[repoName]; !ok {
+		eng.Config.Repos[repoName] = config.RepoConfig{
+			Path: config.NormalizePath(repoRoot),
+		}
+	}
+
+	// Probe for an agent on PATH.
+	agentName := probeAgent()
+	if agentName != "" {
+		if _, ok := eng.Config.Agents[agentName]; !ok {
+			eng.Config.Agents[agentName] = config.AgentConfig{Command: agentName}
+		}
+	}
+
+	// Create dock if not already configured.
+	// DockNew handles adding to Config.Docks and creating the tmux session.
+	if _, ok := eng.Config.Docks[dockName]; !ok {
+		if err := eng.DockNew(dockName, repoName, agentName, ""); err != nil {
+			return "", err
+		}
+	}
+
+	// Save config for future commands.
+	p := bayPaths()
+	if err := config.Save(p.ConfigFile, eng.Config); err != nil {
+		return "", fmt.Errorf("saving config: %w", err)
+	}
+
+	fmt.Printf("Auto-configured: repo %s, dock %s", repoName, dockName)
+	if agentName != "" {
+		fmt.Printf(", agent %s", agentName)
+	}
+	fmt.Println()
+
+	return dockName, nil
+}
+
+// probeAgent scans PATH for known AI agent commands.
+func probeAgent() string {
+	for _, name := range []string{"claude", "codex", "gemini"} {
+		if _, err := exec.LookPath(name); err == nil {
+			return name
+		}
+	}
+	return ""
 }
 
 // resolveTarget resolves "self" or a workspace query.

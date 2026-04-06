@@ -27,14 +27,16 @@ func bayPaths() config.Paths {
 }
 
 // newEngine creates an Engine from the loaded config and real implementations.
+// If no config file exists, returns an engine with an empty default config.
 func newEngine() (*engine.Engine, error) {
 	p := bayPaths()
 	cfg, err := config.Load(p.ConfigFile)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("no config file found at %s\nRun 'bay setup' to get started.", p.ConfigFile)
+			cfg = config.DefaultConfig()
+		} else {
+			return nil, fmt.Errorf("loading config: %w", err)
 		}
-		return nil, fmt.Errorf("loading config: %w", err)
 	}
 	errs := cfg.Validate()
 	if len(errs) > 0 {

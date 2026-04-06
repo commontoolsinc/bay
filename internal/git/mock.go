@@ -17,6 +17,7 @@ type repoState struct {
 	ignored       map[string]bool
 	worktrees     map[string]bool
 	prs           map[string]string // branch → PR number
+	repoRoot      string
 }
 
 // Mock is a test double for Interface that tracks calls and stores state.
@@ -124,6 +125,20 @@ func (m *Mock) Clone(url, destPath string) error {
 func (m *Mock) IsGitRepo(path string) bool {
 	m.record("IsGitRepo", path)
 	return true // mock defaults to yes
+}
+
+func (m *Mock) RepoRoot(path string) (string, error) {
+	m.record("RepoRoot", path)
+	r := m.repo(path)
+	if r.repoRoot != "" {
+		return r.repoRoot, nil
+	}
+	return "", fmt.Errorf("not a git repository: %s", path)
+}
+
+// SetRepoRoot configures the repo root for a path.
+func (m *Mock) SetRepoRoot(path, root string) {
+	m.repo(path).repoRoot = root
 }
 
 func (m *Mock) CreateWorktree(repoPath, worktreePath string) error {
