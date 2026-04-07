@@ -2,22 +2,12 @@ package cli
 
 import (
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/commontoolsinc/bay/internal/engine"
 )
-
-// formatAnsiRE strips tmux/terminal SGR sequences so visibleWidth can count
-// only the columns that actually render.
-var formatAnsiRE = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
-
-// visibleWidth returns the rendered column count of s, ignoring ANSI SGR
-// sequences (used by dim() to format dimmed labels).
-func visibleWidth(s string) int {
-	return len(formatAnsiRE.ReplaceAllString(s, ""))
-}
 
 type FocusKind string
 
@@ -269,6 +259,14 @@ func labelValue(label, value string) string {
 	return dim(label) + " " + value
 }
 
+// labelValueWithWidth returns the labelValue prefix and its visible column
+// count. The width is computed directly from the inputs because labelValue's
+// structure (dimmed label + space + value) is fixed and the dim() escape
+// codes are zero-width — no ANSI stripping needed.
+func labelValueWithWidth(label, value string) (string, int) {
+	return labelValue(label, value), utf8.RuneCountInString(label) + 1 + utf8.RuneCountInString(value)
+}
+
 func dimmedSeparator(sep string) string {
 	return dim(sep)
 }
@@ -323,27 +321,30 @@ func surfaceMeta(s engine.SurfaceInfo, long bool) string {
 	return strings.Join(parts, " ")
 }
 
-func writeIndentedLine(b *strings.Builder, indent int, prefix string, meta string) {
-	writeAlignedLine(b, indent, prefix, meta, 0)
+// writeHeaderLine writes an indented label-only line. Used for repo / dock /
+// "(no docks)" / "(no workspaces)" rows that have no metadata column.
+func writeHeaderLine(b *strings.Builder, indent int, prefix string) {
+	b.WriteString(strings.Repeat("  ", indent))
+	b.WriteString(prefix)
+	b.WriteString("\n")
 }
 
-// writeAlignedLine writes "<indent><prefix><pad><meta>" where pad makes the
-// meta column start at maxPrefixWidth + 2 (a 2-space minimum gap). Lines
-// with no meta omit padding entirely. maxPrefixWidth = 0 falls back to a
-// single-space gap (no alignment).
-func writeAlignedLine(b *strings.Builder, indent int, prefix, meta string, maxPrefixWidth int) {
+// writeAlignedLine writes "<indent><prefix><pad><meta>". When alignTo > 0,
+// pad makes the meta column start at alignTo + 2 (a 2-space minimum gap)
+// — used for sibling rows in a group. When alignTo == 0 the line gets a
+// single-space gap, used for one-off lines with no alignment context.
+// Lines with empty meta omit padding entirely.
+func writeAlignedLine(b *strings.Builder, indent int, prefix string, prefixWidth int, meta string, alignTo int) {
 	b.WriteString(strings.Repeat("  ", indent))
 	b.WriteString(prefix)
 	if meta == "" {
 		b.WriteString("\n")
 		return
 	}
-	if maxPrefixWidth > 0 {
-		gap := maxPrefixWidth - visibleWidth(prefix) + 2
-		if gap < 2 {
-			gap = 2
-		}
-		b.WriteString(strings.Repeat(" ", gap))
+	if alignTo > 0 {
+		// alignTo was computed as the max prefixWidth across rows with
+		// meta, so prefixWidth <= alignTo always — gap is always >= 2.
+		b.WriteString(strings.Repeat(" ", alignTo-prefixWidth+2))
 	} else {
 		b.WriteString(" ")
 	}
@@ -351,24 +352,29 @@ func writeAlignedLine(b *strings.Builder, indent int, prefix, meta string, maxPr
 	b.WriteString("\n")
 }
 
-// alignedRow holds a prefix/meta pair so we can compute group-wide column
-// alignment in a first pass before rendering.
+// alignedRow holds a precomputed render row. The optional surfaces /
+// isCurrentWs fields are populated only on workspace rows so the render
+// pass can iterate workspace rows without indexing back into
+// dock.Workspaces (which would risk silent lockstep breakage).
 type alignedRow struct {
-	prefix string
-	meta   string
+	prefix      string
+	prefixWidth int
+	meta        string
+	surfaces    []engine.SurfaceInfo // workspace rows only
+	isCurrentWs bool                 // workspace rows only
 }
 
-// maxPrefixWithMeta returns the maximum visible prefix width across rows
-// that have non-empty meta. Rows without meta don't contribute, so they
-// don't push the meta column out for sibling rows.
-func maxPrefixWithMeta(rows []alignedRow) int {
+// alignWidth returns the max prefix width across rows that have non-empty
+// meta. Rows without meta don't contribute, so they don't push the meta
+// column out for their siblings.
+func alignWidth(rows []alignedRow) int {
 	max := 0
 	for _, r := range rows {
 		if r.meta == "" {
 			continue
 		}
-		if w := visibleWidth(r.prefix); w > max {
-			max = w
+		if r.prefixWidth > max {
+			max = r.prefixWidth
 		}
 	}
 	return max
@@ -377,9 +383,9 @@ func maxPrefixWithMeta(rows []alignedRow) int {
 func FormatListView(view ListView, long bool) string {
 	var b strings.Builder
 	for _, repo := range view.Repos {
-		writeIndentedLine(&b, 0, labelValue("repo", repo.Name), "")
+		writeHeaderLine(&b, 0, labelValue("repo", repo.Name))
 		if len(repo.Docks) == 0 {
-			writeIndentedLine(&b, 1, "(no docks)", "")
+			writeHeaderLine(&b, 1, "(no docks)")
 			continue
 		}
 		for _, dock := range repo.Docks {
@@ -387,49 +393,57 @@ func FormatListView(view ListView, long bool) string {
 			if dock.Name == view.CurrentDock {
 				dockMarker = " *"
 			}
-			writeIndentedLine(&b, 1, labelValue("dock", dock.Name+dockMarker), "")
+			writeHeaderLine(&b, 1, labelValue("dock", dock.Name+dockMarker))
 			if len(dock.Workspaces) == 0 {
-				writeIndentedLine(&b, 2, "(no workspaces)", "")
+				writeHeaderLine(&b, 2, "(no workspaces)")
 				continue
 			}
 			showChildren := view.Recursive || view.Focus.Kind == FocusWorkspace
 
-			// First pass: build all workspace rows so we can compute the
-			// max prefix width and align meta within this dock.
+			// First pass: build workspace rows. Carry surfaces inline so
+			// the render pass can iterate one slice (no lockstep with
+			// dock.Workspaces).
 			wsRows := make([]alignedRow, len(dock.Workspaces))
 			for i, ws := range dock.Workspaces {
+				isCurrentWs := dock.Name == view.CurrentDock && ws.Name == view.CurrentWs
 				wsName := ws.Name
-				if dock.Name == view.CurrentDock && ws.Name == view.CurrentWs {
+				if isCurrentWs {
 					wsName += " *"
 				}
+				prefix, width := labelValueWithWidth("workspace", wsName)
 				wsRows[i] = alignedRow{
-					prefix: labelValue("workspace", wsName),
-					meta:   workspaceMeta(ws, !showChildren),
+					prefix:      prefix,
+					prefixWidth: width,
+					meta:        workspaceMeta(ws, !showChildren),
+					surfaces:    ws.Surfaces,
+					isCurrentWs: isCurrentWs,
 				}
 			}
-			wsAlign := maxPrefixWithMeta(wsRows)
+			wsAlign := alignWidth(wsRows)
 
-			for i, ws := range dock.Workspaces {
-				writeAlignedLine(&b, 2, wsRows[i].prefix, wsRows[i].meta, wsAlign)
+			for _, wsRow := range wsRows {
+				writeAlignedLine(&b, 2, wsRow.prefix, wsRow.prefixWidth, wsRow.meta, wsAlign)
 				if !showChildren {
 					continue
 				}
 
 				// Per-workspace surface alignment.
-				sfRows := make([]alignedRow, len(ws.Surfaces))
-				for j, s := range ws.Surfaces {
+				sfRows := make([]alignedRow, len(wsRow.surfaces))
+				for j, s := range wsRow.surfaces {
 					sName := s.Name
-					if dock.Name == view.CurrentDock && ws.Name == view.CurrentWs && s.Name == view.CurrentSurface {
+					if wsRow.isCurrentWs && s.Name == view.CurrentSurface {
 						sName += " *"
 					}
+					prefix, width := labelValueWithWidth("surface", sName)
 					sfRows[j] = alignedRow{
-						prefix: labelValue("surface", sName),
-						meta:   surfaceMeta(s, long),
+						prefix:      prefix,
+						prefixWidth: width,
+						meta:        surfaceMeta(s, long),
 					}
 				}
-				sfAlign := maxPrefixWithMeta(sfRows)
-				for j := range ws.Surfaces {
-					writeAlignedLine(&b, 3, sfRows[j].prefix, sfRows[j].meta, sfAlign)
+				sfAlign := alignWidth(sfRows)
+				for _, sr := range sfRows {
+					writeAlignedLine(&b, 3, sr.prefix, sr.prefixWidth, sr.meta, sfAlign)
 				}
 			}
 		}
@@ -457,8 +471,18 @@ func FormatWorkspaceShow(repoName, dockName string, ws *engine.WorkspaceInfo, lo
 	if ws.SyncStatus != "" && ws.SyncStatus != "ok" {
 		fmt.Fprintf(&b, "%s\n", labelValue("sync", ws.SyncStatus))
 	}
-	for _, s := range ws.Surfaces {
-		writeIndentedLine(&b, 0, labelValue("surface", s.Name), surfaceMeta(s, long))
+	sfRows := make([]alignedRow, len(ws.Surfaces))
+	for i, s := range ws.Surfaces {
+		prefix, width := labelValueWithWidth("surface", s.Name)
+		sfRows[i] = alignedRow{
+			prefix:      prefix,
+			prefixWidth: width,
+			meta:        surfaceMeta(s, long),
+		}
+	}
+	sfAlign := alignWidth(sfRows)
+	for _, sr := range sfRows {
+		writeAlignedLine(&b, 0, sr.prefix, sr.prefixWidth, sr.meta, sfAlign)
 	}
 	return b.String()
 }

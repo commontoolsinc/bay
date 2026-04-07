@@ -93,6 +93,38 @@ func TestBuildListView_DefaultIncludesRepos(t *testing.T) {
 	}
 }
 
+// TestAlignWidth_IgnoresRowsWithoutMeta verifies the load-bearing rule:
+// rows with empty meta don't contribute to the alignment width, so a long
+// meta-less row doesn't push the meta column out for its meta-having
+// siblings. This is the case the FormatListView caller relies on, but
+// it's hard to construct via the public DockInfo API — so we exercise
+// alignWidth directly.
+func TestAlignWidth_IgnoresRowsWithoutMeta(t *testing.T) {
+	rows := []alignedRow{
+		{prefix: "short", prefixWidth: 5, meta: "branch=foo"},
+		{prefix: "longer-prefix-with-no-meta", prefixWidth: 26, meta: ""},
+		{prefix: "medium", prefixWidth: 6, meta: "status=active"},
+	}
+	got := alignWidth(rows)
+	if got != 6 {
+		t.Errorf("alignWidth = %d, want 6 (longest-with-meta is 'medium' at width 6)", got)
+	}
+
+	// Empty input.
+	if alignWidth(nil) != 0 {
+		t.Errorf("alignWidth(nil) = %d, want 0", alignWidth(nil))
+	}
+
+	// All rows meta-less.
+	allEmpty := []alignedRow{
+		{prefix: "a", prefixWidth: 1, meta: ""},
+		{prefix: "bb", prefixWidth: 2, meta: ""},
+	}
+	if alignWidth(allEmpty) != 0 {
+		t.Errorf("alignWidth(all-meta-less) = %d, want 0", alignWidth(allEmpty))
+	}
+}
+
 // TestFormatListView_AlignsWorkspaceMetaWithinDock verifies that the meta
 // column on workspace lines starts at the same screen column for every
 // workspace in a dock, regardless of name length. This is the readability
