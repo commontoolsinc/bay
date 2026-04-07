@@ -61,8 +61,9 @@ git checkout -b fix/login-bug
 # edit files, run tests, etc.
 ```
 
-Notice the tmux tab name updated from a placeholder to `login-bug` —
-bay watches your branch and keeps the name in sync.
+Within a few seconds the tmux tab name updates from its placeholder to
+`login-bug` — bay watches your branch in the background and keeps the
+name in sync.
 
 Now you realize the auth refactor should be its own PR. Create a second
 workspace:

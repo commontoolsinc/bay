@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/focus"
@@ -178,13 +179,26 @@ func newDoctorCmd() *cobra.Command {
 				}
 			}
 
-			// Check monitor
+			// Check monitor.
 			mon, monCfgErr := newMonitorWithConfig()
 			if monCfgErr != nil {
 				fmt.Printf("[WARN] monitor: %v\n", monCfgErr)
 				ok = false
 			} else {
 				running, pid, monErr := mon.Status()
+				if monErr != nil || !running {
+					// Lazy retry: the auto-start hook in
+					// PersistentPreRunE forks `bay monitor run` before
+					// doctor's RunE runs, but the forked child writes
+					// its PID file asynchronously. A first-call check
+					// that runs before the child has finished startup
+					// will incorrectly report "not running". The retry
+					// only fires on the negative path so the steady
+					// state (monitor already running, second doctor
+					// run, etc.) is still instant.
+					time.Sleep(150 * time.Millisecond)
+					running, pid, monErr = mon.Status()
+				}
 				if monErr != nil || !running {
 					fmt.Printf("[WARN] monitor not running\n")
 					ok = false

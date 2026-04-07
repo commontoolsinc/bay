@@ -33,6 +33,9 @@ For fish (~/.config/fish/config.fish):
 `,
 		Args:      cobra.ExactArgs(1),
 		ValidArgs: []string{"bash", "zsh", "fish"},
+		// Sourced from shell rc on every new shell — never fork the
+		// monitor from this path.
+		Annotations: map[string]string{noMonitorAutostartAnnotation: "true"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			switch args[0] {
 			case "bash":
