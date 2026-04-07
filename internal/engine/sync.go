@@ -25,7 +25,6 @@ type workspaceSyncUpdate struct {
 	pr             string
 	prBranch       string
 	prChanged      bool
-	prCheckedAt    int64
 	mergedDone     bool
 	deadSurfaceIDs map[int]bool
 }
@@ -117,26 +116,20 @@ func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace)
 			if update.branchChanged {
 				branchForChecks = update.branch
 			}
-			// PR check uses the TTL-based sentinel — re-queries after the
-			// TTL even if the previous answer was "no PR", so a PR opened
+			// PR check: a branch change always forces a re-query (the
+			// cached PR belongs to the old branch). Otherwise the
+			// TTL-based sentinel decides — we re-query after PRCheckTTL
+			// even if the previous answer was "no PR", so a PR opened
 			// after the first check is eventually picked up.
 			now := time.Now().Unix()
-			worktreeForCheck := ws.Worktree
-			if update.branchChanged {
-				// Hand the predicate the new branch so a fresh branch
-				// triggers a check even if the old branch had been
-				// recently checked.
-				cloned := *ws.Worktree
-				cloned.Branch = branchForChecks
-				worktreeForCheck = &cloned
-			}
-			if worktreeForCheck.NeedsPRCheck(now) {
+			shouldCheckPR := branchForChecks != "" &&
+				(update.branchChanged || ws.Worktree.NeedsPRCheck(now))
+			if shouldCheckPR {
 				pr, err := e.Git.PRForBranch(wsPath, branchForChecks)
 				if err == nil {
 					update.pr = pr
 					update.prBranch = branchForChecks
 					update.prChanged = true
-					update.prCheckedAt = now
 				}
 			}
 			if branchForChecks != "" && ws.Status != manifest.WorkspaceStatusDone {
@@ -172,6 +165,14 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 	changed := false
 	if update.branchChanged && ws.Worktree != nil && ws.Worktree.Branch != update.branch {
 		ws.Worktree.Branch = update.branch
+		// Cached PR belongs to the old branch — invalidate it. The probe
+		// will already have queried gh for the new branch (via the
+		// branchChanged bypass) and may set PR below. If the probe's
+		// query failed transiently, the cleared state means future syncs
+		// treat this as fresh and try again, rather than displaying the
+		// wrong PR.
+		ws.Worktree.PR = ""
+		ws.Worktree.PRCheckedAt = 0
 		changed = true
 		if ws.Status == manifest.WorkspaceStatusIdle {
 			ws.Status = manifest.WorkspaceStatusActive
@@ -189,7 +190,9 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 
 	if update.prChanged && ws.Worktree != nil && ws.Worktree.Branch == update.prBranch && ws.Worktree.PR == "" {
 		ws.Worktree.PR = update.pr
-		ws.Worktree.PRCheckedAt = update.prCheckedAt
+		// Use time.Now() rather than a probe-time timestamp so concurrent
+		// processes can't write a stale value over a fresher one.
+		ws.Worktree.PRCheckedAt = time.Now().Unix()
 		changed = true
 	}
 

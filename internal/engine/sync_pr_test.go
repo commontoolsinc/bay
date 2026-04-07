@@ -159,6 +159,75 @@ func TestSyncAll_RechecksAfterTTLExpires(t *testing.T) {
 	}
 }
 
+func TestSyncAll_BranchChangeInvalidatesCachedPR(t *testing.T) {
+	// Regression: when a workspace's branch changes (detected by sync from
+	// the actual git state), the cached PR — which belongs to the OLD
+	// branch — must be invalidated and re-queried for the new branch.
+	// Otherwise users see the wrong PR after switching branches.
+	eng, _ := testEngine(t)
+	wsPath := seedWorktreeWorkspace(t, eng, "labs", "w1", "feature/old")
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetPR(wsPath, "feature/old", "100")
+
+	// First sync — caches PR=100 for the old branch.
+	eng.SyncAll()
+	m, _ := eng.LoadManifest()
+	ws := m.FindDock("labs").FindWorkspace("w1")
+	if ws.Worktree.PR != "100" {
+		t.Fatalf("first sync: PR = %q, want 100", ws.Worktree.PR)
+	}
+
+	// Now: branch changes on disk to feature/new. The new branch has its
+	// own PR #200. Crucially, PRCheckedAt is recent — the old TTL-based
+	// logic would have skipped the re-query.
+	mockGit.SetBranch(wsPath, "feature/new")
+	mockGit.SetPR(wsPath, "feature/new", "200")
+
+	eng.SyncAll()
+
+	m, _ = eng.LoadManifest()
+	// Workspace got renamed by abbreviateBranch.
+	ws = m.FindDock("labs").FindWorkspace("new")
+	if ws == nil {
+		t.Fatalf("workspace 'new' missing after rename")
+	}
+	if ws.Worktree.Branch != "feature/new" {
+		t.Errorf("Branch = %q, want feature/new", ws.Worktree.Branch)
+	}
+	if ws.Worktree.PR != "200" {
+		t.Errorf("PR = %q, want 200 (new branch's PR, not the cached old one)", ws.Worktree.PR)
+	}
+}
+
+func TestSyncAll_BranchChangeClearsCacheWhenGHFails(t *testing.T) {
+	// Belt-and-braces: even if the new gh query fails (no PR found), the
+	// cached PR for the old branch must NOT remain. Otherwise users see
+	// the old PR next to the new branch — strictly worse than no PR at all.
+	eng, _ := testEngine(t)
+	wsPath := seedWorktreeWorkspace(t, eng, "labs", "w1", "feature/old")
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetPR(wsPath, "feature/old", "100")
+
+	// First sync — caches PR=100.
+	eng.SyncAll()
+
+	// Branch changes; new branch has no PR (mock default).
+	mockGit.SetBranch(wsPath, "feature/new")
+
+	eng.SyncAll()
+
+	m, _ := eng.LoadManifest()
+	ws := m.FindDock("labs").FindWorkspace("new")
+	if ws == nil {
+		t.Fatalf("workspace 'new' missing after rename")
+	}
+	if ws.Worktree.PR != "" {
+		t.Errorf("PR = %q, want empty (new branch has no PR; old cached value should not persist)", ws.Worktree.PR)
+	}
+}
+
 func TestSyncAll_ParallelChecksMultipleWorkspaces(t *testing.T) {
 	eng, _ := testEngine(t)
 	mockGit := eng.Git.(*git.Mock)

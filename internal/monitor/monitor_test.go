@@ -580,7 +580,7 @@ func TestCheckOnce_DetectsPR(t *testing.T) {
 	}
 }
 
-func TestCheckOnce_PRCheckedSentinelPreventsRecheck(t *testing.T) {
+func TestCheckOnce_PRCheckedAtPreventsRecheckWithinTTL(t *testing.T) {
 	// After a definitive "no PR found" answer, subsequent monitor cycles
 	// should not re-query gh for the same workspace. Otherwise we hammer
 	// gh every minute for every PR-less workspace forever.
