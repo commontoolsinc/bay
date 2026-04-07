@@ -283,8 +283,11 @@ func extractBayBlock(content string) (string, bool) {
 	return strings.Join(blockLines, "\n"), true
 }
 
-// commandsInBlock returns the set of single-quoted commands found on
-// any active (non-comment) bind-key/bind line in the block.
+// commandsInBlock returns the set of quoted commands found on any
+// active (non-comment) bind-key/bind line in the block. Both single-
+// and double-quoted commands are recognized; whichever quote character
+// appears first opens the command, and the last occurrence of that
+// same character closes it.
 func commandsInBlock(block string) map[string]bool {
 	cmds := map[string]bool{}
 	for _, l := range strings.Split(block, "\n") {
@@ -295,13 +298,15 @@ func commandsInBlock(block string) map[string]bool {
 		if !strings.HasPrefix(trimmed, "bind-key") && !strings.HasPrefix(trimmed, "bind ") {
 			continue
 		}
-		// The command is the only single-quoted segment on the line.
-		first := strings.Index(trimmed, "'")
-		last := strings.LastIndex(trimmed, "'")
-		if first < 0 || first >= last {
+		open := strings.IndexAny(trimmed, "'\"")
+		if open < 0 {
 			continue
 		}
-		cmds[trimmed[first+1:last]] = true
+		close := strings.LastIndexByte(trimmed, trimmed[open])
+		if close <= open {
+			continue
+		}
+		cmds[trimmed[open+1:close]] = true
 	}
 	return cmds
 }

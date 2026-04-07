@@ -124,6 +124,24 @@ bind -n M-x run-shell 'bay shell'
 	}
 }
 
+func TestCommandsInBlock_DoubleQuotes(t *testing.T) {
+	// Users frequently mix quote styles in tmux configs. The diff
+	// must recognize a double-quoted command, otherwise rebound bay
+	// commands get falsely flagged as missing every setup run.
+	block := `# Bay keybindings
+bind-key -n M-j run-shell "bay surface next"
+bind-key -n M-k run-shell 'bay surface prev'
+`
+	got := commandsInBlock(block)
+	want := map[string]bool{
+		"bay surface next": true,
+		"bay surface prev": true,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("commandsInBlock() = %v, want %v", got, want)
+	}
+}
+
 func TestCommandsInBlock_IgnoresCommentedBindings(t *testing.T) {
 	// Critical: the commented binding must NOT show up. This is the
 	// core regression — substring-based detection treated commented
