@@ -277,7 +277,6 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	return updatedWs, nil
 }
 
-// WsClose closes a workspace and all its surfaces.
 // closeWorkspaceState does the safety checks, worktree removal, archive,
 // and manifest update for a workspace — but NOT the destructive tmux
 // kill. Returns the tmux window IDs the caller should kill afterward.

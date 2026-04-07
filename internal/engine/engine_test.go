@@ -825,6 +825,81 @@ func TestDockClose_PersistsManifestBeforeKill(t *testing.T) {
 	}
 }
 
+// On a non-force DockClose that fails partway through, workspaces that
+// were already removed from the manifest must also have their tmux
+// windows killed — otherwise we leave orphan windows alive in the dock
+// session that no manifest entry refers to.
+func TestDockClose_NonForceFailure_KillsAlreadyRemovedWorkspaceWindows(t *testing.T) {
+	eng, _ := testEngine(t)
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+		t.Fatalf("WsNew w1: %v", err)
+	}
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"}); err != nil {
+		t.Fatalf("WsNew w2: %v", err)
+	}
+
+	// Capture w1's tmux window ID before close (so we can verify it
+	// gets killed even though the loop bails out on w2).
+	pre, _ := eng.LoadManifest()
+	w1 := pre.FindDock("labs").FindWorkspace("w1")
+	if w1 == nil || len(w1.Surfaces) == 0 || w1.Surfaces[0].Tmux == nil {
+		t.Fatalf("w1 missing tmux surface")
+	}
+	w1WindowID := w1.Surfaces[0].Tmux.WindowID
+
+	// Make w2 fail the safety check: the worktree dir must exist on
+	// disk (closeWorkspaceState skips dirty checks if !exists), and
+	// the git mock must report it dirty.
+	w2 := pre.FindDock("labs").FindWorkspace("w2")
+	if w2 == nil {
+		t.Fatalf("w2 missing")
+	}
+	if err := os.MkdirAll(w2.Path, 0o755); err != nil {
+		t.Fatalf("mkdir w2.Path: %v", err)
+	}
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetDirty(w2.Path, true)
+
+	if err := eng.DockClose("labs", false); err == nil {
+		t.Fatalf("DockClose succeeded; expected dirty-w2 failure")
+	}
+
+	// w1 must be gone from the manifest (already-removed in the loop).
+	post, _ := eng.LoadManifest()
+	dock := post.FindDock("labs")
+	if dock == nil {
+		t.Fatalf("dock 'labs' unexpectedly removed on non-force failure")
+	}
+	if dock.FindWorkspace("w1") != nil {
+		t.Errorf("w1 still in manifest; expected it to be removed before w2 failed")
+	}
+	if dock.FindWorkspace("w2") == nil {
+		t.Errorf("w2 missing from manifest; expected it to remain after its failed close")
+	}
+
+	// w1's window must have been killed — otherwise it's an orphan
+	// tmux window with no manifest entry.
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	killed := false
+	for _, c := range mockTmux.Calls {
+		if c.Method == "KillWindow" && len(c.Args) == 1 && c.Args[0] == w1WindowID {
+			killed = true
+			break
+		}
+	}
+	if !killed {
+		t.Errorf("w1's window %s was not killed; expected sync after partial DockClose failure", w1WindowID)
+	}
+
+	// And we must NOT have killed the dock session — that would
+	// destroy w2's pane (which still has dirty work).
+	for _, c := range mockTmux.Calls {
+		if c.Method == "KillSession" {
+			t.Errorf("KillSession called on non-force partial failure: %v", c)
+		}
+	}
+}
+
 func TestRepoRemove_PersistsManifestBeforeKill(t *testing.T) {
 	eng, _ := testEngine(t)
 	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {

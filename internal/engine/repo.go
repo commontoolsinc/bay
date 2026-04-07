@@ -115,8 +115,9 @@ func (e *Engine) RepoRemove(name string, force bool) error {
 
 	// Force path: close every workspace in each affected dock at the
 	// manifest level (no tmux kills yet — see closeWorkspaceState).
+	// Snapshot workspace names from the manifest we loaded above so we
+	// don't keep re-reading it as closeWorkspaceState mutates it.
 	for _, dockName := range affectedDockNames {
-		m, _ := e.LoadManifest()
 		dock := m.FindDock(dockName)
 		if dock == nil {
 			continue

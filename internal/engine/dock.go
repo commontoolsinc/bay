@@ -188,16 +188,28 @@ func (e *Engine) DockClose(name string, force bool) error {
 		wsNames = append(wsNames, ws.Name)
 	}
 
-	// Manifest pass: archive + remove each workspace. We discard the
-	// returned window IDs because KillSession at the end takes out
-	// every pane in the session in one shot — no need for per-window
-	// kills.
+	// Manifest pass: archive + remove each workspace. On the success
+	// path we discard the returned window IDs because KillSession at
+	// the end takes out every pane in the session in one shot. On a
+	// non-force failure mid-loop we use them to kill just the windows
+	// for workspaces that *were* removed from the manifest, so we don't
+	// leave orphaned tmux windows with no manifest reference.
+	var killedWindowIDs []string
 	for _, wsName := range wsNames {
-		if _, err := e.closeWorkspaceState(name, wsName, force); err != nil {
+		ids, err := e.closeWorkspaceState(name, wsName, force)
+		if err != nil {
 			if !force {
+				// Sync tmux state with the manifest mutations we already
+				// did before bailing out — otherwise the workspaces we
+				// closed earlier in the loop would have orphan windows.
+				for _, id := range killedWindowIDs {
+					e.ensurePlaceholderIfLastWindow(name, id)
+					_ = e.Tmux.KillWindow(id)
+				}
 				return fmt.Errorf("workspace %q: %w", wsName, err)
 			}
 		}
+		killedWindowIDs = append(killedWindowIDs, ids...)
 	}
 
 	// Remove dock from manifest.
