@@ -62,12 +62,14 @@ func (e *Engine) SurfaceAdd(dockName, wsName string, surfaceType manifest.Surfac
 	// Determine the layout group — find an existing tmux window to split into,
 	// or create a new one.
 	var tmuxWindowID string
+	var tmuxSplitTargetID string
 	var layoutGroup int
 	var splitFromSurface int
 
 	if splitDir != "" && len(ws.Surfaces) > 0 {
 		if parent := e.preferredSplitTarget(ws); parent != nil {
 			tmuxWindowID = parent.Tmux.WindowID
+			tmuxSplitTargetID = parent.Tmux.PaneID
 			layoutGroup = parent.Tmux.LayoutGroup
 			splitFromSurface = parent.ID
 		}
@@ -78,7 +80,11 @@ func (e *Engine) SurfaceAdd(dockName, wsName string, surfaceType manifest.Surfac
 
 	if tmuxWindowID != "" && splitDir != "" {
 		// Split an existing window.
-		newPaneID, err := e.Tmux.SplitWindow(tmuxWindowID, splitDir, ws.Path)
+		targetID := tmuxSplitTargetID
+		if targetID == "" {
+			targetID = tmuxWindowID
+		}
+		newPaneID, err := e.Tmux.SplitWindow(targetID, splitDir, ws.Path)
 		if err != nil {
 			return fmt.Errorf("splitting window: %w", err)
 		}

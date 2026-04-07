@@ -14,12 +14,14 @@ import (
 type RecoverResult struct {
 	Dock      string
 	Recovered []string // workspace names that had surfaces recreated
+	Warnings  []string
 	AttachCmd string
 }
 
 type recoverOutcome struct {
 	recovered []string
 	errs      []string
+	warnings  []string
 	changed   bool
 }
 
@@ -27,51 +29,38 @@ type recoverOutcome struct {
 // Note: agent config files are no longer generated during recovery.
 // Agents are relaunched directly; project-level CLAUDE.md provides bay awareness.
 func (e *Engine) Recover() ([]RecoverResult, error) {
-	var results []RecoverResult
+	m, err := e.LoadManifest()
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]RecoverResult, 0, len(m.Docks))
 	var errs []string
-	if err := e.withManifestMaybe(func(m *manifest.Manifest) (bool, error) {
-		changed := false
-		results = nil
-		errs = nil
+	for i := range m.Docks {
+		dock := &m.Docks[i]
+		agentArgs := e.resolvedDockAgentArgs(dock.Name, m)
 
-		for i := range m.Docks {
-			dock := &m.Docks[i]
-			agentArgs := e.resolvedDockAgentArgs(dock.Name, m)
-
-			if err := e.ensureSession(dock.Name); err != nil {
-				return false, err
-			}
-
-			outcome := e.recoverDockWorkspaces(dock, agentArgs)
-			e.cleanPlaceholders(dock.Name)
-
-			// Recover host terminal if configured and dead.
-			terminal := e.Config.ResolvedDockTerminal(dock.Name)
-			if dock.Host != nil && terminal != "" {
-				if dock.Host.PID == 0 || !processAlive(dock.Host.PID) {
-					if pid, err := launchTerminal(terminal, dock.Name); err == nil {
-						if dock.Host.PID != pid {
-							dock.Host.PID = pid
-							outcome.changed = true
-						}
-					} else {
-						outcome.errs = append(outcome.errs, fmt.Sprintf("dock %s: launch terminal: %v", dock.Name, err))
-					}
-				}
-			}
-
-			results = append(results, RecoverResult{
-				Dock:      dock.Name,
-				Recovered: outcome.recovered,
-				AttachCmd: fmt.Sprintf("tmux attach -t %s", dock.Name),
-			})
-			errs = append(errs, outcome.errs...)
-			changed = changed || outcome.changed
+		if err := e.ensureSession(dock.Name); err != nil {
+			return nil, err
 		}
 
-		return changed, nil
-	}); err != nil {
-		return nil, err
+		outcome := e.recoverDockWorkspaces(dock, agentArgs)
+		e.cleanPlaceholders(dock.Name)
+		e.recoverDockHostTerminal(dock, &outcome)
+
+		if outcome.changed {
+			if err := e.mergeRecoveredDockState(dock); err != nil {
+				return nil, err
+			}
+		}
+
+		results = append(results, RecoverResult{
+			Dock:      dock.Name,
+			Recovered: outcome.recovered,
+			Warnings:  outcome.warnings,
+			AttachCmd: fmt.Sprintf("tmux attach -t %s", dock.Name),
+		})
+		errs = append(errs, outcome.errs...)
 	}
 
 	if len(errs) > 0 {
@@ -81,33 +70,41 @@ func (e *Engine) Recover() ([]RecoverResult, error) {
 }
 
 // DockRecover recovers a single dock by name.
-func (e *Engine) DockRecover(name string) ([]string, error) {
-	var recovered []string
-	var errs []string
-	if err := e.withManifestMaybe(func(m *manifest.Manifest) (bool, error) {
-		dock := m.FindDock(name)
-		if dock == nil {
-			return false, fmt.Errorf("unknown dock %q in manifest", name)
-		}
-		agentArgs := e.resolvedDockAgentArgs(name, m)
+func (e *Engine) DockRecover(name string) (RecoverResult, error) {
+	m, err := e.LoadManifest()
+	if err != nil {
+		return RecoverResult{}, err
+	}
+	dock := m.FindDock(name)
+	if dock == nil {
+		return RecoverResult{}, fmt.Errorf("unknown dock %q in manifest", name)
+	}
+	agentArgs := e.resolvedDockAgentArgs(name, m)
 
-		if err := e.ensureSession(name); err != nil {
-			return false, err
-		}
-
-		outcome := e.recoverDockWorkspaces(dock, agentArgs)
-		e.cleanPlaceholders(name)
-		recovered = outcome.recovered
-		errs = outcome.errs
-		return outcome.changed, nil
-	}); err != nil {
-		return nil, err
+	if err := e.ensureSession(name); err != nil {
+		return RecoverResult{}, err
 	}
 
-	if len(errs) > 0 {
-		return recovered, fmt.Errorf("recovery completed with errors:\n%s", strings.Join(errs, "\n"))
+	outcome := e.recoverDockWorkspaces(dock, agentArgs)
+	e.cleanPlaceholders(name)
+	e.recoverDockHostTerminal(dock, &outcome)
+
+	if outcome.changed {
+		if err := e.mergeRecoveredDockState(dock); err != nil {
+			return RecoverResult{}, err
+		}
 	}
-	return recovered, nil
+
+	result := RecoverResult{
+		Dock:      name,
+		Recovered: outcome.recovered,
+		Warnings:  outcome.warnings,
+		AttachCmd: fmt.Sprintf("tmux attach -t %s", name),
+	}
+	if len(outcome.errs) > 0 {
+		return result, fmt.Errorf("recovery completed with errors:\n%s", strings.Join(outcome.errs, "\n"))
+	}
+	return result, nil
 }
 
 // recoverDockWorkspaces handles recovery for all workspaces in a dock.
@@ -183,15 +180,16 @@ func (e *Engine) recoverDockWorkspaces(dock *manifest.Dock, agentArgs []string) 
 						}
 					} else {
 						// Subsequent surfaces split from their recorded parent pane.
-						if err := e.selectRecoverSplitParent(ws, s); err != nil {
-							outcome.errs = append(outcome.errs, fmt.Sprintf("workspace %s surface %s: %v", ws.Name, s.Name, err))
-							continue
-						}
 						dir := s.Tmux.SplitDir
 						if dir == "" {
 							dir = "v"
 						}
-						newPaneID, err := e.Tmux.SplitWindow(newWindowID, dir, ws.Path)
+						splitTargetID, err := recoverSplitTargetID(ws, s, newWindowID)
+						if err != nil {
+							outcome.errs = append(outcome.errs, fmt.Sprintf("workspace %s surface %s: %v", ws.Name, s.Name, err))
+							continue
+						}
+						newPaneID, err := e.Tmux.SplitWindow(splitTargetID, dir, ws.Path)
 						if err != nil {
 							outcome.errs = append(outcome.errs, fmt.Sprintf("workspace %s surface %s: split window: %v", ws.Name, s.Name, err))
 							continue
@@ -236,15 +234,16 @@ func (e *Engine) reconcileSurfaces(tmuxWindowID string, ws *manifest.Workspace, 
 		if s.Tmux == nil {
 			continue
 		}
-		if err := e.selectRecoverSplitParent(ws, s); err != nil {
-			outcome.errs = append(outcome.errs, fmt.Sprintf("workspace %s surface %s: %v", ws.Name, s.Name, err))
-			continue
-		}
 		dir := s.Tmux.SplitDir
 		if dir == "" {
 			dir = "v"
 		}
-		newPaneID, err := e.Tmux.SplitWindow(tmuxWindowID, dir, ws.Path)
+		splitTargetID, err := recoverSplitTargetID(ws, s, tmuxWindowID)
+		if err != nil {
+			outcome.errs = append(outcome.errs, fmt.Sprintf("workspace %s surface %s: %v", ws.Name, s.Name, err))
+			continue
+		}
+		newPaneID, err := e.Tmux.SplitWindow(splitTargetID, dir, ws.Path)
 		if err != nil {
 			outcome.errs = append(outcome.errs, fmt.Sprintf("workspace %s surface %s: split window: %v", ws.Name, s.Name, err))
 			continue
@@ -300,18 +299,120 @@ func (e *Engine) recoverSurfaceLaunch(s *manifest.Surface, tmuxPaneID string, ag
 	return nil
 }
 
-func (e *Engine) selectRecoverSplitParent(ws *manifest.Workspace, s *manifest.Surface) error {
-	if s.Tmux == nil || s.Tmux.SplitFrom == 0 {
+func (e *Engine) recoverDockHostTerminal(dock *manifest.Dock, outcome *recoverOutcome) {
+	terminal := e.Config.ResolvedDockTerminal(dock.Name)
+	if dock.Host == nil || terminal == "" {
+		return
+	}
+	if dock.Host.PID != 0 && processAlive(dock.Host.PID) {
+		return
+	}
+
+	pid, err := launchTerminal(terminal, dock.Name)
+	if err != nil {
+		outcome.warnings = append(outcome.warnings, fmt.Sprintf("dock %s: launch terminal: %v", dock.Name, err))
+		return
+	}
+	if dock.Host.PID != pid {
+		dock.Host.PID = pid
+		outcome.changed = true
+	}
+}
+
+func (e *Engine) mergeRecoveredDockState(recovered *manifest.Dock) error {
+	return e.withManifestMaybe(func(m *manifest.Manifest) (bool, error) {
+		dock := m.FindDock(recovered.Name)
+		if dock == nil {
+			return false, fmt.Errorf("dock %q disappeared during recovery", recovered.Name)
+		}
+		return mergeRecoveredDockRuntimeState(dock, recovered), nil
+	})
+}
+
+func mergeRecoveredDockRuntimeState(dst, src *manifest.Dock) bool {
+	changed := false
+
+	if src.Host != nil {
+		if dst.Host == nil {
+			dst.Host = &manifest.GUIAttrs{}
+			changed = true
+		}
+		if dst.Host.PID != src.Host.PID {
+			dst.Host.PID = src.Host.PID
+			changed = true
+		}
+	}
+
+	for i := range src.Workspaces {
+		srcWS := &src.Workspaces[i]
+		dstWS := findWorkspaceForRecoveryMerge(dst, srcWS)
+		if dstWS == nil {
+			continue
+		}
+		for j := range srcWS.Surfaces {
+			srcSurface := &srcWS.Surfaces[j]
+			if srcSurface.Tmux == nil {
+				continue
+			}
+			dstSurface := findSurfaceForRecoveryMerge(dstWS, srcSurface)
+			if dstSurface == nil {
+				continue
+			}
+			if dstSurface.Tmux == nil {
+				dstSurface.Tmux = &manifest.TmuxAttrs{
+					LayoutGroup: srcSurface.Tmux.LayoutGroup,
+					SplitFrom:   srcSurface.Tmux.SplitFrom,
+					SplitDir:    srcSurface.Tmux.SplitDir,
+				}
+				changed = true
+			}
+			if dstSurface.Tmux.WindowID != srcSurface.Tmux.WindowID {
+				dstSurface.Tmux.WindowID = srcSurface.Tmux.WindowID
+				changed = true
+			}
+			if dstSurface.Tmux.PaneID != srcSurface.Tmux.PaneID {
+				dstSurface.Tmux.PaneID = srcSurface.Tmux.PaneID
+				changed = true
+			}
+		}
+	}
+
+	return changed
+}
+
+func findWorkspaceForRecoveryMerge(dock *manifest.Dock, src *manifest.Workspace) *manifest.Workspace {
+	for i := range dock.Workspaces {
+		if dock.Workspaces[i].Path == src.Path {
+			return &dock.Workspaces[i]
+		}
+	}
+	if src.Name == "" {
 		return nil
+	}
+	return dock.FindWorkspace(src.Name)
+}
+
+func findSurfaceForRecoveryMerge(ws *manifest.Workspace, src *manifest.Surface) *manifest.Surface {
+	if src.ID != 0 {
+		if surface := ws.FindSurfaceByID(src.ID); surface != nil {
+			return surface
+		}
+	}
+	if src.Name == "" {
+		return nil
+	}
+	return ws.FindSurface(src.Name)
+}
+
+func recoverSplitTargetID(ws *manifest.Workspace, s *manifest.Surface, fallbackTargetID string) (string, error) {
+	if s.Tmux == nil || s.Tmux.SplitFrom == 0 {
+		return fallbackTargetID, nil
 	}
 	parent := ws.FindSurfaceByID(s.Tmux.SplitFrom)
 	if parent == nil || parent.Tmux == nil || parent.Tmux.PaneID == "" {
-		return fmt.Errorf("missing split parent %d", s.Tmux.SplitFrom)
+		return "", fmt.Errorf("missing split parent %d", s.Tmux.SplitFrom)
 	}
-	if err := e.Tmux.SelectPane(parent.Tmux.PaneID); err != nil {
-		return fmt.Errorf("select split parent %d: %w", s.Tmux.SplitFrom, err)
-	}
-	return nil
+	return parent.Tmux.PaneID, nil
 }
 
 // groupSurfacesByLayout groups surface indices by their layout group.

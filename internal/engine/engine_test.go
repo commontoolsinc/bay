@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -204,6 +205,48 @@ func TestRecover_RelaunchesHostTerminal(t *testing.T) {
 	}
 	if dock.Host.PID != 4242 {
 		t.Fatalf("dock.Host.PID = %d, want 4242", dock.Host.PID)
+	}
+}
+
+func TestRecover_HostTerminalFailureIsWarning(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	oldLaunchTerminal := launchTerminal
+	launchTerminal = func(terminal, session string) (int, error) {
+		return 0, fmt.Errorf("missing terminal binary")
+	}
+	defer func() { launchTerminal = oldLaunchTerminal }()
+
+	m, _ := eng.LoadManifest()
+	dock := m.FindDock("labs")
+	dock.Host = &manifest.GUIAttrs{AppCommand: "ghostty", PID: 0}
+	eng.saveManifest(m)
+
+	eng.Config.Docks["labs"] = config.DockConfig{
+		Terminal: "ghostty",
+	}
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.Reset()
+
+	results, err := eng.Recover()
+	if err != nil {
+		t.Fatalf("Recover returned hard error for terminal warning: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("results = %d, want 1", len(results))
+	}
+	if len(results[0].Warnings) != 1 || !strings.Contains(results[0].Warnings[0], "missing terminal binary") {
+		t.Fatalf("warnings = %v, want launch-terminal warning", results[0].Warnings)
+	}
+
+	m, _ = eng.LoadManifest()
+	dock = m.FindDock("labs")
+	if dock == nil || dock.Host == nil {
+		t.Fatal("dock host missing after recovery")
+	}
+	if dock.Host.PID != 0 {
+		t.Fatalf("dock.Host.PID = %d, want unchanged 0 on warning", dock.Host.PID)
 	}
 }
 
@@ -1196,7 +1239,7 @@ func TestRecoverReconcilesSurfacesInExistingWindow(t *testing.T) {
 	}
 }
 
-func TestRecover_SelectsRecordedSplitParent(t *testing.T) {
+func TestRecover_UsesRecordedSplitParentAsSplitTarget(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
@@ -1244,20 +1287,20 @@ func TestRecover_SelectsRecordedSplitParent(t *testing.T) {
 		t.Fatalf("recovered surfaces missing tmux metadata: %#v", ws.Surfaces)
 	}
 
-	var selects []string
+	var splitTargets []string
 	for _, call := range mockTmux.Calls {
-		if call.Method == "SelectPane" && len(call.Args) > 0 {
-			selects = append(selects, call.Args[0])
+		if call.Method == "SplitWindow" && len(call.Args) > 0 {
+			splitTargets = append(splitTargets, call.Args[0])
 		}
 	}
-	if len(selects) < 2 {
-		t.Fatalf("expected at least 2 SelectPane calls during recovery, got %v", selects)
+	if len(splitTargets) < 2 {
+		t.Fatalf("expected at least 2 SplitWindow calls during recovery, got %v", splitTargets)
 	}
-	if selects[0] != root.Tmux.PaneID {
-		t.Fatalf("first split parent = %q, want %q", selects[0], root.Tmux.PaneID)
+	if splitTargets[0] != root.Tmux.PaneID {
+		t.Fatalf("first split target = %q, want %q", splitTargets[0], root.Tmux.PaneID)
 	}
-	if selects[1] != middle.Tmux.PaneID {
-		t.Fatalf("second split parent = %q, want %q", selects[1], middle.Tmux.PaneID)
+	if splitTargets[1] != middle.Tmux.PaneID {
+		t.Fatalf("second split target = %q, want %q", splitTargets[1], middle.Tmux.PaneID)
 	}
 }
 

@@ -23,7 +23,7 @@ type Interface interface {
 
 	// Panes
 	SelectPane(paneID string) error
-	SplitWindow(windowID string, dir string, cwd string) (string, error) // returns pane ID
+	SplitWindow(targetID string, dir string, cwd string) (string, error) // target may be a window or pane ID; returns pane ID
 	KillPane(paneID string) error
 	SendKeys(paneID string, keys string) error
 	CapturePane(paneID string, lines int) (string, error)
