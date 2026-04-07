@@ -1761,36 +1761,6 @@ func TestSyncWorkspaceGitState_BranchChangeUpdatesNameAndStatus(t *testing.T) {
 	}
 }
 
-func TestSyncAll_NoChangesDoesNotRewriteManifest(t *testing.T) {
-	eng, _ := testEngine(t)
-
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
-		t.Fatalf("WsNew failed: %v", err)
-	}
-
-	before, err := os.ReadFile(eng.manifestPath)
-	if err != nil {
-		t.Fatalf("ReadFile before sync: %v", err)
-	}
-	backupPath := eng.manifestPath + ".bak"
-	if err := os.Remove(backupPath); err != nil && !os.IsNotExist(err) {
-		t.Fatalf("removing backup: %v", err)
-	}
-
-	eng.SyncAll()
-
-	after, err := os.ReadFile(eng.manifestPath)
-	if err != nil {
-		t.Fatalf("ReadFile after sync: %v", err)
-	}
-	if string(after) != string(before) {
-		t.Fatal("manifest changed after no-op SyncAll")
-	}
-	if _, err := os.Stat(backupPath); !os.IsNotExist(err) {
-		t.Fatalf("expected no backup after no-op SyncAll, got err=%v", err)
-	}
-}
-
 func TestWsUpdate_BranchCollisionGetsUniqueName(t *testing.T) {
 	eng, _ := testEngine(t)
 

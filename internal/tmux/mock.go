@@ -3,6 +3,7 @@ package tmux
 import (
 	"fmt"
 	"sort"
+	"sync"
 )
 
 // Call records a method call on the mock.
@@ -32,7 +33,13 @@ type mockPane struct {
 }
 
 // Mock is a test double that implements Interface using in-memory state.
+//
+// The recorder (Calls + record) is protected by mu so concurrent callers
+// from the engine's parallel sync paths don't race on the slice append.
+// Tests that read or reset Calls directly should do so sequentially
+// (between test phases), not concurrently with engine code.
 type Mock struct {
+	mu    sync.Mutex
 	Calls []Call
 
 	sessions map[string]bool
@@ -61,6 +68,8 @@ func NewMock() *Mock {
 }
 
 func (m *Mock) record(method string, args ...string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.Calls = append(m.Calls, Call{Method: method, Args: args})
 }
 

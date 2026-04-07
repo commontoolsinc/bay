@@ -94,10 +94,31 @@ type Workspace struct {
 
 // WorktreeAttrs holds git worktree metadata. Only present for worktree workspaces.
 type WorktreeAttrs struct {
-	Repo      string `json:"repo"` // repo config key
-	Branch    string `json:"branch"`
-	PR        string `json:"pr,omitempty"`         // PR number (display-only)
-	PRChecked bool   `json:"pr_checked,omitempty"` // true once we've tried gh pr view; sticky
+	Repo        string `json:"repo"` // repo config key
+	Branch      string `json:"branch"`
+	PR          string `json:"pr,omitempty"`            // PR number (display-only)
+	PRCheckedAt int64  `json:"pr_checked_at,omitempty"` // unix seconds of last gh pr view; 0 = never
+}
+
+// PRCheckTTL is how long a "no PR found" answer stays valid before we re-query
+// gh. Without this, opening a PR after the first check would never be picked
+// up. 1 hour balances responsiveness against gh API quota usage.
+const PRCheckTTL = 3600
+
+// NeedsPRCheck reports whether this worktree should have its PR number
+// re-queried via gh. Returns true when:
+//   - the worktree has a branch but no PR cached, AND
+//   - we've never checked OR the last check is older than PRCheckTTL
+//
+// Callers must additionally verify the workspace path is non-empty.
+func (w *WorktreeAttrs) NeedsPRCheck(now int64) bool {
+	if w == nil || w.Branch == "" || w.PR != "" {
+		return false
+	}
+	if w.PRCheckedAt > 0 && now-w.PRCheckedAt < PRCheckTTL {
+		return false
+	}
+	return true
 }
 
 // Surface is the unit of navigation — anything you can focus and jump to.

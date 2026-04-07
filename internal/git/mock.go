@@ -1,6 +1,9 @@
 package git
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
 // Call records a single method invocation on the mock.
 type Call struct {
@@ -22,7 +25,18 @@ type repoState struct {
 }
 
 // Mock is a test double for Interface that tracks calls and stores state.
+//
+// Concurrency contract: read-side methods (PRForBranch, IsMergedIntoDefault,
+// CurrentBranch, etc.) and the call recorder are safe for concurrent use —
+// the engine's parallel sync paths call them from multiple goroutines.
+//
+// Setter methods (SetPR, SetMerged, SetBranch, etc.) and the inner repoState
+// maps they touch are NOT lock-protected beyond the *repoState lookup. All
+// test setup using setters must complete before any concurrent reads begin.
+// In practice this means: configure the mock fully, then call the engine
+// method under test.
 type Mock struct {
+	mu            sync.Mutex
 	calls         []Call
 	repos         map[string]*repoState
 	globalDirty   *bool
@@ -37,6 +51,8 @@ func NewMock() *Mock {
 }
 
 func (m *Mock) repo(path string) *repoState {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	r, ok := m.repos[path]
 	if !ok {
 		r = &repoState{
@@ -51,11 +67,15 @@ func (m *Mock) repo(path string) *repoState {
 }
 
 func (m *Mock) record(method string, args ...string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.calls = append(m.calls, Call{Method: method, Args: args})
 }
 
 // Calls returns all recorded calls for the given method name.
 func (m *Mock) Calls(method string) []Call {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	var result []Call
 	for _, c := range m.calls {
 		if c.Method == method {

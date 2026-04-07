@@ -2,17 +2,31 @@ package engine
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/commontoolsinc/bay/internal/config"
+	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
-// Edit returns the workspace path for opening in an editor.
+// Edit returns the workspace path for opening in an editor and bumps
+// LastActive so the monitor's activity gate keeps fetching merge data
+// for this workspace's repo.
 func (e *Engine) Edit(dockName, wsName string) (string, error) {
-	ws, err := e.WsShow(dockName, wsName)
-	if err != nil {
-		return "", err
-	}
-	return ws.Path, nil
+	var path string
+	err := e.withManifest(func(m *manifest.Manifest) error {
+		dock := m.FindDock(dockName)
+		if dock == nil {
+			return fmt.Errorf("unknown dock %q", dockName)
+		}
+		ws := dock.FindWorkspace(wsName)
+		if ws == nil {
+			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
+		}
+		ws.LastActive = time.Now().Unix()
+		path = ws.Path
+		return nil
+	})
+	return path, err
 }
 
 // EditAll returns all active workspace paths for a single dock.
