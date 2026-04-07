@@ -95,8 +95,9 @@ bay go                      # pick a surface (agent/shell/editor)
 bay ws go                   # pick a workspace
 ```
 
-Or use keybindings: Option+j/k to cycle surfaces, Option+Shift+j/K to cycle
-workspaces.
+Or use keybindings: Option+j/k to cycle surfaces, Option+Shift+J/K to cycle
+workspaces. Cycling flashes a brief position indicator showing where you
+are in the list and what's nearby.
 
 ### Check on things
 
@@ -380,12 +381,11 @@ bay surface new --cmd "npm test"            # command surface
 bay surface new --window                    # new tmux window instead of split
 bay surface new --split h                   # horizontal split (default: v)
 bay surface new --name <n>                  # with custom name
-bay surface close [workspace]               # close current surface
-bay surface close --surface <name>          # close specific surface
-bay surface restart [workspace]             # restart surface process
-bay surface restart --surface <name>        # restart specific surface
+bay surface close <name|self>               # close a surface (prompts on agent surfaces)
+bay surface close <name|self> --force       # skip the agent confirmation prompt
+bay surface restart [name]                  # restart a surface (defaults to current)
 bay surface go [query]                      # surface picker (intra-workspace)
-bay surface go --index <n>                  # jump to surface by index
+bay surface go --index <n>                  # jump to surface by index (no keybinding)
 bay surface go --next-waiting               # next waiting surface
 bay surface next                            # next surface in workspace
 bay surface prev                            # prev surface in workspace
@@ -394,23 +394,30 @@ bay surface prev                            # prev surface in workspace
 `sf` is an alias for `surface`:
 ```
 bay sf new --shell
-bay sf close
-bay sf restart
+bay sf close shell-2
+bay sf restart agent
 ```
 
 ### Top-level shortcuts
 
 ```
-bay go [query]              # alias for bay surface go (intra-workspace)
-bay go --index <n>          # jump to surface by index
-bay go --next-waiting       # next waiting surface
-bay shell [workspace]       # alias for bay surface new --shell
-bay shell --window          # shell in new tmux window
-bay edit [name|self]        # open workspace in editor (creates GUI surface)
-bay edit --all              # open all workspaces in current dock
-bay edit --set <editor>     # set default editor
-bay edit --show             # show which editor would be used
-bay restart [workspace]     # alias for bay surface restart
+bay new shell [name]            # bay surface new --shell, with optional name
+bay new agent <type> [name]     # bay surface new --agent <type>
+bay new cmd "<command>" [name]  # bay surface new --cmd <command>
+bay new edit [workspace]        # alias for bay edit
+bay close <name|self>           # alias for bay surface close (prompts on agents)
+bay show <name>                 # alias for bay surface show
+bay rename <old> <new>          # alias for bay surface rename
+bay go [query]                  # alias for bay surface go (intra-workspace)
+bay go --index <n>              # jump to surface by index (no keybinding)
+bay go --next-waiting           # next waiting surface
+bay shell [workspace]           # alias for bay surface new --shell
+bay shell --window              # shell in new tmux window
+bay edit [name|self]            # open workspace in editor (creates GUI surface)
+bay edit --all                  # open all workspaces in current dock
+bay edit --set <editor>         # set default editor
+bay edit --show                 # show which editor would be used
+bay restart [name]              # alias for bay surface restart
 ```
 
 ### Navigation summary
@@ -478,7 +485,7 @@ bay version                                 # show version + commit
 
 ## Keybindings
 
-Bay installs 21 tmux keybindings, all using the Option (Meta) key. No
+Bay installs 10 tmux keybindings, all using the Option (Meta) key. No
 tmux prefix required -- just press the key combo directly.
 
 ### Surface navigation (intra-workspace)

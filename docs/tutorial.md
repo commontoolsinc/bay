@@ -18,7 +18,7 @@ the home base is tmux.
 
 This tutorial walks through the full lifecycle in about 10 minutes.
 
-**You'll need:** bay (`go install github.com/commontoolsinc/bay/cmd/bay@latest`), tmux, and git.
+**You'll need:** bay (built from this repo with `go install ./cmd/bay`), tmux, and git.
 
 ---
 
@@ -98,10 +98,11 @@ bay shell
 Run a long-lived command in its own pane:
 
 ```
-bay sf new --cmd "top" --name monitor
+bay new cmd "top" monitor
 ```
 
-(`sf` is short for `surface`.)
+(`bay new cmd` creates a `cmd` surface; the second argument is its display
+name.)
 
 Open your editor on the workspace:
 
@@ -127,6 +128,11 @@ navigable.
 
 - `Option+Shift+j` / `Option+Shift+k` — next / previous workspace
 - `Option+Shift+g` — fuzzy picker for workspaces
+
+When you cycle with `Option+j/k` (or `Option+Shift+j/k`), bay flashes a
+brief position indicator at the top of the tmux window so you can see
+where you are in the list and what's nearby — `[3/5]  agent  shell` and
+so on, with the current item bold.
 
 The pattern: **without Shift = within your current task, with Shift =
 switch tasks.**
@@ -170,18 +176,33 @@ the conversation picks up where it left off.
 bay ls
 ```
 
-Shows your workspaces and their surfaces:
+Shows the workspaces in your current dock with a per-workspace surface count:
 
 ```
 repo myproject
-  dock myproject
-    workspace login-bug  status=active
-      surface shell  type=shell
-      surface monitor type=cmd
-    workspace review     status=idle
-      surface agent  type=agent
-      surface shell  type=shell
+  dock myproject *
+    workspace login-bug * branch=fix/login-bug status=active surfaces=2
+    workspace review surfaces=2
 ```
+
+For the full hierarchy including each surface:
+
+```
+bay tree
+```
+
+```
+repo myproject
+  dock myproject *
+    workspace login-bug * branch=fix/login-bug status=active
+      surface shell type=shell
+      surface monitor type=cmd
+    workspace review
+      surface agent type=agent
+      surface shell type=shell
+```
+
+(`bay ls -R` does the same thing — `tree` is the friendlier alias.)
 
 Other useful commands:
 
@@ -199,6 +220,10 @@ bay ws close review
 
 Bay checks for uncommitted changes and unpushed commits first. Use
 `--force` to skip the safety checks.
+
+Closing an *individual* agent surface (`bay close agent`) prompts for
+confirmation, since agents carry valuable conversation context. Use
+`--force` (or `-f`) to skip the prompt.
 
 When a PR is merged, bay detects it in the background and marks the
 workspace "done." Clean up all merged workspaces at once:
@@ -237,8 +262,9 @@ For more control: `bay dock new myproject --repo myproject --agent claude`.
 A **dock** is a tmux session that groups workspaces — think of it as
 "the terminal window for this project."
 
-**Status line:** Add `#(bay status-line)` to your tmux `status-right`
-to always see your current workspace.
+**Status line:** Add `#(bay status-line full)` to your tmux `status-right`
+to always see your current workspace. Other field names: `name`, `branch`,
+`pr`, `status`, `dock`, `merged`.
 
 ---
 

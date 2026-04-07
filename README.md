@@ -7,32 +7,35 @@ Bay manages concurrent workspaces — each with its own git worktree, tmux windo
 For developers who work on multiple branches simultaneously and use tmux as their terminal multiplexer.
 
 ```
-bay repo add myproject ~/projects/myproject
-bay dock new dev --repo myproject
-tmux attach -t dev
-bay ws new                      # new worktree + shell window
-bay ws new --agent claude       # new worktree + agent window
+cd ~/projects/myproject
+bay ws new                      # auto-bootstrap repo/dock + create worktree
+bay ws new --agent              # new worktree with the dock's default agent
 bay edit                        # open editor for current workspace
-bay shell                       # split a shell pane
-bay go                          # fuzzy-pick any window across docks
+bay shell                       # split a shell into the current workspace
+bay go                          # fuzzy-pick a surface in the current workspace
+bay ws go                       # fuzzy-pick a workspace in the current dock
 bay recover                     # reconstruct everything after reboot
 ```
 
 ## What it does
 
 - **Worktree lifecycle** — create, close, rename workspaces backed by git worktrees or external directories. Safety checks on close (dirty files, unpushed commits). Each workspace is an isolated checkout.
-- **Tmux management** — multiple windows and panes per workspace, automatic naming from branch names, placeholder windows to keep sessions alive, and full recovery after reboot.
+- **Surface model** — each workspace contains one or more **surfaces** (agent panes, shell panes, command panes, GUI editors). Bay tracks them all and recovers them after reboot.
 - **Editor integration** — `bay edit` opens your workspace in cursor, VS Code, zed, nvim, or vim. `bay edit --all` for multi-root.
-- **Agent support** — optionally launch AI agents (Claude Code, Codex, Gemini) with auto-injected config. Agents are opt-in per workspace.
-- **Navigation** — `bay go` fuzzy-matches workspace names, branches, PR numbers, and window types with fzf.
-- **Hierarchical browsing** — `bay ls` shows repo/dock/workspace structure and, when focused on a workspace, its windows and panes. Use `bay ws show` for workspace defaults like the default agent.
-- **Status line** — `bay status-line` provides workspace info for tmux status bar composition.
+- **Agent support** — optionally launch AI agents (Claude Code, Codex, Gemini). Agent surfaces resume on restart via configured `resume_args`. Closing an agent surface prompts for confirmation.
+- **Scoped navigation** — `bay go` (Option+j/k) cycles surfaces within the current workspace; `bay ws go` (Option+Shift+J/K) cycles workspaces within the current dock. Cycling flashes a brief position indicator.
+- **Hierarchical browsing** — `bay ls` shows the dock/workspace structure scoped to your current focus; `bay tree` (or `bay ls -R`) shows the full hierarchy including surfaces.
+- **Status line** — `bay status-line <field>` provides workspace info for tmux status bar composition.
 - **Shell completion** — tab-complete workspace names, dock names, and flag values in bash, zsh, and fish.
 
 ## Install
 
+This is a private repository. Build from source:
+
 ```
-go install github.com/commontoolsinc/bay/cmd/bay@latest
+git clone git@github.com:commontoolsinc/bay.git
+cd bay
+go install ./cmd/bay
 ```
 
 Then run `bay setup` to create your config and install shell completions.
@@ -42,4 +45,3 @@ Then run `bay setup` to create your config and install shell completions.
 - **[Tutorial](docs/tutorial.md)** — hands-on walkthrough from install to cleanup
 - **[User Guide](docs/human-guide.md)** — configuration, commands, and daily workflow
 - **[Agent Reference](docs/agent-reference.md)** — comprehensive reference for AI agents operating inside bay workspaces
-- **[Design Doc](docs/design.md)** — architecture, requirements, and design decisions
