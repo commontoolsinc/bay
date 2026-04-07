@@ -203,11 +203,12 @@ Surfaces within a workspace that share a tmux window are in the same
 
 - **idle** -- workspace created, no branch yet
 - **active** -- branch detected, work in progress
-- **done** -- PR merged or manually marked complete
+- **done** -- branch has been merged into the default branch
 
 Status transitions are automatic: bay detects branches via `git
-rev-parse` and merges via background `git fetch`. You can also set
-status manually with `bay ws update`.
+rev-parse` on every display, and detects merges via the monitor
+daemon's background `git fetch` plus a fast `merge-base --is-ancestor`
+check on each `bay ls`.
 
 ### Naming and references
 
@@ -363,9 +364,6 @@ bay ws close --done                         # close all done workspaces
 bay ws close --done --force                 # force close all done
 bay ws show [name|self]                     # detailed view (default: self)
 bay ws show [name|self] --json              # machine-readable
-bay ws update <name|self> --branch <b>      # update metadata
-bay ws update <name|self> --pr <n>          # (auto-detected, rarely needed)
-bay ws update <name|self> --status <s>      # idle, active, done
 bay ws rename <name|self> <new-name>        # permanent rename
 bay ws go [query]                           # workspace picker (intra-dock)
 bay ws go --waiting                         # filter to waiting workspaces
@@ -596,9 +594,12 @@ No fetches happen for idle repos or workspaces without recent activity.
 
 ### PR detection
 
-The monitor detects PR numbers automatically via `gh pr view` when a
-workspace has a branch but no PR recorded. The PR number is cached and
-never re-fetched. This replaces manual `bay ws update self --pr <n>`.
+PR numbers are detected automatically via `gh pr view` whenever a
+workspace has a branch but no PR recorded. The lookup happens on the
+first display after creation (and again on each monitor cycle for
+workspaces that haven't been checked yet). The result — including
+"this branch has no PR" — is cached so the lookup runs at most once
+per workspace.
 
 ### Managing the monitor
 
@@ -807,7 +808,7 @@ close your last one.
 **"How does bay know my branch and PR without me telling it?"**
 Branch is detected via `git rev-parse` on every sync cycle. PR number
 is detected via `gh pr view` once a branch exists. Both are cached in
-the manifest. You rarely need `bay ws update` for these fields.
+the manifest.
 
 **"My agent restarted and lost context."**
 If the agent supports session resumption (like Claude Code's

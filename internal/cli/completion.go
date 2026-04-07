@@ -87,7 +87,7 @@ func registerCompletions(root *cobra.Command) {
 	// Workspace-target positional: ws verbs operate on workspaces, and the
 	// surface-creation / editor / shell paths take a workspace target too.
 	for _, path := range []string{
-		"ws close", "ws show", "ws update", "ws rename",
+		"ws close", "ws show", "ws rename",
 		"surface new",
 		"shell",
 		"edit",
@@ -141,9 +141,6 @@ func registerCompletions(root *cobra.Command) {
 		cmd.RegisterFlagCompletionFunc("agent", agentFlagCompletions)
 		cmd.RegisterFlagCompletionFunc("repo", repoCompletions)
 	}
-	if cmd := findCmd(root, "ws update"); cmd != nil {
-		cmd.RegisterFlagCompletionFunc("status", statusCompletions)
-	}
 	if cmd := findCmd(root, "surface new"); cmd != nil {
 		cmd.RegisterFlagCompletionFunc("agent", agentFlagCompletions)
 		cmd.RegisterFlagCompletionFunc("split", splitCompletions)
@@ -171,7 +168,7 @@ func registerCompletions(root *cobra.Command) {
 			cmd.RegisterFlagCompletionFunc("split", splitCompletions)
 		}
 	}
-	for _, path := range []string{"ws close", "ws show", "ws update", "ws rename"} {
+	for _, path := range []string{"ws close", "ws show", "ws rename"} {
 		if cmd := findCmd(root, path); cmd != nil {
 			cmd.RegisterFlagCompletionFunc("dock", dockFlagCompl)
 		}
@@ -458,15 +455,6 @@ func repoCompletions(cmd *cobra.Command, args []string, toComplete string) ([]st
 		completions = append(completions, repo.Name+"\t"+repo.Path)
 	}
 	return completions, cobra.ShellCompDirectiveNoFileComp
-}
-
-// statusCompletions returns valid workspace status values.
-func statusCompletions(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	return []string{
-		"idle\tfresh workspace, no work assigned",
-		"active\twork in progress",
-		"done\twork complete, ready to close",
-	}, cobra.ShellCompDirectiveNoFileComp
 }
 
 // splitCompletions returns valid pane split directions.

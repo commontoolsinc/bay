@@ -40,9 +40,9 @@ func New(cfg *config.Config, configPath, manifestPath, archivePath string, t tmu
 // LoadManifest loads the manifest, creating an empty one if it doesn't exist.
 // NOTE: LoadManifest + saveManifest do NOT hold a lock across the full
 // read-modify-write cycle. Use withManifest for operations that must be
-// atomic (e.g. WsUpdate, WsRename — called concurrently by agents).
-// Operations like WsNew, WsClose, WinOpen are typically user-initiated
-// and single-threaded, so the separate load/save is acceptable.
+// atomic (e.g. WsRename, background sync writes). Operations like WsNew,
+// WsClose, WinOpen are typically user-initiated and single-threaded, so
+// the separate load/save is acceptable.
 func (e *Engine) LoadManifest() (*manifest.Manifest, error) {
 	m, err := manifest.Load(e.manifestPath)
 	if err != nil {

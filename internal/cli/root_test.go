@@ -152,7 +152,7 @@ func TestWsSubcommands(t *testing.T) {
 		t.Fatalf("finding ws: %v", err)
 	}
 
-	expected := []string{"new", "close", "show", "update", "rename", "ls", "tree", "go", "next", "prev"}
+	expected := []string{"new", "close", "show", "rename", "ls", "tree", "go", "next", "prev"}
 	found := map[string]bool{}
 	for _, cmd := range ws.Commands() {
 		found[cmd.Name()] = true
