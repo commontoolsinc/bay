@@ -580,7 +580,7 @@ func TestCheckOnce_DetectsPR(t *testing.T) {
 	}
 }
 
-func TestCheckOnce_PRCheckedSentinelPreventsRecheck(t *testing.T) {
+func TestCheckOnce_PRCheckedAtPreventsRecheckWithinTTL(t *testing.T) {
 	// After a definitive "no PR found" answer, subsequent monitor cycles
 	// should not re-query gh for the same workspace. Otherwise we hammer
 	// gh every minute for every PR-less workspace forever.
@@ -621,11 +621,11 @@ func TestCheckOnce_PRCheckedSentinelPreventsRecheck(t *testing.T) {
 		t.Fatalf("expected 1 PRForBranch call after first cycle, got %d", firstCallCount)
 	}
 
-	// Verify PRChecked sentinel was set.
+	// Verify PRCheckedAt sentinel was set.
 	updated, _ := manifest.Load(manifestPath)
 	ws := updated.FindDock("dev").FindWorkspace("test-ws")
-	if !ws.Worktree.PRChecked {
-		t.Error("PRChecked should be true after first definitive 'no PR' answer")
+	if ws.Worktree.PRCheckedAt == 0 {
+		t.Error("PRCheckedAt should be set after first definitive 'no PR' answer")
 	}
 
 	// Run many more cycles — mock should NOT be called again.

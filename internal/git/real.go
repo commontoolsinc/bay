@@ -148,7 +148,7 @@ func (r *Real) CreateBranch(path, branchName string) error {
 
 // PRForBranch looks up the PR number for the given branch via `gh pr view`.
 //
-// Return semantics (important for the PRChecked sentinel in the caller):
+// Return semantics (important for the PRCheckedAt sentinel in the caller):
 //   - (number, nil)  — gh ran, PR exists
 //   - ("", nil)      — gh ran, no PR found for this branch (definitive)
 //   - ("", err)      — gh is unavailable, unauthenticated, or otherwise

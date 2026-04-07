@@ -222,12 +222,17 @@ func (e *Engine) SurfaceRestart(dockName, wsName, surfaceName string) error {
 		// Empty command = default shell.
 	}
 
-	_ = e.Tmux.RespawnPane(s.Tmux.PaneID, ws.Path, respawnCmd)
-
-	// Bump LastActive so the monitor's activity gate keeps fetching
-	// merge data for this workspace's repo.
+	// Bump LastActive and save the manifest BEFORE respawning. If the save
+	// fails we return early without touching tmux, which avoids the
+	// confusing case where the user sees an error message but the surface
+	// has actually been restarted.
 	ws.LastActive = time.Now().Unix()
-	return e.saveManifest(m)
+	if err := e.saveManifest(m); err != nil {
+		return err
+	}
+
+	_ = e.Tmux.RespawnPane(s.Tmux.PaneID, ws.Path, respawnCmd)
+	return nil
 }
 
 // SurfaceRename renames a surface within a workspace.

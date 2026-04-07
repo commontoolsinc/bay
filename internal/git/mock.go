@@ -25,8 +25,16 @@ type repoState struct {
 }
 
 // Mock is a test double for Interface that tracks calls and stores state.
-// It is safe for concurrent use; parallel sync paths in the engine call
-// PRForBranch from multiple goroutines.
+//
+// Concurrency contract: read-side methods (PRForBranch, IsMergedIntoDefault,
+// CurrentBranch, etc.) and the call recorder are safe for concurrent use —
+// the engine's parallel sync paths call them from multiple goroutines.
+//
+// Setter methods (SetPR, SetMerged, SetBranch, etc.) and the inner repoState
+// maps they touch are NOT lock-protected beyond the lookup of the *repoState.
+// All test setup using setters must complete before any concurrent reads
+// begin. In practice this means: configure the mock fully, then call the
+// engine method under test.
 type Mock struct {
 	mu            sync.Mutex
 	calls         []Call

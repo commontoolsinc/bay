@@ -177,32 +177,30 @@ func (m *Monitor) CheckOnce() error {
 }
 
 // detectPRs checks workspaces with a branch but no PR and tries to find one.
-// Uses the PRChecked sentinel to avoid re-hammering workspaces that have
-// already been checked and genuinely have no PR.
+// Uses the PRCheckedAt timestamp + manifest.PRCheckTTL to avoid re-hammering
+// workspaces that have already been checked. The TTL ensures that PRs opened
+// after the first check are eventually picked up.
 //
-// Returns true if any workspace's PR or PRChecked flag changed.
+// Returns true if any workspace's PR state changed.
 func (m *Monitor) detectPRs(mf *manifest.Manifest) bool {
+	now := time.Now().Unix()
 	changed := false
 	for i := range mf.Docks {
 		dock := &mf.Docks[i]
 		for j := range dock.Workspaces {
 			ws := &dock.Workspaces[j]
-			if ws.Worktree == nil || ws.Worktree.Branch == "" || ws.Path == "" {
-				continue
-			}
-			// Already checked (either PR found, or definitively no PR)?
-			if ws.Worktree.PR != "" || ws.Worktree.PRChecked {
+			if ws.Path == "" || !ws.Worktree.NeedsPRCheck(now) {
 				continue
 			}
 			pr, err := m.git.PRForBranch(ws.Path, ws.Worktree.Branch)
 			if err != nil {
-				// gh unavailable or transient failure — leave PRChecked
-				// false so we retry next cycle.
+				// gh unavailable or transient — leave PRCheckedAt
+				// unchanged so we retry next cycle.
 				continue
 			}
 			// Definitive answer: either a PR number, or confirmed no PR.
 			ws.Worktree.PR = pr
-			ws.Worktree.PRChecked = true
+			ws.Worktree.PRCheckedAt = time.Now().Unix()
 			changed = true
 		}
 	}

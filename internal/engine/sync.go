@@ -5,6 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/manifest"
@@ -77,18 +78,15 @@ func (e *Engine) syncWorkspaceMergeStatus(ws *manifest.Workspace) bool {
 }
 
 // syncWorkspacePR looks up the PR number for a workspace with a branch but
-// no PR and no PRChecked sentinel. Returns true if the manifest needs saving.
+// no PR. Returns true if the manifest needs saving.
 //
-// Uses the PRChecked flag to avoid re-hammering workspaces that genuinely
-// have no PR: after the first definitive check, PRChecked is set and we
-// stop calling gh. Transient errors (gh missing, auth, network) leave
-// PRChecked false so we retry on the next display.
+// Uses the PRCheckedAt timestamp + PRCheckTTL to avoid hammering gh: after a
+// definitive check, we wait PRCheckTTL before re-querying. The TTL ensures
+// that a PR opened after the first check is eventually picked up. Transient
+// errors (gh missing, auth, network) leave PRCheckedAt unchanged so we retry
+// on the next display.
 func (e *Engine) syncWorkspacePR(ws *manifest.Workspace) bool {
-	if ws.Path == "" || ws.Worktree == nil || ws.Worktree.Branch == "" {
-		return false
-	}
-	// Already checked (either PR found, or confirmed no PR)?
-	if ws.Worktree.PR != "" || ws.Worktree.PRChecked {
+	if ws.Path == "" || !ws.Worktree.NeedsPRCheck(time.Now().Unix()) {
 		return false
 	}
 
@@ -104,7 +102,7 @@ func (e *Engine) syncWorkspacePR(ws *manifest.Workspace) bool {
 	}
 	// Definitive answer: either a PR number, or confirmed no PR.
 	ws.Worktree.PR = pr
-	ws.Worktree.PRChecked = true
+	ws.Worktree.PRCheckedAt = time.Now().Unix()
 	return true
 }
 
@@ -118,7 +116,7 @@ func (e *Engine) SyncAll() {
 
 	// Run PR detection in parallel for any workspaces that need it. This
 	// pass blocks until all gh calls return; the per-workspace loop below
-	// then sees PRChecked=true on those workspaces and skips them.
+	// then sees fresh PRCheckedAt timestamps and skips them.
 	changed := e.parallelSyncPRs(m)
 
 	for i := range m.Docks {
@@ -147,18 +145,19 @@ func (e *Engine) SyncAll() {
 
 // parallelSyncPRs runs gh pr view in parallel for all workspaces in the
 // manifest that need PR detection. Bounded by prSyncConcurrency. Returns
-// true if any workspace's PR/PRChecked state was updated.
+// true if any workspace's PR state was updated.
 //
 // Each goroutine writes to a different *Workspace, so the writes are
 // disjoint and need no mutex. The wg.Wait happens-before any subsequent
 // reads in SyncAll.
 func (e *Engine) parallelSyncPRs(m *manifest.Manifest) bool {
+	now := time.Now().Unix()
 	var todo []*manifest.Workspace
 	for i := range m.Docks {
 		dock := &m.Docks[i]
 		for j := range dock.Workspaces {
 			ws := &dock.Workspaces[j]
-			if !needsPRCheck(ws) {
+			if ws.Path == "" || !ws.Worktree.NeedsPRCheck(now) {
 				continue
 			}
 			todo = append(todo, ws)
@@ -185,26 +184,17 @@ func (e *Engine) parallelSyncPRs(m *manifest.Manifest) bool {
 			}
 			pr, err := e.Git.PRForBranch(wsPath, ws.Worktree.Branch)
 			if err != nil {
-				// Transient — leave PRChecked false so we retry later.
+				// Transient — leave PRCheckedAt unchanged so we retry.
 				return
 			}
 			ws.Worktree.PR = pr
-			ws.Worktree.PRChecked = true
+			ws.Worktree.PRCheckedAt = time.Now().Unix()
 			atomic.AddInt64(&changed, 1)
 		}(ws)
 	}
 	wg.Wait()
 
 	return changed > 0
-}
-
-// needsPRCheck reports whether a workspace is eligible for PR auto-detection.
-func needsPRCheck(ws *manifest.Workspace) bool {
-	return ws.Path != "" &&
-		ws.Worktree != nil &&
-		ws.Worktree.Branch != "" &&
-		ws.Worktree.PR == "" &&
-		!ws.Worktree.PRChecked
 }
 
 // syncSurfaceState removes dead surfaces — tmux surfaces whose windows
