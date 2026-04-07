@@ -72,6 +72,41 @@ func resolveWsArg(eng *engine.Engine, posArg, dockFlag string) (string, string, 
 	return eng.ResolveWorkspace(ws)
 }
 
+// resolveSurfaceArgOrSelf is like resolveSurfaceArg but treats a bare "self"
+// positional (no flags, no colons) specially: it resolves to the current
+// pane's surface, unless a literal surface named "self" exists in the
+// resolved workspace — in which case the literal wins. Qualified forms
+// like "w1:self" or "labs:w1:self" are always literal — no virtual fallback.
+func resolveSurfaceArgOrSelf(eng *engine.Engine, posArg, wsFlag, dockFlag string) (string, string, string, error) {
+	if posArg != "self" || wsFlag != "" || dockFlag != "" {
+		return resolveSurfaceArg(eng, posArg, wsFlag, dockFlag)
+	}
+
+	dockName, wsName, err := eng.ResolveSelf()
+	if err != nil {
+		return "", "", "", err
+	}
+	ws, err := eng.WsShow(dockName, wsName)
+	if err != nil {
+		return "", "", "", err
+	}
+	// Literal surface named "self" wins if it exists.
+	if ws.FindSurface("self") != nil {
+		return dockName, wsName, "self", nil
+	}
+	// Otherwise resolve to the surface owning the current tmux pane.
+	paneID, tmuxErr := eng.Tmux.CurrentPaneID()
+	if tmuxErr != nil {
+		return "", "", "", fmt.Errorf("cannot determine current pane")
+	}
+	for _, s := range ws.Surfaces {
+		if s.Tmux != nil && s.Tmux.PaneID == paneID {
+			return dockName, wsName, s.Name, nil
+		}
+	}
+	return "", "", "", fmt.Errorf("current pane is not a tracked surface")
+}
+
 // resolveSurfaceArg resolves a surface positional + --ws/--dock flags into
 // (dockName, wsName, surfaceName). The positional may be "name", "ws:name",
 // or "dock:ws:name". Flags may not conflict with corresponding parts in the

@@ -124,11 +124,18 @@ func TestRunSurfaceClose_ByName(t *testing.T) {
 	}
 }
 
-func TestRunSurfaceClose_FlagsRequireName(t *testing.T) {
+func TestRunSurfaceClose_NoArgsErrors(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
-	err := runSurfaceClose(eng, nil, "w1", "")
-	if err == nil || !strings.Contains(err.Error(), "require a surface name") {
-		t.Errorf("expected error about requiring a name, got %v", err)
+	// Bare invocation with no args is an error — we don't want bay close
+	// to silently kill the current pane.
+	err := runSurfaceClose(eng, nil, "", "")
+	if err == nil || !strings.Contains(err.Error(), "specify a surface name") {
+		t.Errorf("expected 'specify a surface name' error, got %v", err)
+	}
+	// Same with flags but no positional.
+	err = runSurfaceClose(eng, nil, "w1", "")
+	if err == nil || !strings.Contains(err.Error(), "specify a surface name") {
+		t.Errorf("expected 'specify a surface name' error with --ws, got %v", err)
 	}
 }
 
@@ -146,6 +153,116 @@ func TestRunSurfaceClose_CrossWorkspace(t *testing.T) {
 		if s.Name == "agent" {
 			t.Errorf("agent should have been closed in labs:solo")
 		}
+	}
+}
+
+// --- self keyword end-to-end ---
+
+// selfFixtureWithCurrentPane mirrors target_test.go's selfFixture but is
+// duplicated here to keep the close/restart/show/rename tests next to each
+// other for easy reading.
+func selfFixtureWithCurrentPane(t *testing.T) *engine.Engine {
+	t.Helper()
+	eng, mockTmux, _, _ := testNavEngine(t)
+
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "second", "", "", "v"); err != nil {
+		t.Fatalf("SurfaceAdd second: %v", err)
+	}
+	ws, _ := eng.WsShow("labs", "w1")
+	mockTmux.SetCurrentWindowID(ws.Surfaces[1].Tmux.WindowID)
+	mockTmux.SetCurrentPaneID(ws.Surfaces[1].Tmux.PaneID)
+	return eng
+}
+
+func TestRunSurfaceClose_Self(t *testing.T) {
+	eng := selfFixtureWithCurrentPane(t)
+	// Pane is pinned to "second" — bay close self should remove it.
+	if err := runSurfaceClose(eng, []string{"self"}, "", ""); err != nil {
+		t.Fatalf("runSurfaceClose self: %v", err)
+	}
+	ws, _ := eng.WsShow("labs", "w1")
+	for _, s := range ws.Surfaces {
+		if s.Name == "second" {
+			t.Errorf("surface 'second' should have been closed via 'self'")
+		}
+	}
+}
+
+func TestRunSurfaceClose_LiteralSelfWins(t *testing.T) {
+	eng := selfFixtureWithCurrentPane(t)
+	// Add a literal surface named "self" — bay close self should target it.
+	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "self", "", "", "v"); err != nil {
+		t.Fatalf("SurfaceAdd self: %v", err)
+	}
+
+	if err := runSurfaceClose(eng, []string{"self"}, "", ""); err != nil {
+		t.Fatalf("runSurfaceClose self: %v", err)
+	}
+
+	ws, _ := eng.WsShow("labs", "w1")
+	hasLiteralSelf, hasSecond := false, false
+	for _, s := range ws.Surfaces {
+		if s.Name == "self" {
+			hasLiteralSelf = true
+		}
+		if s.Name == "second" {
+			hasSecond = true
+		}
+	}
+	if hasLiteralSelf {
+		t.Error("literal 'self' surface should have been closed")
+	}
+	if !hasSecond {
+		t.Error("'second' (the current pane) should NOT have been closed when literal 'self' exists")
+	}
+}
+
+func TestRunSurfaceRestart_NoArgsStillWorks(t *testing.T) {
+	eng := selfFixtureWithCurrentPane(t)
+	// Bare bay restart should work — restart is non-destructive.
+	if err := runSurfaceRestart(eng, nil, "", ""); err != nil {
+		t.Errorf("runSurfaceRestart with no args should still work, got %v", err)
+	}
+}
+
+func TestRunSurfaceRestart_Self(t *testing.T) {
+	eng := selfFixtureWithCurrentPane(t)
+	if err := runSurfaceRestart(eng, []string{"self"}, "", ""); err != nil {
+		t.Errorf("runSurfaceRestart self: %v", err)
+	}
+}
+
+func TestRunSurfaceShow_Self(t *testing.T) {
+	eng := selfFixtureWithCurrentPane(t)
+	if err := runSurfaceShow(eng, []string{"self"}, "", ""); err != nil {
+		t.Errorf("runSurfaceShow self: %v", err)
+	}
+}
+
+func TestRunSurfaceRename_Self(t *testing.T) {
+	eng := selfFixtureWithCurrentPane(t)
+	// Rename "second" (the current pane's surface) to "renamed" via self keyword.
+	if err := runSurfaceRename(eng, []string{"self", "renamed"}, "", ""); err != nil {
+		t.Fatalf("runSurfaceRename self: %v", err)
+	}
+	ws, _ := eng.WsShow("labs", "w1")
+	foundRenamed, foundSecond := false, false
+	for _, s := range ws.Surfaces {
+		if s.Name == "renamed" {
+			foundRenamed = true
+		}
+		if s.Name == "second" {
+			foundSecond = true
+		}
+	}
+	if !foundRenamed {
+		t.Error("renamed surface 'renamed' not found")
+	}
+	if foundSecond {
+		t.Error("'second' should have been renamed away")
 	}
 }
 
