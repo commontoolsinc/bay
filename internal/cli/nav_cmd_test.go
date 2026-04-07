@@ -417,7 +417,7 @@ func TestWsCycle_Forward(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 
 	eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1"})
-	ws2, _ := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w2"})
+	eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w2"})
 
 	// Set tmux context to first workspace's window.
 	ws1, _ := eng.WsShow("labs", "w1")
@@ -430,7 +430,7 @@ func TestWsCycle_Forward(t *testing.T) {
 	}
 
 	// Should switch to w2's window.
-	ws2, _ = eng.WsShow("labs", "w2")
+	ws2, _ := eng.WsShow("labs", "w2")
 	foundSelect := false
 	for _, call := range mockTmux.Calls {
 		if call.Method == "SelectWindow" && call.Args[0] == ws2.Surfaces[0].Tmux.WindowID {

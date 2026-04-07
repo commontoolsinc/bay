@@ -33,9 +33,9 @@ func twoDockFixture(t *testing.T) *engine.Engine {
 
 func TestParseSurfaceArg(t *testing.T) {
 	cases := []struct {
-		in                  string
-		dock, ws, surface   string
-		wantErr             bool
+		in                string
+		dock, ws, surface string
+		wantErr           bool
 	}{
 		{"agent", "", "", "agent", false},
 		{"w1:agent", "", "w1", "agent", false},

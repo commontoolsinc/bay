@@ -152,8 +152,8 @@ func (r *Real) CreateBranch(path, branchName string) error {
 //   - (number, nil)  — gh ran, PR exists
 //   - ("", nil)      — gh ran, no PR found for this branch (definitive)
 //   - ("", err)      — gh is unavailable, unauthenticated, or otherwise
-//                      failed to give a definitive answer. Caller should NOT
-//                      cache the result, so it retries later.
+//     failed to give a definitive answer. Caller should NOT
+//     cache the result, so it retries later.
 func (r *Real) PRForBranch(path, branch string) (string, error) {
 	if _, lookErr := exec.LookPath("gh"); lookErr != nil {
 		return "", fmt.Errorf("gh not installed")

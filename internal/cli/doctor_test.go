@@ -26,8 +26,8 @@ func TestKeybindingsIncludeSurfaceNavigation(t *testing.T) {
 		"M-g",        // surface picker
 		"M-a",        // next waiting surface
 		"M-J", "M-K", // workspace next/prev
-		"M-G",        // workspace picker
-		"M-A",        // next waiting workspace
+		"M-G", // workspace picker
+		"M-A", // next waiting workspace
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("keybindings missing %q", want)

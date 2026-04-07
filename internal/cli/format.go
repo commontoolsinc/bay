@@ -36,12 +36,12 @@ type RepoInfo struct {
 }
 
 type ListView struct {
-	Focus        ListFocus  `json:"focus"`
-	Recursive    bool       `json:"recursive"`
-	Repos        []RepoInfo `json:"repos"`
-	CurrentDock    string `json:"-"` // for highlighting; not serialized
-	CurrentWs      string `json:"-"`
-	CurrentSurface string `json:"-"`
+	Focus          ListFocus  `json:"focus"`
+	Recursive      bool       `json:"recursive"`
+	Repos          []RepoInfo `json:"repos"`
+	CurrentDock    string     `json:"-"` // for highlighting; not serialized
+	CurrentWs      string     `json:"-"`
+	CurrentSurface string     `json:"-"`
 }
 
 // SetCurrentContext populates the current dock/workspace/surface for highlighting.

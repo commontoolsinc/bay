@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -227,11 +228,11 @@ func TestDefaultPaths(t *testing.T) {
 		t.Error("PIDFile is empty")
 	}
 	// ManifestFile should be under DataDir
-	if !filepath.HasPrefix(p.ManifestFile, p.DataDir) {
+	if !strings.HasPrefix(p.ManifestFile, p.DataDir+string(filepath.Separator)) {
 		t.Errorf("ManifestFile %q not under DataDir %q", p.ManifestFile, p.DataDir)
 	}
 	// ConfigFile should be under ConfigDir
-	if !filepath.HasPrefix(p.ConfigFile, p.ConfigDir) {
+	if !strings.HasPrefix(p.ConfigFile, p.ConfigDir+string(filepath.Separator)) {
 		t.Errorf("ConfigFile %q not under ConfigDir %q", p.ConfigFile, p.ConfigDir)
 	}
 }

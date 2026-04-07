@@ -8,8 +8,8 @@ import (
 
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/engine"
-	"github.com/commontoolsinc/bay/internal/picker"
 	gitpkg "github.com/commontoolsinc/bay/internal/git"
+	"github.com/commontoolsinc/bay/internal/picker"
 	tmuxpkg "github.com/commontoolsinc/bay/internal/tmux"
 	"github.com/spf13/cobra"
 )

@@ -1,7 +1,7 @@
 // Visual cycling flash. Pressing Option+j/k or Option+J/K flashes a tmux
 // display-message that shows the user's new position in the surrounding list:
 //
-//     [4/8]  monitor  agent  shell  tests  alpha
+//	[4/8]  monitor  agent  shell  tests  alpha
 //
 // where the target item ("shell" here) is rendered bold via the tmux format
 // codes #[bold]name#[default]. The window of items shown around the target

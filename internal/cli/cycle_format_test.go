@@ -148,7 +148,7 @@ func TestFormatCycleMessage_TruncationBoundary(t *testing.T) {
 		name string
 		want string
 	}{
-		{"abcdefghijkl", "[1/2]  #[bold]abcdefghijkl#[default]  short"},  // 12: kept
+		{"abcdefghijkl", "[1/2]  #[bold]abcdefghijkl#[default]  short"},       // 12: kept
 		{"abcdefghijklm", "[1/2]  #[bold]abcdefghijk\u2026#[default]  short"}, // 13: truncated
 	}
 	for _, tc := range cases {

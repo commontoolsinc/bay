@@ -279,9 +279,9 @@ func TestNextWaiting_CyclesCorrectly(t *testing.T) {
 	}
 
 	cases := []struct {
-		current  string
-		wantWin  string
-		wantIdx  int
+		current string
+		wantWin string
+		wantIdx int
 	}{
 		{"@1", "@3", 2}, // current is @1 (waiting); next waiting is @3
 		{"@3", "@4", 3}, // current is @3 (waiting); next waiting is @4

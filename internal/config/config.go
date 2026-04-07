@@ -12,10 +12,10 @@ import (
 
 // Config represents the top-level bay configuration.
 type Config struct {
-	Agents  map[string]AgentConfig  `toml:"agents"`
-	Docks   map[string]DockConfig   `toml:"docks"`
-	Editor  EditorConfig  `toml:"editor"`
-	Monitor MonitorConfig `toml:"monitor"`
+	Agents  map[string]AgentConfig `toml:"agents"`
+	Docks   map[string]DockConfig  `toml:"docks"`
+	Editor  EditorConfig           `toml:"editor"`
+	Monitor MonitorConfig          `toml:"monitor"`
 }
 
 // EditorConfig configures the editor launched by `bay edit`.
@@ -51,7 +51,6 @@ func (m MonitorConfig) EffectiveInterval() int {
 	}
 	return m.IntervalSeconds
 }
-
 
 // DefaultConfig returns an empty config with initialized maps.
 func DefaultConfig() *Config {
