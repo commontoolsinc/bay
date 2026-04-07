@@ -43,37 +43,19 @@ func TestAgentClosePrompt(t *testing.T) {
 	}
 }
 
-// --- runSurfaceClose force / non-agent paths ---
-
-func TestRunSurfaceClose_ForceClosesAgentWithoutPrompt(t *testing.T) {
-	// force=true should close an agent surface without any prompt logic
-	// running. (Tests can't easily simulate a TTY, but the contract is
-	// "force always wins regardless of TTY state".)
-	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
-		t.Fatalf("WsNew: %v", err)
-	}
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeAgent, "agent", "claude", "", "v"); err != nil {
-		t.Fatalf("SurfaceAdd: %v", err)
-	}
-
-	if err := runSurfaceClose(eng, []string{"w1:agent"}, "", "", true); err != nil {
-		t.Fatalf("runSurfaceClose force: %v", err)
-	}
-
-	ws, _ := eng.WsShow("labs", "w1")
-	for _, s := range ws.Surfaces {
-		if s.Name == "agent" {
-			t.Errorf("agent surface should be closed when force=true")
-		}
-	}
-}
+// --- runSurfaceClose prompt wiring ---
 
 func TestRunSurfaceClose_NonAgentSkipsPrompt(t *testing.T) {
-	// Closing a non-agent surface (a shell, in this case) should never
-	// trigger the prompt path, even with force=false. We can't easily
-	// verify "no prompt was shown" without injecting the prompt fn, but
-	// we can verify the close succeeds without hanging or erroring.
+	// Closing a non-agent surface should never call confirmAgentClose,
+	// even with force=false. Verify directly by mocking the prompt to
+	// fail the test if invoked.
+	orig := confirmAgentClose
+	defer func() { confirmAgentClose = orig }()
+	confirmAgentClose = func(name string) bool {
+		t.Fatalf("confirmAgentClose should not be called for a non-agent surface (got name=%q)", name)
+		return true
+	}
+
 	eng, _, _, _ := testNavEngine(t)
 	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
@@ -90,6 +72,94 @@ func TestRunSurfaceClose_NonAgentSkipsPrompt(t *testing.T) {
 	for _, s := range ws.Surfaces {
 		if s.Name == "extra" {
 			t.Errorf("extra shell surface should be closed (no prompt for non-agent)")
+		}
+	}
+}
+
+func TestRunSurfaceClose_DeclinedKeepsAgentSurface(t *testing.T) {
+	// User declines the prompt → surface stays open and runSurfaceClose
+	// returns nil (decline isn't an error).
+	orig := confirmAgentClose
+	defer func() { confirmAgentClose = orig }()
+	confirmAgentClose = func(name string) bool { return false }
+
+	eng, _, _, _ := testNavEngine(t)
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeAgent, "claude", "claude", "", "v"); err != nil {
+		t.Fatalf("SurfaceAdd: %v", err)
+	}
+
+	if err := runSurfaceClose(eng, []string{"w1:claude"}, "", "", false); err != nil {
+		t.Fatalf("runSurfaceClose declined: expected nil error, got %v", err)
+	}
+
+	ws, _ := eng.WsShow("labs", "w1")
+	foundAgent := false
+	for _, s := range ws.Surfaces {
+		if s.Name == "claude" {
+			foundAgent = true
+			break
+		}
+	}
+	if !foundAgent {
+		t.Error("agent surface should still exist after user declined the prompt")
+	}
+}
+
+func TestRunSurfaceClose_ConfirmedClosesAgentSurface(t *testing.T) {
+	// User confirms the prompt → surface gets closed normally.
+	orig := confirmAgentClose
+	defer func() { confirmAgentClose = orig }()
+	confirmAgentClose = func(name string) bool { return true }
+
+	eng, _, _, _ := testNavEngine(t)
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeAgent, "claude", "claude", "", "v"); err != nil {
+		t.Fatalf("SurfaceAdd: %v", err)
+	}
+
+	if err := runSurfaceClose(eng, []string{"w1:claude"}, "", "", false); err != nil {
+		t.Fatalf("runSurfaceClose confirmed: %v", err)
+	}
+
+	ws, _ := eng.WsShow("labs", "w1")
+	for _, s := range ws.Surfaces {
+		if s.Name == "claude" {
+			t.Error("agent surface should be closed after user confirmed the prompt")
+		}
+	}
+}
+
+func TestRunSurfaceClose_ForceSkipsConfirmEntirely(t *testing.T) {
+	// force=true should bypass confirmAgentClose entirely — if it's called,
+	// fail the test.
+	orig := confirmAgentClose
+	defer func() { confirmAgentClose = orig }()
+	confirmAgentClose = func(name string) bool {
+		t.Fatalf("confirmAgentClose should not be called when force=true (got name=%q)", name)
+		return true
+	}
+
+	eng, _, _, _ := testNavEngine(t)
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeAgent, "claude", "claude", "", "v"); err != nil {
+		t.Fatalf("SurfaceAdd: %v", err)
+	}
+
+	if err := runSurfaceClose(eng, []string{"w1:claude"}, "", "", true); err != nil {
+		t.Fatalf("runSurfaceClose force: %v", err)
+	}
+
+	ws, _ := eng.WsShow("labs", "w1")
+	for _, s := range ws.Surfaces {
+		if s.Name == "claude" {
+			t.Error("agent surface should be closed when force=true")
 		}
 	}
 }

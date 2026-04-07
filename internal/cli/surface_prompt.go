@@ -33,3 +33,17 @@ func stdinIsTTY() bool {
 	}
 	return fi.Mode()&os.ModeCharDevice != 0
 }
+
+// confirmAgentClose decides whether to proceed with closing an agent surface.
+// Returns true automatically when stdin is not a TTY (script / pipe / CI).
+// Otherwise prompts the user via agentClosePrompt.
+//
+// Package-level var so tests can substitute a deterministic implementation
+// and exercise the decline path of runSurfaceClose without depending on the
+// real stdin/TTY state.
+var confirmAgentClose = func(surfaceName string) bool {
+	if !stdinIsTTY() {
+		return true
+	}
+	return agentClosePrompt(os.Stdin, os.Stderr, surfaceName)
+}

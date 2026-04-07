@@ -204,15 +204,19 @@ func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string,
 		return err
 	}
 
-	// Confirmation prompt for agent surfaces.
-	if !force && stdinIsTTY() {
+	// Confirmation prompt for agent surfaces. Skipped entirely when --force
+	// is set; otherwise we look up the surface type and ask
+	// confirmAgentClose (which handles the TTY check and prompt itself,
+	// or returns the test stub's answer).
+	if !force {
 		ws, err := eng.WsShow(dockName, wsName)
 		if err != nil {
 			return err
 		}
 		s := ws.FindSurface(sName)
 		if s != nil && s.Type == manifest.SurfaceTypeAgent {
-			if !agentClosePrompt(os.Stdin, os.Stderr, s.Name) {
+			if !confirmAgentClose(s.Name) {
+				fmt.Fprintln(os.Stderr, "not closing.")
 				return nil // user declined; not an error
 			}
 		}
