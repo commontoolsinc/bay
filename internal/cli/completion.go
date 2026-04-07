@@ -84,11 +84,13 @@ func registerCompletions(root *cobra.Command) {
 	wsFlagCompl := workspaceFlagCompletions()
 	dockFlagCompl := dockFlagCompletions()
 
-	// Workspace-target positional: ws verbs operate on workspaces, and a few
-	// surface-creation paths take a workspace target too.
+	// Workspace-target positional: ws verbs operate on workspaces, and the
+	// surface-creation / editor / shell paths take a workspace target too.
 	for _, path := range []string{
 		"ws close", "ws show", "ws update", "ws rename",
 		"surface new",
+		"shell",
+		"edit",
 		"new edit",
 	} {
 		if cmd := findCmd(root, path); cmd != nil {
@@ -136,23 +138,24 @@ func registerCompletions(root *cobra.Command) {
 
 	// Flag completions
 	if cmd := findCmd(root, "ws new"); cmd != nil {
-		cmd.RegisterFlagCompletionFunc("agent", agentCompletions)
+		cmd.RegisterFlagCompletionFunc("agent", agentFlagCompletions)
 		cmd.RegisterFlagCompletionFunc("repo", repoCompletions)
 	}
 	if cmd := findCmd(root, "ws update"); cmd != nil {
 		cmd.RegisterFlagCompletionFunc("status", statusCompletions)
 	}
 	if cmd := findCmd(root, "surface new"); cmd != nil {
-		cmd.RegisterFlagCompletionFunc("agent", agentCompletions)
+		cmd.RegisterFlagCompletionFunc("agent", agentFlagCompletions)
 		cmd.RegisterFlagCompletionFunc("split", splitCompletions)
 	}
 	if cmd := findCmd(root, "dock new"); cmd != nil {
-		cmd.RegisterFlagCompletionFunc("agent", agentCompletions)
+		cmd.RegisterFlagCompletionFunc("agent", agentFlagCompletions)
 		cmd.RegisterFlagCompletionFunc("repo", repoCompletions)
 	}
 
 	// --ws and --dock flag completions on every surface verb that supports
-	// them. Workspace commands get --dock too.
+	// them. Workspace commands get --dock too. The bay new <kind> commands
+	// also get --split for symmetry with sf new.
 	for _, path := range []string{
 		"surface close", "surface restart", "surface show", "surface rename",
 		"close", "show", "rename", "restart",
@@ -161,6 +164,11 @@ func registerCompletions(root *cobra.Command) {
 		if cmd := findCmd(root, path); cmd != nil {
 			cmd.RegisterFlagCompletionFunc("ws", wsFlagCompl)
 			cmd.RegisterFlagCompletionFunc("dock", dockFlagCompl)
+		}
+	}
+	for _, path := range []string{"new shell", "new agent", "new cmd"} {
+		if cmd := findCmd(root, path); cmd != nil {
+			cmd.RegisterFlagCompletionFunc("split", splitCompletions)
 		}
 	}
 	for _, path := range []string{"ws close", "ws show", "ws update", "ws rename"} {
@@ -193,132 +201,149 @@ func loadConfigForCompletions() *config.Config {
 	return cfg
 }
 
-// workspaceCompletions returns completions for workspace identifiers.
-// Includes: IDs, display names, dock:id, branch names, PR numbers, and "self".
+// --- Candidate builders ---
+//
+// These pure functions take manifest/config data and return ready-to-use
+// completion strings. The positional and flag completers below wrap them
+// with the right args-guard semantics.
+
+// addCandidate is a helper that appends "val\tdesc" to completions, deduping
+// by val. Used by all candidate builders.
+func addCandidate(completions *[]string, seen map[string]bool, val, desc string) {
+	if val == "" || seen[val] {
+		return
+	}
+	seen[val] = true
+	if desc != "" {
+		*completions = append(*completions, val+"\t"+desc)
+	} else {
+		*completions = append(*completions, val)
+	}
+}
+
+// workspaceCandidates returns workspace identifier candidates: each workspace
+// in two forms (bare name and dock:name), plus the "self" keyword.
+func workspaceCandidates(m *manifest.Manifest) []string {
+	seen := make(map[string]bool)
+	var completions []string
+	for _, ref := range manifest.AllWorkspaces(m) {
+		ws := ref.Workspace
+		desc := ref.Dock
+		if ws.Worktree != nil {
+			if ws.Worktree.Branch != "" {
+				desc += " " + ws.Worktree.Branch
+			}
+			if ws.Worktree.PR != "" {
+				desc += " #" + ws.Worktree.PR
+			}
+		}
+		addCandidate(&completions, seen, ws.Name, desc)
+		addCandidate(&completions, seen, ref.Dock+":"+ws.Name, ws.Name)
+	}
+	addCandidate(&completions, seen, "self", "current workspace")
+	return completions
+}
+
+// surfaceCandidates returns surface identifier candidates: each surface in
+// two qualified forms (ws:name and dock:ws:name). Bare names are deliberately
+// omitted because they collide across workspaces and would suggest a surface
+// from one workspace while the resolver picks one from another.
+//
+// includeSelf controls whether the "self" keyword is appended; callers should
+// pass false when the user has already typed a colon (qualified `self` is
+// always literal, not a keyword).
+func surfaceCandidates(m *manifest.Manifest, includeSelf bool) []string {
+	seen := make(map[string]bool)
+	var completions []string
+	if includeSelf {
+		addCandidate(&completions, seen, "self", "current surface")
+	}
+	for _, ref := range manifest.AllWorkspaces(m) {
+		ws := ref.Workspace
+		for _, s := range ws.Surfaces {
+			desc := string(s.Type) + " in " + ref.Dock + ":" + ws.Name
+			addCandidate(&completions, seen, ws.Name+":"+s.Name, desc)
+			addCandidate(&completions, seen, ref.Dock+":"+ws.Name+":"+s.Name, desc)
+		}
+	}
+	return completions
+}
+
+// dockCandidates returns dock name candidates with repo/agent descriptions.
+func dockCandidates(m *manifest.Manifest) []string {
+	var completions []string
+	for _, dock := range m.Docks {
+		var parts []string
+		if dock.Repo != "" {
+			parts = append(parts, "repo="+dock.Repo)
+		}
+		if dock.Agent != "" {
+			parts = append(parts, "agent="+dock.Agent)
+		}
+		desc := strings.Join(parts, " ")
+		if desc != "" {
+			completions = append(completions, dock.Name+"\t"+desc)
+		} else {
+			completions = append(completions, dock.Name)
+		}
+	}
+	return completions
+}
+
+// agentCandidates returns agent type candidates from config.
+func agentCandidates(cfg *config.Config) []string {
+	var completions []string
+	for name, agent := range cfg.Agents {
+		completions = append(completions, name+"\t"+agent.Command)
+	}
+	return completions
+}
+
+// --- Positional completers (with len(args) > 0 short-circuit) ---
+
+// workspaceCompletions returns a positional completer for workspace
+// identifiers.
 func workspaceCompletions() func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-
 		m := loadManifestForCompletions()
 		if m == nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-
-		seen := make(map[string]bool)
-		var completions []string
-		add := func(val, desc string) {
-			if val == "" || seen[val] {
-				return
-			}
-			seen[val] = true
-			if desc != "" {
-				completions = append(completions, val+"\t"+desc)
-			} else {
-				completions = append(completions, val)
-			}
-		}
-
-		for _, ref := range manifest.AllWorkspaces(m) {
-			ws := ref.Workspace
-			desc := ref.Dock
-			if ws.Worktree != nil {
-				if ws.Worktree.Branch != "" {
-					desc += " " + ws.Worktree.Branch
-				}
-				if ws.Worktree.PR != "" {
-					desc += " #" + ws.Worktree.PR
-				}
-			}
-
-			// Offer workspace name and dock:name.
-			add(ws.Name, desc)
-			add(ref.Dock+":"+ws.Name, ws.Name)
-		}
-
-		add("self", "current workspace")
-		return completions, cobra.ShellCompDirectiveNoFileComp
+		return workspaceCandidates(m), cobra.ShellCompDirectiveNoFileComp
 	}
 }
 
-// surfaceCompletions returns completions for surface identifiers. Surfaces
-// are emitted in three forms — bare name, ws:name, and dock:ws:name — so the
-// user can type any colon-prefix and have the shell narrow the list. Includes
-// the "self" keyword as a hint when the partial input has no colon.
+// surfaceCompletions returns a positional completer for surface identifiers.
+// 'self' is only included when toComplete has no colon, since qualified
+// `self` (`w1:self`, `labs:w1:self`) is always literal in the resolver.
 func surfaceCompletions() func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-
 		m := loadManifestForCompletions()
 		if m == nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-
-		seen := make(map[string]bool)
-		var completions []string
-		add := func(val, desc string) {
-			if val == "" || seen[val] {
-				return
-			}
-			seen[val] = true
-			if desc != "" {
-				completions = append(completions, val+"\t"+desc)
-			} else {
-				completions = append(completions, val)
-			}
-		}
-
-		// 'self' is only meaningful as a bare positional, not after a colon.
-		if !strings.Contains(toComplete, ":") {
-			add("self", "current surface")
-		}
-
-		for _, ref := range manifest.AllWorkspaces(m) {
-			ws := ref.Workspace
-			for _, s := range ws.Surfaces {
-				desc := string(s.Type) + " in " + ref.Dock + ":" + ws.Name
-				add(s.Name, desc)
-				add(ws.Name+":"+s.Name, desc)
-				add(ref.Dock+":"+ws.Name+":"+s.Name, desc)
-			}
-		}
-
-		return completions, cobra.ShellCompDirectiveNoFileComp
+		includeSelf := !strings.Contains(toComplete, ":")
+		return surfaceCandidates(m, includeSelf), cobra.ShellCompDirectiveNoFileComp
 	}
 }
 
-// dockCompletions returns dock names with descriptions.
+// dockCompletions returns a positional completer for dock names.
 func dockCompletions() func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-
 		m := loadManifestForCompletions()
 		if m == nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-
-		var completions []string
-		for _, dock := range m.Docks {
-			var parts []string
-			if dock.Repo != "" {
-				parts = append(parts, "repo="+dock.Repo)
-			}
-			if dock.Agent != "" {
-				parts = append(parts, "agent="+dock.Agent)
-			}
-			desc := strings.Join(parts, " ")
-			if desc != "" {
-				completions = append(completions, dock.Name+"\t"+desc)
-			} else {
-				completions = append(completions, dock.Name)
-			}
-		}
-		return completions, cobra.ShellCompDirectiveNoFileComp
+		return dockCandidates(m), cobra.ShellCompDirectiveNoFileComp
 	}
 }
 
@@ -366,45 +391,50 @@ func goCompletions() func(cmd *cobra.Command, args []string, toComplete string) 
 	}
 }
 
-// agentCompletions returns agent type names from config.
-func agentCompletions(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+// --- Flag completers (no args guard, since flag values aren't positionals) ---
+
+// workspaceFlagCompletions returns a flag-value completer for workspace
+// identifiers (used for --ws on surface verbs).
+func workspaceFlagCompletions() func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		m := loadManifestForCompletions()
+		if m == nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		return workspaceCandidates(m), cobra.ShellCompDirectiveNoFileComp
+	}
+}
+
+// dockFlagCompletions returns a flag-value completer for dock names (used
+// for --dock on workspace and surface verbs).
+func dockFlagCompletions() func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		m := loadManifestForCompletions()
+		if m == nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		return dockCandidates(m), cobra.ShellCompDirectiveNoFileComp
+	}
+}
+
+// agentFlagCompletions returns a flag-value completer for agent types (used
+// for --agent on ws new, surface new, dock new).
+func agentFlagCompletions(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	cfg := loadConfigForCompletions()
 	if cfg == nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	var completions []string
-	for name, agent := range cfg.Agents {
-		completions = append(completions, name+"\t"+agent.Command)
-	}
-	return completions, cobra.ShellCompDirectiveNoFileComp
+	return agentCandidates(cfg), cobra.ShellCompDirectiveNoFileComp
 }
 
-// agentArgCompletions is the positional version of agentCompletions: it
+// agentArgCompletions is the positional version of agentFlagCompletions: it
 // returns nothing once an agent has already been provided. Used for
 // `bay new agent <agent>`.
 func agentArgCompletions(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	if len(args) > 0 {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	return agentCompletions(cmd, args, toComplete)
-}
-
-// workspaceFlagCompletions is workspaceCompletions wrapped for use as a
-// flag completer (no len(args) guard, since flag values aren't positionals).
-func workspaceFlagCompletions() func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	inner := workspaceCompletions()
-	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		// Pass nil args so workspaceCompletions doesn't short-circuit.
-		return inner(cmd, nil, toComplete)
-	}
-}
-
-// dockFlagCompletions is dockCompletions wrapped for use as a flag completer.
-func dockFlagCompletions() func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	inner := dockCompletions()
-	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		return inner(cmd, nil, toComplete)
-	}
+	return agentFlagCompletions(cmd, args, toComplete)
 }
 
 // repoCompletionsFunc returns a ValidArgsFunction for repo name positional args.

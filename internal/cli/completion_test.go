@@ -127,9 +127,11 @@ func TestSurfaceCommands_UseSurfaceCompletions(t *testing.T) {
 			continue
 		}
 		completions, _ := cmd.ValidArgsFunction(cmd, nil, "")
+		// Surface completer emits qualified forms only — verify the agent
+		// surface appears as w1:agent and labs:w1:agent.
 		hasAgent := false
 		for _, c := range completions {
-			if strings.HasPrefix(c, "agent\t") || strings.HasPrefix(c, "w1:agent\t") || strings.HasPrefix(c, "labs:w1:agent\t") {
+			if strings.HasPrefix(c, "w1:agent\t") || strings.HasPrefix(c, "labs:w1:agent\t") {
 				hasAgent = true
 				break
 			}
@@ -182,15 +184,26 @@ func TestSurfaceCompletions(t *testing.T) {
 		return false
 	}
 
-	// All three forms for each surface, plus the self keyword.
+	// Both qualified forms for each surface, plus the self keyword. Bare
+	// names ("agent", "shell") are deliberately omitted — they collide
+	// across workspaces and would mislead users.
 	for _, expected := range []string{
 		"self",
-		"agent\t", "shell\t",
 		"w1:agent", "w1:shell",
 		"labs:w1:agent", "labs:w1:shell",
 	} {
 		if !hasValue(expected) {
 			t.Errorf("surfaceCompletions missing %q, got: %v", expected, completions)
+		}
+	}
+
+	// Bare surface names must NOT appear — verify by checking that no entry
+	// is exactly "agent" or "shell" (no colon prefix) or starts with
+	// "agent\t" / "shell\t".
+	for _, c := range completions {
+		if c == "agent" || c == "shell" ||
+			strings.HasPrefix(c, "agent\t") || strings.HasPrefix(c, "shell\t") {
+			t.Errorf("surfaceCompletions should not include bare name %q", c)
 		}
 	}
 }
@@ -224,6 +237,66 @@ func TestSurfaceCompletions_SecondArgReturnsNone(t *testing.T) {
 	completions, _ := fn(nil, []string{"agent"}, "")
 	if len(completions) != 0 {
 		t.Errorf("expected no completions for second arg, got %d", len(completions))
+	}
+}
+
+func TestWorkspaceFlagCompletions(t *testing.T) {
+	dir := t.TempDir()
+	m := manifest.New()
+	m.Docks = []manifest.Dock{
+		{Name: "labs", Workspaces: []manifest.Workspace{{Name: "w1"}, {Name: "w2"}}},
+	}
+	origXDG := os.Getenv("XDG_DATA_HOME")
+	os.Setenv("XDG_DATA_HOME", dir)
+	defer os.Setenv("XDG_DATA_HOME", origXDG)
+	bayDir := filepath.Join(dir, "bay")
+	os.MkdirAll(bayDir, 0o755)
+	manifest.Save(filepath.Join(bayDir, "manifest.json"), m)
+
+	fn := workspaceFlagCompletions()
+	// Pass non-empty args — flag completers must NOT short-circuit on args.
+	completions, directive := fn(nil, []string{"some-positional"}, "")
+	if directive != cobra.ShellCompDirectiveNoFileComp {
+		t.Errorf("directive = %d, want NoFileComp", directive)
+	}
+	if len(completions) == 0 {
+		t.Error("workspaceFlagCompletions returned no completions even with non-empty args")
+	}
+	// Should contain w1 and w2.
+	hasValue := func(prefix string) bool {
+		for _, c := range completions {
+			if strings.HasPrefix(c, prefix) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, expected := range []string{"w1", "w2", "labs:w1", "labs:w2"} {
+		if !hasValue(expected) {
+			t.Errorf("workspaceFlagCompletions missing %q, got: %v", expected, completions)
+		}
+	}
+}
+
+func TestDockFlagCompletions(t *testing.T) {
+	dir := t.TempDir()
+	m := manifest.New()
+	m.Docks = []manifest.Dock{
+		{Name: "labs", Repo: "labs"},
+		{Name: "research"},
+	}
+	origXDG := os.Getenv("XDG_DATA_HOME")
+	os.Setenv("XDG_DATA_HOME", dir)
+	defer os.Setenv("XDG_DATA_HOME", origXDG)
+	bayDir := filepath.Join(dir, "bay")
+	os.MkdirAll(bayDir, 0o755)
+	manifest.Save(filepath.Join(bayDir, "manifest.json"), m)
+
+	fn := dockFlagCompletions()
+	// Pass non-empty args — flag completers must NOT short-circuit on args.
+	completions, _ := fn(nil, []string{"some-positional"}, "")
+	if len(completions) != 2 {
+		t.Errorf("expected 2 dock completions, got %d: %v", len(completions), completions)
 	}
 }
 
