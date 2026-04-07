@@ -117,8 +117,8 @@ func (e *Engine) syncWorkspacePR(ws *manifest.Workspace) bool {
 	return true
 }
 
-// SyncAll checks git branches, PR numbers, and tmux surface state for all
-// workspaces and updates the manifest if anything changed.
+// SyncAll checks git branches, PR numbers, merge status, and tmux surface state
+// for all workspaces and updates the manifest if anything changed.
 func (e *Engine) SyncAll() {
 	m, err := e.LoadManifest()
 	if err != nil {
