@@ -67,6 +67,13 @@ func TestCompletionsRegistered(t *testing.T) {
 		"ws go",
 		"dock close", "dock recover",
 		"ws new",
+		// surface verbs (sf X form)
+		"surface close", "surface restart", "surface show", "surface rename",
+		"surface new",
+		// top-level surface verbs
+		"close", "show", "rename", "restart",
+		// bay new subcommands with positional completions
+		"new agent", "new edit",
 	}
 	for _, path := range withCompletions {
 		cmd := findCmd(root, path)
@@ -76,6 +83,172 @@ func TestCompletionsRegistered(t *testing.T) {
 		}
 		if cmd.ValidArgsFunction == nil {
 			t.Errorf("command %q has no ValidArgsFunction", path)
+		}
+	}
+}
+
+func TestSurfaceCommands_UseSurfaceCompletions(t *testing.T) {
+	// surface close/restart/show/rename and the top-level close/show/rename/restart
+	// must use sfCompl, not wsCompl. Set up a manifest with one workspace and
+	// one surface, and verify the completer returns the surface name.
+	dir := t.TempDir()
+
+	m := manifest.New()
+	m.Docks = []manifest.Dock{
+		{
+			Name: "labs",
+			Workspaces: []manifest.Workspace{
+				{
+					Name: "w1",
+					Surfaces: []manifest.Surface{
+						{Name: "agent", Type: manifest.SurfaceTypeAgent},
+					},
+				},
+			},
+		},
+	}
+
+	origXDG := os.Getenv("XDG_DATA_HOME")
+	os.Setenv("XDG_DATA_HOME", dir)
+	defer os.Setenv("XDG_DATA_HOME", origXDG)
+	bayDir := filepath.Join(dir, "bay")
+	os.MkdirAll(bayDir, 0o755)
+	manifest.Save(filepath.Join(bayDir, "manifest.json"), m)
+
+	root := NewRootCmd("test")
+
+	for _, path := range []string{
+		"surface close", "surface restart", "surface show", "surface rename",
+		"close", "show", "rename", "restart",
+	} {
+		cmd := findCmd(root, path)
+		if cmd == nil || cmd.ValidArgsFunction == nil {
+			t.Errorf("command %q has no ValidArgsFunction", path)
+			continue
+		}
+		completions, _ := cmd.ValidArgsFunction(cmd, nil, "")
+		hasAgent := false
+		for _, c := range completions {
+			if strings.HasPrefix(c, "agent\t") || strings.HasPrefix(c, "w1:agent\t") || strings.HasPrefix(c, "labs:w1:agent\t") {
+				hasAgent = true
+				break
+			}
+		}
+		if !hasAgent {
+			t.Errorf("command %q completions missing 'agent' surface, got: %v", path, completions)
+		}
+	}
+}
+
+func TestSurfaceCompletions(t *testing.T) {
+	dir := t.TempDir()
+
+	m := manifest.New()
+	m.Docks = []manifest.Dock{
+		{
+			Name: "labs",
+			Workspaces: []manifest.Workspace{
+				{
+					Name: "w1",
+					Surfaces: []manifest.Surface{
+						{Name: "agent", Type: manifest.SurfaceTypeAgent},
+						{Name: "shell", Type: manifest.SurfaceTypeShell},
+					},
+				},
+			},
+		},
+	}
+
+	origXDG := os.Getenv("XDG_DATA_HOME")
+	os.Setenv("XDG_DATA_HOME", dir)
+	defer os.Setenv("XDG_DATA_HOME", origXDG)
+	bayDir := filepath.Join(dir, "bay")
+	os.MkdirAll(bayDir, 0o755)
+	manifest.Save(filepath.Join(bayDir, "manifest.json"), m)
+
+	fn := surfaceCompletions()
+	completions, directive := fn(nil, nil, "")
+
+	if directive != cobra.ShellCompDirectiveNoFileComp {
+		t.Errorf("directive = %d, want NoFileComp", directive)
+	}
+
+	hasValue := func(prefix string) bool {
+		for _, c := range completions {
+			if strings.HasPrefix(c, prefix) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// All three forms for each surface, plus the self keyword.
+	for _, expected := range []string{
+		"self",
+		"agent\t", "shell\t",
+		"w1:agent", "w1:shell",
+		"labs:w1:agent", "labs:w1:shell",
+	} {
+		if !hasValue(expected) {
+			t.Errorf("surfaceCompletions missing %q, got: %v", expected, completions)
+		}
+	}
+}
+
+func TestSurfaceCompletions_NoSelfAfterColon(t *testing.T) {
+	// When the user has typed a colon, 'self' is not a meaningful completion
+	// (qualified self is always literal, not a keyword).
+	dir := t.TempDir()
+	m := manifest.New()
+	m.Docks = []manifest.Dock{{Name: "labs", Workspaces: []manifest.Workspace{{Name: "w1"}}}}
+
+	origXDG := os.Getenv("XDG_DATA_HOME")
+	os.Setenv("XDG_DATA_HOME", dir)
+	defer os.Setenv("XDG_DATA_HOME", origXDG)
+	bayDir := filepath.Join(dir, "bay")
+	os.MkdirAll(bayDir, 0o755)
+	manifest.Save(filepath.Join(bayDir, "manifest.json"), m)
+
+	fn := surfaceCompletions()
+	completions, _ := fn(nil, nil, "w1:")
+
+	for _, c := range completions {
+		if strings.HasPrefix(c, "self\t") || c == "self" {
+			t.Errorf("surfaceCompletions should not include 'self' after a colon, got: %v", completions)
+		}
+	}
+}
+
+func TestSurfaceCompletions_SecondArgReturnsNone(t *testing.T) {
+	fn := surfaceCompletions()
+	completions, _ := fn(nil, []string{"agent"}, "")
+	if len(completions) != 0 {
+		t.Errorf("expected no completions for second arg, got %d", len(completions))
+	}
+}
+
+func TestFlagCompletions_WsAndDockOnSurfaceVerbs(t *testing.T) {
+	// Verify --ws and --dock have completion functions registered on the
+	// surface verb commands.
+	root := NewRootCmd("test")
+	for _, path := range []string{
+		"surface close", "surface restart", "surface show", "surface rename",
+		"close", "show", "rename", "restart",
+		"new shell", "new agent", "new cmd",
+	} {
+		cmd := findCmd(root, path)
+		if cmd == nil {
+			t.Errorf("command %q not found", path)
+			continue
+		}
+		// Cobra exposes flag completions via its internal map. We can't
+		// inspect them directly, so just verify the flags exist (a missing
+		// flag would mean the wiring loop silently no-op'd on this command).
+		if cmd.Flags().Lookup("ws") == nil {
+			t.Errorf("command %q missing --ws flag", path)
+		}
+		if cmd.Flags().Lookup("dock") == nil {
+			t.Errorf("command %q missing --dock flag", path)
 		}
 	}
 }
