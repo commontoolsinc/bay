@@ -110,13 +110,9 @@ func FilterWaiting(entries []Entry) []Entry {
 	return waiting
 }
 
-// NextWaiting returns the next waiting entry after the given current window.
-func NextWaiting(entries []Entry, currentWindowID string) *Entry {
-	waiting := FilterWaiting(entries)
-	if len(waiting) == 0 {
-		return nil
-	}
-
+// NextWaiting returns the next waiting entry after the given current window
+// (and its index in entries). Returns (nil, -1) when no entry is waiting.
+func NextWaiting(entries []Entry, currentWindowID string) (*Entry, int) {
 	currentIdx := -1
 	for i, e := range entries {
 		if e.TmuxWindowID == currentWindowID {
@@ -125,20 +121,24 @@ func NextWaiting(entries []Entry, currentWindowID string) *Entry {
 		}
 	}
 
+	n := len(entries)
 	if currentIdx == -1 {
-		return &waiting[0]
+		// No matching current window: return the first waiting entry.
+		for i, e := range entries {
+			if e.Waiting {
+				return &entries[i], i
+			}
+		}
+		return nil, -1
 	}
 
-	n := len(entries)
 	for offset := 1; offset <= n; offset++ {
 		idx := (currentIdx + offset) % n
 		if entries[idx].Waiting {
-			e := entries[idx]
-			return &e
+			return &entries[idx], idx
 		}
 	}
-
-	return nil
+	return nil, -1
 }
 
 // FormatEntry formats a single entry for picker display.
@@ -274,42 +274,42 @@ func CollectSurfaces(ws *manifest.Workspace, tc tmux.Interface, currentPaneID st
 	return entries
 }
 
-// NextSurface returns the next surface after the current one, wrapping around.
-// If no surface is marked current, returns the first entry.
-func NextSurface(entries []SurfaceEntry) *SurfaceEntry {
+// NextSurface returns the next surface after the current one (and its index),
+// wrapping around. If no surface is marked current, returns the first entry.
+// Returns (nil, -1) on an empty list.
+func NextSurface(entries []SurfaceEntry) (*SurfaceEntry, int) {
 	if len(entries) == 0 {
-		return nil
+		return nil, -1
 	}
-	cur := -1
-	for i, e := range entries {
-		if e.Current {
-			cur = i
-			break
-		}
-	}
+	cur := currentSurfaceIndex(entries)
 	next := (cur + 1) % len(entries)
-	return &entries[next]
+	return &entries[next], next
 }
 
-// PrevSurface returns the previous surface before the current one, wrapping around.
-// If no surface is marked current, returns the last entry.
-func PrevSurface(entries []SurfaceEntry) *SurfaceEntry {
+// PrevSurface returns the previous surface before the current one (and its
+// index), wrapping around. If no surface is marked current, returns the last
+// entry. Returns (nil, -1) on an empty list.
+func PrevSurface(entries []SurfaceEntry) (*SurfaceEntry, int) {
 	if len(entries) == 0 {
-		return nil
+		return nil, -1
 	}
-	cur := -1
-	for i, e := range entries {
-		if e.Current {
-			cur = i
-			break
-		}
-	}
+	cur := currentSurfaceIndex(entries)
 	if cur == -1 {
-		// No current — return last (prev wraps to end).
-		return &entries[len(entries)-1]
+		last := len(entries) - 1
+		return &entries[last], last
 	}
 	prev := (cur - 1 + len(entries)) % len(entries)
-	return &entries[prev]
+	return &entries[prev], prev
+}
+
+// currentSurfaceIndex returns the index of the entry marked Current, or -1.
+func currentSurfaceIndex(entries []SurfaceEntry) int {
+	for i, e := range entries {
+		if e.Current {
+			return i
+		}
+	}
+	return -1
 }
 
 // SurfaceByIndex returns the surface at the given 1-based index, or nil if out of range.
@@ -318,4 +318,27 @@ func SurfaceByIndex(entries []SurfaceEntry, index int) *SurfaceEntry {
 		return nil
 	}
 	return &entries[index-1]
+}
+
+// NextWaitingSurface returns the next surface marked Waiting after the
+// current one (and its index), wrapping around. If no surface is current,
+// returns the first waiting entry. Returns (nil, -1) when none are waiting.
+func NextWaitingSurface(entries []SurfaceEntry) (*SurfaceEntry, int) {
+	cur := currentSurfaceIndex(entries)
+	n := len(entries)
+	if cur == -1 {
+		for i, e := range entries {
+			if e.Waiting {
+				return &entries[i], i
+			}
+		}
+		return nil, -1
+	}
+	for offset := 1; offset <= n; offset++ {
+		idx := (cur + offset) % n
+		if entries[idx].Waiting {
+			return &entries[idx], idx
+		}
+	}
+	return nil, -1
 }

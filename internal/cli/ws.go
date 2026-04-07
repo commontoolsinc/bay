@@ -527,12 +527,16 @@ func wsGo(eng *engine.Engine, args []string, waiting, nextWaiting bool) error {
 
 	if nextWaiting {
 		currentWinID, _ := eng.Tmux.CurrentWindowID()
-		entry := nav.NextWaiting(entries, currentWinID)
+		entry, idx := nav.NextWaiting(entries, currentWinID)
 		if entry == nil {
 			fmt.Println("No waiting workspaces in this dock.")
 			return nil
 		}
-		return eng.Tmux.SelectWindow(entry.TmuxWindowID)
+		if err := eng.Tmux.SelectWindow(entry.TmuxWindowID); err != nil {
+			return err
+		}
+		flashWsCycle(eng, entries, idx)
+		return nil
 	}
 
 	if waiting {
@@ -558,7 +562,8 @@ func wsGo(eng *engine.Engine, args []string, waiting, nextWaiting bool) error {
 	}
 }
 
-// wsCycle moves to next/prev workspace in the current dock.
+// wsCycle moves to next/prev workspace in the current dock and flashes the
+// new position via the cycling indicator.
 func wsCycle(eng *engine.Engine, forward bool) error {
 	currentSession, err := eng.Tmux.CurrentSession()
 	if err != nil {
@@ -603,7 +608,11 @@ func wsCycle(eng *engine.Engine, forward bool) error {
 		}
 	}
 
-	return eng.Tmux.SelectWindow(dockEntries[next].TmuxWindowID)
+	if err := eng.Tmux.SelectWindow(dockEntries[next].TmuxWindowID); err != nil {
+		return err
+	}
+	flashWsCycle(eng, dockEntries, next)
+	return nil
 }
 
 // pickWorkspace shows the built-in picker for workspace selection.
