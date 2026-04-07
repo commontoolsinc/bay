@@ -247,6 +247,73 @@ func TestWsNew_Worktree(t *testing.T) {
 	}
 }
 
+func TestWsNew_InvalidNameDoesNotCreateWorktree(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "bad name"}); err == nil {
+		t.Fatal("expected invalid workspace name to fail")
+	}
+
+	mockGit := eng.Git.(*git.Mock)
+	if got := len(mockGit.CreatedWorktrees()); got != 0 {
+		t.Fatalf("created worktrees = %d, want 0", got)
+	}
+}
+
+func TestWsNew_BranchNameCollisionGetsUniqueName(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "new-branch", Shell: true}); err != nil {
+		t.Fatalf("seed workspace: %v", err)
+	}
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Branch: "feature/new-branch"})
+	if err != nil {
+		t.Fatalf("WsNew with colliding branch name: %v", err)
+	}
+	if ws.Name != "new-branch-2" {
+		t.Fatalf("workspace name = %q, want new-branch-2", ws.Name)
+	}
+}
+
+func TestWsNew_RequireAgentFailsWithoutDockDefault(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	m, _ := eng.LoadManifest()
+	m.FindDock("labs").Agent = ""
+	if err := eng.saveManifest(m); err != nil {
+		t.Fatalf("saveManifest: %v", err)
+	}
+
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", RequireAgent: true}); err == nil || !strings.Contains(err.Error(), "no default agent") {
+		t.Fatalf("WsNew error = %v, want no default agent", err)
+	}
+}
+
+func TestWsNew_UnknownExplicitAgentFails(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Agent: "ghostwriter", RequireAgent: true}); err == nil || !strings.Contains(err.Error(), `unknown agent "ghostwriter"`) {
+		t.Fatalf("WsNew error = %v, want unknown agent", err)
+	}
+}
+
+func TestWsNew_ShellIgnoresInvalidDefaultAgent(t *testing.T) {
+	eng, _ := testEngine(t)
+	eng.Config.Docks["labs"] = config.DockConfig{Agent: "ghostwriter"}
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	if ws.Name != "w1" {
+		t.Fatalf("name = %q, want w1", ws.Name)
+	}
+	if len(ws.Surfaces) != 1 || ws.Surfaces[0].Type != manifest.SurfaceTypeShell {
+		t.Fatalf("surfaces = %#v, want single shell surface", ws.Surfaces)
+	}
+}
+
 func TestWsNew_CopiesWorktreeincludeFiles(t *testing.T) {
 	eng, dir := testEngine(t)
 
@@ -335,6 +402,96 @@ func TestSurfaceAdd_PersistsTmuxPaneID(t *testing.T) {
 	}
 	if ws.Surfaces[1].Tmux == nil || ws.Surfaces[1].Tmux.PaneID == "" {
 		t.Fatal("expected added surface to record tmux pane ID")
+	}
+}
+
+func TestSurfaceAdd_UnknownAgentFailsWithoutPersistingSurface(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+
+	err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeAgent, "agent", "ghostwriter", "", "v")
+	if err == nil || !strings.Contains(err.Error(), `unknown agent "ghostwriter"`) {
+		t.Fatalf("SurfaceAdd error = %v, want unknown agent", err)
+	}
+
+	ws, err := eng.WsShow("labs", "w1")
+	if err != nil {
+		t.Fatalf("WsShow failed: %v", err)
+	}
+	if got := len(ws.Surfaces); got != 1 {
+		t.Fatalf("surfaces = %d, want 1", got)
+	}
+}
+
+func TestSurfaceAdd_PrefersCurrentPaneAsSplitParent(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell-2", "", "", "v"); err != nil {
+		t.Fatalf("SurfaceAdd shell-2 failed: %v", err)
+	}
+
+	ws, err := eng.WsShow("labs", "w1")
+	if err != nil {
+		t.Fatalf("WsShow failed: %v", err)
+	}
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.SetCurrentPaneID(ws.Surfaces[0].Tmux.PaneID)
+
+	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell-3", "", "", "v"); err != nil {
+		t.Fatalf("SurfaceAdd shell-3 failed: %v", err)
+	}
+
+	ws, err = eng.WsShow("labs", "w1")
+	if err != nil {
+		t.Fatalf("WsShow failed: %v", err)
+	}
+	s := ws.FindSurface("shell-3")
+	if s == nil {
+		t.Fatal("surface shell-3 not found")
+	}
+	if s.Tmux.SplitFrom != ws.Surfaces[0].ID {
+		t.Fatalf("split_from = %d, want %d", s.Tmux.SplitFrom, ws.Surfaces[0].ID)
+	}
+}
+
+func TestSurfaceAdd_FallsBackToLastFocusedSurface(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell-2", "", "", "v"); err != nil {
+		t.Fatalf("SurfaceAdd shell-2 failed: %v", err)
+	}
+
+	ws, err := eng.WsShow("labs", "w1")
+	if err != nil {
+		t.Fatalf("WsShow failed: %v", err)
+	}
+	if err := eng.SetLastFocused("labs", "w1", ws.Surfaces[1].ID); err != nil {
+		t.Fatalf("SetLastFocused failed: %v", err)
+	}
+
+	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell-3", "", "", "v"); err != nil {
+		t.Fatalf("SurfaceAdd shell-3 failed: %v", err)
+	}
+
+	ws, err = eng.WsShow("labs", "w1")
+	if err != nil {
+		t.Fatalf("WsShow failed: %v", err)
+	}
+	s := ws.FindSurface("shell-3")
+	if s == nil {
+		t.Fatal("surface shell-3 not found")
+	}
+	if s.Tmux.SplitFrom != ws.Surfaces[1].ID {
+		t.Fatalf("split_from = %d, want %d", s.Tmux.SplitFrom, ws.Surfaces[1].ID)
 	}
 }
 
@@ -1064,7 +1221,6 @@ func TestSurfaceRestart_UsesResumeArgs(t *testing.T) {
 	t.Error("expected RespawnPane call")
 }
 
-
 func TestWsNew_DuplicateDisplayName(t *testing.T) {
 	eng, _ := testEngine(t)
 
@@ -1602,6 +1758,88 @@ func TestSyncWorkspaceGitState_BranchChangeUpdatesNameAndStatus(t *testing.T) {
 	}
 	if ws.Status != manifest.WorkspaceStatusActive {
 		t.Errorf("status = %q, want active", ws.Status)
+	}
+}
+
+func TestWsUpdate_BranchCollisionGetsUniqueName(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "existing", Shell: true}); err != nil {
+		t.Fatalf("seed workspace: %v", err)
+	}
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+		t.Fatalf("target workspace: %v", err)
+	}
+
+	branch := "feature/existing"
+	if err := eng.WsUpdate("labs", "w1", &branch, nil, nil); err != nil {
+		t.Fatalf("WsUpdate: %v", err)
+	}
+
+	ws, err := eng.WsShow("labs", "existing-2")
+	if err != nil {
+		t.Fatalf("WsShow: %v", err)
+	}
+	if ws.Name != "existing-2" {
+		t.Fatalf("name = %q, want existing-2", ws.Name)
+	}
+}
+
+func TestSyncWorkspaceGitState_BranchCollisionGetsUniqueName(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "existing", Shell: true}); err != nil {
+		t.Fatalf("seed workspace: %v", err)
+	}
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	if err := os.MkdirAll(ws.Path, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetBranch(ws.Path, "feature/existing")
+
+	eng.SyncAll()
+
+	ws, err = eng.WsShow("labs", "existing-2")
+	if err != nil {
+		t.Fatalf("WsShow: %v", err)
+	}
+	if ws.Name != "existing-2" {
+		t.Fatalf("name = %q, want existing-2", ws.Name)
+	}
+}
+
+func TestSyncAll_NoChangesDoesNotRewriteManifest(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+
+	before, err := os.ReadFile(eng.manifestPath)
+	if err != nil {
+		t.Fatalf("ReadFile before sync: %v", err)
+	}
+	backupPath := eng.manifestPath + ".bak"
+	if err := os.Remove(backupPath); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("removing backup: %v", err)
+	}
+
+	eng.SyncAll()
+
+	after, err := os.ReadFile(eng.manifestPath)
+	if err != nil {
+		t.Fatalf("ReadFile after sync: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("manifest changed after no-op SyncAll")
+	}
+	if _, err := os.Stat(backupPath); !os.IsNotExist(err) {
+		t.Fatalf("expected no backup after no-op SyncAll, got err=%v", err)
 	}
 }
 

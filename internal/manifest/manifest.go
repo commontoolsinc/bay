@@ -71,11 +71,11 @@ type Manifest struct {
 
 // Dock represents a tmux session and its associated terminal window.
 type Dock struct {
-	Name       string      `json:"name"`                  // unique; matches config key and tmux session name
-	Repo       string      `json:"repo,omitempty"`        // default repo for workspaces
-	Agent      string      `json:"agent,omitempty"`       // default agent
-	AgentArgs  []string    `json:"agent_args,omitempty"`  // agent args
-	Host       *GUIAttrs   `json:"host,omitempty"`        // terminal window hosting this dock's tmux session; nil if unmanaged
+	Name       string      `json:"name"`                 // unique; matches config key and tmux session name
+	Repo       string      `json:"repo,omitempty"`       // default repo for workspaces
+	Agent      string      `json:"agent,omitempty"`      // default agent
+	AgentArgs  []string    `json:"agent_args,omitempty"` // agent args
+	Host       *GUIAttrs   `json:"host,omitempty"`       // terminal window hosting this dock's tmux session; nil if unmanaged
 	Workspaces []Workspace `json:"workspaces"`
 }
 
@@ -94,10 +94,10 @@ type Workspace struct {
 
 // WorktreeAttrs holds git worktree metadata. Only present for worktree workspaces.
 type WorktreeAttrs struct {
-	Repo      string `json:"repo"`                  // repo config key
+	Repo      string `json:"repo"` // repo config key
 	Branch    string `json:"branch"`
-	PR        string `json:"pr,omitempty"`          // PR number (display-only)
-	PRChecked bool   `json:"pr_checked,omitempty"`  // true once we've tried gh pr view; sticky
+	PR        string `json:"pr,omitempty"`         // PR number (display-only)
+	PRChecked bool   `json:"pr_checked,omitempty"` // true once we've tried gh pr view; sticky
 }
 
 // Surface is the unit of navigation — anything you can focus and jump to.
@@ -123,16 +123,16 @@ type TmuxAttrs struct {
 	WindowID string `json:"window_id,omitempty"`
 
 	// Stable — survives recover.
-	LayoutGroup int    `json:"layout_group"`           // per-workspace, starting from 1; same value = same tmux window
-	SplitFrom   int    `json:"split_from,omitempty"`   // surface ID; 0 = first pane in layout group
-	SplitDir    string `json:"split_dir,omitempty"`    // "h" or "v"; empty for first pane in group
+	LayoutGroup int    `json:"layout_group"`         // per-workspace, starting from 1; same value = same tmux window
+	SplitFrom   int    `json:"split_from,omitempty"` // surface ID; 0 = first pane in layout group
+	SplitDir    string `json:"split_dir,omitempty"`  // "h" or "v"; empty for first pane in group
 }
 
 // GUIAttrs holds state for a GUI application — either a surface or a dock host.
 type GUIAttrs struct {
-	AppCommand string `json:"app_command"`          // launch command (e.g. "cursor", "ghostty")
-	BundleID   string `json:"bundle_id,omitempty"`  // macOS bundle ID for activation
-	PID        int    `json:"pid,omitempty"`         // ephemeral; for liveness probing; 0 = not tracked
+	AppCommand string `json:"app_command"`         // launch command (e.g. "cursor", "ghostty")
+	BundleID   string `json:"bundle_id,omitempty"` // macOS bundle ID for activation
+	PID        int    `json:"pid,omitempty"`       // ephemeral; for liveness probing; 0 = not tracked
 }
 
 // --- Constructor ---
@@ -212,6 +212,16 @@ func Save(path string, m *Manifest) error {
 
 // LockedUpdate atomically loads the manifest, calls fn for modifications, and saves.
 func LockedUpdate(path string, fn func(m *Manifest) error) error {
+	return LockedUpdateMaybe(path, func(m *Manifest) (bool, error) {
+		if err := fn(m); err != nil {
+			return false, err
+		}
+		return true, nil
+	})
+}
+
+// LockedUpdateMaybe atomically loads the manifest, calls fn, and saves only if fn reports changes.
+func LockedUpdateMaybe(path string, fn func(m *Manifest) (bool, error)) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("creating manifest dir: %w", err)
 	}
@@ -238,8 +248,12 @@ func LockedUpdate(path string, fn func(m *Manifest) error) error {
 		}
 	}
 
-	if err := fn(m); err != nil {
+	changed, err := fn(m)
+	if err != nil {
 		return err
+	}
+	if !changed {
+		return nil
 	}
 
 	// Backup existing file before overwriting.

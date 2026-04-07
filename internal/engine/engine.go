@@ -38,11 +38,8 @@ func New(cfg *config.Config, configPath, manifestPath, archivePath string, t tmu
 }
 
 // LoadManifest loads the manifest, creating an empty one if it doesn't exist.
-// NOTE: LoadManifest + saveManifest do NOT hold a lock across the full
-// read-modify-write cycle. Use withManifest for operations that must be
-// atomic (e.g. WsRename, background sync writes). Operations like WsNew,
-// WsClose, WinOpen are typically user-initiated and single-threaded, so
-// the separate load/save is acceptable.
+// Callers that mutate the manifest should prefer withManifest so the full
+// read-modify-write cycle stays atomic under a file lock.
 func (e *Engine) LoadManifest() (*manifest.Manifest, error) {
 	m, err := manifest.Load(e.manifestPath)
 	if err != nil {
@@ -63,6 +60,11 @@ func (e *Engine) saveManifest(m *manifest.Manifest) error {
 // The entire read-modify-write cycle is done under a file lock.
 func (e *Engine) withManifest(fn func(m *manifest.Manifest) error) error {
 	return manifest.LockedUpdate(e.manifestPath, fn)
+}
+
+// withManifestMaybe loads the manifest, passes it to fn, and saves only if fn reports changes.
+func (e *Engine) withManifestMaybe(fn func(m *manifest.Manifest) (bool, error)) error {
+	return manifest.LockedUpdateMaybe(e.manifestPath, fn)
 }
 
 // SaveConfig writes the current config to disk.
@@ -131,6 +133,17 @@ func ValidateName(name string) error {
 	return nil
 }
 
+func uniqueWorkspaceName(dock *manifest.Dock, current *manifest.Workspace, base string) string {
+	candidate := base
+	for i := 2; ; i++ {
+		existing := dock.FindWorkspace(candidate)
+		if existing == nil || existing == current {
+			return candidate
+		}
+		candidate = fmt.Sprintf("%s-%d", base, i)
+	}
+}
+
 // abbreviateBranch strips common prefixes from branch names for display.
 // The result is sanitized to be a valid display name.
 func abbreviateBranch(branch string) string {
@@ -169,7 +182,7 @@ func abbreviateBranch(branch string) string {
 // launchSurfaceInTmux launches the appropriate command in a tmux pane
 // based on the surface type and returns a populated Surface.
 // Used by workspace creation and surface add operations.
-func (e *Engine) launchSurfaceInTmux(tmuxPaneID, dockName string, surfaceType manifest.SurfaceType, agent, cmd string, agentArgs []string) manifest.Surface {
+func (e *Engine) launchSurfaceInTmux(tmuxPaneID, dockName string, surfaceType manifest.SurfaceType, agent, cmd string, agentArgs []string) (manifest.Surface, error) {
 	s := manifest.Surface{
 		Type:    surfaceType,
 		Backend: manifest.SurfaceBackendTmux,
@@ -179,7 +192,10 @@ func (e *Engine) launchSurfaceInTmux(tmuxPaneID, dockName string, surfaceType ma
 	switch surfaceType {
 	case manifest.SurfaceTypeAgent:
 		s.Agent = &agent
-		agentCmd := e.buildAgentCommand(agent, agentArgs)
+		agentCmd, err := e.buildAgentCommand(agent, agentArgs)
+		if err != nil {
+			return manifest.Surface{}, err
+		}
 		_ = e.Tmux.SendKeys(tmuxPaneID, agentCmd)
 	case manifest.SurfaceTypeCmd:
 		s.Command = &cmd
@@ -190,5 +206,5 @@ func (e *Engine) launchSurfaceInTmux(tmuxPaneID, dockName string, surfaceType ma
 		// Editor tmux surface — no command to send (editor launched separately).
 	}
 
-	return s
+	return s, nil
 }

@@ -20,6 +20,29 @@ func uniqueSurfaceName(ws *manifest.Workspace, name string) string {
 	}
 }
 
+func (e *Engine) preferredSplitTarget(ws *manifest.Workspace) *manifest.Surface {
+	if paneID, err := e.Tmux.CurrentPaneID(); err == nil {
+		for i := range ws.Surfaces {
+			s := &ws.Surfaces[i]
+			if s.Tmux != nil && s.Tmux.PaneID == paneID {
+				return s
+			}
+		}
+	}
+	if ws.LastFocused != 0 {
+		if s := ws.FindSurfaceByID(ws.LastFocused); s != nil && s.Tmux != nil && s.Tmux.WindowID != "" {
+			return s
+		}
+	}
+	for i := len(ws.Surfaces) - 1; i >= 0; i-- {
+		s := &ws.Surfaces[i]
+		if s.Tmux != nil && s.Tmux.WindowID != "" {
+			return s
+		}
+	}
+	return nil
+}
+
 // SurfaceAdd adds a new surface to a workspace.
 func (e *Engine) SurfaceAdd(dockName, wsName string, surfaceType manifest.SurfaceType, name, agent, cmd, splitDir string) error {
 	m, err := e.LoadManifest()
@@ -43,20 +66,15 @@ func (e *Engine) SurfaceAdd(dockName, wsName string, surfaceType manifest.Surfac
 	var splitFromSurface int
 
 	if splitDir != "" && len(ws.Surfaces) > 0 {
-		// Split from an existing surface's tmux window.
-		// Find the last tmux surface as the split parent.
-		for i := len(ws.Surfaces) - 1; i >= 0; i-- {
-			s := &ws.Surfaces[i]
-			if s.Tmux != nil && s.Tmux.WindowID != "" {
-				tmuxWindowID = s.Tmux.WindowID
-				layoutGroup = s.Tmux.LayoutGroup
-				splitFromSurface = s.ID
-				break
-			}
+		if parent := e.preferredSplitTarget(ws); parent != nil {
+			tmuxWindowID = parent.Tmux.WindowID
+			layoutGroup = parent.Tmux.LayoutGroup
+			splitFromSurface = parent.ID
 		}
 	}
 
 	var tmuxPaneID string
+	rollbackSurface := func() {}
 
 	if tmuxWindowID != "" && splitDir != "" {
 		// Split an existing window.
@@ -65,6 +83,9 @@ func (e *Engine) SurfaceAdd(dockName, wsName string, surfaceType manifest.Surfac
 			return fmt.Errorf("splitting window: %w", err)
 		}
 		tmuxPaneID = newPaneID
+		rollbackSurface = func() {
+			_ = e.Tmux.KillPane(newPaneID)
+		}
 	} else {
 		// Create a new tmux window.
 		winID, err := e.Tmux.NewWindow(dockName, ws.Name, ws.Path)
@@ -80,6 +101,16 @@ func (e *Engine) SurfaceAdd(dockName, wsName string, surfaceType manifest.Surfac
 		if len(panes) > 0 {
 			tmuxPaneID = panes[0].ID
 		}
+		rollbackSurface = func() {
+			_ = e.Tmux.KillWindow(winID)
+		}
+	}
+
+	if surfaceType == manifest.SurfaceTypeAgent {
+		if err := e.validateAgentName(agent); err != nil {
+			rollbackSurface()
+			return err
+		}
 	}
 
 	// Resolve agent args for the dock.
@@ -87,7 +118,11 @@ func (e *Engine) SurfaceAdd(dockName, wsName string, surfaceType manifest.Surfac
 	agentArgs := e.resolvedDockAgentArgs(dockName, m2)
 
 	// Launch the surface process.
-	surface := e.launchSurfaceInTmux(tmuxPaneID, dockName, surfaceType, agent, cmd, agentArgs)
+	surface, err := e.launchSurfaceInTmux(tmuxPaneID, dockName, surfaceType, agent, cmd, agentArgs)
+	if err != nil {
+		rollbackSurface()
+		return err
+	}
 	surface.Name = uniqueSurfaceName(ws, name)
 	surface.Tmux.PaneID = tmuxPaneID
 	surface.Tmux.WindowID = tmuxWindowID
@@ -95,45 +130,55 @@ func (e *Engine) SurfaceAdd(dockName, wsName string, surfaceType manifest.Surfac
 	surface.Tmux.SplitFrom = splitFromSurface
 	surface.Tmux.SplitDir = splitDir
 
-	if _, err := ws.AddSurface(surface); err != nil {
-		return err
-	}
+	return e.withManifest(func(m *manifest.Manifest) error {
+		dock := m.FindDock(dockName)
+		if dock == nil {
+			rollbackSurface()
+			return fmt.Errorf("unknown dock %q", dockName)
+		}
+		ws := dock.FindWorkspace(wsName)
+		if ws == nil {
+			rollbackSurface()
+			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
+		}
 
-	return e.saveManifest(m)
+		surface.Name = uniqueSurfaceName(ws, name)
+		if _, err := ws.AddSurface(surface); err != nil {
+			rollbackSurface()
+			return err
+		}
+		return nil
+	})
 }
 
 // SurfaceAddGUI adds a GUI application surface (e.g., an editor) to a workspace.
 // Unlike SurfaceAdd, no tmux operations are performed.
 func (e *Engine) SurfaceAddGUI(dockName, wsName, name, appCommand string, pid int) error {
-	m, err := e.LoadManifest()
-	if err != nil {
-		return err
-	}
+	return e.withManifest(func(m *manifest.Manifest) error {
+		dock := m.FindDock(dockName)
+		if dock == nil {
+			return fmt.Errorf("unknown dock %q", dockName)
+		}
+		ws := dock.FindWorkspace(wsName)
+		if ws == nil {
+			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
+		}
 
-	dock := m.FindDock(dockName)
-	if dock == nil {
-		return fmt.Errorf("unknown dock %q", dockName)
-	}
-	ws := dock.FindWorkspace(wsName)
-	if ws == nil {
-		return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
-	}
+		surface := manifest.Surface{
+			Name:    uniqueSurfaceName(ws, name),
+			Type:    manifest.SurfaceTypeEditor,
+			Backend: manifest.SurfaceBackendGUI,
+			GUI: &manifest.GUIAttrs{
+				AppCommand: appCommand,
+				PID:        pid,
+			},
+		}
 
-	surface := manifest.Surface{
-		Name:    uniqueSurfaceName(ws, name),
-		Type:    manifest.SurfaceTypeEditor,
-		Backend: manifest.SurfaceBackendGUI,
-		GUI: &manifest.GUIAttrs{
-			AppCommand: appCommand,
-			PID:        pid,
-		},
-	}
-
-	if _, err := ws.AddSurface(surface); err != nil {
-		return err
-	}
-
-	return e.saveManifest(m)
+		if _, err := ws.AddSurface(surface); err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 // SurfaceClose removes a surface from a workspace.
@@ -156,6 +201,7 @@ func (e *Engine) SurfaceClose(dockName, wsName, surfaceName string) error {
 	if s == nil {
 		return fmt.Errorf("surface %q not found in workspace %q", surfaceName, wsName)
 	}
+	surfaceID := s.ID
 
 	// If this is the last surface in its layout group, kill the tmux window.
 	// Otherwise, kill just the pane.
@@ -168,11 +214,21 @@ func (e *Engine) SurfaceClose(dockName, wsName, surfaceName string) error {
 		}
 	}
 
-	if err := ws.RemoveSurface(surfaceName); err != nil {
-		return err
-	}
-
-	return e.saveManifest(m)
+	return e.withManifest(func(m *manifest.Manifest) error {
+		dock := m.FindDock(dockName)
+		if dock == nil {
+			return fmt.Errorf("unknown dock %q", dockName)
+		}
+		ws := dock.FindWorkspace(wsName)
+		if ws == nil {
+			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
+		}
+		s := ws.FindSurfaceByID(surfaceID)
+		if s == nil {
+			return fmt.Errorf("surface %q not found in workspace %q", surfaceName, wsName)
+		}
+		return ws.RemoveSurface(s.Name)
+	})
 }
 
 // SurfaceRestart respawns a surface's process.
@@ -206,9 +262,11 @@ func (e *Engine) SurfaceRestart(dockName, wsName, surfaceName string) error {
 	switch s.Type {
 	case manifest.SurfaceTypeAgent:
 		if s.Agent != nil && *s.Agent != "" {
-			if _, ok := e.Config.Agents[*s.Agent]; ok {
-				respawnCmd = e.buildAgentResumeCommand(*s.Agent, agentArgs)
+			cmd, err := e.buildAgentResumeCommand(*s.Agent, agentArgs)
+			if err != nil {
+				return err
 			}
+			respawnCmd = cmd
 		}
 	case manifest.SurfaceTypeCmd:
 		if s.Command != nil {
