@@ -241,6 +241,24 @@ var bayKeybindings = []struct {
 	{"M-s", "bay shell", "Option+s: split a shell pane", "run-shell"},
 }
 
+// keybindingsUpToDate reports whether every required line appears as a
+// full (whitespace-trimmed) line in content. Full-line matching is
+// important because a commented-out line like
+// "# bind-key -n M-j run-shell 'bay surface next'" still contains the
+// target as a substring, but is not actually active in tmux.
+func keybindingsUpToDate(content string, required []string) bool {
+	fileLines := map[string]bool{}
+	for _, l := range strings.Split(content, "\n") {
+		fileLines[strings.TrimSpace(l)] = true
+	}
+	for _, line := range required {
+		if !fileLines[line] {
+			return false
+		}
+	}
+	return true
+}
+
 func installKeybindings(reader *bufio.Reader) {
 	fmt.Println()
 
@@ -257,15 +275,7 @@ func installKeybindings(reader *bufio.Reader) {
 		lines = append(lines, line)
 	}
 
-	// Check if all bindings are present with the correct format
-	allPresent := true
-	for _, line := range lines {
-		if !strings.Contains(content, line) {
-			allPresent = false
-			break
-		}
-	}
-	if allPresent {
+	if keybindingsUpToDate(content, lines) {
 		fmt.Println("Tmux keybindings already up to date.")
 		return
 	}
