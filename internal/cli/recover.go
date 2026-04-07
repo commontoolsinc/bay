@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -26,15 +27,16 @@ Outside tmux: recovers all docks.`,
 
 			// Inside a dock: recover just that dock
 			if session, sessionErr := eng.Tmux.CurrentSession(); sessionErr == nil {
-				recovered, err := eng.DockRecover(session)
-				if err != nil && len(recovered) == 0 {
+				result, err := eng.DockRecover(session)
+				if err != nil && len(result.Recovered) == 0 {
 					// Not a bay dock — fall through to full recovery
 				} else {
-					if len(recovered) == 0 {
+					if len(result.Recovered) == 0 {
 						fmt.Printf("Dock %q: nothing to recover.\n", session)
 					} else {
-						fmt.Printf("Dock %q: recovered %s\n", session, strings.Join(recovered, ", "))
+						fmt.Printf("Dock %q: recovered %s\n", session, strings.Join(result.Recovered, ", "))
 					}
+					printRecoveryWarnings(result.Warnings)
 					if currentWinID != "" {
 						_ = eng.Tmux.SelectWindow(currentWinID)
 					}
@@ -58,6 +60,7 @@ Outside tmux: recovers all docks.`,
 				} else {
 					fmt.Printf("Dock %q: recovered %s\n", r.Dock, strings.Join(r.Recovered, ", "))
 				}
+				printRecoveryWarnings(r.Warnings)
 			}
 			fmt.Println("\nAttach with:")
 			for _, r := range results {
@@ -72,6 +75,12 @@ Outside tmux: recovers all docks.`,
 			startMonitor()
 			return err
 		},
+	}
+}
+
+func printRecoveryWarnings(warnings []string) {
+	for _, warning := range warnings {
+		fmt.Fprintf(os.Stderr, "warning: %s\n", warning)
 	}
 }
 

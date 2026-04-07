@@ -273,6 +273,35 @@ func TestSplitWindow(t *testing.T) {
 	}
 }
 
+func TestSplitWindow_TargetPane(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	winID, _ := m.NewWindow("work", "editor", "/home")
+	panes, err := m.ListPanes(winID)
+	if err != nil {
+		t.Fatalf("ListPanes: %v", err)
+	}
+	if len(panes) != 1 {
+		t.Fatalf("expected 1 initial pane, got %d", len(panes))
+	}
+
+	paneID, err := m.SplitWindow(panes[0].ID, "h", "/home")
+	if err != nil {
+		t.Fatalf("SplitWindow(target pane): %v", err)
+	}
+
+	panes, err = m.ListPanes(winID)
+	if err != nil {
+		t.Fatalf("ListPanes after split: %v", err)
+	}
+	if len(panes) != 2 {
+		t.Fatalf("expected 2 panes after split, got %d", len(panes))
+	}
+	if panes[1].ID != paneID {
+		t.Fatalf("new pane order = %q, want %q immediately after target", panes[1].ID, paneID)
+	}
+}
+
 func TestSplitWindow_MissingWindow(t *testing.T) {
 	m := NewMock()
 	_, err := m.SplitWindow("@999", "h", "/home")

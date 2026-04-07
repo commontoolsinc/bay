@@ -290,11 +290,26 @@ func (m *Mock) SelectWindow(windowID string) error {
 
 // --- Panes ---
 
-func (m *Mock) SplitWindow(windowID string, dir string, cwd string) (string, error) {
-	m.record("SplitWindow", windowID, dir, cwd)
+func (m *Mock) SplitWindow(targetID string, dir string, cwd string) (string, error) {
+	m.record("SplitWindow", targetID, dir, cwd)
+
+	windowID := targetID
+	insertAt := -1
+	if p, ok := m.panes[targetID]; ok {
+		windowID = p.windowID
+		if w, ok := m.windows[windowID]; ok {
+			for i, paneID := range w.panes {
+				if paneID == targetID {
+					insertAt = i + 1
+					break
+				}
+			}
+		}
+	}
+
 	w, ok := m.windows[windowID]
 	if !ok {
-		return "", fmt.Errorf("window %q not found", windowID)
+		return "", fmt.Errorf("target %q not found", targetID)
 	}
 	paneID := m.nextPaneID()
 	p := &mockPane{
@@ -303,7 +318,13 @@ func (m *Mock) SplitWindow(windowID string, dir string, cwd string) (string, err
 		pid:      m.nextPID(),
 		active:   false,
 	}
-	w.panes = append(w.panes, paneID)
+	if insertAt >= 0 && insertAt <= len(w.panes) {
+		w.panes = append(w.panes, "")
+		copy(w.panes[insertAt+1:], w.panes[insertAt:])
+		w.panes[insertAt] = paneID
+	} else {
+		w.panes = append(w.panes, paneID)
+	}
 	m.panes[paneID] = p
 	return paneID, nil
 }
