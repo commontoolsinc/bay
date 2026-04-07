@@ -191,39 +191,15 @@ func (e *Engine) SurfaceAddGUI(dockName, wsName, name, appCommand string, pid in
 }
 
 // SurfaceClose removes a surface from a workspace.
+//
+// The manifest update happens BEFORE the destructive tmux kill so that
+// when bay is invoked from inside the pane being closed, the user-visible
+// state is already correct by the time tmux SIGHUPs bay. See also
+// SurfaceRestart and the closeWorkspaceState helper for the same pattern.
 func (e *Engine) SurfaceClose(dockName, wsName, surfaceName string) error {
-	m, err := e.LoadManifest()
-	if err != nil {
-		return err
-	}
+	var windowIDToKill, paneIDToKill string
 
-	dock := m.FindDock(dockName)
-	if dock == nil {
-		return fmt.Errorf("unknown dock %q", dockName)
-	}
-	ws := dock.FindWorkspace(wsName)
-	if ws == nil {
-		return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
-	}
-
-	s := ws.FindSurface(surfaceName)
-	if s == nil {
-		return fmt.Errorf("surface %q not found in workspace %q", surfaceName, wsName)
-	}
-	surfaceID := s.ID
-
-	// If this is the last surface in its layout group, kill the tmux window.
-	// Otherwise, kill just the pane.
-	if s.Tmux != nil && s.Tmux.WindowID != "" {
-		if countSurfacesInLayoutGroup(ws, s.Tmux.LayoutGroup) <= 1 {
-			e.ensurePlaceholderIfLastWindow(dockName, s.Tmux.WindowID)
-			_ = e.Tmux.KillWindow(s.Tmux.WindowID)
-		} else if s.Tmux.PaneID != "" {
-			_ = e.Tmux.KillPane(s.Tmux.PaneID)
-		}
-	}
-
-	return e.withManifest(func(m *manifest.Manifest) error {
+	err := e.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)
 		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
@@ -232,16 +208,41 @@ func (e *Engine) SurfaceClose(dockName, wsName, surfaceName string) error {
 		if ws == nil {
 			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
 		}
-		s := ws.FindSurfaceByID(surfaceID)
+		s := ws.FindSurface(surfaceName)
 		if s == nil {
 			return fmt.Errorf("surface %q not found in workspace %q", surfaceName, wsName)
 		}
+
+		// Capture what we'll kill before the surface is removed from
+		// the in-memory manifest (RemoveSurface invalidates s).
+		if s.Tmux != nil && s.Tmux.WindowID != "" {
+			if countSurfacesInLayoutGroup(ws, s.Tmux.LayoutGroup) <= 1 {
+				windowIDToKill = s.Tmux.WindowID
+			} else if s.Tmux.PaneID != "" {
+				paneIDToKill = s.Tmux.PaneID
+			}
+		}
+
 		if err := ws.RemoveSurface(s.Name); err != nil {
 			return err
 		}
 		ws.LastActive = time.Now().Unix()
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	// Manifest is saved. Now do the destructive tmux work — bay may die
+	// mid-call if it's running in the pane being killed, but the
+	// user-visible state is already correct.
+	if windowIDToKill != "" {
+		e.ensurePlaceholderIfLastWindow(dockName, windowIDToKill)
+		_ = e.Tmux.KillWindow(windowIDToKill)
+	} else if paneIDToKill != "" {
+		_ = e.Tmux.KillPane(paneIDToKill)
+	}
+	return nil
 }
 
 // SurfaceRestart respawns a surface's process.

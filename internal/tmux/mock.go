@@ -59,6 +59,14 @@ type Mock struct {
 
 	clientWidth     int
 	displayMessages []string // recorded DisplayMessage calls in order
+
+	// OnKill is an optional test hook fired at the start of any
+	// destructive operation (KillPane / KillWindow / KillSession)
+	// before the mock mutates its own state. Tests use it to assert
+	// invariants like "the manifest must already be updated by the
+	// time bay issues a tmux kill" without instrumenting production
+	// code. method is "KillPane" / "KillWindow" / "KillSession".
+	OnKill func(method, target string)
 }
 
 // NewMock creates a new Mock with initialized state.
@@ -112,6 +120,9 @@ func (m *Mock) NewSession(name string) error {
 
 func (m *Mock) KillSession(name string) error {
 	m.record("KillSession", name)
+	if m.OnKill != nil {
+		m.OnKill("KillSession", name)
+	}
 	if !m.sessions[name] {
 		return fmt.Errorf("session %q not found", name)
 	}
@@ -199,6 +210,9 @@ func (m *Mock) NewWindow(session string, name string, cwd string) (string, error
 
 func (m *Mock) KillWindow(windowID string) error {
 	m.record("KillWindow", windowID)
+	if m.OnKill != nil {
+		m.OnKill("KillWindow", windowID)
+	}
 	w, ok := m.windows[windowID]
 	if !ok {
 		return fmt.Errorf("window %q not found", windowID)
@@ -342,6 +356,9 @@ func (m *Mock) SelectPane(paneID string) error {
 
 func (m *Mock) KillPane(paneID string) error {
 	m.record("KillPane", paneID)
+	if m.OnKill != nil {
+		m.OnKill("KillPane", paneID)
+	}
 	p, ok := m.panes[paneID]
 	if !ok {
 		return fmt.Errorf("pane %q not found", paneID)

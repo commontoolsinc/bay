@@ -113,9 +113,21 @@ func (e *Engine) RepoRemove(name string, force bool) error {
 		return &RepoInUseError{RepoName: name, AffectedDocks: affected}
 	}
 
-	// Force path: close all workspaces in affected docks.
+	// Force path: close every workspace in each affected dock at the
+	// manifest level (no tmux kills yet — see closeWorkspaceState).
 	for _, dockName := range affectedDockNames {
-		e.DockCloseWorkspaces(dockName, true)
+		m, _ := e.LoadManifest()
+		dock := m.FindDock(dockName)
+		if dock == nil {
+			continue
+		}
+		var wsNames []string
+		for _, ws := range dock.Workspaces {
+			wsNames = append(wsNames, ws.Name)
+		}
+		for _, wsName := range wsNames {
+			_, _ = e.closeWorkspaceState(dockName, wsName, true)
+		}
 	}
 
 	// Remove repo and affected docks from manifest.
@@ -136,7 +148,7 @@ func (e *Engine) RepoRemove(name string, force bool) error {
 		_ = config.Save(e.configPath, e.Config)
 	}
 
-	// Now kill the tmux sessions (safe — manifest is saved)
+	// All manifest state is persisted. Now kill the tmux sessions.
 	for _, dockName := range affectedDockNames {
 		_ = e.Tmux.KillSession(dockName)
 	}

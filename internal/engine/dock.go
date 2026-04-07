@@ -166,27 +166,11 @@ func (e *Engine) DockRename(oldName, newName string) error {
 	})
 }
 
-// DockCloseWorkspaces closes all workspaces in a dock.
-func (e *Engine) DockCloseWorkspaces(name string, force bool) {
-	m, err := e.LoadManifest()
-	if err != nil {
-		return
-	}
-	dock := m.FindDock(name)
-	if dock == nil {
-		return
-	}
-	// Collect names first to avoid modifying slice during iteration.
-	var names []string
-	for _, ws := range dock.Workspaces {
-		names = append(names, ws.Name)
-	}
-	for _, wsName := range names {
-		_ = e.WsClose(name, wsName, force)
-	}
-}
-
 // DockClose closes all workspaces in a dock and kills the tmux session.
+//
+// All manifest mutations (per workspace + the dock itself) happen before
+// any tmux kill, so the user-visible state is correct even if bay is
+// invoked from inside a pane in this dock and dies during KillSession.
 func (e *Engine) DockClose(name string, force bool) error {
 	m, _ := e.LoadManifest()
 	var dock *manifest.Dock
@@ -197,20 +181,24 @@ func (e *Engine) DockClose(name string, force bool) error {
 		return fmt.Errorf("unknown dock %q", name)
 	}
 
-	// Close workspaces if the dock has any in the manifest.
-	var names []string
+	// Collect workspace names first to avoid modifying the slice during
+	// iteration.
+	var wsNames []string
 	for _, ws := range dock.Workspaces {
-		names = append(names, ws.Name)
+		wsNames = append(wsNames, ws.Name)
 	}
-	for _, wsName := range names {
-		if err := e.WsClose(name, wsName, force); err != nil {
+
+	// Manifest pass: archive + remove each workspace. We discard the
+	// returned window IDs because KillSession at the end takes out
+	// every pane in the session in one shot — no need for per-window
+	// kills.
+	for _, wsName := range wsNames {
+		if _, err := e.closeWorkspaceState(name, wsName, force); err != nil {
 			if !force {
 				return fmt.Errorf("workspace %q: %w", wsName, err)
 			}
 		}
 	}
-
-	_ = e.Tmux.KillSession(name)
 
 	// Remove dock from manifest.
 	_ = e.withManifest(func(m *manifest.Manifest) error {
@@ -223,6 +211,8 @@ func (e *Engine) DockClose(name string, force bool) error {
 		_ = config.Save(e.configPath, e.Config)
 	}
 
+	// All manifest state is persisted. Now kill the tmux session.
+	_ = e.Tmux.KillSession(name)
 	return nil
 }
 
