@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/commontoolsinc/bay/internal/config"
+	"github.com/commontoolsinc/bay/internal/engine"
 	"github.com/commontoolsinc/bay/internal/git"
 	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/commontoolsinc/bay/internal/tmux"
@@ -515,6 +517,124 @@ func TestRun_CancelsOnContext(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Run did not exit after context cancellation")
+	}
+}
+
+// --- Engine SyncAll integration ---
+
+// Regression: when an engine is wired into the monitor via SetEngine,
+// each CheckOnce cycle should call engine.SyncAll() so that branch
+// changes (and the resulting tmux window renames) propagate without
+// the user having to run a CLI command. Before this hookup, a fresh
+// `git checkout -b ...` inside a workspace pane would leave the tmux
+// tab name stuck on the old workspace name forever.
+func TestCheckOnce_RenamesWindowOnBranchChange(t *testing.T) {
+	dir := t.TempDir()
+	mock := tmux.NewMock()
+	mockGit := git.NewMock()
+
+	// engine.SyncAll() only probes a workspace whose Path exists on
+	// disk; create a temp dir to stand in for the worktree.
+	wtPath := filepath.Join(dir, "wt")
+	if err := os.MkdirAll(wtPath, 0o755); err != nil {
+		t.Fatalf("mkdir wt: %v", err)
+	}
+
+	mock.NewSession("dev")
+	winID, _ := mock.NewWindow("dev", "w1", wtPath)
+
+	m := manifest.New()
+	m.Repos = []manifest.Repo{{Name: "dev", Path: filepath.Join(dir, "repo")}}
+	m.Docks = []manifest.Dock{
+		{
+			Name: "dev",
+			Repo: "dev",
+			Workspaces: []manifest.Workspace{
+				{
+					Name:     "w1",
+					Type:     manifest.WorkspaceTypeWorktree,
+					Path:     wtPath,
+					Status:   manifest.WorkspaceStatusActive,
+					Worktree: &manifest.WorktreeAttrs{Repo: "dev", Branch: ""},
+					Surfaces: []manifest.Surface{
+						{
+							ID: 1, Name: "shell", Type: manifest.SurfaceTypeShell,
+							Backend: manifest.SurfaceBackendTmux,
+							Tmux:    &manifest.TmuxAttrs{WindowID: winID, PaneID: "%1", LayoutGroup: 1},
+						},
+					},
+				},
+			},
+		},
+	}
+	manifestPath := filepath.Join(dir, "manifest.json")
+	if err := manifest.Save(manifestPath, m); err != nil {
+		t.Fatalf("saving manifest: %v", err)
+	}
+
+	// User just ran `git checkout -b fix/login-bug` inside the
+	// workspace. The git mock now reports the new branch.
+	mockGit.SetBranch(wtPath, "fix/login-bug")
+
+	patternsPath := filepath.Join(dir, "bay-prompts.txt")
+	_ = os.WriteFile(patternsPath, []byte(""), 0o644)
+	pidPath := filepath.Join(dir, "monitor.pid")
+
+	mon := NewWithGit(mock, mockGit, manifestPath, patternsPath, pidPath, 1)
+
+	// Wire the same dependencies into an engine and attach it.
+	cfg := &config.Config{Agents: map[string]config.AgentConfig{}, Docks: map[string]config.DockConfig{}}
+	eng := engine.New(cfg, "", manifestPath, filepath.Join(dir, "archive.json"), mock, mockGit)
+	mon.SetEngine(eng)
+
+	if err := mon.CheckOnce(); err != nil {
+		t.Fatalf("CheckOnce: %v", err)
+	}
+
+	// Manifest should reflect the new branch.
+	updated, err := manifest.Load(manifestPath)
+	if err != nil {
+		t.Fatalf("loading manifest: %v", err)
+	}
+	ws := updated.FindDock("dev").FindWorkspace("login-bug")
+	if ws == nil {
+		t.Fatalf("workspace not found at expected post-rename name 'login-bug'; manifest: %+v", updated.Docks[0].Workspaces)
+	}
+	if ws.Worktree.Branch != "fix/login-bug" {
+		t.Errorf("branch = %q, want fix/login-bug", ws.Worktree.Branch)
+	}
+
+	// Tmux window should also have been renamed.
+	renamed := false
+	for _, c := range mock.Calls {
+		if c.Method == "RenameWindow" && len(c.Args) == 2 && c.Args[0] == winID && c.Args[1] == "login-bug" {
+			renamed = true
+			break
+		}
+	}
+	if !renamed {
+		t.Errorf("expected RenameWindow(%s, login-bug); calls: %v", winID, mock.Calls)
+	}
+}
+
+func TestCheckOnce_NoEngine_DoesNotPanic(t *testing.T) {
+	// Engine is optional. The monitor should still work fine without
+	// one — prompt detection only.
+	dir := t.TempDir()
+	mock := tmux.NewMock()
+	mock.NewSession("dev")
+	winID, _ := mock.NewWindow("dev", "test-ws", "/tmp")
+
+	manifestPath := createTestManifest(t, dir, winID)
+	patternsPath := filepath.Join(dir, "bay-prompts.txt")
+	_ = os.WriteFile(patternsPath, []byte(""), 0o644)
+	pidPath := filepath.Join(dir, "monitor.pid")
+
+	mon := New(mock, manifestPath, patternsPath, pidPath, 1)
+	// No SetEngine call.
+
+	if err := mon.CheckOnce(); err != nil {
+		t.Fatalf("CheckOnce: %v", err)
 	}
 }
 

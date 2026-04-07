@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/commontoolsinc/bay/internal/config"
+	"github.com/commontoolsinc/bay/internal/engine"
 	gitpkg "github.com/commontoolsinc/bay/internal/git"
 	"github.com/commontoolsinc/bay/internal/monitor"
 	tmuxpkg "github.com/commontoolsinc/bay/internal/tmux"
@@ -20,6 +21,11 @@ func newMonitorCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "monitor",
 		Short: "Manage the pane monitor",
+		// Don't auto-start the monitor when the user is explicitly
+		// running monitor subcommands — `monitor stop` auto-starting
+		// then stopping is absurd, `monitor status` should be a pure
+		// inspector, and `monitor run` is the monitor itself.
+		Annotations: map[string]string{noMonitorAutostartAnnotation: "true"},
 	}
 
 	cmd.AddCommand(
@@ -45,7 +51,12 @@ func newMonitorWithConfig() (*monitor.Monitor, error) {
 
 	t := tmuxpkg.NewReal()
 	g := gitpkg.NewReal()
-	return monitor.NewWithGit(t, g, p.ManifestFile, p.PatternsFile, p.PIDFile, cfg.Monitor.EffectiveInterval()), nil
+	mon := monitor.NewWithGit(t, g, p.ManifestFile, p.PatternsFile, p.PIDFile, cfg.Monitor.EffectiveInterval())
+	// Wire the same engine the CLI uses so the monitor's per-cycle
+	// SyncAll picks up branch changes and renames tmux windows in the
+	// background. Re-uses tmux + git instances above.
+	mon.SetEngine(engine.New(cfg, p.ConfigFile, p.ManifestFile, p.ArchiveFile, t, g))
+	return mon, nil
 }
 
 func newMonitorStartCmd() *cobra.Command {

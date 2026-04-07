@@ -84,6 +84,9 @@ func printRecoveryWarnings(warnings []string) {
 	}
 }
 
+// startMonitor is the verbose recover-time start: prints "Monitor
+// started." on success and a warning on failure. ensureMonitor is the
+// quiet variant used by the auto-start hook.
 func startMonitor() {
 	mon, monErr := newMonitorWithConfig()
 	if monErr == nil {

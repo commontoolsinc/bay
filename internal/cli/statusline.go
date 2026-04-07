@@ -16,6 +16,9 @@ Designed for use in tmux status-format strings. Outputs empty string if not in a
 
 Fields: name, branch, pr, status, dock, merged, full`,
 		Args: cobra.ExactArgs(1),
+		// Tmux status-right runs this command on every refresh — do
+		// NOT fork the monitor from here.
+		Annotations: map[string]string{noMonitorAutostartAnnotation: "true"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			field := args[0]
 

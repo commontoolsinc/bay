@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/commontoolsinc/bay/internal/engine"
 	"github.com/commontoolsinc/bay/internal/git"
 	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/commontoolsinc/bay/internal/tmux"
@@ -59,6 +60,13 @@ type Monitor struct {
 	pidPath      string
 	intervalSecs int
 
+	// engine, if set, has its SyncAll() called at the start of every
+	// CheckOnce cycle so that branch changes (and the resulting tmux
+	// window renames) propagate without waiting for a CLI command.
+	// Optional — when nil, the monitor still does prompt detection
+	// and PR/merge probing on its own cadence.
+	engine *engine.Engine
+
 	// tracked keeps state of which windows are currently highlighted to avoid
 	// redundant tmux calls and to know when to clear.
 	tracked map[string]bool
@@ -86,6 +94,14 @@ func NewWithGit(t tmux.Interface, g git.Interface, manifestPath, patternsPath, p
 	return m
 }
 
+// SetEngine attaches an engine whose SyncAll() will run at the start of
+// every CheckOnce cycle. Pass nil to disable. Used by the CLI to wire
+// background branch detection into the same process that already does
+// prompt-waiting detection.
+func (m *Monitor) SetEngine(e *engine.Engine) {
+	m.engine = e
+}
+
 // Run is the main loop. It periodically checks all windows and exits when ctx is cancelled.
 func (m *Monitor) Run(ctx context.Context) error {
 	interval := time.Duration(m.intervalSecs) * time.Second
@@ -105,6 +121,15 @@ func (m *Monitor) Run(ctx context.Context) error {
 
 // CheckOnce runs a single check cycle: reload patterns, read manifest, check all windows.
 func (m *Monitor) CheckOnce() error {
+	// Branch sync first, so the manifest we load below reflects any
+	// branch changes the user just made (and so the tmux windows have
+	// already been renamed by the time we iterate them for prompt
+	// detection). Cheap — engine.SyncAll's per-workspace probe is one
+	// local git call.
+	if m.engine != nil {
+		m.engine.SyncAll()
+	}
+
 	patterns, err := LoadPatterns(m.patternsPath)
 	if err != nil {
 		return fmt.Errorf("loading patterns: %w", err)

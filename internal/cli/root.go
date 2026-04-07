@@ -176,5 +176,10 @@ func NewRootCmd(version string) *cobra.Command {
 
 	RegisterCompletion(root)
 
+	// Auto-start the background monitor on every command unless the
+	// command (or one of its ancestors) opts out via the no-autostart
+	// annotation. See monitor_autostart.go.
+	installMonitorAutostart(root)
+
 	return root
 }
