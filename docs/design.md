@@ -5,7 +5,12 @@ and git worktrees. Handles agent sessions, shell access, and tmux
 session recovery after reboot. Not tied to any specific project or
 workflow — project context is injected via configuration.
 
-**Status**: Design in progress (v2).
+**Status**: Historical design notes for the v2 redesign.
+
+The current implementation has evolved since this draft. The user-facing
+behavior in [`docs/human-guide.md`](human-guide.md) and
+[`internal/cli/agent-guide.md`](../internal/cli/agent-guide.md) is the
+authoritative reference when this document disagrees with the code.
 
 ## Design principles
 
@@ -89,25 +94,25 @@ verification), and monitoring.
 2. **Reboot recovery** — `bay recover` reconstructs all docks,
    workspaces, windows, and panes. Idempotent — detects and reuses
    existing tmux state. Prints attach commands on completion.
-3. **Agent config generation** — bay generates a gitignored config file
-   in the workspace's CWD containing a standard preamble (workspace
-   identity and essential bay commands) followed by optional per-dock
-   template content. The preamble is always written, even without a
-   user template.
+3. **Agent awareness** — bay updates repo-level project files (for
+   example `CLAUDE.md`) via `bay repo init` so agents can discover bay
+   commands from the repo itself. Bay no longer generates per-workspace
+   config files inside worktrees.
 4. **Manifest tracking** — persistent record of each workspace (id,
    name, type, repo, path, branch, PR, status) and its windows/panes.
 5. **Clean shutdown** — closing a worktree workspace checks for
    uncommitted changes and unpushed commits. Refuses if dirty (override
-   with `--force`). Cleans up worktree, config files, and all attached
-   windows/panes. Closing an external workspace just closes windows
-   and cleans up config files. Manifest entry moves to archive.
+   with `--force`). Cleans up the worktree and all attached
+   windows/panes. Closing an external workspace just closes windows.
+   Manifest entry moves to archive.
 6. **Agent-agnostic** — works with Claude Code, Codex, or other agents.
    Agent-specific behavior (launch command, config filename) is
    configured per agent type. Per-dock `agent_args` extend the base
    command.
-7. **Gitignore safety** — before writing a config file into any
-   workspace CWD, bay verifies that the repo's `.gitignore` includes
-   the agent's config filename. Refuses if not, offers to add it.
+7. **Minimal repo intrusion** — bay leaves target repos largely
+   untouched. Repo setup is explicit via `bay repo init`, which appends
+   a bay-awareness pointer to configured project files and creates a
+   `.worktreeinclude` file when needed.
 8. **Workspace naming** — each workspace has an immutable ID (w1,
    w2, ..., max+1 within the dock) and a renameable display name.
    Default name is auto-abbreviated from the branch name (stripping
@@ -232,7 +237,7 @@ directory is untouched.
 
 ### 4. Manifest and workspace lifecycle
 
-**Manifest location**: `~/.local/share/bay/manifest.toml`
+**Manifest location**: `~/.local/share/bay/manifest.json`
 
 **Manifest structure** (dock > workspace > window > pane):
 ```toml
