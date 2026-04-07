@@ -138,16 +138,16 @@ func newSurfaceCloseCmd() *cobra.Command {
 	var wsFlag, dockFlag string
 
 	cmd := &cobra.Command{
-		Use:     "close [name]",
+		Use:     "close <name|self>",
 		Aliases: []string{"rm"},
-		Short:   "Close a surface (or current tmux pane if not bay-managed)",
-		Long: `Close a surface by name, or the current pane if no name given.
+		Short:   "Close a surface",
+		Long: `Close a surface by name. Use 'self' to target the current surface.
 
   bay sf close monitor              close "monitor" in the current workspace
   bay sf close w1:monitor           close "monitor" in workspace w1
   bay sf close labs:w1:monitor      fully-qualified
   bay sf close monitor --ws w1      same as w1:monitor
-  bay sf close                      close the current pane
+  bay sf close self                 close the current pane's surface
   bay sf rm shell-2                 same thing with the rm alias`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -165,52 +165,22 @@ func newSurfaceCloseCmd() *cobra.Command {
 	return cmd
 }
 
-// runSurfaceClose closes a named surface, or the current pane if no name was
-// given and no --ws/--dock flags were set. Shared by `bay sf close` and the
-// top-level `bay close`.
+// runSurfaceClose closes a named surface. Shared by `bay sf close` and the
+// top-level `bay close`. Requires an explicit name — `close` is destructive
+// and we don't want a bare invocation to silently close the current pane.
+// Use `bay close self` to target the current surface.
 func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string) error {
-	if len(args) == 0 && wsFlag == "" && dockFlag == "" {
-		return surfaceCloseCurrentPane(eng)
-	}
 	if len(args) == 0 {
-		return fmt.Errorf("--ws/--dock require a surface name")
+		if wsFlag != "" || dockFlag != "" {
+			return fmt.Errorf("--ws/--dock require a surface name")
+		}
+		return fmt.Errorf("specify a surface name (or 'self' to close the current surface)")
 	}
-	dockName, wsName, sName, err := resolveSurfaceArg(eng, args[0], wsFlag, dockFlag)
+	dockName, wsName, sName, err := resolveSurfaceArgOrSelf(eng, args[0], wsFlag, dockFlag)
 	if err != nil {
 		return err
 	}
 	return eng.SurfaceClose(dockName, wsName, sName)
-}
-
-// surfaceCloseCurrentPane closes the surface owning the current tmux pane,
-// or just kills the pane if it isn't tracked or we're not in a bay workspace.
-func surfaceCloseCurrentPane(eng *engine.Engine) error {
-	dockName, wsName, resolveErr := eng.ResolveSelf()
-	if resolveErr != nil {
-		// Not in a bay workspace — just kill the active tmux pane.
-		paneID, tmuxErr := eng.Tmux.CurrentPaneID()
-		if tmuxErr != nil {
-			return resolveErr
-		}
-		return eng.Tmux.KillPane(paneID)
-	}
-
-	paneID, tmuxErr := eng.Tmux.CurrentPaneID()
-	if tmuxErr != nil {
-		return fmt.Errorf("cannot determine current pane")
-	}
-
-	ws, err := eng.WsShow(dockName, wsName)
-	if err != nil {
-		return eng.Tmux.KillPane(paneID)
-	}
-	for _, s := range ws.Surfaces {
-		if s.Tmux != nil && s.Tmux.PaneID == paneID {
-			return eng.SurfaceClose(dockName, wsName, s.Name)
-		}
-	}
-	// Pane not tracked — just kill it.
-	return eng.Tmux.KillPane(paneID)
 }
 
 func newSurfaceRestartCmd() *cobra.Command {
@@ -242,44 +212,22 @@ func newSurfaceRestartCmd() *cobra.Command {
 }
 
 // runSurfaceRestart restarts a named surface, or the current pane's surface
-// if no name was given and no --ws/--dock flags were set. Shared by
-// `bay sf restart`, `bay restart`, and the top-level surface verbs.
+// if no name was given. Shared by `bay sf restart`, `bay restart`, and the
+// top-level surface verbs. Restart is non-destructive, so the bare no-arg
+// form is preserved (unlike `close`).
 func runSurfaceRestart(eng *engine.Engine, args []string, wsFlag, dockFlag string) error {
-	if len(args) == 0 && wsFlag == "" && dockFlag == "" {
-		return surfaceRestartCurrentPane(eng)
-	}
 	if len(args) == 0 {
-		return fmt.Errorf("--ws/--dock require a surface name")
+		if wsFlag != "" || dockFlag != "" {
+			return fmt.Errorf("--ws/--dock require a surface name")
+		}
+		// Bare invocation: restart the current pane via the self keyword.
+		args = []string{"self"}
 	}
-	dockName, wsName, sName, err := resolveSurfaceArg(eng, args[0], wsFlag, dockFlag)
+	dockName, wsName, sName, err := resolveSurfaceArgOrSelf(eng, args[0], wsFlag, dockFlag)
 	if err != nil {
 		return err
 	}
 	return eng.SurfaceRestart(dockName, wsName, sName)
-}
-
-// surfaceRestartCurrentPane restarts the surface owning the current tmux pane.
-func surfaceRestartCurrentPane(eng *engine.Engine) error {
-	dockName, wsName, err := eng.ResolveSelf()
-	if err != nil {
-		return err
-	}
-
-	paneID, tmuxErr := eng.Tmux.CurrentPaneID()
-	if tmuxErr != nil {
-		return fmt.Errorf("cannot determine current pane")
-	}
-
-	ws, err := eng.WsShow(dockName, wsName)
-	if err != nil {
-		return err
-	}
-	for _, s := range ws.Surfaces {
-		if s.Tmux != nil && s.Tmux.PaneID == paneID {
-			return eng.SurfaceRestart(dockName, wsName, s.Name)
-		}
-	}
-	return fmt.Errorf("current pane is not a tracked surface")
 }
 
 func newSurfaceGoCmd() *cobra.Command {
@@ -398,9 +346,12 @@ func newSurfaceShowCmd() *cobra.Command {
 }
 
 // runSurfaceShow prints details for a named surface. Shared by `bay sf show`
-// and the top-level `bay show`.
+// and the top-level `bay show`. Accepts the `self` keyword.
+//
+// Precondition: args must contain exactly one element. Cobra's ExactArgs(1)
+// enforces this in production; callers from tests should pass the same.
 func runSurfaceShow(eng *engine.Engine, args []string, wsFlag, dockFlag string) error {
-	dockName, wsName, sName, err := resolveSurfaceArg(eng, args[0], wsFlag, dockFlag)
+	dockName, wsName, sName, err := resolveSurfaceArgOrSelf(eng, args[0], wsFlag, dockFlag)
 	if err != nil {
 		return err
 	}
@@ -464,10 +415,13 @@ func newSurfaceRenameCmd() *cobra.Command {
 }
 
 // runSurfaceRename renames a surface. The first arg is the old name (which
-// may include a workspace prefix); the second is the new name. Shared by
-// `bay sf rename` and the top-level `bay rename`.
+// may include a workspace prefix or be the `self` keyword); the second is the
+// new name. Shared by `bay sf rename` and the top-level `bay rename`.
+//
+// Precondition: args must contain exactly two elements. Cobra's ExactArgs(2)
+// enforces this in production; callers from tests should pass the same.
 func runSurfaceRename(eng *engine.Engine, args []string, wsFlag, dockFlag string) error {
-	dockName, wsName, oldName, err := resolveSurfaceArg(eng, args[0], wsFlag, dockFlag)
+	dockName, wsName, oldName, err := resolveSurfaceArgOrSelf(eng, args[0], wsFlag, dockFlag)
 	if err != nil {
 		return err
 	}

@@ -291,3 +291,91 @@ func TestResolveWsArg_DockFlagConflict(t *testing.T) {
 		t.Errorf("expected --dock conflict, got %v", err)
 	}
 }
+
+// --- resolveSurfaceArgOrSelf ---
+
+// selfFixture builds a workspace with two surfaces and pins the tmux mock to
+// the second one. The "current pane" therefore maps to surface "second".
+func selfFixture(t *testing.T) *engine.Engine {
+	t.Helper()
+	eng, mockTmux, _, _ := testNavEngine(t)
+
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "second", "", "", "v"); err != nil {
+		t.Fatalf("SurfaceAdd second: %v", err)
+	}
+	ws, _ := eng.WsShow("labs", "w1")
+	// Pin tmux context to the "second" surface (index 1).
+	mockTmux.SetCurrentWindowID(ws.Surfaces[1].Tmux.WindowID)
+	mockTmux.SetCurrentPaneID(ws.Surfaces[1].Tmux.PaneID)
+
+	return eng
+}
+
+func TestResolveSurfaceArgOrSelf_VirtualSelf(t *testing.T) {
+	eng := selfFixture(t)
+
+	dock, ws, surface, err := resolveSurfaceArgOrSelf(eng, "self", "", "")
+	if err != nil {
+		t.Fatalf("resolveSurfaceArgOrSelf: %v", err)
+	}
+	if dock != "labs" || ws != "w1" || surface != "second" {
+		t.Errorf("got (%q,%q,%q), want (labs,w1,second)", dock, ws, surface)
+	}
+}
+
+func TestResolveSurfaceArgOrSelf_LiteralWinsOverVirtual(t *testing.T) {
+	eng := selfFixture(t)
+	// Add a literal surface named "self" — should win over the virtual lookup.
+	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "self", "", "", "v"); err != nil {
+		t.Fatalf("SurfaceAdd self: %v", err)
+	}
+
+	_, _, surface, err := resolveSurfaceArgOrSelf(eng, "self", "", "")
+	if err != nil {
+		t.Fatalf("resolveSurfaceArgOrSelf: %v", err)
+	}
+	if surface != "self" {
+		t.Errorf("surface = %q, want literal 'self'", surface)
+	}
+}
+
+func TestResolveSurfaceArgOrSelf_QualifiedSelfIsAlwaysLiteral(t *testing.T) {
+	eng := selfFixture(t)
+	// Qualified form must NOT silently substitute the current pane's surface.
+	// It should return the literal "self" name regardless of whether such a
+	// surface exists; the engine call would error later if not.
+	_, _, surface, err := resolveSurfaceArgOrSelf(eng, "w1:self", "", "")
+	if err != nil {
+		t.Fatalf("resolveSurfaceArgOrSelf: %v", err)
+	}
+	if surface != "self" {
+		t.Errorf("surface = %q, want literal 'self' (no virtual fallback for qualified)", surface)
+	}
+}
+
+func TestResolveSurfaceArgOrSelf_FlagDisablesSelfFallback(t *testing.T) {
+	eng := selfFixture(t)
+	// --ws set means "self" is a literal name, not the virtual keyword.
+	_, _, surface, err := resolveSurfaceArgOrSelf(eng, "self", "w1", "")
+	if err != nil {
+		t.Fatalf("resolveSurfaceArgOrSelf: %v", err)
+	}
+	if surface != "self" {
+		t.Errorf("surface = %q, want literal 'self' (flags disable virtual fallback)", surface)
+	}
+}
+
+func TestResolveSurfaceArgOrSelf_NonSelfDelegates(t *testing.T) {
+	eng := selfFixture(t)
+	// Any non-"self" positional should behave exactly like resolveSurfaceArg.
+	dock, ws, surface, err := resolveSurfaceArgOrSelf(eng, "w1:second", "", "")
+	if err != nil {
+		t.Fatalf("resolveSurfaceArgOrSelf: %v", err)
+	}
+	if dock != "labs" || ws != "w1" || surface != "second" {
+		t.Errorf("got (%q,%q,%q), want (labs,w1,second)", dock, ws, surface)
+	}
+}
