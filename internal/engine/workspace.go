@@ -373,6 +373,7 @@ func (e *Engine) WsRename(dockName, wsName, newName string) error {
 
 		ws.Name = newName
 		ws.NameOverridden = true
+		ws.LastActive = time.Now().Unix()
 		e.updateWindowNames(ws, newName)
 
 		return nil

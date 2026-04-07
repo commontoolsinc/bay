@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/commontoolsinc/bay/internal/manifest"
 )
@@ -99,6 +100,7 @@ func (e *Engine) SurfaceAdd(dockName, wsName string, surfaceType manifest.Surfac
 		return err
 	}
 
+	ws.LastActive = time.Now().Unix()
 	return e.saveManifest(m)
 }
 
@@ -133,6 +135,7 @@ func (e *Engine) SurfaceAddGUI(dockName, wsName, name, appCommand string, pid in
 		return err
 	}
 
+	ws.LastActive = time.Now().Unix()
 	return e.saveManifest(m)
 }
 
@@ -172,6 +175,7 @@ func (e *Engine) SurfaceClose(dockName, wsName, surfaceName string) error {
 		return err
 	}
 
+	ws.LastActive = time.Now().Unix()
 	return e.saveManifest(m)
 }
 
@@ -219,7 +223,11 @@ func (e *Engine) SurfaceRestart(dockName, wsName, surfaceName string) error {
 	}
 
 	_ = e.Tmux.RespawnPane(s.Tmux.PaneID, ws.Path, respawnCmd)
-	return nil
+
+	// Bump LastActive so the monitor's activity gate keeps fetching
+	// merge data for this workspace's repo.
+	ws.LastActive = time.Now().Unix()
+	return e.saveManifest(m)
 }
 
 // SurfaceRename renames a surface within a workspace.
@@ -245,6 +253,7 @@ func (e *Engine) SurfaceRename(dockName, wsName, oldName, newName string) error 
 			return fmt.Errorf("surface name %q already in use in workspace %q", newName, wsName)
 		}
 		s.Name = newName
+		ws.LastActive = time.Now().Unix()
 		return nil
 	})
 }

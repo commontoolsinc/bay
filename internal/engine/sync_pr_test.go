@@ -121,6 +121,47 @@ func TestSyncAll_DoesNotRecheckWorkspaceWithPRSet(t *testing.T) {
 	}
 }
 
+// --- parallelSyncPRs ---
+
+func TestSyncAll_ParallelChecksMultipleWorkspaces(t *testing.T) {
+	eng, _ := testEngine(t)
+	mockGit := eng.Git.(*git.Mock)
+
+	// Create N workspaces with branches and configure mock PR numbers.
+	const n = 5
+	for i := 0; i < n; i++ {
+		wsName := "w" + string(rune('1'+i))
+		branch := "feature/branch-" + string(rune('1'+i))
+		wsPath := seedWorktreeWorkspace(t, eng, "labs", wsName, branch)
+		mockGit.SetPR(wsPath, branch, "10"+string(rune('0'+i)))
+	}
+
+	eng.SyncAll()
+
+	// All N workspaces should have their PR populated and PRChecked set.
+	m, _ := eng.LoadManifest()
+	for i := 0; i < n; i++ {
+		wsName := "w" + string(rune('1'+i))
+		ws := m.FindDock("labs").FindWorkspace(wsName)
+		if ws == nil {
+			t.Errorf("workspace %q missing", wsName)
+			continue
+		}
+		wantPR := "10" + string(rune('0'+i))
+		if ws.Worktree.PR != wantPR {
+			t.Errorf("%s: PR = %q, want %q", wsName, ws.Worktree.PR, wantPR)
+		}
+		if !ws.Worktree.PRChecked {
+			t.Errorf("%s: PRChecked should be true", wsName)
+		}
+	}
+
+	// Each workspace should have been queried exactly once.
+	if got := len(mockGit.Calls("PRForBranch")); got != n {
+		t.Errorf("PRForBranch call count = %d, want %d", got, n)
+	}
+}
+
 // --- syncWorkspaceMergeStatus ---
 
 func TestSyncAll_MarksMergedWorkspaceDone(t *testing.T) {

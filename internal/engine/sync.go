@@ -2,11 +2,18 @@ package engine
 
 import (
 	"os"
+	"sync"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/manifest"
 )
+
+// prSyncConcurrency caps the number of concurrent gh pr view calls during
+// the parallel PR sync pass. Each call shells out and takes ~500ms; bounding
+// keeps display latency reasonable on docks with many fresh workspaces.
+const prSyncConcurrency = 10
 
 // syncWorkspaceGitState checks the actual git branch of a workspace and
 // updates the manifest and tmux window names if the branch has changed.
@@ -109,7 +116,11 @@ func (e *Engine) SyncAll() {
 		return
 	}
 
-	changed := false
+	// Run PR detection in parallel for any workspaces that need it. This
+	// pass blocks until all gh calls return; the per-workspace loop below
+	// then sees PRChecked=true on those workspaces and skips them.
+	changed := e.parallelSyncPRs(m)
+
 	for i := range m.Docks {
 		dock := &m.Docks[i]
 		for j := range dock.Workspaces {
@@ -132,6 +143,68 @@ func (e *Engine) SyncAll() {
 	if changed {
 		_ = e.saveManifest(m)
 	}
+}
+
+// parallelSyncPRs runs gh pr view in parallel for all workspaces in the
+// manifest that need PR detection. Bounded by prSyncConcurrency. Returns
+// true if any workspace's PR/PRChecked state was updated.
+//
+// Each goroutine writes to a different *Workspace, so the writes are
+// disjoint and need no mutex. The wg.Wait happens-before any subsequent
+// reads in SyncAll.
+func (e *Engine) parallelSyncPRs(m *manifest.Manifest) bool {
+	var todo []*manifest.Workspace
+	for i := range m.Docks {
+		dock := &m.Docks[i]
+		for j := range dock.Workspaces {
+			ws := &dock.Workspaces[j]
+			if !needsPRCheck(ws) {
+				continue
+			}
+			todo = append(todo, ws)
+		}
+	}
+	if len(todo) == 0 {
+		return false
+	}
+
+	sem := make(chan struct{}, prSyncConcurrency)
+	var wg sync.WaitGroup
+	var changed int64
+
+	for _, ws := range todo {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(ws *manifest.Workspace) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			wsPath := config.ExpandPath(ws.Path)
+			if _, err := os.Stat(wsPath); err != nil {
+				return
+			}
+			pr, err := e.Git.PRForBranch(wsPath, ws.Worktree.Branch)
+			if err != nil {
+				// Transient — leave PRChecked false so we retry later.
+				return
+			}
+			ws.Worktree.PR = pr
+			ws.Worktree.PRChecked = true
+			atomic.AddInt64(&changed, 1)
+		}(ws)
+	}
+	wg.Wait()
+
+	return changed > 0
+}
+
+// needsPRCheck reports whether a workspace is eligible for PR auto-detection.
+func needsPRCheck(ws *manifest.Workspace) bool {
+	return ws.Path != "" &&
+		ws.Worktree != nil &&
+		ws.Worktree.Branch != "" &&
+		ws.Worktree.PR == "" &&
+		!ws.Worktree.PRChecked
 }
 
 // syncSurfaceState removes dead surfaces — tmux surfaces whose windows
