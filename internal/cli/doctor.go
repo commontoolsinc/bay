@@ -102,10 +102,14 @@ func newDoctorCmd() *cobra.Command {
 				ok = false
 			} else {
 				missingCount := 0
+				worktreesWithBranches := 0
 				for i := range m.Docks {
 					dock := &m.Docks[i]
 					for j := range dock.Workspaces {
 						ws := &dock.Workspaces[j]
+						if ws.Worktree != nil && ws.Worktree.Branch != "" {
+							worktreesWithBranches++
+						}
 						if ws.Path == "" {
 							continue
 						}
@@ -119,6 +123,16 @@ func newDoctorCmd() *cobra.Command {
 				}
 				if missingCount == 0 {
 					fmt.Println("[OK] all workspace paths exist")
+				}
+
+				// Warn if gh is missing but we have worktrees that would
+				// benefit from PR auto-detection.
+				if worktreesWithBranches > 0 {
+					if _, ghErr := exec.LookPath("gh"); ghErr != nil {
+						fmt.Println("[INFO] gh not installed — PR numbers won't be auto-detected for branches")
+					} else {
+						fmt.Println("[OK] gh available (PR auto-detection enabled)")
+					}
 				}
 
 				manifestWarnings := checkManifestConsistency(m, eng.Config)
