@@ -172,6 +172,34 @@ func ExpandPath(path string) string {
 	return path
 }
 
+// CanonicalPath returns path with ~ expanded and all symlinks resolved. If
+// EvalSymlinks fails (typically because the path doesn't exist), the
+// expanded form is returned unchanged. Use this whenever a path needs to
+// be compared against another path that may have been recorded with a
+// different symlink representation — common on macOS where /var is a
+// symlink to /private/var, /tmp to /private/tmp, etc.
+func CanonicalPath(path string) string {
+	expanded := ExpandPath(path)
+	if resolved, err := filepath.EvalSymlinks(expanded); err == nil {
+		return resolved
+	}
+	return expanded
+}
+
+// IsPathUnder reports whether child is at or nested inside parent. Both
+// paths are canonicalized via CanonicalPath before comparison, so symlink
+// indirection on either side is handled. An exact match returns true; a
+// child whose canonical form has parent's canonical form as a directory
+// prefix also returns true.
+func IsPathUnder(child, parent string) bool {
+	c := CanonicalPath(child)
+	p := CanonicalPath(parent)
+	if c == p {
+		return true
+	}
+	return strings.HasPrefix(c, p+string(filepath.Separator))
+}
+
 // NormalizePath converts a path to an absolute form suitable for config storage.
 // Relative paths are resolved to absolute. Paths under the user's home directory
 // are shortened to use ~/. This ensures paths work from any working directory.
