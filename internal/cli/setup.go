@@ -217,13 +217,16 @@ func shellRCFile(shell string) string {
 	}
 }
 
-// bayKeybindings defines all bay tmux keybindings.
-var bayKeybindings = []struct {
+// bayKeybinding describes one canonical bay tmux binding.
+type bayKeybinding struct {
 	key      string
 	cmd      string
 	desc     string
 	tmuxVerb string // "run-shell" or "display-popup -E" (for interactive commands)
-}{
+}
+
+// bayKeybindings defines all bay tmux keybindings.
+var bayKeybindings = []bayKeybinding{
 	// Surface navigation (intra-workspace)
 	{"M-j", "bay surface next", "Option+j: next surface in workspace", "run-shell"},
 	{"M-k", "bay surface prev", "Option+k: prev surface in workspace", "run-shell"},
@@ -241,6 +244,109 @@ var bayKeybindings = []struct {
 	{"M-s", "bay shell", "Option+s: split a shell pane", "run-shell"},
 }
 
+const bayKeybindingsMarker = "# Bay keybindings"
+
+// canonicalLine returns the literal line bay would write for this binding.
+func (kb bayKeybinding) canonicalLine() string {
+	return fmt.Sprintf("bind-key -n %s %s '%s'", kb.key, kb.tmuxVerb, kb.cmd)
+}
+
+// extractBayBlock returns the bay keybindings block (everything from the
+// "# Bay keybindings" marker until the first blank line or first line
+// that isn't a bind-key/bind/comment) along with a flag indicating
+// whether the block was found. The marker line itself is included.
+func extractBayBlock(content string) (string, bool) {
+	allLines := strings.Split(content, "\n")
+	start := -1
+	for i, l := range allLines {
+		if strings.TrimSpace(l) == bayKeybindingsMarker {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return "", false
+	}
+	blockLines := []string{allLines[start]}
+	for i := start + 1; i < len(allLines); i++ {
+		trimmed := strings.TrimSpace(allLines[i])
+		if trimmed == "" {
+			break
+		}
+		if !strings.HasPrefix(trimmed, "bind-key") &&
+			!strings.HasPrefix(trimmed, "bind ") &&
+			!strings.HasPrefix(trimmed, "#") {
+			break
+		}
+		blockLines = append(blockLines, allLines[i])
+	}
+	return strings.Join(blockLines, "\n"), true
+}
+
+// commandsInBlock returns the set of single-quoted commands found on
+// any active (non-comment) bind-key/bind line in the block.
+func commandsInBlock(block string) map[string]bool {
+	cmds := map[string]bool{}
+	for _, l := range strings.Split(block, "\n") {
+		trimmed := strings.TrimSpace(l)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if !strings.HasPrefix(trimmed, "bind-key") && !strings.HasPrefix(trimmed, "bind ") {
+			continue
+		}
+		// The command is the only single-quoted segment on the line.
+		first := strings.Index(trimmed, "'")
+		last := strings.LastIndex(trimmed, "'")
+		if first < 0 || first >= last {
+			continue
+		}
+		cmds[trimmed[first+1:last]] = true
+	}
+	return cmds
+}
+
+// conflictingKeys returns the canonical keys that are already actively
+// bound in content. Walks lines and skips blanks and comments, so a
+// commented-out binding does not count as a conflict.
+func conflictingKeys(content string, kbs []bayKeybinding) []string {
+	bound := map[string]bool{}
+	for _, l := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(l)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		for _, kb := range kbs {
+			if strings.HasPrefix(trimmed, "bind-key -n "+kb.key+" ") ||
+				strings.HasPrefix(trimmed, "bind -n "+kb.key+" ") {
+				bound[kb.key] = true
+			}
+		}
+	}
+	var conflicts []string
+	for _, kb := range kbs {
+		if bound[kb.key] {
+			conflicts = append(conflicts, kb.key)
+		}
+	}
+	return conflicts
+}
+
+// missingCanonicalLines returns the canonical bind-key lines for any
+// command in kbs that is not bound in the block. Diff is by command,
+// not by key, so a user who rebound a bay command to a different key
+// is not flagged as missing it.
+func missingCanonicalLines(block string, kbs []bayKeybinding) []string {
+	have := commandsInBlock(block)
+	var missing []string
+	for _, kb := range kbs {
+		if !have[kb.cmd] {
+			missing = append(missing, kb.canonicalLine())
+		}
+	}
+	return missing
+}
+
 func installKeybindings(reader *bufio.Reader) {
 	fmt.Println()
 
@@ -250,58 +356,24 @@ func installKeybindings(reader *bufio.Reader) {
 	existing, _ := os.ReadFile(tmuxConf)
 	content := string(existing)
 
-	// Build the full bay keybindings block
-	var lines []string
-	for _, kb := range bayKeybindings {
-		line := fmt.Sprintf("bind-key -n %s %s '%s'", kb.key, kb.tmuxVerb, kb.cmd)
-		lines = append(lines, line)
-	}
-
-	// Check if all bindings are present with the correct format
-	allPresent := true
-	for _, line := range lines {
-		if !strings.Contains(content, line) {
-			allPresent = false
-			break
+	// If a "# Bay keybindings" block already exists, leave it alone —
+	// the user may have customized it. Print a heads-up listing any
+	// canonical commands their block doesn't bind, so they know what
+	// they could be missing.
+	if block, found := extractBayBlock(content); found {
+		fmt.Printf("Bay keybindings block found in %s — leaving as-is.\n", tmuxConf)
+		if missing := missingCanonicalLines(block, bayKeybindings); len(missing) > 0 {
+			fmt.Printf("Note: %d canonical binding(s) not bound in your block:\n", len(missing))
+			for _, line := range missing {
+				fmt.Printf("  %s\n", line)
+			}
+			fmt.Printf("(To re-install the defaults, delete the block from %s and re-run bay setup.)\n", tmuxConf)
 		}
-	}
-	if allPresent {
-		fmt.Println("Tmux keybindings already up to date.")
 		return
 	}
 
-	// Check for conflicting non-bay bindings
-	// Strip out the bay block to check only user bindings
-	userContent := content
-	if idx := strings.Index(userContent, "\n# Bay keybindings"); idx >= 0 {
-		rest := userContent[idx+1:]
-		endIdx := len(rest)
-		for i, line := range strings.Split(rest, "\n") {
-			if i == 0 {
-				continue
-			}
-			trimmed := strings.TrimSpace(line)
-			if trimmed != "" && !strings.HasPrefix(trimmed, "bind") && !strings.HasPrefix(trimmed, "#") {
-				endIdx = strings.Index(rest, line)
-				break
-			}
-			if trimmed == "" && i > 1 {
-				endIdx = strings.Index(rest, line)
-				break
-			}
-		}
-		userContent = userContent[:idx] + userContent[idx+1+endIdx:]
-	}
-
-	var conflicts []string
-	for _, kb := range bayKeybindings {
-		// Look for bind-key -n <key> in non-bay content
-		pattern := "bind-key -n " + kb.key + " "
-		altPattern := "bind -n " + kb.key + " "
-		if strings.Contains(userContent, pattern) || strings.Contains(userContent, altPattern) {
-			conflicts = append(conflicts, kb.key)
-		}
-	}
+	// No existing block. Check for conflicts on canonical keys.
+	conflicts := conflictingKeys(content, bayKeybindings)
 
 	if len(conflicts) > 0 {
 		fmt.Printf("Warning: these keys are already bound in %s: %s\n", tmuxConf, strings.Join(conflicts, ", "))
@@ -310,9 +382,9 @@ func installKeybindings(reader *bufio.Reader) {
 		fmt.Println()
 	}
 
-	// Show what we'll add
+	// Show what we'll add.
 	fmt.Printf("These tmux keybindings will be added to %s:\n\n", tmuxConf)
-	for i, kb := range bayKeybindings {
+	for _, kb := range bayKeybindings {
 		conflict := ""
 		for _, c := range conflicts {
 			if c == kb.key {
@@ -320,7 +392,7 @@ func installKeybindings(reader *bufio.Reader) {
 				break
 			}
 		}
-		fmt.Printf("  %s%s\n", lines[i], conflict)
+		fmt.Printf("  %s%s\n", kb.canonicalLine(), conflict)
 		fmt.Printf("    %s\n\n", kb.desc)
 	}
 	fmt.Print("Add these keybindings? [Y/n] ")
@@ -329,37 +401,13 @@ func installKeybindings(reader *bufio.Reader) {
 		return
 	}
 
-	// Remove any existing bay keybinding block
-	if idx := strings.Index(content, "\n# Bay keybindings"); idx >= 0 {
-		// Find the end of the bay block (next blank line or non-bind line)
-		rest := content[idx+1:]
-		endIdx := len(rest)
-		inBlock := false
-		for i, line := range strings.Split(rest, "\n") {
-			if i == 0 {
-				inBlock = true
-				continue
-			}
-			trimmed := strings.TrimSpace(line)
-			if inBlock && trimmed != "" && !strings.HasPrefix(trimmed, "bind-key") && !strings.HasPrefix(trimmed, "#") {
-				endIdx = strings.Index(rest, line)
-				break
-			}
-			if inBlock && trimmed == "" {
-				endIdx = strings.Index(rest, line)
-				break
-			}
-		}
-		content = content[:idx] + content[idx+1+endIdx:]
+	// Append the canonical block. We returned early above if a block
+	// already existed, so there's nothing to strip.
+	newBlock := "\n" + bayKeybindingsMarker + "\n"
+	for _, kb := range bayKeybindings {
+		newBlock += kb.canonicalLine() + "\n"
 	}
-
-	// Write the new block
-	block := "\n# Bay keybindings\n"
-	for _, line := range lines {
-		block += line + "\n"
-	}
-
-	if err := os.WriteFile(tmuxConf, []byte(content+block), 0o644); err != nil {
+	if err := os.WriteFile(tmuxConf, []byte(content+newBlock), 0o644); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not write %s: %v\n", tmuxConf, err)
 		return
 	}
