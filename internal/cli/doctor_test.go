@@ -22,22 +22,16 @@ func TestKeybindingsIncludeSurfaceNavigation(t *testing.T) {
 
 	// Surface navigation keybindings must be present.
 	for _, want := range []string{
-		"M-j", "M-k",   // surface next/prev
-		"M-g",           // surface picker
-		"M-a",           // next waiting surface
-		"M-J", "M-K",   // workspace next/prev
-		"M-G",           // workspace picker
-		"M-A",           // next waiting workspace
-		"M-1", "M-9",   // surface by index (first and last)
+		"M-j", "M-k", // surface next/prev
+		"M-g",        // surface picker
+		"M-a",        // next waiting surface
+		"M-J", "M-K", // workspace next/prev
+		"M-G",        // workspace picker
+		"M-A",        // next waiting workspace
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("keybindings missing %q", want)
 		}
-	}
-
-	// Should have at least 20 keybindings (surface nav + ws nav + indices + utility).
-	if len(lines) < 19 {
-		t.Errorf("expected at least 19 keybindings, got %d", len(lines))
 	}
 }
 

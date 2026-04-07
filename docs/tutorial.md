@@ -122,7 +122,6 @@ navigable.
 
 - `Option+j` / `Option+k` — next / previous surface
 - `Option+g` — fuzzy picker (type to filter, Enter to select)
-- `Option+1`..`Option+9` — jump by position
 
 **Between workspaces**:
 
