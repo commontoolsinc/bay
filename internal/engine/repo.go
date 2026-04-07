@@ -168,7 +168,7 @@ func (e *Engine) RepoInit(name string) error {
 	// .worktreeinclude: create with a comment if it doesn't exist.
 	wtIncludePath := filepath.Join(repoPath, ".worktreeinclude")
 	if _, err := os.Stat(wtIncludePath); os.IsNotExist(err) {
-		content := "# Files to copy into new worktrees (gitignore pattern syntax).\n# Example: .env\n"
+		content := "# Repo-root paths to copy into new worktrees.\n# Example: .env\n"
 		if err := os.WriteFile(wtIncludePath, []byte(content), 0o644); err != nil {
 			return fmt.Errorf("creating .worktreeinclude: %w", err)
 		}

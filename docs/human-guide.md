@@ -319,17 +319,15 @@ This does three things:
    commands."*
 2. Creates `.worktreeinclude` if missing, so gitignored files (`.env`,
    etc.) get copied to new worktrees.
-3. Ensures `.gitignore` has necessary entries.
 
 `bay repo add` calls `repo init` automatically. `bay doctor` flags
 repos missing bay awareness.
 
 ### .worktreeinclude
 
-Bay respects `.worktreeinclude` files (same format as `.gitignore`).
-At worktree creation time, bay reads `.worktreeinclude` from the repo
-root, finds matching gitignored files, and copies them into the new
-worktree.
+Bay reads `.worktreeinclude` as a newline-delimited list of repo-root
+paths to copy into each new worktree. At worktree creation time, bay
+copies any listed files that exist into the new worktree.
 
 ### Session resumption
 
