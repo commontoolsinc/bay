@@ -277,21 +277,36 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	return updatedWs, nil
 }
 
-// WsClose closes a workspace and all its surfaces.
-func (e *Engine) WsClose(dockName, wsName string, force bool) error {
+// closeWorkspaceState does the safety checks, worktree removal, archive,
+// and manifest update for a workspace — but NOT the destructive tmux
+// kill. Returns the tmux window IDs the caller should kill afterward.
+//
+// This split exists so callers can defer all destructive tmux work until
+// every manifest update has been persisted. When bay is invoked from
+// inside a pane being killed, tmux SIGHUPs bay shortly after the kill
+// command is issued; if the manifest update were still pending at that
+// moment, the user-visible state would be left inconsistent. By doing
+// the manifest update first, the worst case is that bay dies between
+// the manifest write and the kill — leaving the manifest correct and
+// the pane briefly orphaned (next bay invocation will skip it).
+//
+// Callers: WsClose (kills the returned IDs immediately), DockClose
+// (collects across all workspaces and uses KillSession at the end),
+// RepoRemove (collects across all docks), WsCloseByStatus (collects
+// across all targets).
+func (e *Engine) closeWorkspaceState(dockName, wsName string, force bool) ([]string, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	dock := m.FindDock(dockName)
 	if dock == nil {
-		return fmt.Errorf("unknown dock %q", dockName)
+		return nil, fmt.Errorf("unknown dock %q", dockName)
 	}
-
 	ws := dock.FindWorkspace(wsName)
 	if ws == nil {
-		return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
+		return nil, fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
 	}
 
 	// Safety checks for worktree workspaces.
@@ -299,40 +314,43 @@ func (e *Engine) WsClose(dockName, wsName string, force bool) error {
 		if _, statErr := os.Stat(ws.Path); statErr == nil {
 			dirty, err := e.Git.IsDirty(ws.Path)
 			if err != nil {
-				return fmt.Errorf("checking workspace state: %w", err)
+				return nil, fmt.Errorf("checking workspace state: %w", err)
 			}
 			if dirty {
-				return fmt.Errorf("workspace %q has uncommitted changes (use --force to override)", wsName)
+				return nil, fmt.Errorf("workspace %q has uncommitted changes (use --force to override)", wsName)
 			}
 
 			unpushed, err := e.Git.HasUnpushedCommits(ws.Path)
 			if err != nil {
-				return fmt.Errorf("workspace %q: could not verify push status: %w (use --force to override)", wsName, err)
+				return nil, fmt.Errorf("workspace %q: could not verify push status: %w (use --force to override)", wsName, err)
 			}
 			if unpushed {
-				return fmt.Errorf("workspace %q has unpushed commits (use --force to override)", wsName)
+				return nil, fmt.Errorf("workspace %q has unpushed commits (use --force to override)", wsName)
 			}
 		}
 	}
 
-	// Close all tmux windows for this workspace's surfaces.
-	closedWindows := map[string]bool{}
+	// Collect window IDs (deduped) the caller should kill once all
+	// manifest state is persisted.
+	seen := map[string]bool{}
+	var windowIDs []string
 	for _, s := range ws.Surfaces {
-		if s.Tmux != nil && s.Tmux.WindowID != "" && !closedWindows[s.Tmux.WindowID] {
-			e.ensurePlaceholderIfLastWindow(dockName, s.Tmux.WindowID)
-			_ = e.Tmux.KillWindow(s.Tmux.WindowID)
-			closedWindows[s.Tmux.WindowID] = true
+		if s.Tmux != nil && s.Tmux.WindowID != "" && !seen[s.Tmux.WindowID] {
+			seen[s.Tmux.WindowID] = true
+			windowIDs = append(windowIDs, s.Tmux.WindowID)
 		}
 	}
 
-	// Remove worktree if applicable.
+	// Remove worktree from disk. This is destructive of the worktree
+	// directory (and may invalidate the shell's CWD), but does not
+	// kill bay's process.
 	if ws.Type == manifest.WorkspaceTypeWorktree && ws.Worktree != nil && ws.Worktree.Repo != "" {
 		repo := m.FindRepo(ws.Worktree.Repo)
 		if repo != nil {
 			repoPath := config.ExpandPath(repo.Path)
 			if err := e.Git.RemoveWorktree(repoPath, ws.Path, force); err != nil {
 				if !force {
-					return fmt.Errorf("removing worktree: %w", err)
+					return nil, fmt.Errorf("removing worktree: %w", err)
 				}
 			}
 			wtDir := repo.EffectiveWorktreeDir()
@@ -359,19 +377,38 @@ func (e *Engine) WsClose(dockName, wsName string, force bool) error {
 	_ = manifest.SaveArchive(e.archivePath, archive)
 
 	// Remove from manifest atomically in case another command updated the dock.
-	return e.withManifest(func(m *manifest.Manifest) error {
+	if err := e.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)
 		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		if err := dock.RemoveWorkspace(wsName); err != nil {
-			return err
-		}
-		return nil
-	})
+		return dock.RemoveWorkspace(wsName)
+	}); err != nil {
+		return nil, err
+	}
+	return windowIDs, nil
+}
+
+func (e *Engine) WsClose(dockName, wsName string, force bool) error {
+	windowIDs, err := e.closeWorkspaceState(dockName, wsName, force)
+	if err != nil {
+		return err
+	}
+	// Manifest is saved. Now kill the windows — bay may die mid-call if
+	// it's running in one of these panes, but the user-visible state is
+	// already correct.
+	for _, id := range windowIDs {
+		e.ensurePlaceholderIfLastWindow(dockName, id)
+		_ = e.Tmux.KillWindow(id)
+	}
+	return nil
 }
 
 // WsCloseByStatus closes all workspaces with the given status.
+//
+// Manifest updates for ALL targets are persisted before any tmux kill,
+// so that bay invoked from inside one of the affected panes doesn't
+// leave the rest of the targets half-closed when its host pane dies.
 func (e *Engine) WsCloseByStatus(dockName, status string, force bool) (closed []string, skipped []string, err error) {
 	if err := ValidateStatus(status); err != nil {
 		return nil, nil, err
@@ -405,12 +442,29 @@ func (e *Engine) WsCloseByStatus(dockName, status string, force bool) (closed []
 		return nil, nil, fmt.Errorf("no workspaces with status %q found", status)
 	}
 
+	// First pass: do all manifest mutations, collecting window IDs to kill.
+	type pendingKill struct {
+		dock      string
+		windowIDs []string
+	}
+	var pending []pendingKill
 	for _, t := range targets {
 		label := t.dock + ":" + t.name
-		if closeErr := e.WsClose(t.dock, t.name, force); closeErr != nil {
+		ids, closeErr := e.closeWorkspaceState(t.dock, t.name, force)
+		if closeErr != nil {
 			skipped = append(skipped, label+" ("+closeErr.Error()+")")
-		} else {
-			closed = append(closed, label)
+			continue
+		}
+		closed = append(closed, label)
+		pending = append(pending, pendingKill{dock: t.dock, windowIDs: ids})
+	}
+
+	// Second pass: kill tmux windows. Safe to die at any point — every
+	// closed-workspace's manifest entry is already persisted.
+	for _, p := range pending {
+		for _, id := range p.windowIDs {
+			e.ensurePlaceholderIfLastWindow(p.dock, id)
+			_ = e.Tmux.KillWindow(id)
 		}
 	}
 	return closed, skipped, nil

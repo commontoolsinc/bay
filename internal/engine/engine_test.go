@@ -735,6 +735,246 @@ func TestSurfaceClose(t *testing.T) {
 	}
 }
 
+// Regression: SurfaceClose, WsClose, DockClose, and RepoRemove must
+// persist their manifest mutations BEFORE issuing any tmux kill, so that
+// bay invoked from inside a pane being killed doesn't leave the manifest
+// half-updated when tmux SIGHUPs the process. The hook on the mock fires
+// at the start of every kill call; the assertion is that the manifest on
+// disk already reflects the removal at that moment.
+
+func TestSurfaceClose_PersistsManifestBeforeKill(t *testing.T) {
+	eng, _ := testEngine(t)
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell-2", "", "", "v"); err != nil {
+		t.Fatalf("SurfaceAdd: %v", err)
+	}
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.OnKill = func(method, target string) {
+		m, err := manifest.Load(eng.manifestPath)
+		if err != nil {
+			t.Errorf("loading manifest in kill hook: %v", err)
+			return
+		}
+		ws := m.FindDock("labs").FindWorkspace("w1")
+		if ws == nil {
+			t.Errorf("workspace gone from manifest at kill time (unexpected)")
+			return
+		}
+		if ws.FindSurface("shell-2") != nil {
+			t.Errorf("manifest still references surface 'shell-2' at the moment of %s(%s) — kill happened before manifest update", method, target)
+		}
+	}
+
+	if err := eng.SurfaceClose("labs", "w1", "shell-2"); err != nil {
+		t.Fatalf("SurfaceClose: %v", err)
+	}
+}
+
+func TestWsClose_PersistsManifestBeforeKill(t *testing.T) {
+	eng, _ := testEngine(t)
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.OnKill = func(method, target string) {
+		m, err := manifest.Load(eng.manifestPath)
+		if err != nil {
+			t.Errorf("loading manifest in kill hook: %v", err)
+			return
+		}
+		dock := m.FindDock("labs")
+		if dock != nil && dock.FindWorkspace("w1") != nil {
+			t.Errorf("manifest still references workspace 'w1' at the moment of %s(%s) — kill happened before manifest update", method, target)
+		}
+	}
+
+	if err := eng.WsClose("labs", "w1", true); err != nil {
+		t.Fatalf("WsClose: %v", err)
+	}
+}
+
+func TestDockClose_PersistsManifestBeforeKill(t *testing.T) {
+	eng, _ := testEngine(t)
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"}); err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.OnKill = func(method, target string) {
+		m, err := manifest.Load(eng.manifestPath)
+		if err != nil {
+			t.Errorf("loading manifest in kill hook: %v", err)
+			return
+		}
+		// By the time any kill fires, the dock and both workspaces must
+		// already be gone from the manifest.
+		if m.FindDock("labs") != nil {
+			t.Errorf("manifest still references dock 'labs' at the moment of %s(%s) — kill happened before manifest update", method, target)
+		}
+	}
+
+	if err := eng.DockClose("labs", true); err != nil {
+		t.Fatalf("DockClose: %v", err)
+	}
+}
+
+// On a non-force DockClose that fails partway through, workspaces that
+// were already removed from the manifest must also have their tmux
+// windows killed — otherwise we leave orphan windows alive in the dock
+// session that no manifest entry refers to.
+func TestDockClose_NonForceFailure_KillsAlreadyRemovedWorkspaceWindows(t *testing.T) {
+	eng, _ := testEngine(t)
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+		t.Fatalf("WsNew w1: %v", err)
+	}
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"}); err != nil {
+		t.Fatalf("WsNew w2: %v", err)
+	}
+
+	// Capture w1's tmux window ID before close (so we can verify it
+	// gets killed even though the loop bails out on w2).
+	pre, _ := eng.LoadManifest()
+	w1 := pre.FindDock("labs").FindWorkspace("w1")
+	if w1 == nil || len(w1.Surfaces) == 0 || w1.Surfaces[0].Tmux == nil {
+		t.Fatalf("w1 missing tmux surface")
+	}
+	w1WindowID := w1.Surfaces[0].Tmux.WindowID
+
+	// Make w2 fail the safety check: the worktree dir must exist on
+	// disk (closeWorkspaceState skips dirty checks if !exists), and
+	// the git mock must report it dirty.
+	w2 := pre.FindDock("labs").FindWorkspace("w2")
+	if w2 == nil {
+		t.Fatalf("w2 missing")
+	}
+	if err := os.MkdirAll(w2.Path, 0o755); err != nil {
+		t.Fatalf("mkdir w2.Path: %v", err)
+	}
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetDirty(w2.Path, true)
+
+	if err := eng.DockClose("labs", false); err == nil {
+		t.Fatalf("DockClose succeeded; expected dirty-w2 failure")
+	}
+
+	// w1 must be gone from the manifest (already-removed in the loop).
+	post, _ := eng.LoadManifest()
+	dock := post.FindDock("labs")
+	if dock == nil {
+		t.Fatalf("dock 'labs' unexpectedly removed on non-force failure")
+	}
+	if dock.FindWorkspace("w1") != nil {
+		t.Errorf("w1 still in manifest; expected it to be removed before w2 failed")
+	}
+	if dock.FindWorkspace("w2") == nil {
+		t.Errorf("w2 missing from manifest; expected it to remain after its failed close")
+	}
+
+	// w1's window must have been killed — otherwise it's an orphan
+	// tmux window with no manifest entry.
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	killed := false
+	for _, c := range mockTmux.Calls {
+		if c.Method == "KillWindow" && len(c.Args) == 1 && c.Args[0] == w1WindowID {
+			killed = true
+			break
+		}
+	}
+	if !killed {
+		t.Errorf("w1's window %s was not killed; expected sync after partial DockClose failure", w1WindowID)
+	}
+
+	// And we must NOT have killed the dock session — that would
+	// destroy w2's pane (which still has dirty work).
+	for _, c := range mockTmux.Calls {
+		if c.Method == "KillSession" {
+			t.Errorf("KillSession called on non-force partial failure: %v", c)
+		}
+	}
+}
+
+func TestRepoRemove_PersistsManifestBeforeKill(t *testing.T) {
+	eng, _ := testEngine(t)
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.OnKill = func(method, target string) {
+		m, err := manifest.Load(eng.manifestPath)
+		if err != nil {
+			t.Errorf("loading manifest in kill hook: %v", err)
+			return
+		}
+		if m.FindRepo("labs") != nil {
+			t.Errorf("manifest still references repo 'labs' at the moment of %s(%s) — kill happened before manifest update", method, target)
+		}
+		if m.FindDock("labs") != nil {
+			t.Errorf("manifest still references dock 'labs' at the moment of %s(%s) — kill happened before manifest update", method, target)
+		}
+	}
+
+	if err := eng.RepoRemove("labs", true); err != nil {
+		t.Fatalf("RepoRemove: %v", err)
+	}
+}
+
+func TestWsCloseByStatus_PersistsAllManifestsBeforeAnyKill(t *testing.T) {
+	eng, _ := testEngine(t)
+	// Two workspaces both marked done.
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"}); err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	doneStatus := "done"
+	if err := eng.WsUpdate("labs", "w1", nil, nil, &doneStatus); err != nil {
+		t.Fatalf("WsUpdate w1: %v", err)
+	}
+	if err := eng.WsUpdate("labs", "w2", nil, nil, &doneStatus); err != nil {
+		t.Fatalf("WsUpdate w2: %v", err)
+	}
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.OnKill = func(method, target string) {
+		// By the time the FIRST kill fires, both workspaces must already
+		// be removed from the manifest. This catches a regression where
+		// per-target killing got interleaved with per-target manifest
+		// mutation.
+		m, err := manifest.Load(eng.manifestPath)
+		if err != nil {
+			t.Errorf("loading manifest in kill hook: %v", err)
+			return
+		}
+		dock := m.FindDock("labs")
+		if dock == nil {
+			return
+		}
+		if dock.FindWorkspace("w1") != nil {
+			t.Errorf("manifest still references w1 at the moment of %s(%s)", method, target)
+		}
+		if dock.FindWorkspace("w2") != nil {
+			t.Errorf("manifest still references w2 at the moment of %s(%s)", method, target)
+		}
+	}
+
+	closed, _, err := eng.WsCloseByStatus("labs", "done", true)
+	if err != nil {
+		t.Fatalf("WsCloseByStatus: %v", err)
+	}
+	if len(closed) != 2 {
+		t.Errorf("closed = %v, want 2 workspaces", closed)
+	}
+}
+
 func TestSurfaceAdd_Split(t *testing.T) {
 	eng, _ := testEngine(t)
 
