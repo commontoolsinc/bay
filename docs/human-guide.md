@@ -499,12 +499,6 @@ tmux prefix required -- just press the key combo directly.
 | `Option+Shift+g` | Workspace picker (interactive popup) |
 | `Option+Shift+a` | Next waiting workspace |
 
-### Index jump
-
-| Key | Action |
-|-----|--------|
-| `Option+1` through `Option+9` | Jump to surface by index |
-
 ### Utility
 
 | Key | Action |

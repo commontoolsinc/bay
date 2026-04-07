@@ -236,17 +236,6 @@ var bayKeybindings = []struct {
 	{"M-G", "bay ws go", "Option+G: pick workspace in dock", "display-popup -E"},
 	{"M-A", "bay ws go --next-waiting", "Option+A: next waiting workspace", "run-shell"},
 
-	// Surface by index
-	{"M-1", "bay go --index 1", "Option+1: surface 1", "run-shell"},
-	{"M-2", "bay go --index 2", "Option+2: surface 2", "run-shell"},
-	{"M-3", "bay go --index 3", "Option+3: surface 3", "run-shell"},
-	{"M-4", "bay go --index 4", "Option+4: surface 4", "run-shell"},
-	{"M-5", "bay go --index 5", "Option+5: surface 5", "run-shell"},
-	{"M-6", "bay go --index 6", "Option+6: surface 6", "run-shell"},
-	{"M-7", "bay go --index 7", "Option+7: surface 7", "run-shell"},
-	{"M-8", "bay go --index 8", "Option+8: surface 8", "run-shell"},
-	{"M-9", "bay go --index 9", "Option+9: surface 9", "run-shell"},
-
 	// Utility
 	{"M-w", "bay sf close", "Option+w: close current surface (or pane)", "run-shell"},
 	{"M-s", "bay shell", "Option+s: split a shell pane", "run-shell"},
