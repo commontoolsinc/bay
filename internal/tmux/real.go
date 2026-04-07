@@ -301,3 +301,28 @@ func (r *Real) CurrentPaneID() (string, error) {
 	}
 	return strings.TrimSpace(out), nil
 }
+
+// --- Client display ---
+
+// DisplayMessage shows a transient message in the tmux status line. The
+// message is rendered with tmux format strings, so it may contain attribute
+// codes like #[bold]name#[default]. The display duration is governed by the
+// user's tmux display-time setting.
+func (r *Real) DisplayMessage(msg string) error {
+	return runSilent("display-message", msg)
+}
+
+// ClientWidth returns the width in cells of the attached tmux client.
+// Returns 100 (a reasonable default) if tmux can't report a width — e.g.
+// no client attached, or the value can't be parsed.
+func (r *Real) ClientWidth() (int, error) {
+	out, err := run("display-message", "-p", "#{client_width}")
+	if err != nil {
+		return 100, nil
+	}
+	w, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil || w <= 0 {
+		return 100, nil
+	}
+	return w, nil
+}

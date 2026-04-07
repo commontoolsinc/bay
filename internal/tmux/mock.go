@@ -56,6 +56,9 @@ type Mock struct {
 	currentSessionSet  bool
 	currentWindowIDSet bool
 	currentPaneIDSet   bool
+
+	clientWidth     int
+	displayMessages []string // recorded DisplayMessage calls in order
 }
 
 // NewMock creates a new Mock with initialized state.
@@ -456,6 +459,24 @@ func (m *Mock) CurrentPaneID() (string, error) {
 	return m.currentPaneID, nil
 }
 
+// --- Client display ---
+
+func (m *Mock) DisplayMessage(msg string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Calls = append(m.Calls, Call{Method: "DisplayMessage", Args: []string{msg}})
+	m.displayMessages = append(m.displayMessages, msg)
+	return nil
+}
+
+func (m *Mock) ClientWidth() (int, error) {
+	m.record("ClientWidth")
+	if m.clientWidth <= 0 {
+		return 100, nil
+	}
+	return m.clientWidth, nil
+}
+
 // --- Mock helpers (not part of Interface) ---
 
 // SetCurrentSession sets the value returned by CurrentSession.
@@ -483,6 +504,21 @@ func (m *Mock) SetCaptureContent(paneID string, content string) {
 	}
 }
 
+// SetClientWidth sets the value returned by ClientWidth.
+func (m *Mock) SetClientWidth(w int) {
+	m.clientWidth = w
+}
+
+// DisplayMessages returns a copy of the messages recorded via DisplayMessage,
+// in call order.
+func (m *Mock) DisplayMessages() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]string, len(m.displayMessages))
+	copy(out, m.displayMessages)
+	return out
+}
+
 // Reset clears all tmux mock state (simulates reboot).
 func (m *Mock) Reset() {
 	m.Calls = nil
@@ -495,6 +531,8 @@ func (m *Mock) Reset() {
 	m.currentSessionSet = false
 	m.currentWindowIDSet = false
 	m.currentPaneIDSet = false
+	m.clientWidth = 0
+	m.displayMessages = nil
 }
 
 // HasSessionCalled returns true if NewSession was called with the given name

@@ -490,23 +490,16 @@ func surfaceGo(eng *engine.Engine, args []string, index int, nextWaiting bool) e
 		return nil
 	}
 
-	// Jump to next waiting surface.
 	if nextWaiting {
-		cur := -1
-		for i, e := range entries {
-			if e.Current {
-				cur = i
-				break
-			}
+		target, idx := nav.NextWaitingSurface(entries)
+		if target == nil {
+			fmt.Println("No waiting surfaces in this workspace.")
+			return nil
 		}
-		n := len(entries)
-		for offset := 1; offset <= n; offset++ {
-			idx := (cur + offset) % n
-			if entries[idx].Waiting {
-				return focusSurface(eng, &entries[idx], dockName, wsName)
-			}
+		if err := focusSurface(eng, target, dockName, wsName); err != nil {
+			return err
 		}
-		fmt.Println("No waiting surfaces in this workspace.")
+		flashSurfaceCycle(eng, entries, idx)
 		return nil
 	}
 
@@ -539,7 +532,8 @@ func surfaceGo(eng *engine.Engine, args []string, index int, nextWaiting bool) e
 	}
 }
 
-// surfaceCycle moves to next/prev surface in the current workspace.
+// surfaceCycle moves to next/prev surface in the current workspace and
+// flashes the new position via the cycling indicator.
 func surfaceCycle(eng *engine.Engine, forward bool) error {
 	dockName, wsName, err := eng.ResolveSelf()
 	if err != nil {
@@ -555,19 +549,21 @@ func surfaceCycle(eng *engine.Engine, forward bool) error {
 	entries := nav.CollectSurfaces(ws, eng.Tmux, currentPaneID)
 
 	if len(entries) < 2 {
-		return nil // nothing to cycle to
+		return nil
 	}
 
 	var target *nav.SurfaceEntry
+	var targetIdx int
 	if forward {
-		target = nav.NextSurface(entries)
+		target, targetIdx = nav.NextSurface(entries)
 	} else {
-		target = nav.PrevSurface(entries)
+		target, targetIdx = nav.PrevSurface(entries)
 	}
-	if target == nil {
-		return nil
+	if err := focusSurface(eng, target, dockName, wsName); err != nil {
+		return err
 	}
-	return focusSurface(eng, target, dockName, wsName)
+	flashSurfaceCycle(eng, entries, targetIdx)
+	return nil
 }
 
 // focusSurface switches focus to a surface and records it as last-focused.

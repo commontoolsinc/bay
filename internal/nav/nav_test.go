@@ -278,40 +278,25 @@ func TestNextWaiting_CyclesCorrectly(t *testing.T) {
 		{WsName: "d", TmuxWindowID: "@4", Waiting: true},
 	}
 
-	// Current is @1 (waiting). Next waiting should be @3.
-	next := NextWaiting(entries, "@1")
-	if next == nil {
-		t.Fatal("expected non-nil result")
+	cases := []struct {
+		current  string
+		wantWin  string
+		wantIdx  int
+	}{
+		{"@1", "@3", 2}, // current is @1 (waiting); next waiting is @3
+		{"@3", "@4", 3}, // current is @3 (waiting); next waiting is @4
+		{"@4", "@1", 0}, // current is @4 (last waiting); wraps to @1
+		{"@2", "@3", 2}, // current is @2 (not waiting); next waiting is @3
 	}
-	if next.TmuxWindowID != "@3" {
-		t.Errorf("expected @3, got %q", next.TmuxWindowID)
-	}
-
-	// Current is @3 (waiting). Next waiting should be @4.
-	next = NextWaiting(entries, "@3")
-	if next == nil {
-		t.Fatal("expected non-nil result")
-	}
-	if next.TmuxWindowID != "@4" {
-		t.Errorf("expected @4, got %q", next.TmuxWindowID)
-	}
-
-	// Current is @4 (waiting, last). Should wrap around to @1.
-	next = NextWaiting(entries, "@4")
-	if next == nil {
-		t.Fatal("expected non-nil result")
-	}
-	if next.TmuxWindowID != "@1" {
-		t.Errorf("expected @1 (wrap), got %q", next.TmuxWindowID)
-	}
-
-	// Current is @2 (not waiting). Next waiting after @2 is @3.
-	next = NextWaiting(entries, "@2")
-	if next == nil {
-		t.Fatal("expected non-nil result")
-	}
-	if next.TmuxWindowID != "@3" {
-		t.Errorf("expected @3, got %q", next.TmuxWindowID)
+	for _, tc := range cases {
+		next, idx := NextWaiting(entries, tc.current)
+		if next == nil {
+			t.Fatalf("current=%q: expected non-nil", tc.current)
+		}
+		if next.TmuxWindowID != tc.wantWin || idx != tc.wantIdx {
+			t.Errorf("current=%q: got (%q, %d), want (%q, %d)",
+				tc.current, next.TmuxWindowID, idx, tc.wantWin, tc.wantIdx)
+		}
 	}
 }
 
@@ -321,9 +306,9 @@ func TestNextWaiting_NoWaiting(t *testing.T) {
 		{WsName: "b", TmuxWindowID: "@2", Waiting: false},
 	}
 
-	next := NextWaiting(entries, "@1")
-	if next != nil {
-		t.Errorf("expected nil when no waiting entries, got %v", next)
+	next, idx := NextWaiting(entries, "@1")
+	if next != nil || idx != -1 {
+		t.Errorf("expected (nil, -1), got (%v, %d)", next, idx)
 	}
 }
 
@@ -334,12 +319,12 @@ func TestNextWaiting_UnknownCurrent(t *testing.T) {
 	}
 
 	// Current window not in list; should return first waiting entry.
-	next := NextWaiting(entries, "@99")
+	next, idx := NextWaiting(entries, "@99")
 	if next == nil {
 		t.Fatal("expected non-nil result")
 	}
-	if next.TmuxWindowID != "@1" {
-		t.Errorf("expected @1, got %q", next.TmuxWindowID)
+	if next.TmuxWindowID != "@1" || idx != 0 {
+		t.Errorf("expected (@1, 0), got (%q, %d)", next.TmuxWindowID, idx)
 	}
 }
 
@@ -502,12 +487,9 @@ func TestNextSurface(t *testing.T) {
 	mock := tmux.NewMock()
 	entries := CollectSurfaces(ws, mock, "%1") // current = agent (index 0)
 
-	next := NextSurface(entries)
-	if next == nil {
-		t.Fatal("expected non-nil")
-	}
-	if next.Name != "shell" {
-		t.Errorf("next after agent should be shell, got %q", next.Name)
+	next, idx := NextSurface(entries)
+	if next == nil || next.Name != "shell" || idx != 1 {
+		t.Errorf("next after agent: got (%v, %d), want (shell, 1)", next, idx)
 	}
 }
 
@@ -520,12 +502,9 @@ func TestNextSurface_WrapsAround(t *testing.T) {
 	entries := CollectSurfaces(ws, mock, "")
 	entries[3].Current = true
 
-	next := NextSurface(entries)
-	if next == nil {
-		t.Fatal("expected non-nil")
-	}
-	if next.Name != "agent" {
-		t.Errorf("next after last should wrap to agent, got %q", next.Name)
+	next, idx := NextSurface(entries)
+	if next == nil || next.Name != "agent" || idx != 0 {
+		t.Errorf("next after last: got (%v, %d), want (agent, 0)", next, idx)
 	}
 }
 
@@ -534,12 +513,9 @@ func TestPrevSurface(t *testing.T) {
 	mock := tmux.NewMock()
 	entries := CollectSurfaces(ws, mock, "%2") // current = shell (index 1)
 
-	prev := PrevSurface(entries)
-	if prev == nil {
-		t.Fatal("expected non-nil")
-	}
-	if prev.Name != "agent" {
-		t.Errorf("prev before shell should be agent, got %q", prev.Name)
+	prev, idx := PrevSurface(entries)
+	if prev == nil || prev.Name != "agent" || idx != 0 {
+		t.Errorf("prev before shell: got (%v, %d), want (agent, 0)", prev, idx)
 	}
 }
 
@@ -548,12 +524,9 @@ func TestPrevSurface_WrapsAround(t *testing.T) {
 	mock := tmux.NewMock()
 	entries := CollectSurfaces(ws, mock, "%1") // current = agent (index 0, first)
 
-	prev := PrevSurface(entries)
-	if prev == nil {
-		t.Fatal("expected non-nil")
-	}
-	if prev.Name != "editor" {
-		t.Errorf("prev before first should wrap to editor (last), got %q", prev.Name)
+	prev, idx := PrevSurface(entries)
+	if prev == nil || prev.Name != "editor" || idx != 3 {
+		t.Errorf("prev before first: got (%v, %d), want (editor, 3)", prev, idx)
 	}
 }
 
@@ -589,11 +562,8 @@ func TestNextSurface_NoCurrent(t *testing.T) {
 	mock := tmux.NewMock()
 	entries := CollectSurfaces(ws, mock, "%999") // no match
 
-	next := NextSurface(entries)
-	if next == nil {
-		t.Fatal("expected non-nil")
-	}
-	if next.Name != "agent" {
-		t.Errorf("with no current, next should be first entry, got %q", next.Name)
+	next, idx := NextSurface(entries)
+	if next == nil || next.Name != "agent" || idx != 0 {
+		t.Errorf("with no current: got (%v, %d), want (agent, 0)", next, idx)
 	}
 }
