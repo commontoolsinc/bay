@@ -150,6 +150,7 @@ func runSurfaceNew(eng *engine.Engine, dockName, wsName string, opts surfaceNewO
 
 func newSurfaceCloseCmd() *cobra.Command {
 	var wsFlag, dockFlag string
+	var force bool
 
 	cmd := &cobra.Command{
 		Use:     "close <name|self>",
@@ -162,19 +163,24 @@ func newSurfaceCloseCmd() *cobra.Command {
   bay sf close labs:w1:monitor      fully-qualified
   bay sf close monitor --ws w1      same as w1:monitor
   bay sf close self                 close the current pane's surface
-  bay sf rm shell-2                 same thing with the rm alias`,
+  bay sf rm shell-2                 same thing with the rm alias
+
+Closing an agent surface prompts for confirmation when stdin is a
+terminal — agents carry valuable conversation context. Use --force to
+skip the prompt.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
 				return err
 			}
-			return runSurfaceClose(eng, args, wsFlag, dockFlag)
+			return runSurfaceClose(eng, args, wsFlag, dockFlag, force)
 		},
 	}
 
 	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (disambiguates with --dock)")
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (only valid with --ws or a workspace prefix)")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "skip the confirmation prompt for agent surfaces")
 
 	return cmd
 }
@@ -183,7 +189,10 @@ func newSurfaceCloseCmd() *cobra.Command {
 // top-level `bay close`. Requires an explicit name — `close` is destructive
 // and we don't want a bare invocation to silently close the current pane.
 // Use `bay close self` to target the current surface.
-func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string) error {
+//
+// Agent surfaces prompt for confirmation when stdin is a TTY (unless force
+// is true). Other surface types close without prompting.
+func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string, force bool) error {
 	if len(args) == 0 {
 		if wsFlag != "" || dockFlag != "" {
 			return fmt.Errorf("--ws/--dock require a surface name")
@@ -194,6 +203,25 @@ func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string)
 	if err != nil {
 		return err
 	}
+
+	// Confirmation prompt for agent surfaces. Skipped entirely when --force
+	// is set; otherwise we look up the surface type and ask
+	// confirmAgentClose (which handles the TTY check and prompt itself,
+	// or returns the test stub's answer).
+	if !force {
+		ws, err := eng.WsShow(dockName, wsName)
+		if err != nil {
+			return err
+		}
+		s := ws.FindSurface(sName)
+		if s != nil && s.Type == manifest.SurfaceTypeAgent {
+			if !confirmAgentClose(s.Name) {
+				fmt.Fprintln(os.Stderr, "not closing.")
+				return nil // user declined; not an error
+			}
+		}
+	}
+
 	return eng.SurfaceClose(dockName, wsName, sName)
 }
 

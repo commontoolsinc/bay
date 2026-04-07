@@ -220,7 +220,9 @@ func TestRunSurfaceClose_ByName(t *testing.T) {
 	}
 
 	// Use qualified form to avoid depending on tmux ResolveSelf state.
-	if err := runSurfaceClose(eng, []string{"w1:agent"}, "", ""); err != nil {
+	// force=true bypasses the agent close prompt — the prompt path is
+	// covered by dedicated tests below.
+	if err := runSurfaceClose(eng, []string{"w1:agent"}, "", "", true); err != nil {
 		t.Fatalf("runSurfaceClose: %v", err)
 	}
 
@@ -236,16 +238,16 @@ func TestRunSurfaceClose_NoArgsErrors(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
 	// Bare invocation: no args, no flags. Should give the friendlier message
 	// that mentions the 'self' keyword.
-	err := runSurfaceClose(eng, nil, "", "")
+	err := runSurfaceClose(eng, nil, "", "", false)
 	if err == nil || !strings.Contains(err.Error(), "specify a surface name") {
 		t.Errorf("expected 'specify a surface name' error, got %v", err)
 	}
 	// Flags set but no positional: more specific message.
-	err = runSurfaceClose(eng, nil, "w1", "")
+	err = runSurfaceClose(eng, nil, "w1", "", false)
 	if err == nil || !strings.Contains(err.Error(), "--ws/--dock require") {
 		t.Errorf("expected '--ws/--dock require' error with --ws, got %v", err)
 	}
-	err = runSurfaceClose(eng, nil, "", "labs")
+	err = runSurfaceClose(eng, nil, "", "labs", false)
 	if err == nil || !strings.Contains(err.Error(), "--ws/--dock require") {
 		t.Errorf("expected '--ws/--dock require' error with --dock, got %v", err)
 	}
@@ -265,7 +267,7 @@ func TestRunSurfaceClose_CrossWorkspace(t *testing.T) {
 
 	// "labs:solo:agent" is a uniquely-named cross-workspace surface from the
 	// fixture. Close it via the helper using bare ws:surface form.
-	if err := runSurfaceClose(eng, []string{"solo:agent"}, "", ""); err != nil {
+	if err := runSurfaceClose(eng, []string{"solo:agent"}, "", "", true); err != nil {
 		t.Fatalf("runSurfaceClose: %v", err)
 	}
 
@@ -284,8 +286,8 @@ func TestRunSurfaceClose_CrossWorkspace(t *testing.T) {
 
 func TestRunSurfaceClose_Self(t *testing.T) {
 	eng := selfFixture(t)
-	// Pane is pinned to "second" — bay close self should remove it.
-	if err := runSurfaceClose(eng, []string{"self"}, "", ""); err != nil {
+	// Pane is pinned to "second" (a shell). bay close self should remove it.
+	if err := runSurfaceClose(eng, []string{"self"}, "", "", true); err != nil {
 		t.Fatalf("runSurfaceClose self: %v", err)
 	}
 	ws, _ := eng.WsShow("labs", "w1")
@@ -303,7 +305,7 @@ func TestRunSurfaceClose_LiteralSelfWins(t *testing.T) {
 		t.Fatalf("SurfaceAdd self: %v", err)
 	}
 
-	if err := runSurfaceClose(eng, []string{"self"}, "", ""); err != nil {
+	if err := runSurfaceClose(eng, []string{"self"}, "", "", true); err != nil {
 		t.Fatalf("runSurfaceClose self: %v", err)
 	}
 

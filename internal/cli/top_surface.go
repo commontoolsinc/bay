@@ -254,6 +254,7 @@ func resolveSurfaceWorkspace(eng *engine.Engine, wsFlag, dockFlag string) (strin
 // newTopCloseCmd is `bay close` — close a surface (alias: rm, hidden).
 func newTopCloseCmd() *cobra.Command {
 	var wsFlag, dockFlag string
+	var force bool
 
 	cmd := &cobra.Command{
 		Use:     "close <name|self>",
@@ -266,19 +267,24 @@ func newTopCloseCmd() *cobra.Command {
   bay close labs:w1:monitor      fully-qualified
   bay close monitor --ws w1      same as w1:monitor
   bay close self                 close the current pane's surface
-  bay rm shell-2                 same thing with the rm alias`,
+  bay rm shell-2                 same thing with the rm alias
+
+Closing an agent surface prompts for confirmation when stdin is a
+terminal — agents carry valuable conversation context. Use --force to
+skip the prompt.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
 				return err
 			}
-			return runSurfaceClose(eng, args, wsFlag, dockFlag)
+			return runSurfaceClose(eng, args, wsFlag, dockFlag, force)
 		},
 	}
 
 	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (disambiguates with --dock)")
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (only valid with --ws or a workspace prefix)")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "skip the confirmation prompt for agent surfaces")
 
 	return cmd
 }
