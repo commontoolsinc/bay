@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/commontoolsinc/bay/internal/config"
+	"github.com/commontoolsinc/bay/internal/engine"
 	"github.com/spf13/cobra"
 )
 
@@ -61,73 +62,15 @@ Editor resolution order:
 				return nil
 			}
 
-			var paths []string
-
 			if all {
-				// Scope to current dock
-				dockName, sessionErr := eng.Tmux.CurrentSession()
-				if sessionErr != nil {
-					return fmt.Errorf("--all requires being inside a dock (tmux session)")
-				}
-				paths, err = eng.EditAll(dockName)
-				if err != nil {
-					return err
-				}
-				if len(paths) == 0 {
-					return fmt.Errorf("no active workspaces in dock %q", dockName)
-				}
-			} else {
-				target := "self"
-				if len(args) > 0 {
-					target = args[0]
-				}
-				dockName, wsID, resolveErr := resolveTarget(eng, target)
-				if resolveErr != nil {
-					return resolveErr
-				}
-				path, editErr := eng.Edit(dockName, wsID)
-				if editErr != nil {
-					return editErr
-				}
-				paths = []string{path}
+				return runEditAll(eng)
 			}
 
-			editorCmd, isGUI := resolveEditor(eng.Config)
-			if editorCmd == "" {
-				return fmt.Errorf("no editor found; set [editor].command in config, or $VISUAL/$EDITOR")
+			target := "self"
+			if len(args) > 0 {
+				target = args[0]
 			}
-
-			// For --all with terminal editors (vim, nvim), open the worktree
-			// parent directory instead of individual paths. The file tree
-			// shows all worktrees as subdirectories.
-			if all && !isGUI && len(paths) > 1 {
-				dockName, _ := eng.Tmux.CurrentSession()
-				parentDir, err := eng.EditAllParentDir(dockName)
-				if err != nil {
-					return fmt.Errorf("cannot determine worktree directory: %w", err)
-				}
-				paths = []string{parentDir}
-			}
-
-			pid, launchErr := launchEditor(editorCmd, isGUI, paths)
-			if launchErr != nil {
-				return launchErr
-			}
-
-			// For GUI editors, create a surface so the editor appears in bay go.
-			if isGUI && !all && pid > 0 {
-				target := "self"
-				if len(args) > 0 {
-					target = args[0]
-				}
-				dockName, wsName, resolveErr := resolveTarget(eng, target)
-				if resolveErr == nil {
-					appCmd := editorCmd + " " + paths[0]
-					_ = eng.SurfaceAddGUI(dockName, wsName, "editor", appCmd, pid)
-				}
-			}
-
-			return nil
+			return runEditCreate(eng, target)
 		},
 	}
 
@@ -136,6 +79,70 @@ Editor resolution order:
 	cmd.Flags().BoolVar(&showEditor, "show", false, "show which editor would be used")
 
 	return cmd
+}
+
+// runEditCreate launches the editor on a single workspace and, for GUI
+// editors, registers a tracked editor surface so it appears in `bay go`.
+// Shared by `bay edit` and the top-level `bay new edit`.
+func runEditCreate(eng *engine.Engine, target string) error {
+	dockName, wsID, err := resolveTarget(eng, target)
+	if err != nil {
+		return err
+	}
+	path, err := eng.Edit(dockName, wsID)
+	if err != nil {
+		return err
+	}
+
+	editorCmd, isGUI := resolveEditor(eng.Config)
+	if editorCmd == "" {
+		return fmt.Errorf("no editor found; set [editor].command in config, or $VISUAL/$EDITOR")
+	}
+
+	pid, err := launchEditor(editorCmd, isGUI, []string{path})
+	if err != nil {
+		return err
+	}
+
+	// For GUI editors, create a surface so the editor appears in bay go.
+	if isGUI && pid > 0 {
+		appCmd := editorCmd + " " + path
+		_ = eng.SurfaceAddGUI(dockName, wsID, "editor", appCmd, pid)
+	}
+	return nil
+}
+
+// runEditAll launches the editor on every active workspace in the current
+// dock. For terminal editors with multiple workspaces, the worktree parent
+// directory is opened so the file tree shows all worktrees as subdirectories.
+func runEditAll(eng *engine.Engine) error {
+	dockName, sessionErr := eng.Tmux.CurrentSession()
+	if sessionErr != nil {
+		return fmt.Errorf("--all requires being inside a dock (tmux session)")
+	}
+	paths, err := eng.EditAll(dockName)
+	if err != nil {
+		return err
+	}
+	if len(paths) == 0 {
+		return fmt.Errorf("no active workspaces in dock %q", dockName)
+	}
+
+	editorCmd, isGUI := resolveEditor(eng.Config)
+	if editorCmd == "" {
+		return fmt.Errorf("no editor found; set [editor].command in config, or $VISUAL/$EDITOR")
+	}
+
+	if !isGUI && len(paths) > 1 {
+		parentDir, err := eng.EditAllParentDir(dockName)
+		if err != nil {
+			return fmt.Errorf("cannot determine worktree directory: %w", err)
+		}
+		paths = []string{parentDir}
+	}
+
+	_, err = launchEditor(editorCmd, isGUI, paths)
+	return err
 }
 
 // guiEditors are editor commands known to be GUI applications.
