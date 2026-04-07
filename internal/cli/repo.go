@@ -253,4 +253,3 @@ line if not already present. Creates .worktreeinclude if missing.
 		},
 	}
 }
-

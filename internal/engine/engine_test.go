@@ -1242,15 +1242,14 @@ func TestRecoverReconcilesSurfacesInExistingWindow(t *testing.T) {
 func TestRecover_UsesRecordedSplitParentAsSplitTarget(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
-	if err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
 	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell-2", "", "", "v"); err != nil {
 		t.Fatalf("SurfaceAdd shell-2 failed: %v", err)
 	}
 
-	ws, err = eng.WsShow("labs", "w1")
+	ws, err := eng.WsShow("labs", "w1")
 	if err != nil {
 		t.Fatalf("WsShow failed: %v", err)
 	}
@@ -1834,9 +1833,9 @@ func TestPlaceholder_CleanedOnRecovery(t *testing.T) {
 func TestSetLastFocused(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, _ := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
+	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
 	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell-2", "", "", "v")
-	ws, _ = eng.WsShow("labs", "w1")
+	ws, _ := eng.WsShow("labs", "w1")
 
 	// Set last focused to second surface.
 	err := eng.SetLastFocused("labs", "w1", ws.Surfaces[1].ID)

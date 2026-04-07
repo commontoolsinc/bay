@@ -12,9 +12,6 @@ import (
 	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
-// expandPath is a shorthand for config.ExpandPath used throughout the engine.
-var expandPath = config.ExpandPath
-
 // WsNewOptions are options for creating a new workspace.
 type WsNewOptions struct {
 	Dock         string // dock name (required)
@@ -661,20 +658,6 @@ func nextWorkspaceName(dock *manifest.Dock) string {
 			return name
 		}
 	}
-}
-
-// collectWorkspaceAgents returns a set of agent names used by a workspace's surfaces.
-func collectWorkspaceAgents(ws *manifest.Workspace, defaultAgent string) map[string]bool {
-	agents := map[string]bool{}
-	if defaultAgent != "" {
-		agents[defaultAgent] = true
-	}
-	for _, s := range ws.Surfaces {
-		if s.Agent != nil && *s.Agent != "" {
-			agents[*s.Agent] = true
-		}
-	}
-	return agents
 }
 
 func findWorkspaceByPath(dock *manifest.Dock, path string) *manifest.Workspace {

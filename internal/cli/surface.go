@@ -643,4 +643,3 @@ func filterSurfaceEntries(entries []nav.SurfaceEntry, query string) []nav.Surfac
 	}
 	return result
 }
-

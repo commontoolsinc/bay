@@ -96,9 +96,9 @@ func filterDirtyWorkspaces(eng *engine.Engine, docks []engine.DockInfo) []engine
 	var result []engine.DockInfo
 	for _, d := range docks {
 		filtered := engine.DockInfo{
-			Name:       d.Name,
-			Agent:      d.Agent,
-			Repo:       d.Repo,
+			Name:  d.Name,
+			Agent: d.Agent,
+			Repo:  d.Repo,
 		}
 		for _, ws := range d.Workspaces {
 			if ws.Path == "" {

@@ -22,12 +22,12 @@ func testDocks() []engine.DockInfo {
 			Repo: "bay",
 			Workspaces: []engine.WorkspaceInfo{
 				{
-					Name:   "auth-fix",
-					Type:   "worktree",
-					Path:   "~/projects/bay-wt/auth-fix",
-					Branch: "fix/login",
-					Status: "active",
-					Waiting: true,
+					Name:         "auth-fix",
+					Type:         "worktree",
+					Path:         "~/projects/bay-wt/auth-fix",
+					Branch:       "fix/login",
+					Status:       "active",
+					Waiting:      true,
 					SurfaceCount: 3,
 					Surfaces: []engine.SurfaceInfo{
 						{ID: 1, Name: "shell", Type: "shell", Backend: "tmux-pane", Status: "ok"},

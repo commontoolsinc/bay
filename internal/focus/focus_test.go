@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -41,6 +42,12 @@ func TestSourcePath(t *testing.T) {
 }
 
 func TestSwiftSource_TypeChecks(t *testing.T) {
+	// The Swift source imports AppKit / CoreGraphics, which only exist
+	// in the macOS Swift toolchain. Linux Swift installs (e.g. on the
+	// Ubuntu CI runner) would fail with "no such module 'AppKit'".
+	if runtime.GOOS != "darwin" {
+		t.Skip("AppKit only available on darwin")
+	}
 	if _, err := exec.LookPath("swiftc"); err != nil {
 		t.Skip("swiftc not available")
 	}
