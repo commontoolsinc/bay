@@ -1,20 +1,24 @@
 package cli
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 )
 
 func newRestartCmd() *cobra.Command {
-	var surfaceName string
+	var wsFlag, dockFlag string
 
 	cmd := &cobra.Command{
-		Use:   "restart [workspace]",
+		Use:   "restart [name]",
 		Short: "Restart a surface's process",
-		Long: `Restart the current surface (or a named one).
+		Long: `Restart a surface by name, or the current surface if no name given.
 This is a shorthand for "bay surface restart".
 
-  bay restart             restart current surface
-  bay restart --surface agent   restart a specific surface`,
+  bay restart agent              restart the agent surface
+  bay restart w1:agent           restart agent in workspace w1
+  bay restart agent --ws w1      same as w1:agent
+  bay restart                    restart current surface`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -22,20 +26,23 @@ This is a shorthand for "bay surface restart".
 				return err
 			}
 
-			target := "self"
-			if len(args) > 0 {
-				target = args[0]
+			if len(args) == 0 && wsFlag == "" && dockFlag == "" {
+				return surfaceRestartCurrentPane(eng)
 			}
-			dockName, wsName, sName, err := resolveSurfaceTarget(eng, target, surfaceName)
+			if len(args) == 0 {
+				return fmt.Errorf("--ws/--dock require a surface name")
+			}
+
+			dockName, wsName, sName, err := resolveSurfaceArg(eng, args[0], wsFlag, dockFlag)
 			if err != nil {
 				return err
 			}
-
 			return eng.SurfaceRestart(dockName, wsName, sName)
 		},
 	}
 
-	cmd.Flags().StringVar(&surfaceName, "surface", "", "surface name")
+	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (disambiguates with --dock)")
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (only valid with --ws or a workspace prefix)")
 
 	return cmd
 }

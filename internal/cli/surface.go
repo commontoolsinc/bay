@@ -112,71 +112,143 @@ func newSurfaceNewCmd() *cobra.Command {
 }
 
 func newSurfaceCloseCmd() *cobra.Command {
-	var surfaceName string
+	var wsFlag, dockFlag string
 
 	cmd := &cobra.Command{
-		Use:     "close [workspace]",
+		Use:     "close [name]",
 		Aliases: []string{"rm"},
 		Short:   "Close a surface (or current tmux pane if not bay-managed)",
-		Args:  cobra.MaximumNArgs(1),
+		Long: `Close a surface by name, or the current pane if no name given.
+
+  bay sf close monitor              close "monitor" in the current workspace
+  bay sf close w1:monitor           close "monitor" in workspace w1
+  bay sf close labs:w1:monitor      fully-qualified
+  bay sf close monitor --ws w1      same as w1:monitor
+  bay sf close                      close the current pane
+  bay sf rm shell-2                 same thing with the rm alias`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
 				return err
 			}
 
-			target := "self"
-			if len(args) > 0 {
-				target = args[0]
+			// No positional, no flags: close the current pane.
+			if len(args) == 0 && wsFlag == "" && dockFlag == "" {
+				return surfaceCloseCurrentPane(eng)
 			}
-			dockName, wsName, sName, resolveErr := resolveSurfaceTarget(eng, target, surfaceName)
-			if resolveErr != nil {
-				// Not in a bay workspace — just kill the active tmux pane.
-				paneID, tmuxErr := eng.Tmux.CurrentPaneID()
-				if tmuxErr != nil {
-					return resolveErr // return original error
-				}
-				return eng.Tmux.KillPane(paneID)
+			if len(args) == 0 {
+				return fmt.Errorf("--ws/--dock require a surface name")
 			}
 
+			dockName, wsName, sName, err := resolveSurfaceArg(eng, args[0], wsFlag, dockFlag)
+			if err != nil {
+				return err
+			}
 			return eng.SurfaceClose(dockName, wsName, sName)
 		},
 	}
 
-	cmd.Flags().StringVar(&surfaceName, "surface", "", "surface name")
+	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (disambiguates with --dock)")
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (only valid with --ws or a workspace prefix)")
 
 	return cmd
 }
 
+// surfaceCloseCurrentPane closes the surface owning the current tmux pane,
+// or just kills the pane if it isn't tracked or we're not in a bay workspace.
+func surfaceCloseCurrentPane(eng *engine.Engine) error {
+	dockName, wsName, resolveErr := eng.ResolveSelf()
+	if resolveErr != nil {
+		// Not in a bay workspace — just kill the active tmux pane.
+		paneID, tmuxErr := eng.Tmux.CurrentPaneID()
+		if tmuxErr != nil {
+			return resolveErr
+		}
+		return eng.Tmux.KillPane(paneID)
+	}
+
+	paneID, tmuxErr := eng.Tmux.CurrentPaneID()
+	if tmuxErr != nil {
+		return fmt.Errorf("cannot determine current pane")
+	}
+
+	ws, err := eng.WsShow(dockName, wsName)
+	if err != nil {
+		return eng.Tmux.KillPane(paneID)
+	}
+	for _, s := range ws.Surfaces {
+		if s.Tmux != nil && s.Tmux.PaneID == paneID {
+			return eng.SurfaceClose(dockName, wsName, s.Name)
+		}
+	}
+	// Pane not tracked — just kill it.
+	return eng.Tmux.KillPane(paneID)
+}
+
 func newSurfaceRestartCmd() *cobra.Command {
-	var surfaceName string
+	var wsFlag, dockFlag string
 
 	cmd := &cobra.Command{
-		Use:   "restart [workspace]",
+		Use:   "restart [name]",
 		Short: "Restart a surface's process",
-		Args:  cobra.MaximumNArgs(1),
+		Long: `Restart a surface by name, or the current surface if no name given.
+
+  bay sf restart agent              restart "agent" in the current workspace
+  bay sf restart w1:agent           restart "agent" in workspace w1
+  bay sf restart agent --ws w1      same as w1:agent
+  bay sf restart                    restart current surface`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
 				return err
 			}
 
-			target := "self"
-			if len(args) > 0 {
-				target = args[0]
+			// No positional, no flags: restart the current pane's surface.
+			if len(args) == 0 && wsFlag == "" && dockFlag == "" {
+				return surfaceRestartCurrentPane(eng)
 			}
-			dockName, wsName, sName, err := resolveSurfaceTarget(eng, target, surfaceName)
+			if len(args) == 0 {
+				return fmt.Errorf("--ws/--dock require a surface name")
+			}
+
+			dockName, wsName, sName, err := resolveSurfaceArg(eng, args[0], wsFlag, dockFlag)
 			if err != nil {
 				return err
 			}
-
 			return eng.SurfaceRestart(dockName, wsName, sName)
 		},
 	}
 
-	cmd.Flags().StringVar(&surfaceName, "surface", "", "surface name")
+	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (disambiguates with --dock)")
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (only valid with --ws or a workspace prefix)")
 
 	return cmd
+}
+
+// surfaceRestartCurrentPane restarts the surface owning the current tmux pane.
+func surfaceRestartCurrentPane(eng *engine.Engine) error {
+	dockName, wsName, err := eng.ResolveSelf()
+	if err != nil {
+		return err
+	}
+
+	paneID, tmuxErr := eng.Tmux.CurrentPaneID()
+	if tmuxErr != nil {
+		return fmt.Errorf("cannot determine current pane")
+	}
+
+	ws, err := eng.WsShow(dockName, wsName)
+	if err != nil {
+		return err
+	}
+	for _, s := range ws.Surfaces {
+		if s.Tmux != nil && s.Tmux.PaneID == paneID {
+			return eng.SurfaceRestart(dockName, wsName, s.Name)
+		}
+	}
+	return fmt.Errorf("current pane is not a tracked surface")
 }
 
 func newSurfaceGoCmd() *cobra.Command {
@@ -272,7 +344,9 @@ func newSurfaceLsCmd() *cobra.Command {
 }
 
 func newSurfaceShowCmd() *cobra.Command {
-	return &cobra.Command{
+	var wsFlag, dockFlag string
+
+	cmd := &cobra.Command{
 		Use:     "show <name>",
 		Aliases: []string{"cat"},
 		Short:   "Show surface details",
@@ -283,9 +357,9 @@ func newSurfaceShowCmd() *cobra.Command {
 				return err
 			}
 
-			dockName, wsName, err := eng.ResolveSelf()
+			dockName, wsName, sName, err := resolveSurfaceArg(eng, args[0], wsFlag, dockFlag)
 			if err != nil {
-				return fmt.Errorf("not in a bay workspace")
+				return err
 			}
 
 			ws, err := eng.WsShow(dockName, wsName)
@@ -293,9 +367,9 @@ func newSurfaceShowCmd() *cobra.Command {
 				return err
 			}
 
-			s := ws.FindSurface(args[0])
+			s := ws.FindSurface(sName)
 			if s == nil {
-				return fmt.Errorf("surface %q not found in workspace %q", args[0], wsName)
+				return fmt.Errorf("surface %q not found in workspace %q", sName, wsName)
 			}
 
 			fmt.Printf("Surface: %s\n", s.Name)
@@ -318,28 +392,45 @@ func newSurfaceShowCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (disambiguates with --dock)")
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (only valid with --ws or a workspace prefix)")
+
+	return cmd
 }
 
 func newSurfaceRenameCmd() *cobra.Command {
-	return &cobra.Command{
+	var wsFlag, dockFlag string
+
+	cmd := &cobra.Command{
 		Use:     "rename <old> <new>",
 		Aliases: []string{"mv"},
 		Short:   "Rename a surface",
-		Args:    cobra.ExactArgs(2),
+		Long: `Rename a surface. The <old> name may include a workspace prefix.
+
+  bay sf rename agent agent2              rename in current workspace
+  bay sf rename w1:agent agent2           rename agent in workspace w1
+  bay sf rename agent agent2 --ws w1      same as w1:agent`,
+		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
 				return err
 			}
 
-			dockName, wsName, err := eng.ResolveSelf()
+			dockName, wsName, oldName, err := resolveSurfaceArg(eng, args[0], wsFlag, dockFlag)
 			if err != nil {
-				return fmt.Errorf("not in a bay workspace")
+				return err
 			}
 
-			return eng.SurfaceRename(dockName, wsName, args[0], args[1])
+			return eng.SurfaceRename(dockName, wsName, oldName, args[1])
 		},
 	}
+
+	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (disambiguates with --dock)")
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (only valid with --ws or a workspace prefix)")
+
+	return cmd
 }
 
 // surfaceGo implements the surface picker / direct jump logic.
@@ -520,40 +611,3 @@ func filterSurfaceEntries(entries []nav.SurfaceEntry, query string) []nav.Surfac
 	return result
 }
 
-// resolveSurfaceTarget resolves a target to (dock, workspace, surface name).
-func resolveSurfaceTarget(eng *engine.Engine, target, explicitSurface string) (string, string, string, error) {
-	dockName, wsName, err := resolveTarget(eng, target)
-	if err != nil {
-		return "", "", "", err
-	}
-
-	ws, err := eng.WsShow(dockName, wsName)
-	if err != nil {
-		return "", "", "", err
-	}
-	if len(ws.Surfaces) == 0 {
-		return "", "", "", fmt.Errorf("no surfaces in workspace %q", wsName)
-	}
-
-	if explicitSurface != "" {
-		if ws.FindSurface(explicitSurface) == nil {
-			return "", "", "", fmt.Errorf("surface %q not found in workspace %q", explicitSurface, wsName)
-		}
-		return dockName, wsName, explicitSurface, nil
-	}
-
-	// Match current tmux pane.
-	if target == "self" {
-		paneID, tmuxErr := eng.Tmux.CurrentPaneID()
-		if tmuxErr == nil {
-			for _, s := range ws.Surfaces {
-				if s.Tmux != nil && s.Tmux.PaneID == paneID {
-					return dockName, wsName, s.Name, nil
-				}
-			}
-		}
-	}
-
-	// Default: first surface.
-	return dockName, wsName, ws.Surfaces[0].Name, nil
-}

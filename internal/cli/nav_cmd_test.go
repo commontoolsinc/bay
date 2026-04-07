@@ -325,48 +325,6 @@ func findSubstring(s, sub string) bool {
 	return false
 }
 
-// --- resolveSurfaceTarget ---
-
-func TestResolveSurfaceTarget_ExplicitSurface(t *testing.T) {
-	eng, _, _, _ := testNavEngine(t)
-
-	eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
-	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeAgent, "agent", "claude", "", "v")
-
-	dock, ws, surface, err := resolveSurfaceTarget(eng, "labs:w1", "agent")
-	if err != nil {
-		t.Fatalf("resolveSurfaceTarget: %v", err)
-	}
-	if dock != "labs" || ws != "w1" || surface != "agent" {
-		t.Errorf("got %s:%s:%s, want labs:w1:agent", dock, ws, surface)
-	}
-}
-
-func TestResolveSurfaceTarget_ExplicitSurfaceNotFound(t *testing.T) {
-	eng, _, _, _ := testNavEngine(t)
-
-	eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
-
-	_, _, _, err := resolveSurfaceTarget(eng, "labs:w1", "nonexistent")
-	if err == nil {
-		t.Error("expected error for nonexistent surface")
-	}
-}
-
-func TestResolveSurfaceTarget_DefaultsToFirstSurface(t *testing.T) {
-	eng, _, _, _ := testNavEngine(t)
-
-	eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
-
-	_, _, surface, err := resolveSurfaceTarget(eng, "labs:w1", "")
-	if err != nil {
-		t.Fatalf("resolveSurfaceTarget: %v", err)
-	}
-	if surface != "shell" {
-		t.Errorf("surface = %q, want shell (first surface)", surface)
-	}
-}
-
 // --- wsCycle ---
 
 func TestWsCycle_Forward(t *testing.T) {

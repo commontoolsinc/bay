@@ -119,6 +119,7 @@ func newWsNewCmd() *cobra.Command {
 
 func newWsCloseCmd() *cobra.Command {
 	var force, done bool
+	var dockFlag string
 
 	cmd := &cobra.Command{
 		Use:     "close [name|self]",
@@ -126,9 +127,11 @@ func newWsCloseCmd() *cobra.Command {
 		Short:   "Close a workspace and all its surfaces",
 		Long: `Close a workspace and all its windows.
 
-  bay ws close w1          close a specific workspace
-  bay ws close self        close the current workspace
-  bay ws close --done      close all workspaces with status "done"`,
+  bay ws close w1               close a specific workspace
+  bay ws close labs:w1          dock-qualified
+  bay ws close w1 --dock labs   same, with flag
+  bay ws close self             close the current workspace
+  bay ws close --done           close all workspaces with status "done"`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -138,12 +141,14 @@ func newWsCloseCmd() *cobra.Command {
 
 			if done {
 				// Batch close all done workspaces
-				dockName := ""
-				sess, tmuxErr := eng.Tmux.CurrentSession()
-				if tmuxErr == nil {
-					m, _ := eng.LoadManifest()
-					if m != nil && m.FindDock(sess) != nil {
-						dockName = sess
+				dockName := dockFlag
+				if dockName == "" {
+					sess, tmuxErr := eng.Tmux.CurrentSession()
+					if tmuxErr == nil {
+						m, _ := eng.LoadManifest()
+						if m != nil && m.FindDock(sess) != nil {
+							dockName = sess
+						}
 					}
 				}
 
@@ -164,7 +169,7 @@ func newWsCloseCmd() *cobra.Command {
 				return fmt.Errorf("specify a workspace to close (bay ws close <name>) or use --done to close all finished workspaces")
 			}
 
-			dockName, wsID, err := resolveTarget(eng, args[0])
+			dockName, wsID, err := resolveWsArg(eng, args[0], dockFlag)
 			if err != nil {
 				return err
 			}
@@ -175,12 +180,14 @@ func newWsCloseCmd() *cobra.Command {
 
 	cmd.Flags().BoolVar(&force, "force", false, "force close even if dirty")
 	cmd.Flags().BoolVar(&done, "done", false, "close all workspaces with status done")
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare workspace name)")
 
 	return cmd
 }
 
 func newWsShowCmd() *cobra.Command {
 	var jsonOutput bool
+	var dockFlag string
 
 	cmd := &cobra.Command{
 		Use:     "show [name|self]",
@@ -197,7 +204,7 @@ func newWsShowCmd() *cobra.Command {
 			if len(args) > 0 {
 				target = args[0]
 			}
-			dockName, wsID, err := resolveTarget(eng, target)
+			dockName, wsID, err := resolveWsArg(eng, target, dockFlag)
 			if err != nil {
 				return err
 			}
@@ -253,12 +260,13 @@ func newWsShowCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON")
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare workspace name)")
 
 	return cmd
 }
 
 func newWsUpdateCmd() *cobra.Command {
-	var branch, pr, status string
+	var branch, pr, status, dockFlag string
 
 	cmd := &cobra.Command{
 		Use:   "update <name|self>",
@@ -274,7 +282,7 @@ func newWsUpdateCmd() *cobra.Command {
 				return err
 			}
 
-			dockName, wsID, err := resolveTarget(eng, args[0])
+			dockName, wsID, err := resolveWsArg(eng, args[0], dockFlag)
 			if err != nil {
 				return err
 			}
@@ -297,12 +305,15 @@ func newWsUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&branch, "branch", "", "branch name")
 	cmd.Flags().StringVar(&pr, "pr", "", "PR number")
 	cmd.Flags().StringVar(&status, "status", "", "status (idle|active|done)")
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare workspace name)")
 
 	return cmd
 }
 
 func newWsRenameCmd() *cobra.Command {
-	return &cobra.Command{
+	var dockFlag string
+
+	cmd := &cobra.Command{
 		Use:     "rename <name|self> <new-name>",
 		Aliases: []string{"mv"},
 		Short:   "Rename a workspace display name",
@@ -313,7 +324,7 @@ func newWsRenameCmd() *cobra.Command {
 				return err
 			}
 
-			dockName, wsID, err := resolveTarget(eng, args[0])
+			dockName, wsID, err := resolveWsArg(eng, args[0], dockFlag)
 			if err != nil {
 				return err
 			}
@@ -321,6 +332,10 @@ func newWsRenameCmd() *cobra.Command {
 			return eng.WsRename(dockName, wsID, args[1])
 		},
 	}
+
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare workspace name)")
+
+	return cmd
 }
 
 // autoBootstrap detects the CWD git repo, creates a dock and repo in the manifest,
