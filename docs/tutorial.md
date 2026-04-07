@@ -176,13 +176,15 @@ the conversation picks up where it left off.
 bay ls
 ```
 
-Shows the workspaces in your current dock with a per-workspace surface count:
+Shows the workspaces in your current dock with a per-workspace surface count.
+Within each dock, the metadata column is aligned so attributes are easy to scan
+across rows:
 
 ```
 repo myproject
   dock myproject *
-    workspace login-bug * branch=fix/login-bug status=active surfaces=2
-    workspace review surfaces=2
+    workspace login-bug *  branch=fix/login-bug status=active surfaces=2
+    workspace review       surfaces=2
 ```
 
 For the full hierarchy including each surface:
@@ -194,12 +196,12 @@ bay tree
 ```
 repo myproject
   dock myproject *
-    workspace login-bug * branch=fix/login-bug status=active
-      surface shell type=shell
-      surface monitor type=cmd
+    workspace login-bug *  branch=fix/login-bug status=active
+      surface shell    type=shell
+      surface monitor  type=cmd
     workspace review
-      surface agent type=agent
-      surface shell type=shell
+      surface agent  type=agent agent=claude
+      surface shell  type=shell
 ```
 
 (`bay ls -R` does the same thing — `tree` is the friendlier alias.)
