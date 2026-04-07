@@ -179,16 +179,7 @@ func newDoctorCmd() *cobra.Command {
 				}
 			}
 
-			// Check monitor. The auto-start hook in PersistentPreRunE
-			// will have already forked the monitor before doctor's
-			// RunE runs, but the forked child writes its PID file
-			// asynchronously — so a fast-following Status() check can
-			// race the child and incorrectly report "not running". To
-			// avoid that confusing first-doctor-after-cold-start
-			// report, only sleep+retry on the negative path: if the
-			// first check is positive we report instantly, and if
-			// it's negative we give the child a brief window to come
-			// up before deciding it really isn't there.
+			// Check monitor.
 			mon, monCfgErr := newMonitorWithConfig()
 			if monCfgErr != nil {
 				fmt.Printf("[WARN] monitor: %v\n", monCfgErr)
@@ -196,6 +187,15 @@ func newDoctorCmd() *cobra.Command {
 			} else {
 				running, pid, monErr := mon.Status()
 				if monErr != nil || !running {
+					// Lazy retry: the auto-start hook in
+					// PersistentPreRunE forks `bay monitor run` before
+					// doctor's RunE runs, but the forked child writes
+					// its PID file asynchronously. A first-call check
+					// that runs before the child has finished startup
+					// will incorrectly report "not running". The retry
+					// only fires on the negative path so the steady
+					// state (monitor already running, second doctor
+					// run, etc.) is still instant.
 					time.Sleep(150 * time.Millisecond)
 					running, pid, monErr = mon.Status()
 				}
