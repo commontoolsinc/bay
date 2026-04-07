@@ -93,6 +93,107 @@ func TestBuildListView_DefaultIncludesRepos(t *testing.T) {
 	}
 }
 
+// TestAlignWidth_IgnoresRowsWithoutMeta verifies the load-bearing rule:
+// rows with empty meta don't contribute to the alignment width, so a long
+// meta-less row doesn't push the meta column out for its meta-having
+// siblings. This is the case the FormatListView caller relies on, but
+// it's hard to construct via the public DockInfo API — so we exercise
+// alignWidth directly.
+func TestAlignWidth_IgnoresRowsWithoutMeta(t *testing.T) {
+	rows := []alignedRow{
+		{prefix: "short", prefixWidth: 5, meta: "branch=foo"},
+		{prefix: "longer-prefix-with-no-meta", prefixWidth: 26, meta: ""},
+		{prefix: "medium", prefixWidth: 6, meta: "status=active"},
+	}
+	got := alignWidth(rows)
+	if got != 6 {
+		t.Errorf("alignWidth = %d, want 6 (longest-with-meta is 'medium' at width 6)", got)
+	}
+
+	// Empty input.
+	if alignWidth(nil) != 0 {
+		t.Errorf("alignWidth(nil) = %d, want 0", alignWidth(nil))
+	}
+
+	// All rows meta-less.
+	allEmpty := []alignedRow{
+		{prefix: "a", prefixWidth: 1, meta: ""},
+		{prefix: "bb", prefixWidth: 2, meta: ""},
+	}
+	if alignWidth(allEmpty) != 0 {
+		t.Errorf("alignWidth(all-meta-less) = %d, want 0", alignWidth(allEmpty))
+	}
+}
+
+// TestFormatListView_AlignsWorkspaceMetaWithinDock verifies that the meta
+// column on workspace lines starts at the same screen column for every
+// workspace in a dock, regardless of name length. This is the readability
+// fix that turns a key=value run-on into a scannable column.
+func TestFormatListView_AlignsWorkspaceMetaWithinDock(t *testing.T) {
+	view := BuildListView(testDocks(), ListViewOptions{
+		Focus: ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
+	})
+	out := stripANSI(FormatListView(view, false))
+
+	var authLine, cleanupLine string
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "workspace auth-fix") {
+			authLine = line
+		}
+		if strings.Contains(line, "workspace cleanup") {
+			cleanupLine = line
+		}
+	}
+	if authLine == "" || cleanupLine == "" {
+		t.Fatalf("missing workspace lines:\n%s", out)
+	}
+
+	authMetaStart := strings.Index(authLine, "branch=")
+	cleanupMetaStart := strings.Index(cleanupLine, "branch=")
+	if authMetaStart < 0 || cleanupMetaStart < 0 {
+		t.Fatalf("could not find meta start:\nauth:    %q\ncleanup: %q", authLine, cleanupLine)
+	}
+	if authMetaStart != cleanupMetaStart {
+		t.Errorf("workspace meta columns not aligned:\n  auth-fix branch= at column %d\n  cleanup  branch= at column %d\n  auth:    %q\n  cleanup: %q",
+			authMetaStart, cleanupMetaStart, authLine, cleanupLine)
+	}
+}
+
+// TestFormatListView_AlignsSurfaceMetaWithinWorkspace is the surface-level
+// counterpart: in tree mode, all surface lines under a workspace have their
+// meta column aligned to each other.
+func TestFormatListView_AlignsSurfaceMetaWithinWorkspace(t *testing.T) {
+	view := BuildListView(testDocks(), ListViewOptions{
+		Focus: ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "auth-fix"},
+	})
+	out := stripANSI(FormatListView(view, false))
+
+	// auth-fix has surfaces "shell", "agent", "tests" — different lengths.
+	var shellLine, agentLine, testsLine string
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "surface shell") {
+			shellLine = line
+		}
+		if strings.Contains(line, "surface agent") {
+			agentLine = line
+		}
+		if strings.Contains(line, "surface tests") {
+			testsLine = line
+		}
+	}
+	if shellLine == "" || agentLine == "" || testsLine == "" {
+		t.Fatalf("missing surface lines:\n%s", out)
+	}
+
+	shellMeta := strings.Index(shellLine, "type=")
+	agentMeta := strings.Index(agentLine, "type=")
+	testsMeta := strings.Index(testsLine, "type=")
+	if shellMeta != agentMeta || agentMeta != testsMeta {
+		t.Errorf("surface meta columns not aligned: shell=%d agent=%d tests=%d\n  %q\n  %q\n  %q",
+			shellMeta, agentMeta, testsMeta, shellLine, agentLine, testsLine)
+	}
+}
+
 func TestBuildListView_DockFocusStopsAtWorkspacesByDefault(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
 		Focus: ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
