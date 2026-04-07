@@ -159,38 +159,63 @@ func TestFormatListView_AlignsWorkspaceMetaWithinDock(t *testing.T) {
 	}
 }
 
-// TestFormatListView_AlignsSurfaceMetaWithinWorkspace is the surface-level
-// counterpart: in tree mode, all surface lines under a workspace have their
-// meta column aligned to each other.
-func TestFormatListView_AlignsSurfaceMetaWithinWorkspace(t *testing.T) {
-	view := BuildListView(testDocks(), ListViewOptions{
-		Focus: ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "auth-fix"},
+// TestFormatListView_AlignsSurfaceMetaAcrossDock verifies that in tree
+// mode, surface meta columns are aligned across ALL workspaces in a dock,
+// not just within each workspace. A long surface name in one workspace
+// pushes the meta column out for sibling surfaces under other workspaces
+// too — the user's eye doesn't need to recalibrate as they scroll.
+func TestFormatListView_AlignsSurfaceMetaAcrossDock(t *testing.T) {
+	// Two workspaces in the same dock with different longest-surface
+	// names: auth-fix has "tests" (5 chars) and shorter; cleanup has
+	// only "shell" (5 chars). Both should align to the same dock-wide
+	// max so the meta column is stable.
+	docks := []engine.DockInfo{
+		{
+			Name: "api",
+			Repo: "bay",
+			Workspaces: []engine.WorkspaceInfo{
+				{
+					Name: "auth-fix",
+					Surfaces: []engine.SurfaceInfo{
+						{ID: 1, Name: "agent", Type: "agent", Agent: "claude"},
+						{ID: 2, Name: "monitor-pane", Type: "cmd", Command: "top"},
+					},
+				},
+				{
+					Name: "cleanup",
+					Surfaces: []engine.SurfaceInfo{
+						{ID: 1, Name: "sh", Type: "shell"},
+					},
+				},
+			},
+		},
+	}
+	view := BuildListView(docks, ListViewOptions{
+		Focus:     ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
+		Recursive: true,
 	})
 	out := stripANSI(FormatListView(view, false))
 
-	// auth-fix has surfaces "shell", "agent", "tests" — different lengths.
-	var shellLine, agentLine, testsLine string
+	// All three surface lines (across two workspaces) should have
+	// "type=" at the same column.
+	var typeColumns []int
 	for _, line := range strings.Split(out, "\n") {
-		if strings.Contains(line, "surface shell") {
-			shellLine = line
+		if !strings.Contains(line, "surface ") {
+			continue
 		}
-		if strings.Contains(line, "surface agent") {
-			agentLine = line
+		idx := strings.Index(line, "type=")
+		if idx < 0 {
+			t.Fatalf("surface line missing type= column: %q", line)
 		}
-		if strings.Contains(line, "surface tests") {
-			testsLine = line
-		}
+		typeColumns = append(typeColumns, idx)
 	}
-	if shellLine == "" || agentLine == "" || testsLine == "" {
-		t.Fatalf("missing surface lines:\n%s", out)
+	if len(typeColumns) != 3 {
+		t.Fatalf("expected 3 surface lines, got %d:\n%s", len(typeColumns), out)
 	}
-
-	shellMeta := strings.Index(shellLine, "type=")
-	agentMeta := strings.Index(agentLine, "type=")
-	testsMeta := strings.Index(testsLine, "type=")
-	if shellMeta != agentMeta || agentMeta != testsMeta {
-		t.Errorf("surface meta columns not aligned: shell=%d agent=%d tests=%d\n  %q\n  %q\n  %q",
-			shellMeta, agentMeta, testsMeta, shellLine, agentLine, testsLine)
+	for i := 1; i < len(typeColumns); i++ {
+		if typeColumns[i] != typeColumns[0] {
+			t.Errorf("surface meta columns not aligned across dock: %v\noutput:\n%s", typeColumns, out)
+		}
 	}
 }
 

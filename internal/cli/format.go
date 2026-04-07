@@ -352,16 +352,15 @@ func writeAlignedLine(b *strings.Builder, indent int, prefix string, prefixWidth
 	b.WriteString("\n")
 }
 
-// alignedRow holds a precomputed render row. The optional surfaces /
-// isCurrentWs fields are populated only on workspace rows so the render
-// pass can iterate workspace rows without indexing back into
-// dock.Workspaces (which would risk silent lockstep breakage).
+// alignedRow holds a precomputed render row. The optional surfaceRows
+// field is populated only on workspace rows in tree mode and carries the
+// pre-built surface render rows for that workspace, so the render pass
+// can iterate workspace rows without indexing back into dock.Workspaces.
 type alignedRow struct {
 	prefix      string
 	prefixWidth int
 	meta        string
-	surfaces    []engine.SurfaceInfo // workspace rows only
-	isCurrentWs bool                 // workspace rows only
+	surfaceRows []alignedRow // workspace rows only, in tree mode
 }
 
 // alignWidth returns the max prefix width across rows that have non-empty
@@ -400,10 +399,13 @@ func FormatListView(view ListView, long bool) string {
 			}
 			showChildren := view.Recursive || view.Focus.Kind == FocusWorkspace
 
-			// First pass: build workspace rows. Carry surfaces inline so
-			// the render pass can iterate one slice (no lockstep with
-			// dock.Workspaces).
+			// First pass: build all workspace rows AND surface rows
+			// up front. Surface alignment is computed across the WHOLE
+			// dock (not per workspace) so the surface meta column stays
+			// stable as the eye scrolls past workspaces with different
+			// longest-surface-name lengths.
 			wsRows := make([]alignedRow, len(dock.Workspaces))
+			sfAlign := 0
 			for i, ws := range dock.Workspaces {
 				isCurrentWs := dock.Name == view.CurrentDock && ws.Name == view.CurrentWs
 				wsName := ws.Name
@@ -415,34 +417,34 @@ func FormatListView(view ListView, long bool) string {
 					prefix:      prefix,
 					prefixWidth: width,
 					meta:        workspaceMeta(ws, !showChildren),
-					surfaces:    ws.Surfaces,
-					isCurrentWs: isCurrentWs,
 				}
+				if !showChildren {
+					continue
+				}
+				sfRows := make([]alignedRow, len(ws.Surfaces))
+				for j, s := range ws.Surfaces {
+					sName := s.Name
+					if isCurrentWs && s.Name == view.CurrentSurface {
+						sName += " *"
+					}
+					sfPrefix, sfWidth := labelValueWithWidth("surface", sName)
+					sfMeta := surfaceMeta(s, long)
+					sfRows[j] = alignedRow{
+						prefix:      sfPrefix,
+						prefixWidth: sfWidth,
+						meta:        sfMeta,
+					}
+					if sfMeta != "" && sfWidth > sfAlign {
+						sfAlign = sfWidth
+					}
+				}
+				wsRows[i].surfaceRows = sfRows
 			}
 			wsAlign := alignWidth(wsRows)
 
 			for _, wsRow := range wsRows {
 				writeAlignedLine(&b, 2, wsRow.prefix, wsRow.prefixWidth, wsRow.meta, wsAlign)
-				if !showChildren {
-					continue
-				}
-
-				// Per-workspace surface alignment.
-				sfRows := make([]alignedRow, len(wsRow.surfaces))
-				for j, s := range wsRow.surfaces {
-					sName := s.Name
-					if wsRow.isCurrentWs && s.Name == view.CurrentSurface {
-						sName += " *"
-					}
-					prefix, width := labelValueWithWidth("surface", sName)
-					sfRows[j] = alignedRow{
-						prefix:      prefix,
-						prefixWidth: width,
-						meta:        surfaceMeta(s, long),
-					}
-				}
-				sfAlign := alignWidth(sfRows)
-				for _, sr := range sfRows {
+				for _, sr := range wsRow.surfaceRows {
 					writeAlignedLine(&b, 3, sr.prefix, sr.prefixWidth, sr.meta, sfAlign)
 				}
 			}
