@@ -52,6 +52,17 @@ func newTopNewShellCmd() *cobra.Command {
 		Short: "Create a shell surface",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			opts := surfaceNewOpts{
+				Type:     manifest.SurfaceTypeShell,
+				SplitDir: surfaceSplitDir(splitDir, window),
+			}
+			if len(args) > 0 {
+				if err := validateSurfaceName(args[0]); err != nil {
+					return err
+				}
+				opts.Name = args[0]
+			}
+
 			eng, err := newEngine()
 			if err != nil {
 				return err
@@ -59,13 +70,6 @@ func newTopNewShellCmd() *cobra.Command {
 			dockName, wsName, err := resolveSurfaceWorkspace(eng, wsFlag, dockFlag)
 			if err != nil {
 				return err
-			}
-			opts := surfaceNewOpts{
-				Type:     manifest.SurfaceTypeShell,
-				SplitDir: surfaceSplitDir(splitDir, window),
-			}
-			if len(args) > 0 {
-				opts.Name = args[0]
 			}
 			return runSurfaceNew(eng, dockName, wsName, opts)
 		},
@@ -93,6 +97,18 @@ func newTopNewAgentCmd() *cobra.Command {
   bay new agent claude --ws auth-fix --window`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			opts := surfaceNewOpts{
+				Type:     manifest.SurfaceTypeAgent,
+				Agent:    args[0],
+				SplitDir: surfaceSplitDir(splitDir, window),
+			}
+			if len(args) > 1 {
+				if err := validateSurfaceName(args[1]); err != nil {
+					return err
+				}
+				opts.Name = args[1]
+			}
+
 			eng, err := newEngine()
 			if err != nil {
 				return err
@@ -100,14 +116,6 @@ func newTopNewAgentCmd() *cobra.Command {
 			dockName, wsName, err := resolveSurfaceWorkspace(eng, wsFlag, dockFlag)
 			if err != nil {
 				return err
-			}
-			opts := surfaceNewOpts{
-				Type:     manifest.SurfaceTypeAgent,
-				Agent:    args[0],
-				SplitDir: surfaceSplitDir(splitDir, window),
-			}
-			if len(args) > 1 {
-				opts.Name = args[1]
 			}
 			return runSurfaceNew(eng, dockName, wsName, opts)
 		},
@@ -135,6 +143,18 @@ func newTopNewCmdCmd() *cobra.Command {
   bay new cmd "tail -f log.txt" --window`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			opts := surfaceNewOpts{
+				Type:     manifest.SurfaceTypeCmd,
+				Command:  args[0],
+				SplitDir: surfaceSplitDir(splitDir, window),
+			}
+			if len(args) > 1 {
+				if err := validateSurfaceName(args[1]); err != nil {
+					return err
+				}
+				opts.Name = args[1]
+			}
+
 			eng, err := newEngine()
 			if err != nil {
 				return err
@@ -142,14 +162,6 @@ func newTopNewCmdCmd() *cobra.Command {
 			dockName, wsName, err := resolveSurfaceWorkspace(eng, wsFlag, dockFlag)
 			if err != nil {
 				return err
-			}
-			opts := surfaceNewOpts{
-				Type:     manifest.SurfaceTypeCmd,
-				Command:  args[0],
-				SplitDir: surfaceSplitDir(splitDir, window),
-			}
-			if len(args) > 1 {
-				opts.Name = args[1]
 			}
 			return runSurfaceNew(eng, dockName, wsName, opts)
 		},
@@ -164,11 +176,19 @@ func newTopNewCmdCmd() *cobra.Command {
 }
 
 func newTopNewEditCmd() *cobra.Command {
+	var wsFlag, dockFlag string
+
 	cmd := &cobra.Command{
 		Use:   "edit [workspace]",
 		Short: "Launch the editor on a workspace (creates an editor surface)",
 		Long: `Launch the editor on a workspace and register a tracked editor surface
-so it appears in 'bay go'. With no positional, opens the current workspace.
+so it appears in 'bay go'. With no positional and no flags, opens the
+current workspace.
+
+  bay new edit                       current workspace
+  bay new edit auth-fix              specific workspace (positional)
+  bay new edit --ws auth-fix         same thing with a flag
+  bay new edit --ws w1 --dock labs   dock-qualified via flags
 
 This is equivalent to bare 'bay edit [workspace]'. Use 'bay edit' if you need
 the --all, --set, or --show utility flags.`,
@@ -178,14 +198,41 @@ the --all, --set, or --show utility flags.`,
 			if err != nil {
 				return err
 			}
-			target := "self"
-			if len(args) > 0 {
-				target = args[0]
+			target, err := editTargetFromArgs(args, wsFlag, dockFlag)
+			if err != nil {
+				return err
 			}
 			return runEditCreate(eng, target)
 		},
 	}
+
+	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (defaults to current)")
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (with --ws to disambiguate)")
+
 	return cmd
+}
+
+// editTargetFromArgs builds a resolveTarget-compatible workspace target
+// string from a positional arg plus --ws/--dock flags. Positional and flags
+// are mutually exclusive (each is a way to name a workspace); --dock without
+// --ws (or without a positional) is an error.
+func editTargetFromArgs(args []string, wsFlag, dockFlag string) (string, error) {
+	if len(args) > 0 {
+		if wsFlag != "" || dockFlag != "" {
+			return "", fmt.Errorf("cannot combine positional workspace with --ws/--dock")
+		}
+		return args[0], nil
+	}
+	if wsFlag == "" {
+		if dockFlag != "" {
+			return "", fmt.Errorf("--dock requires --ws or a positional workspace")
+		}
+		return "self", nil
+	}
+	if dockFlag != "" {
+		return dockFlag + ":" + wsFlag, nil
+	}
+	return wsFlag, nil
 }
 
 // resolveSurfaceWorkspace resolves the (dock, ws) for a surface-creation

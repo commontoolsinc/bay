@@ -116,10 +116,24 @@ func surfaceSplitDir(splitDir string, window bool) string {
 	return splitDir
 }
 
+// validateSurfaceName rejects names containing a colon. Users who type
+// `bay new shell w1:logs` expecting colon-path semantics would otherwise
+// land a surface literally named "w1:logs" in the current workspace.
+func validateSurfaceName(name string) error {
+	if strings.Contains(name, ":") {
+		return fmt.Errorf("surface name %q cannot contain ':' (use --ws/--dock to specify a workspace)", name)
+	}
+	return nil
+}
+
 // runSurfaceNew creates a new surface in (dockName, wsName). Shared by
 // `bay sf new` and the top-level `bay new` verbs. The caller is responsible
 // for resolving (dockName, wsName) and setting opts.Type.
 func runSurfaceNew(eng *engine.Engine, dockName, wsName string, opts surfaceNewOpts) error {
+	if err := validateSurfaceName(opts.Name); err != nil {
+		return err
+	}
+
 	name := opts.Name
 	if name == "" {
 		switch opts.Type {

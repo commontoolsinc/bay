@@ -101,6 +101,113 @@ func TestRunSurfaceNew_Cmd(t *testing.T) {
 	}
 }
 
+func TestRunSurfaceNew_AgentDefaultName(t *testing.T) {
+	eng, _, _, _ := testNavEngine(t)
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+
+	// No opts.Name — should default to "agent".
+	err := runSurfaceNew(eng, "labs", "w1", surfaceNewOpts{
+		Type:     manifest.SurfaceTypeAgent,
+		Agent:    "claude",
+		SplitDir: "v",
+	})
+	if err != nil {
+		t.Fatalf("runSurfaceNew: %v", err)
+	}
+
+	ws, _ := eng.WsShow("labs", "w1")
+	foundAgent := false
+	for _, s := range ws.Surfaces {
+		if s.Type == manifest.SurfaceTypeAgent && strings.HasPrefix(s.Name, "agent") {
+			foundAgent = true
+			break
+		}
+	}
+	if !foundAgent {
+		t.Error("expected an agent-typed surface with name prefix 'agent'")
+	}
+}
+
+func TestRunSurfaceNew_CmdDefaultName(t *testing.T) {
+	eng, _, _, _ := testNavEngine(t)
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+
+	// No opts.Name — should default to "cmd".
+	err := runSurfaceNew(eng, "labs", "w1", surfaceNewOpts{
+		Type:     manifest.SurfaceTypeCmd,
+		Command:  "tail -f log.txt",
+		SplitDir: "v",
+	})
+	if err != nil {
+		t.Fatalf("runSurfaceNew: %v", err)
+	}
+
+	ws, _ := eng.WsShow("labs", "w1")
+	foundCmd := false
+	for _, s := range ws.Surfaces {
+		if s.Type == manifest.SurfaceTypeCmd && strings.HasPrefix(s.Name, "cmd") {
+			foundCmd = true
+			break
+		}
+	}
+	if !foundCmd {
+		t.Error("expected a cmd-typed surface with name prefix 'cmd'")
+	}
+}
+
+func TestRunSurfaceNew_NameWithColonIsRejected(t *testing.T) {
+	eng, _, _, _ := testNavEngine(t)
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+
+	err := runSurfaceNew(eng, "labs", "w1", surfaceNewOpts{
+		Type:     manifest.SurfaceTypeShell,
+		Name:     "w1:logs",
+		SplitDir: "v",
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot contain ':'") {
+		t.Errorf("expected colon-rejection error, got %v", err)
+	}
+}
+
+// --- editTargetFromArgs ---
+
+func TestEditTargetFromArgs(t *testing.T) {
+	cases := []struct {
+		name    string
+		args    []string
+		ws      string
+		dock    string
+		want    string
+		wantErr bool
+	}{
+		{"no args no flags", nil, "", "", "self", false},
+		{"positional only", []string{"auth-fix"}, "", "", "auth-fix", false},
+		{"positional with dock prefix", []string{"labs:auth-fix"}, "", "", "labs:auth-fix", false},
+		{"ws flag", nil, "auth-fix", "", "auth-fix", false},
+		{"ws + dock flags", nil, "auth-fix", "labs", "labs:auth-fix", false},
+		{"positional + ws flag", []string{"a"}, "b", "", "", true},
+		{"positional + dock flag", []string{"a"}, "", "labs", "", true},
+		{"dock flag alone", nil, "", "labs", "", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := editTargetFromArgs(c.args, c.ws, c.dock)
+			if (err != nil) != c.wantErr {
+				t.Fatalf("err = %v, wantErr = %v", err, c.wantErr)
+			}
+			if got != c.want {
+				t.Errorf("got %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
 // --- runSurfaceClose ---
 
 func TestRunSurfaceClose_ByName(t *testing.T) {
