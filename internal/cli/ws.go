@@ -25,7 +25,6 @@ func newWsCmd() *cobra.Command {
 		newWsNewCmd(),
 		newWsCloseCmd(),
 		newWsShowCmd(),
-		newWsUpdateCmd(),
 		newWsRenameCmd(),
 		newWsLsCmd(),
 		newWsTreeCmd(),
@@ -260,51 +259,6 @@ func newWsShowCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON")
-	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare workspace name)")
-
-	return cmd
-}
-
-func newWsUpdateCmd() *cobra.Command {
-	var branch, pr, status, dockFlag string
-
-	cmd := &cobra.Command{
-		Use:   "update <name|self>",
-		Short: "Update workspace metadata (at least one of --branch, --pr, or --status is required)",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if !cmd.Flags().Changed("branch") && !cmd.Flags().Changed("pr") && !cmd.Flags().Changed("status") {
-				return fmt.Errorf("at least one of --branch, --pr, or --status is required")
-			}
-
-			eng, err := newEngine()
-			if err != nil {
-				return err
-			}
-
-			dockName, wsID, err := resolveWsArg(eng, args[0], dockFlag)
-			if err != nil {
-				return err
-			}
-
-			var bp, pp, sp *string
-			if cmd.Flags().Changed("branch") {
-				bp = &branch
-			}
-			if cmd.Flags().Changed("pr") {
-				pp = &pr
-			}
-			if cmd.Flags().Changed("status") {
-				sp = &status
-			}
-
-			return eng.WsUpdate(dockName, wsID, bp, pp, sp)
-		},
-	}
-
-	cmd.Flags().StringVar(&branch, "branch", "", "branch name")
-	cmd.Flags().StringVar(&pr, "pr", "", "PR number")
-	cmd.Flags().StringVar(&status, "status", "", "status (idle|active|done)")
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare workspace name)")
 
 	return cmd

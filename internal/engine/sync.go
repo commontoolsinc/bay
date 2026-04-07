@@ -43,6 +43,32 @@ func (e *Engine) syncWorkspaceGitState(ws *manifest.Workspace) bool {
 	return true
 }
 
+// syncWorkspaceMergeStatus checks whether a workspace's branch has been
+// merged into origin/<default>, and if so sets its status to done. Uses
+// git merge-base --is-ancestor against already-fetched data — no network
+// calls. The monitor daemon is responsible for fetching; this check just
+// reads whatever's already local.
+//
+// Returns true if the status was changed.
+func (e *Engine) syncWorkspaceMergeStatus(ws *manifest.Workspace) bool {
+	if ws.Worktree == nil || ws.Worktree.Branch == "" || ws.Path == "" {
+		return false
+	}
+	if ws.Status == manifest.WorkspaceStatusDone {
+		return false
+	}
+	wsPath := config.ExpandPath(ws.Path)
+	if _, err := os.Stat(wsPath); err != nil {
+		return false
+	}
+	merged, err := e.Git.IsMergedIntoDefault(wsPath, ws.Worktree.Branch)
+	if err != nil || !merged {
+		return false
+	}
+	ws.Status = manifest.WorkspaceStatusDone
+	return true
+}
+
 // syncWorkspacePR looks up the PR number for a workspace with a branch but
 // no PR and no PRChecked sentinel. Returns true if the manifest needs saving.
 //
@@ -92,6 +118,9 @@ func (e *Engine) SyncAll() {
 				changed = true
 			}
 			if e.syncWorkspacePR(ws) {
+				changed = true
+			}
+			if e.syncWorkspaceMergeStatus(ws) {
 				changed = true
 			}
 			if e.syncSurfaceState(ws) {

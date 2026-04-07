@@ -63,7 +63,7 @@ func TestCompletionsRegistered(t *testing.T) {
 
 	// These commands should have ValidArgsFunction set
 	withCompletions := []string{
-		"ws close", "ws show", "ws update", "ws rename",
+		"ws close", "ws show", "ws rename",
 		"ws go",
 		"dock close", "dock recover",
 		"ws new",
@@ -430,13 +430,6 @@ func TestDockCompletions(t *testing.T) {
 	}
 	if !hasValue("research") {
 		t.Errorf("completions missing 'research', got: %v", completions)
-	}
-}
-
-func TestStatusCompletions(t *testing.T) {
-	completions, _ := statusCompletions(nil, nil, "")
-	if len(completions) != 3 {
-		t.Errorf("expected 3 status completions, got %d", len(completions))
 	}
 }
 

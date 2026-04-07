@@ -350,49 +350,6 @@ func (e *Engine) WsCloseByStatus(dockName, status string, force bool) (closed []
 	return closed, skipped, nil
 }
 
-// WsUpdate updates workspace metadata (branch, PR, status).
-func (e *Engine) WsUpdate(dockName, wsName string, branch, pr, status *string) error {
-	return e.withManifest(func(m *manifest.Manifest) error {
-		dock := m.FindDock(dockName)
-		if dock == nil {
-			return fmt.Errorf("unknown dock %q", dockName)
-		}
-		ws := dock.FindWorkspace(wsName)
-		if ws == nil {
-			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
-		}
-
-		ws.LastActive = time.Now().Unix()
-		nameChanged := false
-
-		if branch != nil && ws.Worktree != nil {
-			ws.Worktree.Branch = *branch
-			if !ws.NameOverridden {
-				ws.Name = abbreviateBranch(*branch)
-				nameChanged = true
-			}
-			if ws.Status == manifest.WorkspaceStatusIdle {
-				ws.Status = manifest.WorkspaceStatusActive
-			}
-		}
-		if pr != nil && ws.Worktree != nil {
-			ws.Worktree.PR = *pr
-		}
-		if status != nil {
-			if err := ValidateStatus(*status); err != nil {
-				return err
-			}
-			ws.Status = manifest.WorkspaceStatus(*status)
-		}
-
-		if nameChanged {
-			e.updateWindowNames(ws, ws.Name)
-		}
-
-		return nil
-	})
-}
-
 // WsRename renames a workspace.
 func (e *Engine) WsRename(dockName, wsName, newName string) error {
 	if err := ValidateName(newName); err != nil {
@@ -527,7 +484,10 @@ func (e *Engine) updateWindowNames(ws *manifest.Workspace, name string) {
 	}
 }
 
-// SetLastFocused records which surface was last focused in a workspace.
+// SetLastFocused records which surface was last focused in a workspace and
+// bumps LastActive. The activity bump signals to the monitor's activity gate
+// that this workspace is in active use, so its repo gets fetched on the next
+// merge-detection cycle.
 func (e *Engine) SetLastFocused(dockName, wsName string, surfaceID int) error {
 	return e.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)
@@ -539,6 +499,7 @@ func (e *Engine) SetLastFocused(dockName, wsName string, surfaceID int) error {
 			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
 		}
 		ws.LastFocused = surfaceID
+		ws.LastActive = time.Now().Unix()
 		return nil
 	})
 }

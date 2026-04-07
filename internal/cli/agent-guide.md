@@ -64,7 +64,6 @@ current tmux pane ID to identify which surface within the workspace.
 
 Commands an agent inside a workspace typically uses:
 - `bay pwd` — confirm bay context (repo, dock, workspace, surface)
-- `bay ws update self` — report branch, PR, or status changes
 - `bay ws show self` — check own workspace metadata
 - `bay ls` — see what other workspaces are doing
 - `bay ws close self` — shut down when work is complete
@@ -80,9 +79,10 @@ Bay is a coordination layer over:
 
 Important invariants:
 - A **workspace** is the durable unit. Surfaces are views onto it.
-- Branch is auto-detected from the filesystem. PR is auto-detected via
-  `gh pr view`. Status transitions to `done` on merge detection.
-- `bay ws update self` is still available for manual metadata overrides.
+- Branch, PR number, and status are all auto-detected. Branch comes
+  from the filesystem on every display. PR is looked up via `gh pr
+  view` once and cached. Status transitions to `done` automatically
+  when the branch is merged into the default branch.
 - Bay does not generate config files into worktrees. Project
   instructions go in the repo's `CLAUDE.md` (or equivalent).
   Per-workspace context is discoverable via `bay pwd --json`.
@@ -327,22 +327,6 @@ bay ws show auth-fix
 bay ws show self --json
 ```
 
-#### `bay ws update <name|self> [--branch NAME] [--pr NUMBER] [--status STATUS]`
-
-Update workspace metadata. At least one flag required. Status must be
-`idle`, `active`, or `done`. This is a metadata update only — it does
-not modify git state.
-
-Note: branch and PR are auto-detected in most cases. Use this command
-when you need to override or when auto-detection has not yet run.
-
-```
-bay ws update self --branch fix-auth-header --status active
-bay ws update self --pr 347
-bay ws update self --status done
-bay ws update auth-fix --status done
-```
-
 #### `bay ws rename <name|self> <new-name>`
 
 Rename a workspace. Overrides auto-abbreviation permanently. Names
@@ -558,13 +542,11 @@ to launch the dock's default agent instead.
 
 ### Track progress from inside
 
-Branch and PR are auto-detected, but you can override:
-
-```
-bay ws update self --branch fix-auth-header --status active
-bay ws update self --pr 347
-bay ws update self --status done
-```
+Branch, PR number, and status are all tracked automatically. Branch
+comes from the worktree on every display. PR is looked up via `gh pr
+view` and cached. Status flips to `done` when the branch is merged
+into the default branch. Just commit, push, and open a PR — bay sees
+all of it.
 
 ### Open a shell alongside your agent
 

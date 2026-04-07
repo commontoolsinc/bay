@@ -121,6 +121,73 @@ func TestSyncAll_DoesNotRecheckWorkspaceWithPRSet(t *testing.T) {
 	}
 }
 
+// --- syncWorkspaceMergeStatus ---
+
+func TestSyncAll_MarksMergedWorkspaceDone(t *testing.T) {
+	eng, _ := testEngine(t)
+	wsPath := seedWorktreeWorkspace(t, eng, "labs", "w1", "feature/login")
+	// Make sure the workspace is active (not idle).
+	_ = eng.withManifest(func(m *manifest.Manifest) error {
+		ws := m.FindDock("labs").FindWorkspace("w1")
+		ws.Status = manifest.WorkspaceStatusActive
+		return nil
+	})
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetDefaultBranch(wsPath, "main")
+	mockGit.SetMerged(wsPath, "feature/login", true)
+
+	eng.SyncAll()
+
+	m, _ := eng.LoadManifest()
+	ws := m.FindDock("labs").FindWorkspace("w1")
+	if ws.Status != manifest.WorkspaceStatusDone {
+		t.Errorf("Status = %q, want done", ws.Status)
+	}
+}
+
+func TestSyncAll_DoesNotChangeStatusForUnmergedBranch(t *testing.T) {
+	eng, _ := testEngine(t)
+	wsPath := seedWorktreeWorkspace(t, eng, "labs", "w1", "feature/login")
+	_ = eng.withManifest(func(m *manifest.Manifest) error {
+		ws := m.FindDock("labs").FindWorkspace("w1")
+		ws.Status = manifest.WorkspaceStatusActive
+		return nil
+	})
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetDefaultBranch(wsPath, "main")
+	// Not merged — mock default is false.
+
+	eng.SyncAll()
+
+	m, _ := eng.LoadManifest()
+	ws := m.FindDock("labs").FindWorkspace("w1")
+	if ws.Status != manifest.WorkspaceStatusActive {
+		t.Errorf("Status = %q, want active", ws.Status)
+	}
+}
+
+func TestSyncAll_SkipsMergedCheckForAlreadyDone(t *testing.T) {
+	eng, _ := testEngine(t)
+	wsPath := seedWorktreeWorkspace(t, eng, "labs", "w1", "feature/login")
+	_ = eng.withManifest(func(m *manifest.Manifest) error {
+		ws := m.FindDock("labs").FindWorkspace("w1")
+		ws.Status = manifest.WorkspaceStatusDone
+		return nil
+	})
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetDefaultBranch(wsPath, "main")
+	before := len(mockGit.Calls("IsMergedIntoDefault"))
+
+	eng.SyncAll()
+
+	if after := len(mockGit.Calls("IsMergedIntoDefault")); after != before {
+		t.Errorf("SyncAll should skip merge check for done workspace: before=%d, after=%d", before, after)
+	}
+}
+
 func TestSyncAll_SkipsWorkspaceWithoutBranch(t *testing.T) {
 	eng, _ := testEngine(t)
 	wsPath := filepath.Join(t.TempDir(), "w1")

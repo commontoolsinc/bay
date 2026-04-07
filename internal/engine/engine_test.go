@@ -456,39 +456,6 @@ func TestWsClose_Dirty(t *testing.T) {
 	}
 }
 
-func TestWsUpdate(t *testing.T) {
-	eng, _ := testEngine(t)
-
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
-	if err != nil {
-		t.Fatalf("WsNew failed: %v", err)
-	}
-
-	branch := "feature/mem-refactor"
-	pr := "234"
-	err = eng.WsUpdate("labs", "w1", &branch, &pr, nil)
-	if err != nil {
-		t.Fatalf("WsUpdate failed: %v", err)
-	}
-
-	// WsUpdate with branch abbreviates the name: w1 -> mem-refactor
-	ws, _ := eng.WsShow("labs", "mem-refactor")
-	if ws.Worktree == nil || ws.Worktree.Branch != "feature/mem-refactor" {
-		t.Errorf("branch = %v", ws.Worktree)
-	}
-	if ws.Worktree.PR != "234" {
-		t.Errorf("pr = %q", ws.Worktree.PR)
-	}
-	// Auto-abbreviated name
-	if ws.Name != "mem-refactor" {
-		t.Errorf("name = %q, want mem-refactor", ws.Name)
-	}
-	// Status auto-promoted to active
-	if ws.Status != manifest.WorkspaceStatusActive {
-		t.Errorf("status = %q, want active", ws.Status)
-	}
-}
-
 func TestWsRename(t *testing.T) {
 	eng, _ := testEngine(t)
 
@@ -505,17 +472,6 @@ func TestWsRename(t *testing.T) {
 	ws, _ := eng.WsShow("labs", "my-ws")
 	if ws.Name != "my-ws" {
 		t.Errorf("name = %q, want my-ws", ws.Name)
-	}
-
-	// Verify name override sticks after branch update
-	branch := "feature/something"
-	err = eng.WsUpdate("labs", "my-ws", &branch, nil, nil)
-	if err != nil {
-		t.Fatalf("WsUpdate failed: %v", err)
-	}
-	ws, _ = eng.WsShow("labs", "my-ws")
-	if ws.Name != "my-ws" {
-		t.Errorf("name after update = %q, want my-ws (override should stick)", ws.Name)
 	}
 }
 
@@ -748,17 +704,23 @@ func TestRecover(t *testing.T) {
 
 // --- Regression tests for code review fixes ---
 
-func TestWsUpdate_TmuxWindowRenamed(t *testing.T) {
-	// Regression: WsUpdate should rename tmux windows when workspace name changes
+func TestSyncWorkspaceGitState_RenamesTmuxWindow(t *testing.T) {
+	// Regression: when sync detects a branch change, the workspace gets a
+	// new abbreviated name and the tmux window should be renamed to match.
 	eng, _ := testEngine(t)
-
 	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 
-	branch := "feature/new-thing"
-	eng.WsUpdate("labs", "w1", &branch, nil, nil)
+	// Simulate a branch change on disk (the worktree's actual current branch).
+	mockGit := eng.Git.(*git.Mock)
+	m, _ := eng.LoadManifest()
+	wsPath := m.FindDock("labs").FindWorkspace("w1").Path
+	os.MkdirAll(wsPath, 0o755)
+	mockGit.SetBranch(wsPath, "feature/new-thing")
 
-	// Verify RenameWindow was called
 	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.Calls = nil
+	eng.SyncAll()
+
 	found := false
 	for _, call := range mockTmux.Calls {
 		if call.Method == "RenameWindow" {
@@ -767,7 +729,7 @@ func TestWsUpdate_TmuxWindowRenamed(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Error("expected RenameWindow call when branch changes workspace name")
+		t.Error("expected RenameWindow call when sync picks up a branch change")
 	}
 }
 
@@ -1102,24 +1064,6 @@ func TestSurfaceRestart_UsesResumeArgs(t *testing.T) {
 	t.Error("expected RespawnPane call")
 }
 
-func TestWsUpdate_InvalidStatus(t *testing.T) {
-	eng, _ := testEngine(t)
-	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
-
-	bad := "banana"
-	err := eng.WsUpdate("labs", "w1", nil, nil, &bad)
-	if err == nil {
-		t.Error("expected error for invalid status")
-	}
-
-	// Valid statuses should work
-	for _, s := range []string{"idle", "active", "done"} {
-		v := s
-		if err := eng.WsUpdate("labs", "w1", nil, nil, &v); err != nil {
-			t.Errorf("valid status %q rejected: %v", s, err)
-		}
-	}
-}
 
 func TestWsNew_DuplicateDisplayName(t *testing.T) {
 	eng, _ := testEngine(t)
@@ -1670,17 +1614,16 @@ func TestSyncWorkspaceGitState_EmptyBranchNoOverwrite(t *testing.T) {
 	}
 	os.MkdirAll(ws.Path, 0o755)
 
-	// First, set a real branch via WsUpdate
-	branch := "feature/existing"
-	eng.WsUpdate("labs", "w1", &branch, nil, nil)
-
-	// Now mock returns empty branch (detached HEAD)
+	// First sync: mock has the real branch — picks it up and abbreviates name.
 	mockGit := eng.Git.(*git.Mock)
-	mockGit.SetBranch(ws.Path, "")
-
+	mockGit.SetBranch(ws.Path, "feature/existing")
 	eng.SyncAll()
 
-	// WsUpdate renamed the workspace to "existing" via abbreviateBranch
+	// Now mock returns empty branch (detached HEAD).
+	mockGit.SetBranch(ws.Path, "")
+	eng.SyncAll()
+
+	// The first sync renamed the workspace to "existing" via abbreviateBranch.
 	ws, _ = eng.WsShow("labs", "existing")
 	if ws.Worktree.Branch != "feature/existing" {
 		t.Errorf("branch = %q, want feature/existing (empty should not overwrite)", ws.Worktree.Branch)
@@ -1961,9 +1904,11 @@ func TestWsCloseByStatus_ClosesDone(t *testing.T) {
 	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"})
 
-	// Mark w1 as done
-	doneStatus := "done"
-	eng.WsUpdate("labs", "w1", nil, nil, &doneStatus)
+	// Mark w1 as done by mutating the manifest directly.
+	_ = eng.withManifest(func(m *manifest.Manifest) error {
+		m.FindDock("labs").FindWorkspace("w1").Status = manifest.WorkspaceStatusDone
+		return nil
+	})
 
 	closed, skipped, err := eng.WsCloseByStatus("labs", "done", true)
 	if err != nil {
@@ -1994,9 +1939,11 @@ func TestWsCloseByStatus_SkipsNonDone(t *testing.T) {
 	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"})
 
-	// Mark w1 as active (not done)
-	activeStatus := "active"
-	eng.WsUpdate("labs", "w1", nil, nil, &activeStatus)
+	// Mark w1 as active (not done).
+	_ = eng.withManifest(func(m *manifest.Manifest) error {
+		m.FindDock("labs").FindWorkspace("w1").Status = manifest.WorkspaceStatusActive
+		return nil
+	})
 
 	// w2 is already idle by default
 
