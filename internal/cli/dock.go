@@ -182,16 +182,25 @@ func newDockTreeCmd() *cobra.Command {
 	var longOutput bool
 
 	cmd := &cobra.Command{
-		Use:   "tree <name>",
-		Short: "Tree view for a specific dock",
-		Args:  cobra.ExactArgs(1),
+		Use:   "tree [name]",
+		Short: "Tree view for a dock (default: current)",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
 				return err
 			}
 
-			dockName := args[0]
+			var dockName string
+			if len(args) > 0 {
+				dockName = args[0]
+			} else {
+				sess, tmuxErr := eng.Tmux.CurrentSession()
+				if tmuxErr != nil {
+					return fmt.Errorf("not in a tmux session — pass a dock name")
+				}
+				dockName = sess
+			}
 
 			docks, err := eng.List()
 			if err != nil {

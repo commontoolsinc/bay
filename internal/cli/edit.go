@@ -16,7 +16,7 @@ func newEditCmd() *cobra.Command {
 	var setEditor string
 
 	cmd := &cobra.Command{
-		Use:   "edit [name|self]",
+		Use:   "edit [workspace]",
 		Short: "Open workspace in editor",
 		Long: `Open a workspace directory in your editor.
 
