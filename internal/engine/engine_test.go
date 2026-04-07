@@ -2171,6 +2171,50 @@ func TestSyncAll_RemovesDeadPaneSurface(t *testing.T) {
 	}
 }
 
+// --- ResolveSelf with symlinked CWD ---
+
+// On macOS the user's CWD often differs from a stored workspace path by a
+// symlink (e.g. /var → /private/var, /tmp → /private/tmp). String equality
+// would miss the match; ResolveSelf must canonicalize both sides via
+// EvalSymlinks before comparing.
+func TestResolveSelf_SymlinkedPath(t *testing.T) {
+	eng, dir := testEngine(t)
+
+	realWs := filepath.Join(dir, "real-workspace")
+	if err := os.MkdirAll(realWs, 0o755); err != nil {
+		t.Fatalf("mkdir realWs: %v", err)
+	}
+	linkWs := filepath.Join(dir, "linked-workspace")
+	if err := os.Symlink(realWs, linkWs); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	// Inject a workspace whose stored path is the symlink form.
+	m, _ := eng.LoadManifest()
+	m.Docks[0].Workspaces = []manifest.Workspace{
+		{Name: "w1", Path: linkWs},
+	}
+	if err := manifest.Save(eng.manifestPath, m); err != nil {
+		t.Fatalf("save manifest: %v", err)
+	}
+
+	// Chdir into the *real* path. Without symlink normalization the
+	// string compare against linkWs would miss.
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(realWs); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer os.Chdir(origDir)
+
+	dockName, wsName, err := eng.ResolveSelf()
+	if err != nil {
+		t.Fatalf("ResolveSelf: %v", err)
+	}
+	if dockName != "labs" || wsName != "w1" {
+		t.Errorf("ResolveSelf = (%q, %q), want (labs, w1)", dockName, wsName)
+	}
+}
+
 // --- ResolveSelf with tmux window ID fallback ---
 
 func TestResolveSelf_TmuxWindowIDFallback(t *testing.T) {

@@ -232,10 +232,13 @@ line if not already present. Creates .worktreeinclude if missing.
 				if rootErr != nil {
 					return fmt.Errorf("not in a git repository")
 				}
-				// Find repo by path.
+				// Find repo by path. Canonicalize both sides so a stored
+				// repo.Path that contains a symlink (e.g. /tmp on macOS)
+				// still matches what git reports as the repo root.
+				rootCanonical := config.CanonicalPath(root)
 				repos, _ := eng.RepoList()
 				for _, repo := range repos {
-					if config.ExpandPath(repo.Path) == root {
+					if config.CanonicalPath(repo.Path) == rootCanonical {
 						repoName = repo.Name
 						break
 					}

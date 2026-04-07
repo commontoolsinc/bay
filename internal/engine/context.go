@@ -3,8 +3,6 @@ package engine
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/commontoolsinc/bay/internal/config"
 )
@@ -31,11 +29,7 @@ func (e *Engine) CurrentContext() (*Context, error) {
 	ctx := &Context{}
 	cwd, _ := os.Getwd()
 	if cwd != "" {
-		ctx.Path = cwd
-		if resolved, err := filepath.EvalSymlinks(cwd); err == nil {
-			cwd = resolved
-			ctx.Path = resolved
-		}
+		ctx.Path = config.CanonicalPath(cwd)
 	}
 
 	currentSession, _ := e.Tmux.CurrentSession()
@@ -47,11 +41,7 @@ func (e *Engine) CurrentContext() (*Context, error) {
 		dock := &m.Docks[i]
 		for j := range dock.Workspaces {
 			ws := &dock.Workspaces[j]
-			wsPath := config.ExpandPath(ws.Path)
-			if resolved, err := filepath.EvalSymlinks(wsPath); err == nil {
-				wsPath = resolved
-			}
-			if cwd != "" && (cwd == wsPath || strings.HasPrefix(cwd, wsPath+"/")) {
+			if cwd != "" && config.IsPathUnder(cwd, ws.Path) {
 				ctx.Dock = dock.Name
 				ctx.Workspace = ws.Name
 				if ws.Worktree != nil {
@@ -88,7 +78,7 @@ func (e *Engine) CurrentContext() (*Context, error) {
 					}
 					ctx.Dock = dock.Name
 					ctx.Workspace = ws.Name
-					ctx.Path = config.ExpandPath(ws.Path)
+					ctx.Path = config.CanonicalPath(ws.Path)
 					if ws.Worktree != nil {
 						ctx.Repo = ws.Worktree.Repo
 					}
@@ -117,11 +107,7 @@ func (e *Engine) CurrentContext() (*Context, error) {
 
 	// Fallback: match CWD to a repo.
 	for _, repo := range m.Repos {
-		repoPath := config.ExpandPath(repo.Path)
-		if resolved, err := filepath.EvalSymlinks(repoPath); err == nil {
-			repoPath = resolved
-		}
-		if cwd != "" && (cwd == repoPath || strings.HasPrefix(cwd, repoPath+"/")) {
+		if cwd != "" && config.IsPathUnder(cwd, repo.Path) {
 			ctx.Repo = repo.Name
 			return ctx, nil
 		}

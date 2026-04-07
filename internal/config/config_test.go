@@ -175,6 +175,112 @@ func TestExpandPath(t *testing.T) {
 	}
 }
 
+func TestCanonicalPath_ResolvesSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	// The canonical form of the symlink path should equal the canonical
+	// form of the target. We canonicalize the target too because the
+	// temp dir itself may live under a symlinked prefix (macOS uses
+	// /var → /private/var, /tmp → /private/tmp).
+	wantTarget, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		t.Fatalf("eval target: %v", err)
+	}
+	got := CanonicalPath(link)
+	if got != wantTarget {
+		t.Errorf("CanonicalPath(link) = %q, want %q", got, wantTarget)
+	}
+}
+
+func TestCanonicalPath_NonexistentReturnsExpanded(t *testing.T) {
+	// EvalSymlinks fails on nonexistent paths; CanonicalPath should
+	// fall back to the ExpandPath result.
+	got := CanonicalPath("~/this/does/not/exist/anywhere")
+	home, _ := os.UserHomeDir()
+	want := filepath.Join(home, "this/does/not/exist/anywhere")
+	if got != want {
+		t.Errorf("CanonicalPath(nonexistent) = %q, want %q", got, want)
+	}
+}
+
+func TestIsPathUnder(t *testing.T) {
+	dir := t.TempDir()
+	parent := filepath.Join(dir, "parent")
+	child := filepath.Join(parent, "child")
+	sibling := filepath.Join(dir, "sibling")
+	// parentx is a real sibling directory whose name happens to share
+	// parent's prefix. Both must exist on disk so EvalSymlinks succeeds
+	// for both — otherwise the prefix-but-not-boundary test passes for
+	// the wrong reason (different symlink-resolved roots) on macOS.
+	parentX := parent + "x"
+	if err := os.MkdirAll(child, 0o755); err != nil {
+		t.Fatalf("mkdir child: %v", err)
+	}
+	if err := os.MkdirAll(sibling, 0o755); err != nil {
+		t.Fatalf("mkdir sibling: %v", err)
+	}
+	if err := os.MkdirAll(parentX, 0o755); err != nil {
+		t.Fatalf("mkdir parentX: %v", err)
+	}
+
+	cases := []struct {
+		name   string
+		child  string
+		parent string
+		want   bool
+	}{
+		{"exact match", parent, parent, true},
+		{"nested child", child, parent, true},
+		{"sibling not under", sibling, parent, false},
+		{"prefix string but not directory boundary", parentX, parent, false},
+		{"both empty returns false", "", "", false},
+		{"empty child returns false", "", parent, false},
+		{"empty parent returns false", parent, "", false},
+		{"filesystem root parent matches absolute child", "/etc", "/", true},
+		{"filesystem root parent matches itself", "/", "/", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := IsPathUnder(tc.child, tc.parent)
+			if got != tc.want {
+				t.Errorf("IsPathUnder(%q, %q) = %v, want %v", tc.child, tc.parent, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsPathUnder_ResolvesSymlinkOnEitherSide(t *testing.T) {
+	dir := t.TempDir()
+	realDir := filepath.Join(dir, "real")
+	realChild := filepath.Join(realDir, "child")
+	if err := os.MkdirAll(realChild, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	linkToReal := filepath.Join(dir, "link")
+	if err := os.Symlink(realDir, linkToReal); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	// Symlink on the parent side: child path resolves to a location
+	// inside the real dir, parent is the symlink.
+	if !IsPathUnder(realChild, linkToReal) {
+		t.Error("realChild should be under linkToReal (symlink-resolved)")
+	}
+	// Symlink on the child side: child uses the symlink prefix, parent
+	// is the real path.
+	if !IsPathUnder(filepath.Join(linkToReal, "child"), realDir) {
+		t.Error("linkToReal/child should be under realDir (symlink-resolved)")
+	}
+}
+
 func TestNormalizePath(t *testing.T) {
 	home, _ := os.UserHomeDir()
 

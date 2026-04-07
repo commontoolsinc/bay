@@ -529,15 +529,15 @@ func (e *Engine) ResolveSelf() (string, string, error) {
 		return "", "", err
 	}
 
-	// First try: match CWD against workspace paths.
+	// First try: match CWD against workspace paths. IsPathUnder is
+	// symlink-safe — needed on macOS where /tmp → /private/tmp etc.
 	cwd, cwdErr := os.Getwd()
 	if cwdErr == nil {
 		for i := range m.Docks {
 			dock := &m.Docks[i]
 			for j := range dock.Workspaces {
 				ws := &dock.Workspaces[j]
-				wsPath := config.ExpandPath(ws.Path)
-				if cwd == wsPath || strings.HasPrefix(cwd, wsPath+"/") {
+				if config.IsPathUnder(cwd, ws.Path) {
 					return dock.Name, ws.Name, nil
 				}
 			}
