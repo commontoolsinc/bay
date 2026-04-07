@@ -580,6 +580,63 @@ func TestCheckOnce_DetectsPR(t *testing.T) {
 	}
 }
 
+func TestCheckOnce_PRCheckedSentinelPreventsRecheck(t *testing.T) {
+	// After a definitive "no PR found" answer, subsequent monitor cycles
+	// should not re-query gh for the same workspace. Otherwise we hammer
+	// gh every minute for every PR-less workspace forever.
+	dir := t.TempDir()
+	mock := tmux.NewMock()
+	mockGit := git.NewMock()
+
+	m := manifest.New()
+	m.Docks = []manifest.Dock{
+		{
+			Name: "dev",
+			Workspaces: []manifest.Workspace{
+				{
+					Name:     "test-ws",
+					Type:     manifest.WorkspaceTypeWorktree,
+					Path:     "/tmp",
+					Status:   manifest.WorkspaceStatusActive,
+					Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "feature/no-pr"},
+				},
+			},
+		},
+	}
+	manifestPath := filepath.Join(dir, "manifest.json")
+	manifest.Save(manifestPath, m)
+
+	patternsPath := filepath.Join(dir, "bay-prompts.txt")
+	os.WriteFile(patternsPath, []byte(""), 0o644)
+	pidPath := filepath.Join(dir, "monitor.pid")
+
+	mon := NewWithGit(mock, mockGit, manifestPath, patternsPath, pidPath, 1)
+
+	// First PR-check cycle — mock returns "" (no PR).
+	for i := 0; i < PRCheckCycles+1; i++ {
+		mon.CheckOnce()
+	}
+	firstCallCount := len(mockGit.Calls("PRForBranch"))
+	if firstCallCount != 1 {
+		t.Fatalf("expected 1 PRForBranch call after first cycle, got %d", firstCallCount)
+	}
+
+	// Verify PRChecked sentinel was set.
+	updated, _ := manifest.Load(manifestPath)
+	ws := updated.FindDock("dev").FindWorkspace("test-ws")
+	if !ws.Worktree.PRChecked {
+		t.Error("PRChecked should be true after first definitive 'no PR' answer")
+	}
+
+	// Run many more cycles — mock should NOT be called again.
+	for i := 0; i < PRCheckCycles*3; i++ {
+		mon.CheckOnce()
+	}
+	if secondCount := len(mockGit.Calls("PRForBranch")); secondCount != firstCallCount {
+		t.Errorf("expected PRForBranch call count to stay at %d, got %d after additional cycles", firstCallCount, secondCount)
+	}
+}
+
 func TestCheckOnce_SkipsPRDetectionForWorkspaceWithNoPath(t *testing.T) {
 	dir := t.TempDir()
 	mock := tmux.NewMock()

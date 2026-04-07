@@ -146,14 +146,32 @@ func (r *Real) CreateBranch(path, branchName string) error {
 	return nil
 }
 
+// PRForBranch looks up the PR number for the given branch via `gh pr view`.
+//
+// Return semantics (important for the PRChecked sentinel in the caller):
+//   - (number, nil)  — gh ran, PR exists
+//   - ("", nil)      — gh ran, no PR found for this branch (definitive)
+//   - ("", err)      — gh is unavailable, unauthenticated, or otherwise
+//                      failed to give a definitive answer. Caller should NOT
+//                      cache the result, so it retries later.
 func (r *Real) PRForBranch(path, branch string) (string, error) {
+	if _, lookErr := exec.LookPath("gh"); lookErr != nil {
+		return "", fmt.Errorf("gh not installed")
+	}
 	cmd := exec.Command("gh", "pr", "view", branch, "--json", "number", "-q", ".number")
 	cmd.Dir = path
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
 	out, err := cmd.Output()
-	if err != nil {
-		return "", nil // no PR or gh not installed — not an error
+	if err == nil {
+		return strings.TrimSpace(string(out)), nil
 	}
-	return strings.TrimSpace(string(out)), nil
+	// Distinguish "no PR for this branch" (definitive, not an error) from
+	// other failures (gh auth, network, rate limit, etc.).
+	if strings.Contains(stderr.String(), "no pull requests found") {
+		return "", nil
+	}
+	return "", fmt.Errorf("gh pr view: %w", err)
 }
 
 func (r *Real) Fetch(path string) error {

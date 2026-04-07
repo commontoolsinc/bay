@@ -94,9 +94,10 @@ type Workspace struct {
 
 // WorktreeAttrs holds git worktree metadata. Only present for worktree workspaces.
 type WorktreeAttrs struct {
-	Repo   string `json:"repo"`            // repo config key
-	Branch string `json:"branch"`
-	PR     string `json:"pr,omitempty"`    // PR number (display-only)
+	Repo      string `json:"repo"`                  // repo config key
+	Branch    string `json:"branch"`
+	PR        string `json:"pr,omitempty"`          // PR number (display-only)
+	PRChecked bool   `json:"pr_checked,omitempty"`  // true once we've tried gh pr view; sticky
 }
 
 // Surface is the unit of navigation — anything you can focus and jump to.

@@ -43,8 +43,40 @@ func (e *Engine) syncWorkspaceGitState(ws *manifest.Workspace) bool {
 	return true
 }
 
-// SyncAll checks git branches and tmux surface state for all workspaces
-// and updates the manifest if anything changed.
+// syncWorkspacePR looks up the PR number for a workspace with a branch but
+// no PR and no PRChecked sentinel. Returns true if the manifest needs saving.
+//
+// Uses the PRChecked flag to avoid re-hammering workspaces that genuinely
+// have no PR: after the first definitive check, PRChecked is set and we
+// stop calling gh. Transient errors (gh missing, auth, network) leave
+// PRChecked false so we retry on the next display.
+func (e *Engine) syncWorkspacePR(ws *manifest.Workspace) bool {
+	if ws.Path == "" || ws.Worktree == nil || ws.Worktree.Branch == "" {
+		return false
+	}
+	// Already checked (either PR found, or confirmed no PR)?
+	if ws.Worktree.PR != "" || ws.Worktree.PRChecked {
+		return false
+	}
+
+	wsPath := config.ExpandPath(ws.Path)
+	if _, err := os.Stat(wsPath); err != nil {
+		return false
+	}
+
+	pr, err := e.Git.PRForBranch(wsPath, ws.Worktree.Branch)
+	if err != nil {
+		// gh unavailable or transient — retry next sync.
+		return false
+	}
+	// Definitive answer: either a PR number, or confirmed no PR.
+	ws.Worktree.PR = pr
+	ws.Worktree.PRChecked = true
+	return true
+}
+
+// SyncAll checks git branches, PR numbers, and tmux surface state for all
+// workspaces and updates the manifest if anything changed.
 func (e *Engine) SyncAll() {
 	m, err := e.LoadManifest()
 	if err != nil {
@@ -57,6 +89,9 @@ func (e *Engine) SyncAll() {
 		for j := range dock.Workspaces {
 			ws := &dock.Workspaces[j]
 			if e.syncWorkspaceGitState(ws) {
+				changed = true
+			}
+			if e.syncWorkspacePR(ws) {
 				changed = true
 			}
 			if e.syncSurfaceState(ws) {
