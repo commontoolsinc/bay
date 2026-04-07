@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 )
 
@@ -25,19 +23,7 @@ This is a shorthand for "bay surface restart".
 			if err != nil {
 				return err
 			}
-
-			if len(args) == 0 && wsFlag == "" && dockFlag == "" {
-				return surfaceRestartCurrentPane(eng)
-			}
-			if len(args) == 0 {
-				return fmt.Errorf("--ws/--dock require a surface name")
-			}
-
-			dockName, wsName, sName, err := resolveSurfaceArg(eng, args[0], wsFlag, dockFlag)
-			if err != nil {
-				return err
-			}
-			return eng.SurfaceRestart(dockName, wsName, sName)
+			return runSurfaceRestart(eng, args, wsFlag, dockFlag)
 		},
 	}
 

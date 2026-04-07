@@ -36,7 +36,7 @@ func newSurfaceCmd() *cobra.Command {
 }
 
 func newSurfaceNewCmd() *cobra.Command {
-	var agent, cmdStr, name, splitDir string
+	var opts surfaceNewOpts
 	var shell, window bool
 
 	cmd := &cobra.Command{
@@ -65,50 +65,73 @@ func newSurfaceNewCmd() *cobra.Command {
 				return err
 			}
 
-			var surfaceType manifest.SurfaceType
-			surfaceName := name
+			// Derive surface type from the flags. Default to shell.
 			switch {
 			case shell:
-				surfaceType = manifest.SurfaceTypeShell
-				if surfaceName == "" {
-					surfaceName = "shell"
-				}
-			case cmdStr != "":
-				surfaceType = manifest.SurfaceTypeCmd
-				if surfaceName == "" {
-					surfaceName = "cmd"
-				}
-			case agent != "":
-				surfaceType = manifest.SurfaceTypeAgent
-				if surfaceName == "" {
-					surfaceName = "agent"
-				}
+				opts.Type = manifest.SurfaceTypeShell
+			case opts.Command != "":
+				opts.Type = manifest.SurfaceTypeCmd
+			case opts.Agent != "":
+				opts.Type = manifest.SurfaceTypeAgent
 			default:
-				surfaceType = manifest.SurfaceTypeShell
-				if surfaceName == "" {
-					surfaceName = "shell"
-				}
+				opts.Type = manifest.SurfaceTypeShell
 			}
 
-			dir := splitDir
-			if window {
-				dir = "" // empty = new tmux window
-			} else if dir == "" {
-				dir = "v" // default split direction
-			}
+			opts.SplitDir = surfaceSplitDir(opts.SplitDir, window)
 
-			return eng.SurfaceAdd(dockName, wsName, surfaceType, surfaceName, agent, cmdStr, dir)
+			return runSurfaceNew(eng, dockName, wsName, opts)
 		},
 	}
 
-	cmd.Flags().StringVar(&agent, "agent", "", "agent type")
+	cmd.Flags().StringVar(&opts.Agent, "agent", "", "agent type")
 	cmd.Flags().BoolVar(&shell, "shell", false, "open a shell")
-	cmd.Flags().StringVar(&cmdStr, "cmd", "", "command to run")
-	cmd.Flags().StringVar(&splitDir, "split", "", "split direction (h or v)")
+	cmd.Flags().StringVar(&opts.Command, "cmd", "", "command to run")
+	cmd.Flags().StringVar(&opts.SplitDir, "split", "", "split direction (h or v)")
 	cmd.Flags().BoolVar(&window, "window", false, "open as new tmux window instead of split")
-	cmd.Flags().StringVar(&name, "name", "", "surface name")
+	cmd.Flags().StringVar(&opts.Name, "name", "", "surface name")
 
 	return cmd
+}
+
+// surfaceNewOpts collects the options accepted by all surface-creation
+// commands (sf new + the top-level bay new). Type is required; Name defaults
+// to a per-type label. SplitDir is "h", "v", or "" (new tmux window).
+type surfaceNewOpts struct {
+	Type     manifest.SurfaceType
+	Agent    string // for SurfaceTypeAgent
+	Command  string // for SurfaceTypeCmd
+	Name     string // surface display name; defaults derived from Type
+	SplitDir string
+}
+
+// surfaceSplitDir resolves the final tmux split direction. --window forces a
+// new window (empty string). Otherwise, an empty splitDir defaults to "v".
+func surfaceSplitDir(splitDir string, window bool) string {
+	if window {
+		return ""
+	}
+	if splitDir == "" {
+		return "v"
+	}
+	return splitDir
+}
+
+// runSurfaceNew creates a new surface in (dockName, wsName). Shared by
+// `bay sf new` and the top-level `bay new` verbs. The caller is responsible
+// for resolving (dockName, wsName) and setting opts.Type.
+func runSurfaceNew(eng *engine.Engine, dockName, wsName string, opts surfaceNewOpts) error {
+	name := opts.Name
+	if name == "" {
+		switch opts.Type {
+		case manifest.SurfaceTypeAgent:
+			name = "agent"
+		case manifest.SurfaceTypeCmd:
+			name = "cmd"
+		default:
+			name = "shell"
+		}
+	}
+	return eng.SurfaceAdd(dockName, wsName, opts.Type, name, opts.Agent, opts.Command, opts.SplitDir)
 }
 
 func newSurfaceCloseCmd() *cobra.Command {
@@ -132,20 +155,7 @@ func newSurfaceCloseCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-
-			// No positional, no flags: close the current pane.
-			if len(args) == 0 && wsFlag == "" && dockFlag == "" {
-				return surfaceCloseCurrentPane(eng)
-			}
-			if len(args) == 0 {
-				return fmt.Errorf("--ws/--dock require a surface name")
-			}
-
-			dockName, wsName, sName, err := resolveSurfaceArg(eng, args[0], wsFlag, dockFlag)
-			if err != nil {
-				return err
-			}
-			return eng.SurfaceClose(dockName, wsName, sName)
+			return runSurfaceClose(eng, args, wsFlag, dockFlag)
 		},
 	}
 
@@ -153,6 +163,23 @@ func newSurfaceCloseCmd() *cobra.Command {
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (only valid with --ws or a workspace prefix)")
 
 	return cmd
+}
+
+// runSurfaceClose closes a named surface, or the current pane if no name was
+// given and no --ws/--dock flags were set. Shared by `bay sf close` and the
+// top-level `bay close`.
+func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string) error {
+	if len(args) == 0 && wsFlag == "" && dockFlag == "" {
+		return surfaceCloseCurrentPane(eng)
+	}
+	if len(args) == 0 {
+		return fmt.Errorf("--ws/--dock require a surface name")
+	}
+	dockName, wsName, sName, err := resolveSurfaceArg(eng, args[0], wsFlag, dockFlag)
+	if err != nil {
+		return err
+	}
+	return eng.SurfaceClose(dockName, wsName, sName)
 }
 
 // surfaceCloseCurrentPane closes the surface owning the current tmux pane,
@@ -204,20 +231,7 @@ func newSurfaceRestartCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-
-			// No positional, no flags: restart the current pane's surface.
-			if len(args) == 0 && wsFlag == "" && dockFlag == "" {
-				return surfaceRestartCurrentPane(eng)
-			}
-			if len(args) == 0 {
-				return fmt.Errorf("--ws/--dock require a surface name")
-			}
-
-			dockName, wsName, sName, err := resolveSurfaceArg(eng, args[0], wsFlag, dockFlag)
-			if err != nil {
-				return err
-			}
-			return eng.SurfaceRestart(dockName, wsName, sName)
+			return runSurfaceRestart(eng, args, wsFlag, dockFlag)
 		},
 	}
 
@@ -225,6 +239,23 @@ func newSurfaceRestartCmd() *cobra.Command {
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (only valid with --ws or a workspace prefix)")
 
 	return cmd
+}
+
+// runSurfaceRestart restarts a named surface, or the current pane's surface
+// if no name was given and no --ws/--dock flags were set. Shared by
+// `bay sf restart`, `bay restart`, and the top-level surface verbs.
+func runSurfaceRestart(eng *engine.Engine, args []string, wsFlag, dockFlag string) error {
+	if len(args) == 0 && wsFlag == "" && dockFlag == "" {
+		return surfaceRestartCurrentPane(eng)
+	}
+	if len(args) == 0 {
+		return fmt.Errorf("--ws/--dock require a surface name")
+	}
+	dockName, wsName, sName, err := resolveSurfaceArg(eng, args[0], wsFlag, dockFlag)
+	if err != nil {
+		return err
+	}
+	return eng.SurfaceRestart(dockName, wsName, sName)
 }
 
 // surfaceRestartCurrentPane restarts the surface owning the current tmux pane.
@@ -356,40 +387,7 @@ func newSurfaceShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-
-			dockName, wsName, sName, err := resolveSurfaceArg(eng, args[0], wsFlag, dockFlag)
-			if err != nil {
-				return err
-			}
-
-			ws, err := eng.WsShow(dockName, wsName)
-			if err != nil {
-				return err
-			}
-
-			s := ws.FindSurface(sName)
-			if s == nil {
-				return fmt.Errorf("surface %q not found in workspace %q", sName, wsName)
-			}
-
-			fmt.Printf("Surface: %s\n", s.Name)
-			fmt.Printf("  type:    %s\n", s.Type)
-			fmt.Printf("  backend: %s\n", s.Backend)
-			if s.Tmux != nil {
-				if s.Tmux.WindowID != "" {
-					fmt.Printf("  window:  %s\n", s.Tmux.WindowID)
-				}
-				if s.Tmux.PaneID != "" {
-					fmt.Printf("  pane:    %s\n", s.Tmux.PaneID)
-				}
-			}
-			if s.Agent != nil && *s.Agent != "" {
-				fmt.Printf("  agent:   %s\n", *s.Agent)
-			}
-			if s.Command != nil && *s.Command != "" {
-				fmt.Printf("  command: %s\n", *s.Command)
-			}
-			return nil
+			return runSurfaceShow(eng, args, wsFlag, dockFlag)
 		},
 	}
 
@@ -397,6 +395,44 @@ func newSurfaceShowCmd() *cobra.Command {
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (only valid with --ws or a workspace prefix)")
 
 	return cmd
+}
+
+// runSurfaceShow prints details for a named surface. Shared by `bay sf show`
+// and the top-level `bay show`.
+func runSurfaceShow(eng *engine.Engine, args []string, wsFlag, dockFlag string) error {
+	dockName, wsName, sName, err := resolveSurfaceArg(eng, args[0], wsFlag, dockFlag)
+	if err != nil {
+		return err
+	}
+
+	ws, err := eng.WsShow(dockName, wsName)
+	if err != nil {
+		return err
+	}
+
+	s := ws.FindSurface(sName)
+	if s == nil {
+		return fmt.Errorf("surface %q not found in workspace %q", sName, wsName)
+	}
+
+	fmt.Printf("Surface: %s\n", s.Name)
+	fmt.Printf("  type:    %s\n", s.Type)
+	fmt.Printf("  backend: %s\n", s.Backend)
+	if s.Tmux != nil {
+		if s.Tmux.WindowID != "" {
+			fmt.Printf("  window:  %s\n", s.Tmux.WindowID)
+		}
+		if s.Tmux.PaneID != "" {
+			fmt.Printf("  pane:    %s\n", s.Tmux.PaneID)
+		}
+	}
+	if s.Agent != nil && *s.Agent != "" {
+		fmt.Printf("  agent:   %s\n", *s.Agent)
+	}
+	if s.Command != nil && *s.Command != "" {
+		fmt.Printf("  command: %s\n", *s.Command)
+	}
+	return nil
 }
 
 func newSurfaceRenameCmd() *cobra.Command {
@@ -417,13 +453,7 @@ func newSurfaceRenameCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-
-			dockName, wsName, oldName, err := resolveSurfaceArg(eng, args[0], wsFlag, dockFlag)
-			if err != nil {
-				return err
-			}
-
-			return eng.SurfaceRename(dockName, wsName, oldName, args[1])
+			return runSurfaceRename(eng, args, wsFlag, dockFlag)
 		},
 	}
 
@@ -431,6 +461,17 @@ func newSurfaceRenameCmd() *cobra.Command {
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (only valid with --ws or a workspace prefix)")
 
 	return cmd
+}
+
+// runSurfaceRename renames a surface. The first arg is the old name (which
+// may include a workspace prefix); the second is the new name. Shared by
+// `bay sf rename` and the top-level `bay rename`.
+func runSurfaceRename(eng *engine.Engine, args []string, wsFlag, dockFlag string) error {
+	dockName, wsName, oldName, err := resolveSurfaceArg(eng, args[0], wsFlag, dockFlag)
+	if err != nil {
+		return err
+	}
+	return eng.SurfaceRename(dockName, wsName, oldName, args[1])
 }
 
 // surfaceGo implements the surface picker / direct jump logic.

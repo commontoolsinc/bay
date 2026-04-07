@@ -60,12 +60,13 @@ const bayHelpTemplate = `Bay — workspace management for tmux and git worktrees
 
 Quick start:
   bay ws new              create a workspace
+  bay new shell           create a shell surface
+  bay new agent claude    create an agent surface
   bay go [query]          jump to a surface
-  bay ws go [query]       jump to a workspace
   bay ls                  see everything
-  bay edit                open editor
-  bay shell               open shell
+  bay close [name]        close a surface (or current pane)
   bay restart             restart current surface
+  bay edit                open editor
 
 Run 'bay help' for all commands, or 'bay help <command>' for details.
 `
@@ -86,6 +87,7 @@ func NewRootCmd(version string) *cobra.Command {
 	// Define command groups
 	root.AddGroup(
 		&cobra.Group{ID: "workspace", Title: "Workspaces:"},
+		&cobra.Group{ID: "surface", Title: "Surfaces:"},
 		&cobra.Group{ID: "navigation", Title: "Navigation:"},
 		&cobra.Group{ID: "infra", Title: "Infrastructure:"},
 		&cobra.Group{ID: "other", Title: "Other:"},
@@ -94,14 +96,24 @@ func NewRootCmd(version string) *cobra.Command {
 	// Workspace commands
 	wsCmd := newWsCmd()
 	wsCmd.GroupID = "workspace"
+
+	// Surface commands (namespace + verbs + utility)
 	surfaceCmd := newSurfaceCmd()
-	surfaceCmd.GroupID = "workspace"
+	surfaceCmd.GroupID = "surface"
 	shellCmd := newShellCmd()
-	shellCmd.GroupID = "workspace"
+	shellCmd.GroupID = "surface"
 	editCmd := newEditCmd()
-	editCmd.GroupID = "workspace"
+	editCmd.GroupID = "surface"
 	restartCmd := newRestartCmd()
-	restartCmd.GroupID = "workspace"
+	restartCmd.GroupID = "surface"
+	topNewCmd := newTopNewCmd()
+	topNewCmd.GroupID = "surface"
+	topCloseCmd := newTopCloseCmd()
+	topCloseCmd.GroupID = "surface"
+	topShowCmd := newTopShowCmd()
+	topShowCmd.GroupID = "surface"
+	topRenameCmd := newTopRenameCmd()
+	topRenameCmd.GroupID = "surface"
 
 	// Navigation commands
 	goCmd := newGoCmd()
@@ -141,6 +153,10 @@ func NewRootCmd(version string) *cobra.Command {
 		shellCmd,
 		editCmd,
 		restartCmd,
+		topNewCmd,
+		topCloseCmd,
+		topShowCmd,
+		topRenameCmd,
 		goCmd,
 		lsCmd,
 		treeCmd,
