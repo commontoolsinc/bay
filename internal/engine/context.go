@@ -78,7 +78,7 @@ func (e *Engine) CurrentContext() (*Context, error) {
 					}
 					ctx.Dock = dock.Name
 					ctx.Workspace = ws.Name
-					ctx.Path = config.ExpandPath(ws.Path)
+					ctx.Path = config.CanonicalPath(ws.Path)
 					if ws.Worktree != nil {
 						ctx.Repo = ws.Worktree.Repo
 					}

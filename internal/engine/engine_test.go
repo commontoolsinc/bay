@@ -2192,7 +2192,7 @@ func TestResolveSelf_SymlinkedPath(t *testing.T) {
 	// Inject a workspace whose stored path is the symlink form.
 	m, _ := eng.LoadManifest()
 	m.Docks[0].Workspaces = []manifest.Workspace{
-		{Name: "w1", Path: linkWs, Type: manifest.WorkspaceTypeWorktree},
+		{Name: "w1", Path: linkWs},
 	}
 	if err := manifest.Save(eng.manifestPath, m); err != nil {
 		t.Fatalf("save manifest: %v", err)

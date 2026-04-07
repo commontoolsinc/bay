@@ -216,11 +216,19 @@ func TestIsPathUnder(t *testing.T) {
 	parent := filepath.Join(dir, "parent")
 	child := filepath.Join(parent, "child")
 	sibling := filepath.Join(dir, "sibling")
+	// parentx is a real sibling directory whose name happens to share
+	// parent's prefix. Both must exist on disk so EvalSymlinks succeeds
+	// for both — otherwise the prefix-but-not-boundary test passes for
+	// the wrong reason (different symlink-resolved roots) on macOS.
+	parentX := parent + "x"
 	if err := os.MkdirAll(child, 0o755); err != nil {
 		t.Fatalf("mkdir child: %v", err)
 	}
 	if err := os.MkdirAll(sibling, 0o755); err != nil {
 		t.Fatalf("mkdir sibling: %v", err)
+	}
+	if err := os.MkdirAll(parentX, 0o755); err != nil {
+		t.Fatalf("mkdir parentX: %v", err)
 	}
 
 	cases := []struct {
@@ -232,7 +240,12 @@ func TestIsPathUnder(t *testing.T) {
 		{"exact match", parent, parent, true},
 		{"nested child", child, parent, true},
 		{"sibling not under", sibling, parent, false},
-		{"prefix string but not directory boundary", parent + "x", parent, false},
+		{"prefix string but not directory boundary", parentX, parent, false},
+		{"both empty returns false", "", "", false},
+		{"empty child returns false", "", parent, false},
+		{"empty parent returns false", parent, "", false},
+		{"filesystem root parent matches absolute child", "/etc", "/", true},
+		{"filesystem root parent matches itself", "/", "/", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

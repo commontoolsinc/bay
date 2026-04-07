@@ -172,12 +172,11 @@ func ExpandPath(path string) string {
 	return path
 }
 
-// CanonicalPath returns path with ~ expanded and all symlinks resolved. If
-// EvalSymlinks fails (typically because the path doesn't exist), the
-// expanded form is returned unchanged. Use this whenever a path needs to
-// be compared against another path that may have been recorded with a
-// different symlink representation — common on macOS where /var is a
-// symlink to /private/var, /tmp to /private/tmp, etc.
+// CanonicalPath expands ~ and resolves symlinks. Falls back to the
+// expanded form if EvalSymlinks fails (e.g. the path doesn't exist), so
+// callers can still compare nonexistent paths for string equality —
+// though that comparison won't bridge symlink representations. Needed on
+// macOS where /var → /private/var, /tmp → /private/tmp, etc.
 func CanonicalPath(path string) string {
 	expanded := ExpandPath(path)
 	if resolved, err := filepath.EvalSymlinks(expanded); err == nil {
@@ -186,18 +185,26 @@ func CanonicalPath(path string) string {
 	return expanded
 }
 
-// IsPathUnder reports whether child is at or nested inside parent. Both
-// paths are canonicalized via CanonicalPath before comparison, so symlink
-// indirection on either side is handled. An exact match returns true; a
-// child whose canonical form has parent's canonical form as a directory
-// prefix also returns true.
+// IsPathUnder returns true if child's canonical form equals parent's, or
+// has parent's as a directory prefix. Both paths are canonicalized via
+// CanonicalPath, so symlink indirection on either side is handled.
+// Returns false if either input is empty.
 func IsPathUnder(child, parent string) bool {
+	if child == "" || parent == "" {
+		return false
+	}
 	c := CanonicalPath(child)
 	p := CanonicalPath(parent)
 	if c == p {
 		return true
 	}
-	return strings.HasPrefix(c, p+string(filepath.Separator))
+	sep := string(filepath.Separator)
+	// Filesystem root: anything non-empty under it qualifies. Without
+	// this special case, p+sep would be "//" and never match.
+	if p == sep {
+		return strings.HasPrefix(c, sep)
+	}
+	return strings.HasPrefix(c, p+sep)
 }
 
 // NormalizePath converts a path to an absolute form suitable for config storage.

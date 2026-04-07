@@ -529,10 +529,8 @@ func (e *Engine) ResolveSelf() (string, string, error) {
 		return "", "", err
 	}
 
-	// First try: match CWD against workspace paths. config.IsPathUnder
-	// canonicalizes both sides via EvalSymlinks so a CWD reached through
-	// a symlink (e.g. /tmp on macOS, which is /private/tmp) still matches
-	// a workspace recorded with the real path.
+	// First try: match CWD against workspace paths. IsPathUnder is
+	// symlink-safe — needed on macOS where /tmp → /private/tmp etc.
 	cwd, cwdErr := os.Getwd()
 	if cwdErr == nil {
 		for i := range m.Docks {
