@@ -2,7 +2,9 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/signal"
 	"syscall"
@@ -34,7 +36,11 @@ func newMonitorWithConfig() (*monitor.Monitor, error) {
 	p := bayPaths()
 	cfg, err := config.Load(p.ConfigFile)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, fs.ErrNotExist) {
+			cfg = config.DefaultConfig()
+		} else {
+			return nil, err
+		}
 	}
 
 	t := tmuxpkg.NewReal()

@@ -83,6 +83,7 @@ func newWsNewCmd() *cobra.Command {
 			// Bare --agent (no value): use dock's default agent.
 			// --agent <name>: use that specific agent.
 			// Both cases: opts.Agent is already set by the flag binding.
+			opts.RequireAgent = cmd.Flags().Changed("agent")
 
 			ws, err := eng.WsNew(opts)
 			if err != nil {
