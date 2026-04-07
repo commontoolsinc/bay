@@ -117,7 +117,7 @@ func (e *Engine) DockNew(name, repo, agent, terminal string) error {
 
 // launchTerminal launches a terminal app attached to a tmux session.
 // Returns the PID of the launched process.
-func launchTerminal(terminal, session string) (int, error) {
+var launchTerminal = func(terminal, session string) (int, error) {
 	cmd := exec.Command(terminal, "-e", "tmux", "attach", "-t", session)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

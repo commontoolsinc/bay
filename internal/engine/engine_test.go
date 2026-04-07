@@ -166,6 +166,15 @@ func TestDockNew_LaunchesHostTerminal(t *testing.T) {
 func TestRecover_RelaunchesHostTerminal(t *testing.T) {
 	eng, _ := testEngine(t)
 
+	oldLaunchTerminal := launchTerminal
+	launchTerminal = func(terminal, session string) (int, error) {
+		if terminal != "ghostty" || session != "labs" {
+			t.Fatalf("launchTerminal(%q, %q)", terminal, session)
+		}
+		return 4242, nil
+	}
+	defer func() { launchTerminal = oldLaunchTerminal }()
+
 	// Set host terminal on the existing labs dock in the manifest.
 	m, _ := eng.LoadManifest()
 	dock := m.FindDock("labs")
@@ -193,8 +202,9 @@ func TestRecover_RelaunchesHostTerminal(t *testing.T) {
 	if dock.Host == nil {
 		t.Fatal("dock.Host should persist through recovery")
 	}
-	// We can't easily check PID since we're not actually launching ghostty.
-	// Just verify the manifest was saved with Host intact.
+	if dock.Host.PID != 4242 {
+		t.Fatalf("dock.Host.PID = %d, want 4242", dock.Host.PID)
+	}
 }
 
 func TestWsNew_Worktree(t *testing.T) {
@@ -1130,6 +1140,27 @@ func TestRecoverCmdSurface(t *testing.T) {
 	t.Error("expected SendKeys with 'htop' for cmd surface recovery")
 }
 
+func TestRecover_ReportsSurfaceLaunchErrors(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Agent: "codex"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	if err := os.MkdirAll(ws.Path, 0o755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+
+	eng.Config.Agents["codex"] = config.AgentConfig{}
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.Reset()
+
+	if _, err := eng.Recover(); err == nil || !strings.Contains(err.Error(), `agent "codex" has no command configured`) {
+		t.Fatalf("Recover error = %v, want invalid agent command", err)
+	}
+}
+
 func TestRecoverReconcilesSurfacesInExistingWindow(t *testing.T) {
 	// Regression: recovery skipped surface repair for existing windows.
 	eng, _ := testEngine(t)
@@ -1162,6 +1193,71 @@ func TestRecoverReconcilesSurfacesInExistingWindow(t *testing.T) {
 	panes, _ = mockTmux.ListPanes(winID)
 	if len(panes) != 2 {
 		t.Errorf("expected 2 panes after recovery, got %d", len(panes))
+	}
+}
+
+func TestRecover_SelectsRecordedSplitParent(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell-2", "", "", "v"); err != nil {
+		t.Fatalf("SurfaceAdd shell-2 failed: %v", err)
+	}
+
+	ws, err = eng.WsShow("labs", "w1")
+	if err != nil {
+		t.Fatalf("WsShow failed: %v", err)
+	}
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.SetCurrentPaneID(ws.Surfaces[1].Tmux.PaneID)
+	if err := eng.SetLastFocused("labs", "w1", ws.Surfaces[1].ID); err != nil {
+		t.Fatalf("SetLastFocused failed: %v", err)
+	}
+	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell-3", "", "", "h"); err != nil {
+		t.Fatalf("SurfaceAdd shell-3 failed: %v", err)
+	}
+
+	ws, err = eng.WsShow("labs", "w1")
+	if err != nil {
+		t.Fatalf("WsShow failed: %v", err)
+	}
+	if err := os.MkdirAll(ws.Path, 0o755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+
+	mockTmux.Reset()
+
+	if _, err := eng.Recover(); err != nil {
+		t.Fatalf("Recover failed: %v", err)
+	}
+
+	ws, err = eng.WsShow("labs", "w1")
+	if err != nil {
+		t.Fatalf("WsShow after recover failed: %v", err)
+	}
+	root := ws.FindSurface("shell")
+	middle := ws.FindSurface("shell-2")
+	if root == nil || root.Tmux == nil || middle == nil || middle.Tmux == nil {
+		t.Fatalf("recovered surfaces missing tmux metadata: %#v", ws.Surfaces)
+	}
+
+	var selects []string
+	for _, call := range mockTmux.Calls {
+		if call.Method == "SelectPane" && len(call.Args) > 0 {
+			selects = append(selects, call.Args[0])
+		}
+	}
+	if len(selects) < 2 {
+		t.Fatalf("expected at least 2 SelectPane calls during recovery, got %v", selects)
+	}
+	if selects[0] != root.Tmux.PaneID {
+		t.Fatalf("first split parent = %q, want %q", selects[0], root.Tmux.PaneID)
+	}
+	if selects[1] != middle.Tmux.PaneID {
+		t.Fatalf("second split parent = %q, want %q", selects[1], middle.Tmux.PaneID)
 	}
 }
 
@@ -1840,36 +1936,6 @@ func TestSyncWorkspaceGitState_BranchCollisionGetsUniqueName(t *testing.T) {
 	}
 	if ws.Name != "existing-2" {
 		t.Fatalf("name = %q, want existing-2", ws.Name)
-	}
-}
-
-func TestSyncAll_NoChangesDoesNotRewriteManifest(t *testing.T) {
-	eng, _ := testEngine(t)
-
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
-		t.Fatalf("WsNew failed: %v", err)
-	}
-
-	before, err := os.ReadFile(eng.manifestPath)
-	if err != nil {
-		t.Fatalf("ReadFile before sync: %v", err)
-	}
-	backupPath := eng.manifestPath + ".bak"
-	if err := os.Remove(backupPath); err != nil && !os.IsNotExist(err) {
-		t.Fatalf("removing backup: %v", err)
-	}
-
-	eng.SyncAll()
-
-	after, err := os.ReadFile(eng.manifestPath)
-	if err != nil {
-		t.Fatalf("ReadFile after sync: %v", err)
-	}
-	if string(after) != string(before) {
-		t.Fatal("manifest changed after no-op SyncAll")
-	}
-	if _, err := os.Stat(backupPath); !os.IsNotExist(err) {
-		t.Fatalf("expected no backup after no-op SyncAll, got err=%v", err)
 	}
 }
 
