@@ -209,16 +209,16 @@ func newTopCloseCmd() *cobra.Command {
 	var wsFlag, dockFlag string
 
 	cmd := &cobra.Command{
-		Use:     "close [name]",
+		Use:     "close <name|self>",
 		Aliases: []string{"rm"},
-		Short:   "Close a surface (or current tmux pane if not bay-managed)",
-		Long: `Close a surface by name, or the current pane if no name given.
+		Short:   "Close a surface",
+		Long: `Close a surface by name. Use 'self' to target the current surface.
 
   bay close monitor              close "monitor" in the current workspace
   bay close w1:monitor           close "monitor" in workspace w1
   bay close labs:w1:monitor      fully-qualified
   bay close monitor --ws w1      same as w1:monitor
-  bay close                      close the current pane
+  bay close self                 close the current pane's surface
   bay rm shell-2                 same thing with the rm alias`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -138,16 +138,16 @@ func newSurfaceCloseCmd() *cobra.Command {
 	var wsFlag, dockFlag string
 
 	cmd := &cobra.Command{
-		Use:     "close [name]",
+		Use:     "close <name|self>",
 		Aliases: []string{"rm"},
-		Short:   "Close a surface (or current tmux pane if not bay-managed)",
-		Long: `Close a surface by name, or the current pane if no name given.
+		Short:   "Close a surface",
+		Long: `Close a surface by name. Use 'self' to target the current surface.
 
   bay sf close monitor              close "monitor" in the current workspace
   bay sf close w1:monitor           close "monitor" in workspace w1
   bay sf close labs:w1:monitor      fully-qualified
   bay sf close monitor --ws w1      same as w1:monitor
-  bay sf close                      close the current pane
+  bay sf close self                 close the current pane's surface
   bay sf rm shell-2                 same thing with the rm alias`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -171,6 +171,9 @@ func newSurfaceCloseCmd() *cobra.Command {
 // Use `bay close self` to target the current surface.
 func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string) error {
 	if len(args) == 0 {
+		if wsFlag != "" || dockFlag != "" {
+			return fmt.Errorf("--ws/--dock require a surface name")
+		}
 		return fmt.Errorf("specify a surface name (or 'self' to close the current surface)")
 	}
 	dockName, wsName, sName, err := resolveSurfaceArgOrSelf(eng, args[0], wsFlag, dockFlag)
@@ -213,12 +216,12 @@ func newSurfaceRestartCmd() *cobra.Command {
 // top-level surface verbs. Restart is non-destructive, so the bare no-arg
 // form is preserved (unlike `close`).
 func runSurfaceRestart(eng *engine.Engine, args []string, wsFlag, dockFlag string) error {
-	// Bare invocation: restart the current pane via the self keyword.
-	if len(args) == 0 && wsFlag == "" && dockFlag == "" {
-		args = []string{"self"}
-	}
 	if len(args) == 0 {
-		return fmt.Errorf("--ws/--dock require a surface name")
+		if wsFlag != "" || dockFlag != "" {
+			return fmt.Errorf("--ws/--dock require a surface name")
+		}
+		// Bare invocation: restart the current pane via the self keyword.
+		args = []string{"self"}
 	}
 	dockName, wsName, sName, err := resolveSurfaceArgOrSelf(eng, args[0], wsFlag, dockFlag)
 	if err != nil {
@@ -344,6 +347,9 @@ func newSurfaceShowCmd() *cobra.Command {
 
 // runSurfaceShow prints details for a named surface. Shared by `bay sf show`
 // and the top-level `bay show`. Accepts the `self` keyword.
+//
+// Precondition: args must contain exactly one element. Cobra's ExactArgs(1)
+// enforces this in production; callers from tests should pass the same.
 func runSurfaceShow(eng *engine.Engine, args []string, wsFlag, dockFlag string) error {
 	dockName, wsName, sName, err := resolveSurfaceArgOrSelf(eng, args[0], wsFlag, dockFlag)
 	if err != nil {
@@ -411,6 +417,9 @@ func newSurfaceRenameCmd() *cobra.Command {
 // runSurfaceRename renames a surface. The first arg is the old name (which
 // may include a workspace prefix or be the `self` keyword); the second is the
 // new name. Shared by `bay sf rename` and the top-level `bay rename`.
+//
+// Precondition: args must contain exactly two elements. Cobra's ExactArgs(2)
+// enforces this in production; callers from tests should pass the same.
 func runSurfaceRename(eng *engine.Engine, args []string, wsFlag, dockFlag string) error {
 	dockName, wsName, oldName, err := resolveSurfaceArgOrSelf(eng, args[0], wsFlag, dockFlag)
 	if err != nil {
