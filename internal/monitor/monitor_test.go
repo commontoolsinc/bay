@@ -621,11 +621,11 @@ func TestCheckOnce_PRCheckedSentinelPreventsRecheck(t *testing.T) {
 		t.Fatalf("expected 1 PRForBranch call after first cycle, got %d", firstCallCount)
 	}
 
-	// Verify PRChecked sentinel was set.
+	// Verify PRCheckedAt sentinel was set.
 	updated, _ := manifest.Load(manifestPath)
 	ws := updated.FindDock("dev").FindWorkspace("test-ws")
-	if !ws.Worktree.PRChecked {
-		t.Error("PRChecked should be true after first definitive 'no PR' answer")
+	if ws.Worktree.PRCheckedAt == 0 {
+		t.Error("PRCheckedAt should be set after first definitive 'no PR' answer")
 	}
 
 	// Run many more cycles — mock should NOT be called again.

@@ -3,6 +3,7 @@ package engine
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/commontoolsinc/bay/internal/git"
@@ -53,8 +54,8 @@ func TestSyncAll_PopulatesPRWhenFound(t *testing.T) {
 	if ws.Worktree.PR != "42" {
 		t.Errorf("PR = %q, want 42", ws.Worktree.PR)
 	}
-	if !ws.Worktree.PRChecked {
-		t.Error("PRChecked should be true after successful lookup")
+	if ws.Worktree.PRCheckedAt == 0 {
+		t.Error("PRCheckedAt should be set after successful lookup")
 	}
 }
 
@@ -70,16 +71,16 @@ func TestSyncAll_MarksCheckedWhenNoPRFound(t *testing.T) {
 	if ws.Worktree.PR != "" {
 		t.Errorf("PR = %q, want empty", ws.Worktree.PR)
 	}
-	if !ws.Worktree.PRChecked {
-		t.Error("PRChecked should be true after definitive 'no PR' answer")
+	if ws.Worktree.PRCheckedAt == 0 {
+		t.Error("PRCheckedAt should be set after definitive 'no PR' answer")
 	}
 }
 
-func TestSyncAll_DoesNotRecheckPRCheckedWorkspace(t *testing.T) {
+func TestSyncAll_DoesNotRecheckRecentlyCheckedWorkspace(t *testing.T) {
 	eng, _ := testEngine(t)
 	_ = seedWorktreeWorkspace(t, eng, "labs", "w1", "feature/no-pr")
 
-	// First sync — marks PRChecked=true with empty PR.
+	// First sync — sets PRCheckedAt with empty PR.
 	eng.SyncAll()
 
 	mockGit := eng.Git.(*git.Mock)
@@ -118,6 +119,82 @@ func TestSyncAll_DoesNotRecheckWorkspaceWithPRSet(t *testing.T) {
 	ws := m.FindDock("labs").FindWorkspace("w1")
 	if ws.Worktree.PR != "99" {
 		t.Errorf("PR = %q, want 99 (cached value should stick)", ws.Worktree.PR)
+	}
+}
+
+func TestSyncAll_RechecksAfterTTLExpires(t *testing.T) {
+	// The "stale no PR" bug: after a definitive "no PR" answer, opening a PR
+	// later should be picked up. We simulate this by aging the PRCheckedAt
+	// timestamp past PRCheckTTL.
+	eng, _ := testEngine(t)
+	wsPath := seedWorktreeWorkspace(t, eng, "labs", "w1", "feature/late-pr")
+
+	// First sync — mock has no PR for the branch, so the result is empty.
+	eng.SyncAll()
+
+	m, _ := eng.LoadManifest()
+	ws := m.FindDock("labs").FindWorkspace("w1")
+	if ws.Worktree.PR != "" {
+		t.Fatalf("PR = %q, want empty after first sync", ws.Worktree.PR)
+	}
+	if ws.Worktree.PRCheckedAt == 0 {
+		t.Fatal("PRCheckedAt should be set after first sync")
+	}
+
+	// Now: a PR is opened, and the cached PRCheckedAt is aged past the TTL.
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetPR(wsPath, "feature/late-pr", "501")
+	_ = eng.withManifest(func(m *manifest.Manifest) error {
+		ws := m.FindDock("labs").FindWorkspace("w1")
+		ws.Worktree.PRCheckedAt = 1 // ancient
+		return nil
+	})
+
+	eng.SyncAll()
+
+	m, _ = eng.LoadManifest()
+	ws = m.FindDock("labs").FindWorkspace("w1")
+	if ws.Worktree.PR != "501" {
+		t.Errorf("PR = %q, want 501 after TTL expiry + re-sync", ws.Worktree.PR)
+	}
+}
+
+func TestSyncAll_ParallelChecksMultipleWorkspaces(t *testing.T) {
+	eng, _ := testEngine(t)
+	mockGit := eng.Git.(*git.Mock)
+
+	// Create N workspaces with branches and configure mock PR numbers.
+	const n = 5
+	for i := 0; i < n; i++ {
+		wsName := "w" + strconv.Itoa(i+1)
+		branch := "feature/branch-" + strconv.Itoa(i+1)
+		wsPath := seedWorktreeWorkspace(t, eng, "labs", wsName, branch)
+		mockGit.SetPR(wsPath, branch, "10"+strconv.Itoa(i))
+	}
+
+	eng.SyncAll()
+
+	// All N workspaces should have PR populated and PRCheckedAt set.
+	m, _ := eng.LoadManifest()
+	for i := 0; i < n; i++ {
+		wsName := "w" + strconv.Itoa(i+1)
+		ws := m.FindDock("labs").FindWorkspace(wsName)
+		if ws == nil {
+			t.Errorf("workspace %q missing", wsName)
+			continue
+		}
+		wantPR := "10" + strconv.Itoa(i)
+		if ws.Worktree.PR != wantPR {
+			t.Errorf("%s: PR = %q, want %q", wsName, ws.Worktree.PR, wantPR)
+		}
+		if ws.Worktree.PRCheckedAt == 0 {
+			t.Errorf("%s: PRCheckedAt should be set", wsName)
+		}
+	}
+
+	// Each workspace should have been queried exactly once.
+	if got := len(mockGit.Calls("PRForBranch")); got != n {
+		t.Errorf("PRForBranch call count = %d, want %d", got, n)
 	}
 }
 
