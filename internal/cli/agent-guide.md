@@ -543,7 +543,7 @@ bay repo init [name]
 
 `bay repo init` sets up bay awareness: appends a one-liner to each
 agent's project file (e.g., `CLAUDE.md`) pointing to `bay agent-guide`,
-creates `.worktreeinclude` if missing, ensures `.gitignore` entries.
+and creates `.worktreeinclude` if missing.
 
 ## Typical workflows
 

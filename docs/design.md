@@ -16,16 +16,17 @@ authoritative reference when this document disagrees with the code.
 
 - **Filesystem is the source of truth.** Agent conversation memory is
   ephemeral. An agent should be able to restart from scratch and fully
-  orient itself from the generated config file and the worktree state.
+  orient itself from the repo-level bay guidance and the worktree state.
   Session resume is a nice-to-have, not a dependency.
-- **Target repos are untouched.** Nothing is added to target repos to
-  support bay. All agent config uses gitignored files.
+- **Target repos are minimally touched.** Bay can append a bay-awareness
+  pointer to repo-level project files via `bay repo init`, but it no
+  longer generates per-workspace config files inside worktrees.
 - **Agent-agnostic.** Bay infrastructure (tmux, worktrees, manifest,
   monitoring) works across agents. Agent-specific behavior is a thin
   config layer.
 - **Bay is generic; project context is configuration.** Bay doesn't
-  know about crew or any specific project. It generates agent config from
-  user-provided templates and manages the infrastructure around it.
+  know about crew or any specific project. It manages workspaces and
+  agent launch/recovery while repo-level docs provide local guidance.
 - **Worktrees are the central managed entity.** Windows and panes are
   lightweight, disposable views into workspaces. Worktree lifecycle
   (creation, safety checks, cleanup) is bay's core value.
@@ -162,18 +163,16 @@ verification), and monitoring.
 
 ## Design areas
 
-### 1. Agent config generation
+### 1. Agent awareness
 
-Each workspace gets a gitignored config file in its CWD, generated from
-a per-dock template file at workspace creation time.
+Current bay uses repo-level project files rather than generated
+per-workspace config files. `bay repo init` appends a short pointer to
+each configured agent project file (for example `CLAUDE.md`) so agents
+can discover `bay agent-guide` from the repo itself.
 
-**Mechanism per agent**:
-- **Claude Code**: `CLAUDE.local.md` in CWD root. Must be in repo's
-  `.gitignore`.
-- **Codex**: `AGENTS.local.md` in CWD root. Registered via
-  `project_doc_fallback_filenames` in `~/.codex/config.toml`. Must be
-  in repo's `.gitignore`.
-- **Others**: configured per agent type.
+Agent-specific launch and resume behavior still lives in bay config, but
+workspace creation no longer writes agent-specific files into the
+worktree.
 
 **Templates** are external files referenced by path in the dock config.
 They can reference variables: `{workspace_id}`, `{workspace_name}`,
@@ -187,14 +186,12 @@ config file, so agents always know how to update bay. The agent
 additionally uses the repo's own config.
 
 **Agent type per workspace**: A dock has a default agent type. Each
-workspace (or window/pane) can override it. The config file written
-depends on the agent type — bay takes the dock's template content and
-writes it to whatever filename the agent definition specifies (e.g.,
-`CLAUDE.local.md` for Claude, `AGENTS.local.md` for Codex).
+workspace (or window/pane) can override it. The chosen agent affects
+launch and resume commands plus which repo-level project file bay checks
+for awareness (for example `CLAUDE.md`).
 
 **Launch command**: assembled as `{agent.command} {dock.agent_args...}`,
-run in the workspace's CWD. The agent finds its config file through its
-own discovery mechanism.
+run in the workspace's CWD.
 
 Config changes (template edits, renames) require agent restart to take
 effect. Agents read their config file at startup, not mid-session.
@@ -228,12 +225,10 @@ Worktree workspaces get a worktree created under the repo's
 
 External workspaces point at a directory bay doesn't own — a raw repo
 checkout, a project directory, or any path. Bay remembers the path for
-tmux recovery and can inject agent config (with gitignore verification),
-but does not create or delete the directory.
+tmux recovery, but does not create or delete the directory.
 
-Closing an external workspace closes all its windows/panes, removes any
-bay-generated config files, and archives the manifest entry. The
-directory is untouched.
+Closing an external workspace closes all its windows/panes and archives
+the manifest entry. The directory is untouched.
 
 ### 4. Manifest and workspace lifecycle
 
@@ -337,7 +332,7 @@ leaves it alone rather than killing it. `bay ws new` reuses the
 existing session if it's still alive.
 
 **Archive**: closed workspaces move to
-`~/.local/share/bay/archive.toml`. Not pruned automatically.
+`~/.local/share/bay/archive.json`. Not pruned automatically.
 
 **Statuses**:
 - **idle** — created, no work assigned (fresh worktree on detached main)
@@ -522,11 +517,11 @@ are installed, manifest is consistent with actual worktree/tmux state.
 ```toml
 [agents.claude]
 command = "claude"
-config_file = "CLAUDE.local.md"
+project_file = "CLAUDE.md"
 
 [agents.codex]
 command = "codex"
-config_file = "AGENTS.local.md"
+project_file = "YOUR_PROJECT_FILE.md"
 
 [repos.labs]
 path = "~/projects/labs"
@@ -568,8 +563,8 @@ When you create a branch or open a PR, run:
 ```
 
 **Data dir contents** (`~/.local/share/bay/`):
-- `manifest.toml` — active workspace/window/pane state
-- `archive.toml` — closed workspace history
+- `manifest.json` — active workspace/window/pane state
+- `archive.json` — closed workspace history
 - `monitor.pid` — pane monitor PID file
 
 ## Crew integration
@@ -604,13 +599,10 @@ updates the Homebrew tap formula.
 
 ## One-time setup (per target repo)
 
-- Add `CLAUDE.local.md` to `.gitignore` (for Claude Code workspaces)
-- Add `AGENTS.local.md` to `.gitignore` (for Codex workspaces)
-- Configure Codex: add `project_doc_fallback_filenames = ["AGENTS.local.md"]`
-  to `~/.codex/config.toml`
-
-Bay verifies gitignore entries before writing config files and offers to
-add them if missing.
+- Run `bay repo init <repo>` to append bay-awareness pointers to
+  configured project files and create `.worktreeinclude` if missing
+- Add any repo-root files you want copied to new worktrees to
+  `.worktreeinclude`
 
 ## Out of scope
 
