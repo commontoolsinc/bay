@@ -39,6 +39,12 @@ func ensureMonitor() {
 // "monitor") opt the entire subtree out without per-subcommand
 // annotations.
 //
+// Note: there's no way for a child to opt back IN once an ancestor has
+// opted out — if a parent is annotated, every child is opted out
+// regardless. We have no use case for per-child override today; if
+// that changes, this function needs a different shape (e.g. a
+// "force-autostart" annotation that beats the inherited opt-out).
+//
 // Cobra's hidden internal commands (__complete, __completeNoDesc, help)
 // are also excluded — they run on every shell tab-completion request
 // or help invocation and should never fork a daemon.

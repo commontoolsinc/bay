@@ -132,3 +132,60 @@ func withFakeEnsureMonitor(t *testing.T, fake func()) {
 	ensureMonitorFn = fake
 	t.Cleanup(func() { ensureMonitorFn = prev })
 }
+
+// TestMonitorAutostart_NoCommandOverridesPersistentPreRunE pins the
+// invariant that no subcommand defines its own PersistentPreRunE.
+// Cobra resolves PersistentPreRunE by walking up from the invoked
+// command and running the FIRST one it finds, so any subcommand-level
+// override would silently shadow the root's auto-start hook for that
+// entire subtree. This test fails loudly if that ever happens, so the
+// auto-start behavior can't be silently disabled.
+func TestMonitorAutostart_NoCommandOverridesPersistentPreRunE(t *testing.T) {
+	root := NewRootCmd("test")
+	var visit func(*cobra.Command)
+	visit = func(c *cobra.Command) {
+		if c != root && c.PersistentPreRunE != nil {
+			t.Errorf("command %q has its own PersistentPreRunE — this would shadow the root's monitor auto-start hook", c.CommandPath())
+		}
+		if c != root && c.PersistentPreRun != nil {
+			t.Errorf("command %q has its own PersistentPreRun — this would shadow the root's monitor auto-start hook", c.CommandPath())
+		}
+		for _, child := range c.Commands() {
+			visit(child)
+		}
+	}
+	visit(root)
+}
+
+// TestShouldAutostartMonitor_SkipsHelpAndUnderscore covers the
+// defensive checks for cobra's hidden / built-in commands. These run
+// on every shell tab-completion request or help invocation and must
+// never fork a daemon, even though they don't carry the explicit
+// no-autostart annotation.
+func TestShouldAutostartMonitor_SkipsHelpAndUnderscore(t *testing.T) {
+	tests := []struct {
+		name string
+		use  string
+	}{
+		{"help command", "help"},
+		{"hidden complete command", "__complete"},
+		{"hidden complete-no-desc command", "__completeNoDesc"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &cobra.Command{Use: tt.use}
+			if shouldAutostartMonitor(cmd) {
+				t.Errorf("expected %q to be skipped, got autostart=true", tt.use)
+			}
+		})
+	}
+
+	// Sanity: a normal command name should not be skipped by the
+	// hidden-command filter.
+	t.Run("normal command is not skipped", func(t *testing.T) {
+		cmd := &cobra.Command{Use: "normal-command"}
+		if !shouldAutostartMonitor(cmd) {
+			t.Error("normal command should not be skipped")
+		}
+	})
+}

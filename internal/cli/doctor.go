@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/focus"
@@ -178,13 +179,26 @@ func newDoctorCmd() *cobra.Command {
 				}
 			}
 
-			// Check monitor
+			// Check monitor. The auto-start hook in PersistentPreRunE
+			// will have already forked the monitor before doctor's
+			// RunE runs, but the forked child writes its PID file
+			// asynchronously — so a fast-following Status() check can
+			// race the child and incorrectly report "not running". To
+			// avoid that confusing first-doctor-after-cold-start
+			// report, only sleep+retry on the negative path: if the
+			// first check is positive we report instantly, and if
+			// it's negative we give the child a brief window to come
+			// up before deciding it really isn't there.
 			mon, monCfgErr := newMonitorWithConfig()
 			if monCfgErr != nil {
 				fmt.Printf("[WARN] monitor: %v\n", monCfgErr)
 				ok = false
 			} else {
 				running, pid, monErr := mon.Status()
+				if monErr != nil || !running {
+					time.Sleep(150 * time.Millisecond)
+					running, pid, monErr = mon.Status()
+				}
 				if monErr != nil || !running {
 					fmt.Printf("[WARN] monitor not running\n")
 					ok = false
