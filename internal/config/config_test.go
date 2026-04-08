@@ -75,6 +75,21 @@ func TestDefaultConfig_HasInitializedMaps(t *testing.T) {
 	}
 }
 
+// TestDefaultConfig_MonitorIntervalMatchesEffective pins that the
+// rendered TOML output of `bay config show` reflects the same monitor
+// interval bay actually uses at runtime. Previously DefaultConfig
+// returned IntervalSeconds=0 (Go zero value), and EffectiveInterval
+// substituted 0→3 at read time — so users running `bay config show`
+// on a fresh install saw `interval_seconds = 0` while bay was actually
+// polling every 3 seconds. Display has to match runtime.
+func TestDefaultConfig_MonitorIntervalMatchesEffective(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Monitor.IntervalSeconds != cfg.Monitor.EffectiveInterval() {
+		t.Errorf("DefaultConfig IntervalSeconds=%d, EffectiveInterval=%d — should match",
+			cfg.Monitor.IntervalSeconds, cfg.Monitor.EffectiveInterval())
+	}
+}
+
 func TestParse_EmptyConfig(t *testing.T) {
 	cfg, err := Parse("")
 	if err != nil {

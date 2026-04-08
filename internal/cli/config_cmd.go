@@ -48,11 +48,11 @@ func newConfigEditCmd() *cobra.Command {
 				return fmt.Errorf("no editor found; set with 'bay config editor <name>', or via $VISUAL/$EDITOR")
 			}
 			path := bayPaths().ConfigFile
-			// First-run safety: the parent directory may not exist yet
-			// (e.g. fresh install with no `bay setup`). Without this,
-			// the editor opens an empty buffer and the user's first
-			// save fails.
-			if err := ensureConfigFileDir(path); err != nil {
+			// Fresh-install safety: create the parent directory and
+			// seed a default config if the file doesn't exist, so
+			// the user opens a real file with the right structure
+			// instead of an empty buffer at a non-existent path.
+			if err := prepareConfigFileForEdit(path); err != nil {
 				return err
 			}
 			_, err = launchEditor(editorCmd, isGUI, []string{path})
@@ -185,6 +185,31 @@ func configPathString(p string) string {
 func ensureConfigFileDir(configPath string) error {
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
 		return fmt.Errorf("creating config directory: %w", err)
+	}
+	return nil
+}
+
+// prepareConfigFileForEdit ensures `bay config edit` opens a real
+// file with the default config structure, not an empty buffer:
+//
+//  1. Creates the parent directory if missing.
+//  2. If the config file doesn't exist, writes a DefaultConfig to
+//     it so the user has something to start from (matches
+//     `git config --edit` and the seeding `bay config editor <name>`
+//     already does).
+//
+// If the file already exists, leaves it untouched.
+func prepareConfigFileForEdit(configPath string) error {
+	if err := ensureConfigFileDir(configPath); err != nil {
+		return err
+	}
+	if _, err := os.Stat(configPath); err == nil {
+		return nil // file exists, nothing to do
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("checking config file: %w", err)
+	}
+	if err := config.Save(configPath, config.DefaultConfig()); err != nil {
+		return fmt.Errorf("seeding default config: %w", err)
 	}
 	return nil
 }

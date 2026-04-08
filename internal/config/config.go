@@ -57,6 +57,15 @@ func DefaultConfig() *Config {
 	return &Config{
 		Agents: make(map[string]AgentConfig),
 		Docks:  make(map[string]DockConfig),
+		Monitor: MonitorConfig{
+			// Match the runtime default in EffectiveInterval so
+			// `bay config show` on a fresh install displays the
+			// interval bay actually uses (3s), not the Go zero
+			// value. EffectiveInterval still substitutes 0→3 at
+			// read time so users who hand-edit the file to 0 get
+			// the default behavior.
+			IntervalSeconds: 3,
+		},
 	}
 }
 

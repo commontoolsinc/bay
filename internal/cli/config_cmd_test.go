@@ -162,6 +162,74 @@ func TestBayConfigPath_PrintsConfigPath(t *testing.T) {
 	}
 }
 
+// TestPrepareConfigFileForEdit_SeedsDefaultsWhenMissing pins the
+// fix for the asymmetry between bay config edit and bay config editor:
+//
+//	bay config editor cursor → seeds DefaultConfig + sets editor
+//	bay config edit          → used to open an EMPTY buffer, no seed
+//
+// On a fresh install, opening an empty buffer in $EDITOR is a worse
+// starting point than getting the default TOML structure with all
+// the section headers. git config --edit does the equivalent.
+//
+// After this fix, bay config edit ALSO seeds DefaultConfig if the
+// file doesn't exist, so the user always opens a real config to edit.
+func TestPrepareConfigFileForEdit_SeedsDefaultsWhenMissing(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "bay", "config.toml")
+
+	if err := prepareConfigFileForEdit(configPath); err != nil {
+		t.Fatalf("prepareConfigFileForEdit: %v", err)
+	}
+
+	// File should now exist with default content.
+	loaded, err := config.Load(configPath)
+	if err != nil {
+		t.Fatalf("config.Load on seeded file: %v", err)
+	}
+	// Verify it's the default — initialized maps + monitor interval.
+	if loaded.Agents == nil {
+		t.Error("expected DefaultConfig agents map to be initialized")
+	}
+	if loaded.Monitor.IntervalSeconds != 3 {
+		t.Errorf("seeded interval = %d, want 3 (DefaultConfig)", loaded.Monitor.IntervalSeconds)
+	}
+}
+
+// TestPrepareConfigFileForEdit_LeavesExistingFileAlone verifies the
+// helper does NOT clobber a user's existing config. The seeding only
+// fires when the file is missing.
+func TestPrepareConfigFileForEdit_LeavesExistingFileAlone(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+
+	// Seed a config the user supposedly already wrote.
+	userCfg := &config.Config{
+		Agents: map[string]config.AgentConfig{"claude": {Command: "claude"}},
+		Docks:  map[string]config.DockConfig{},
+		Editor: config.EditorConfig{Command: "user-editor"},
+	}
+	if err := config.Save(configPath, userCfg); err != nil {
+		t.Fatalf("seeding user config: %v", err)
+	}
+
+	if err := prepareConfigFileForEdit(configPath); err != nil {
+		t.Fatalf("prepareConfigFileForEdit: %v", err)
+	}
+
+	// User's editor command must still be there.
+	loaded, err := config.Load(configPath)
+	if err != nil {
+		t.Fatalf("loading after prepare: %v", err)
+	}
+	if loaded.Editor.Command != "user-editor" {
+		t.Errorf("user's editor command was clobbered; got %q, want user-editor", loaded.Editor.Command)
+	}
+	if _, ok := loaded.Agents["claude"]; !ok {
+		t.Error("user's claude agent was clobbered")
+	}
+}
+
 // TestEnsureConfigFileDir_CreatesMissingDirectory pins the fix for
 // the first-run UX bug: bay config edit on a fresh install with no
 // ~/.config/bay/ directory used to launch the editor on a path whose
