@@ -87,12 +87,12 @@ func registerCompletions(root *cobra.Command) {
 	wsFlagCompl := workspaceFlagCompletions()
 	dockFlagCompl := dockFlagCompletions()
 
-	// Workspace-target positional: ws verbs operate on workspaces, and the
-	// surface-creation / editor / shell paths take a workspace target too.
+	// Workspace-target positional: ws verbs operate on workspaces.
+	// surface new / shell / ws new no longer take a workspace
+	// positional — see PR #112. Their target is selected via
+	// --ws/--dock flags, not a positional, so they're not in this list.
 	for _, path := range []string{
 		"ws close", "ws show", "ws rename",
-		"surface new",
-		"shell",
 		"edit",
 		"new edit",
 	} {
@@ -116,8 +116,8 @@ func registerCompletions(root *cobra.Command) {
 		cmd.ValidArgsFunction = agentArgCompletions
 	}
 
-	// Dock commands: dock close, dock recover
-	for _, path := range []string{"dock close", "dock recover"} {
+	// Dock commands: dock close, dock recover, dock tree.
+	for _, path := range []string{"dock close", "dock recover", "dock tree"} {
 		if cmd := findCmd(root, path); cmd != nil {
 			cmd.ValidArgsFunction = dockCompl
 		}
@@ -134,13 +134,11 @@ func registerCompletions(root *cobra.Command) {
 		cmd.ValidArgsFunction = goCompl
 	}
 
-	// bay ws new [dock] — first arg is dock name
+	// bay ws new — positional is the new workspace's display name (free
+	// text, no completion). Flags carry completions for the things bay
+	// can suggest: --dock, --agent, --repo.
 	if cmd := findCmd(root, "ws new"); cmd != nil {
-		cmd.ValidArgsFunction = dockCompl
-	}
-
-	// Flag completions
-	if cmd := findCmd(root, "ws new"); cmd != nil {
+		cmd.RegisterFlagCompletionFunc("dock", dockFlagCompl)
 		cmd.RegisterFlagCompletionFunc("agent", agentFlagCompletions)
 		cmd.RegisterFlagCompletionFunc("repo", repoCompletions)
 	}
@@ -153,12 +151,16 @@ func registerCompletions(root *cobra.Command) {
 		cmd.RegisterFlagCompletionFunc("repo", repoCompletions)
 	}
 
-	// --ws and --dock flag completions on every surface verb that supports
-	// them. Workspace commands get --dock too. The bay new <kind> commands
-	// also get --split for symmetry with sf new.
+	// --ws and --dock flag completions on every surface verb that
+	// supports them. Workspace commands get --dock too. The bay new
+	// <kind> commands also get --split for symmetry with sf new.
+	// surface new and shell are in this loop now that their positional
+	// is the surface name and the workspace target moved to --ws.
 	for _, path := range []string{
+		"surface new",
 		"surface close", "surface restart", "surface show", "surface rename",
 		"close", "show", "rename", "restart",
+		"shell",
 		"new shell", "new agent", "new cmd",
 	} {
 		if cmd := findCmd(root, path); cmd != nil {

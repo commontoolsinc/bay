@@ -1157,8 +1157,11 @@ func TestRecover(t *testing.T) {
 func TestSyncWorkspaceGitState_RenamesTmuxWindow(t *testing.T) {
 	// Regression: when sync detects a branch change, the workspace gets a
 	// new abbreviated name and the tmux window should be renamed to match.
+	// Use no explicit Name so NameOverridden=false and the auto-rename
+	// fires (an explicit name pins NameOverridden=true and SyncAll skips
+	// the rename, by design — see TestWsNew_ExplicitNameWithBranchKeepsExplicitName).
 	eng, _ := testEngine(t)
-	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	eng.WsNew(WsNewOptions{Dock: "labs"})
 
 	// Simulate a branch change on disk (the worktree's actual current branch).
 	mockGit := eng.Git.(*git.Mock)
@@ -2092,7 +2095,9 @@ func TestSetLastFocused(t *testing.T) {
 func TestSyncWorkspaceGitState_UpdatesBranch(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	// No explicit Name → bay auto-names to w1, NameOverridden=false,
+	// so SyncAll's branch-based rename can fire.
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -2115,7 +2120,9 @@ func TestSyncWorkspaceGitState_UpdatesBranch(t *testing.T) {
 func TestSyncWorkspaceGitState_BranchChangeUpdatesNameAndStatus(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	// No explicit Name → bay auto-names to w1, NameOverridden=false,
+	// so SyncAll's branch-based rename can fire.
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -2145,7 +2152,9 @@ func TestWsUpdate_BranchCollisionGetsUniqueName(t *testing.T) {
 	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "existing", Shell: true}); err != nil {
 		t.Fatalf("seed workspace: %v", err)
 	}
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	// No explicit Name on the target → bay auto-names to w1,
+	// NameOverridden=false, so the branch update can rename it.
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("target workspace: %v", err)
 	}
 
@@ -2169,7 +2178,9 @@ func TestSyncWorkspaceGitState_BranchCollisionGetsUniqueName(t *testing.T) {
 	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "existing", Shell: true}); err != nil {
 		t.Fatalf("seed workspace: %v", err)
 	}
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	// No explicit Name on the target → bay auto-names to w1,
+	// NameOverridden=false, so SyncAll's branch-rename can fire.
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -2194,7 +2205,9 @@ func TestSyncWorkspaceGitState_BranchCollisionGetsUniqueName(t *testing.T) {
 func TestSyncWorkspaceGitState_EmptyBranchNoOverwrite(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	// No explicit Name → bay auto-names to w1, NameOverridden=false,
+	// so the first SyncAll's branch-rename can fire.
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -2601,7 +2614,8 @@ func TestWsCloseByStatus_SkipsNonDone(t *testing.T) {
 func TestWsNew_WithBranch(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Branch: "feature/new-branch"})
+	// No explicit Name → bay derives one from the branch.
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Branch: "feature/new-branch"})
 	if err != nil {
 		t.Fatalf("WsNew with branch failed: %v", err)
 	}
@@ -2622,6 +2636,66 @@ func TestWsNew_WithBranch(t *testing.T) {
 	}
 	if ws.Name != "new-branch" {
 		t.Errorf("name = %q, want new-branch (abbreviated)", ws.Name)
+	}
+}
+
+// TestWsNew_ExplicitNameWithBranchKeepsExplicitName verifies that when
+// the user passes BOTH an explicit name and --branch, the explicit
+// name wins and is NOT overwritten by the branch-derived name. The
+// previous behavior silently overwrote the user's choice — this test
+// pins the fix.
+func TestWsNew_ExplicitNameWithBranchKeepsExplicitName(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{
+		Dock:   "labs",
+		Name:   "auth-fix",
+		Branch: "feature/some-other-name",
+	})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	if ws.Name != "auth-fix" {
+		t.Errorf("ws.Name = %q, want auth-fix (explicit name should not be overwritten by branch-derived name)", ws.Name)
+	}
+	if ws.Worktree == nil || ws.Worktree.Branch != "feature/some-other-name" {
+		t.Errorf("branch wasn't set; ws.Worktree = %+v", ws.Worktree)
+	}
+	if !ws.NameOverridden {
+		t.Error("explicit name should set NameOverridden=true so future syncs don't auto-rename it")
+	}
+}
+
+// TestWsNew_ExplicitNameAlsoBlocksBranchSyncRename verifies the
+// NameOverridden flag set by an explicit name also prevents the
+// background SyncAll loop from auto-renaming the workspace later when
+// it detects a branch change.
+func TestWsNew_ExplicitNameAlsoBlocksBranchSyncRename(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "my-name"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+
+	// Simulate the user checking out a branch outside bay's view, then
+	// SyncAll detecting it. The post-rename block in SyncAll respects
+	// NameOverridden, so the workspace name should stay "my-name".
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetBranch(ws.Path, "feature/different-name")
+	if err := os.MkdirAll(ws.Path, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	eng.SyncAll()
+
+	post, _ := eng.LoadManifest()
+	updated := post.FindDock("labs").FindWorkspace("my-name")
+	if updated == nil {
+		t.Fatal("workspace 'my-name' missing after SyncAll; was it renamed?")
+	}
+	if updated.Worktree == nil || updated.Worktree.Branch != "feature/different-name" {
+		t.Errorf("branch sync should still happen; got branch=%v", updated.Worktree)
 	}
 }
 
