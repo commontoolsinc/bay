@@ -11,8 +11,7 @@ func TestNewRootCmd(t *testing.T) {
 	}
 
 	// Verify all subcommands are registered (including hidden ones).
-	// add-prompt was moved under `bay monitor` — see
-	// TestAddPrompt_LivesUnderMonitor.
+	// add-prompt was removed entirely — see TestAddPrompt_RemovedEntirely.
 	expected := map[string]bool{
 		"dock": false, "repo": false, "ws": false, "surface": false,
 		"go": false, "ls": false, "tree": false, "pwd": false, "recover": false, "doctor": false,

@@ -12,15 +12,6 @@ import (
 // status-line, completion, monitor *, version, agent-guide.
 const noMonitorAutostartAnnotation = "bay-no-monitor-autostart"
 
-// forceMonitorAutostartAnnotation overrides an inherited
-// no-autostart annotation. When walking from the invoked command up
-// to the root, the FIRST annotation hit wins — so a child command
-// can opt back IN to auto-start even when its parent (or any
-// ancestor) opts out. Used by `bay monitor add-prompt`, which lives
-// under the no-autostart `monitor` parent but actively wants the
-// monitor running so the new pattern takes effect.
-const forceMonitorAutostartAnnotation = "bay-force-monitor-autostart"
-
 // ensureMonitorFn is the function the auto-start hook calls. It's a
 // package var so tests can swap it without forking a real process.
 // The default implementation reads the PID file, checks the process,
@@ -42,25 +33,23 @@ func ensureMonitor() {
 	_ = mon.Start()
 }
 
-// shouldAutostartMonitor walks from the invoked command up toward
-// the root and returns based on the FIRST annotation it finds:
+// shouldAutostartMonitor walks the command tree from root to the
+// invoked command and returns false if any node along the way has the
+// no-autostart annotation. The walk lets a parent command (like
+// "monitor") opt the entire subtree out without per-subcommand
+// annotations.
 //
-//   - forceMonitorAutostartAnnotation=true → return true (opt back in)
-//   - noMonitorAutostartAnnotation=true    → return false (opt out)
-//   - neither                              → continue walking
-//
-// Walking leaf-to-root means the closer-to-leaf annotation wins,
-// so a child like `bay monitor add-prompt` can override its parent's
-// inherited opt-out.
+// Note: there's no way for a child to opt back IN once an ancestor has
+// opted out — if a parent is annotated, every child is opted out
+// regardless. We have no use case for per-child override today; if
+// that changes, this function needs a different shape (e.g. a
+// "force-autostart" annotation that beats the inherited opt-out).
 //
 // Cobra's hidden internal commands (__complete, __completeNoDesc, help)
 // are also excluded — they run on every shell tab-completion request
 // or help invocation and should never fork a daemon.
 func shouldAutostartMonitor(cmd *cobra.Command) bool {
 	for c := cmd; c != nil; c = c.Parent() {
-		if c.Annotations[forceMonitorAutostartAnnotation] == "true" {
-			return true
-		}
 		if c.Annotations[noMonitorAutostartAnnotation] == "true" {
 			return false
 		}
