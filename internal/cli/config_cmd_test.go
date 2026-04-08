@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -125,12 +126,71 @@ func TestBayConfigEditor_WithArgPersistsEditor(t *testing.T) {
 	}
 }
 
+// TestRunConfigEditorSet_CreatesConfigWhenMissing verifies that on a
+// fresh install (no config file, no parent directory), running
+// `bay config editor <name>` creates the directory, seeds a default
+// config with the editor field set, and persists it.
+//
+// Caught a real bug introduced by the first iteration of this PR:
+// runConfigEditorSet was using os.IsNotExist(err), which doesn't
+// unwrap fmt.Errorf wraps and so failed to detect the missing-file
+// case after config.Load wrapped its error.
+func TestRunConfigEditorSet_CreatesConfigWhenMissing(t *testing.T) {
+	dir := t.TempDir()
+	// Two levels deep to also exercise the parent-dir creation.
+	configPath := filepath.Join(dir, "config", "bay", "config.toml")
+
+	if err := runConfigEditorSet(configPath, "cursor"); err != nil {
+		t.Fatalf("runConfigEditorSet on missing config: %v", err)
+	}
+
+	loaded, err := config.Load(configPath)
+	if err != nil {
+		t.Fatalf("loading saved config: %v", err)
+	}
+	if loaded.Editor.Command != "cursor" {
+		t.Errorf("persisted editor = %q, want cursor", loaded.Editor.Command)
+	}
+}
+
 func TestBayConfigPath_PrintsConfigPath(t *testing.T) {
 	// The path-printer takes the path as an argument and writes it
 	// to a writer; that's the surface that's testable in isolation.
 	got := configPathString("/some/path/config.toml")
 	if got != "/some/path/config.toml" {
 		t.Errorf("configPathString = %q, want literal path", got)
+	}
+}
+
+// TestEnsureConfigFileDir_CreatesMissingDirectory pins the fix for
+// the first-run UX bug: bay config edit on a fresh install with no
+// ~/.config/bay/ directory used to launch the editor on a path whose
+// parent didn't exist, so the editor's save would fail.
+func TestEnsureConfigFileDir_CreatesMissingDirectory(t *testing.T) {
+	root := t.TempDir()
+	// Two levels deep to verify MkdirAll, not just Mkdir.
+	configPath := filepath.Join(root, "config", "bay", "config.toml")
+
+	if err := ensureConfigFileDir(configPath); err != nil {
+		t.Fatalf("ensureConfigFileDir: %v", err)
+	}
+
+	info, err := os.Stat(filepath.Join(root, "config", "bay"))
+	if err != nil {
+		t.Fatalf("expected parent directory to exist: %v", err)
+	}
+	if !info.IsDir() {
+		t.Errorf("expected directory, got mode %v", info.Mode())
+	}
+}
+
+func TestEnsureConfigFileDir_NoOpWhenDirectoryExists(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+
+	// Calling on an already-existing parent should not error.
+	if err := ensureConfigFileDir(configPath); err != nil {
+		t.Errorf("ensureConfigFileDir on existing parent: %v", err)
 	}
 }
 

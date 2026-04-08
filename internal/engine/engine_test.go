@@ -2699,31 +2699,9 @@ func TestWsNew_ExplicitNameAlsoBlocksBranchSyncRename(t *testing.T) {
 	}
 }
 
-// --- SetEditor test ---
-
-func TestSetEditor(t *testing.T) {
-	eng, dir := testEngine(t)
-	eng.configPath = filepath.Join(dir, "config.toml")
-	config.Save(eng.configPath, eng.Config)
-
-	err := eng.SetEditor("nvim")
-	if err != nil {
-		t.Fatalf("SetEditor failed: %v", err)
-	}
-
-	if eng.Config.Editor.Command != "nvim" {
-		t.Errorf("editor command = %q, want nvim", eng.Config.Editor.Command)
-	}
-
-	// Verify persisted to disk
-	loaded, err := config.Load(eng.configPath)
-	if err != nil {
-		t.Fatalf("loading saved config: %v", err)
-	}
-	if loaded.Editor.Command != "nvim" {
-		t.Errorf("persisted editor command = %q, want nvim", loaded.Editor.Command)
-	}
-}
+// SetEditor was removed in #113 — its only caller (bay edit --set)
+// is gone, replaced by bay config editor <name> which manages the
+// config file directly without going through the engine.
 
 func TestWsClose_RemoveWorktreeFailurePreservesWorkspaceState(t *testing.T) {
 	eng, _ := testEngine(t)

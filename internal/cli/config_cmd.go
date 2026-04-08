@@ -2,10 +2,10 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
-	"os/exec"
-	"strings"
+	"path/filepath"
 
 	"github.com/BurntSushi/toml"
 	"github.com/commontoolsinc/bay/internal/config"
@@ -43,17 +43,20 @@ func newConfigEditCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			editorCmd, _ := resolveEditor(eng.Config)
+			editorCmd, isGUI := resolveEditor(eng.Config)
 			if editorCmd == "" {
 				return fmt.Errorf("no editor found; set with 'bay config editor <name>', or via $VISUAL/$EDITOR")
 			}
 			path := bayPaths().ConfigFile
-			args = append(strings.Fields(editorCmd), path)
-			c := exec.Command(args[0], args[1:]...)
-			c.Stdin = os.Stdin
-			c.Stdout = os.Stdout
-			c.Stderr = os.Stderr
-			return c.Run()
+			// First-run safety: the parent directory may not exist yet
+			// (e.g. fresh install with no `bay setup`). Without this,
+			// the editor opens an empty buffer and the user's first
+			// save fails.
+			if err := ensureConfigFileDir(path); err != nil {
+				return err
+			}
+			_, err = launchEditor(editorCmd, isGUI, []string{path})
+			return err
 		},
 	}
 }
@@ -101,18 +104,22 @@ With a positional argument, sets the editor command in the config.
   bay config editor "nvim -u NONE"  set with arguments`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Set path: no engine needed, just touch the config file.
+			if len(args) > 0 {
+				if err := runConfigEditorSet(bayPaths().ConfigFile, args[0]); err != nil {
+					return err
+				}
+				fmt.Printf("Editor set to %q\n", args[0])
+				return nil
+			}
+			// Get path: needs the loaded config (with defaults +
+			// env-var fallbacks applied) to resolve which editor bay
+			// would actually use.
 			eng, err := newEngine()
 			if err != nil {
 				return err
 			}
-			if len(args) == 0 {
-				fmt.Println(configEditorGetString(eng.Config))
-				return nil
-			}
-			if err := runConfigEditorSet(bayPaths().ConfigFile, args[0]); err != nil {
-				return err
-			}
-			fmt.Printf("Editor set to %q\n", args[0])
+			fmt.Println(configEditorGetString(eng.Config))
 			return nil
 		},
 	}
@@ -121,16 +128,27 @@ With a positional argument, sets the editor command in the config.
 // runConfigEditorSet loads the config at configPath, updates the
 // editor command, and saves. Used by `bay config editor <name>`.
 // Replaces the old `bay edit --set` flag.
+//
+// On a fresh install where the config file doesn't exist yet, this
+// seeds the file from DefaultConfig + the user's editor choice and
+// creates the parent directory if needed.
+//
+// Uses errors.Is(err, os.ErrNotExist) rather than os.IsNotExist —
+// the latter doesn't unwrap fmt.Errorf wraps and so silently fails to
+// detect the missing-file case after config.Load wraps its error.
 func runConfigEditorSet(configPath, name string) error {
 	cfg, err := config.Load(configPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			cfg = config.DefaultConfig()
 		} else {
 			return fmt.Errorf("loading config: %w", err)
 		}
 	}
 	cfg.Editor.Command = name
+	if err := ensureConfigFileDir(configPath); err != nil {
+		return err
+	}
 	if err := config.Save(configPath, cfg); err != nil {
 		return fmt.Errorf("saving config: %w", err)
 	}
@@ -158,6 +176,17 @@ func configEditorGetString(cfg *config.Config) string {
 // pure-string layer.
 func configPathString(p string) string {
 	return p
+}
+
+// ensureConfigFileDir creates the parent directory for configPath
+// if it doesn't already exist. Used before any operation that might
+// write the config file (open in editor, save) so a fresh install
+// without a ~/.config/bay/ directory doesn't fail at write time.
+func ensureConfigFileDir(configPath string) error {
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		return fmt.Errorf("creating config directory: %w", err)
+	}
+	return nil
 }
 
 // configShowString returns the effective config as a TOML document.
