@@ -544,9 +544,10 @@ Manage the background pane monitor. Detects when agents are waiting
 for input and highlights those tmux windows. Also handles
 activity-gated merge detection.
 
-#### `bay add-prompt [name]`
-
-Capture pane text to create a new agent-waiting detection pattern.
+To add a new waiting-detection pattern, edit
+`~/.config/bay/bay-prompts.txt` directly — one regex per line. The
+monitor reloads patterns on every cycle (default 3s), so no restart
+is needed.
 
 ### Dock management
 

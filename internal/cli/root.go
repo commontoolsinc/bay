@@ -141,9 +141,7 @@ func NewRootCmd(version string) *cobra.Command {
 	monitorCmd := newMonitorCmd()
 	monitorCmd.GroupID = "infra"
 
-	// Other commands
-	addPromptCmd := newAddPromptCmd()
-	addPromptCmd.GroupID = "other"
+	// Other commands.
 	versionCmd := newVersionCmd(version)
 	versionCmd.GroupID = "other"
 
@@ -172,7 +170,6 @@ func NewRootCmd(version string) *cobra.Command {
 		recoverCmd,
 		doctorCmd,
 		monitorCmd,
-		addPromptCmd,
 		versionCmd,
 		newAgentGuideCmd(), // hidden, for skill
 	)

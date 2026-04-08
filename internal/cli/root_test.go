@@ -10,11 +10,12 @@ func TestNewRootCmd(t *testing.T) {
 		t.Errorf("root command use = %q, want bay", root.Use)
 	}
 
-	// Verify all subcommands are registered (including hidden ones)
+	// Verify all subcommands are registered (including hidden ones).
+	// add-prompt was removed entirely — see TestAddPrompt_RemovedEntirely.
 	expected := map[string]bool{
 		"dock": false, "repo": false, "ws": false, "surface": false,
 		"go": false, "ls": false, "tree": false, "pwd": false, "recover": false, "doctor": false,
-		"setup": false, "monitor": false, "add-prompt": false, "version": false,
+		"setup": false, "monitor": false, "version": false,
 		"shell": false, "edit": false, "restart": false, "status-line": false,
 		"agent-guide": false,
 	}
