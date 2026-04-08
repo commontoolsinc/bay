@@ -92,7 +92,7 @@ Important invariants:
 Prefer JSON output for automation:
 - `bay pwd --json`
 - `bay ls --json`
-- `bay ws show <name|self> --json`
+- `bay ws show [name] --json` (defaults to current; pass `self` explicitly for the same effect)
 
 Human-formatted output is for display only and may change between
 versions.
@@ -211,7 +211,7 @@ Use `bay ls --json --rows` for denormalized rows (easier to filter):
 Use `bay ls -R` to force recursive output (show surfaces) regardless
 of focus scope.
 
-### JSON: `bay ws show <name|self> --json`
+### JSON: `bay ws show [name] --json`
 
 ```json
 {
@@ -256,20 +256,28 @@ Fields are omitted when empty.
 
 ## Default target rules
 
+Across all create-verbs (`ws new`, `surface new`, `shell`, `new
+shell|agent|cmd`) the positional names the **thing being created**.
+The container (dock, workspace) is selected via `--dock` / `--ws`
+flags or, when omitted, inherited from the current tmux session.
+
 | Command | Default target when omitted |
 |---------|-----------------------------|
-| `bay ws new [dock]` | current tmux session name, or auto-bootstrap from CWD |
-| `bay ws show [name]` | `self` |
-| `bay ws close <name>` | required (no default) |
+| `bay ws new [name]` | current dock from tmux session, or auto-bootstrap from CWD |
+| `bay ws show [name]` | current workspace |
+| `bay ws close [name]` | required (no default; use `--done` for batch) |
 | `bay ws close --done` | all done workspaces in current dock |
 | `bay pwd` | current bay context |
-| `bay surface new [workspace]` | `self` |
-| `bay surface close [workspace]` | `self` |
-| `bay surface restart [workspace]` | `self` |
+| `bay surface new [name]` | current workspace |
+| `bay surface close <name>` | required (use `self` for current pane) |
+| `bay surface restart [name]` | current pane's surface |
+| `bay surface show [name]` | current pane's surface |
+| `bay surface tree` (none) | n/a — surfaces are leaves; use `bay surface show` |
+| `bay dock tree [name]` | current dock from tmux session |
 | `bay go [query]` | surfaces in current workspace |
 | `bay ws go [query]` | workspaces in current dock |
-| `bay edit [name]` | `self` |
-| `bay shell [workspace]` | `self` |
+| `bay edit [workspace]` | current workspace |
+| `bay shell [name]` | current workspace, surface auto-named "shell" |
 
 ## Commands
 
@@ -279,31 +287,33 @@ operations.
 
 ### Workspace commands
 
-#### `bay ws new [dock] [--repo NAME] [--dir PATH] [--name NAME] [--branch NAME] [--agent [TYPE]] [--shell]`
+#### `bay ws new [name] [--dock DOCK] [--repo NAME] [--dir PATH] [--branch NAME] [--agent [TYPE]] [--shell]`
 
-Create a workspace with its first surface. Dock defaults to the
-current tmux session if it is a bay dock, or auto-bootstraps from CWD
-(creates a dock and repo config automatically).
+Create a workspace with its first surface. The positional names the
+new workspace; `--dock` selects which dock to create it in. `--dock`
+defaults to the current tmux session if it is a bay dock, or
+auto-bootstraps from CWD (creates a dock and repo config
+automatically).
 
 Default behavior opens a shell. Use `--agent` (bare flag) for the
 dock's default agent, or `--agent TYPE` for a specific one.
 
 ```
-bay ws new                              # auto-bootstrap from CWD
-bay ws new labs                         # worktree in labs dock
-bay ws new labs --repo ct-server        # worktree using a different repo
-bay ws new labs --dir ~/projects/foo    # external workspace
-bay ws new labs --name auth-fix         # with explicit name
-bay ws new labs --agent                 # launch dock's default agent
-bay ws new labs --agent codex           # launch specific agent
-bay ws new labs --branch fix-auth       # create and checkout branch
+bay ws new                                  # auto-bootstrap from CWD
+bay ws new auth-fix                         # named workspace in current dock
+bay ws new auth-fix --dock labs             # named workspace in a specific dock
+bay ws new auth-fix --repo ct-server        # using a different repo
+bay ws new auth-fix --dir ~/projects/foo    # external workspace
+bay ws new auth-fix --agent                 # launch dock's default agent
+bay ws new auth-fix --agent codex           # launch specific agent
+bay ws new auth-fix --branch fix-auth       # create and checkout branch
 ```
 
-#### `bay ws close <name|self> [--force] [--done]`
+#### `bay ws close [name] [--force] [--done]`
 
 Close a workspace and all its surfaces. For worktree workspaces,
 checks for uncommitted changes and unpushed commits. Refuses if dirty
-unless `--force` is used.
+unless `--force` is used. Pass `self` to close the current workspace.
 
 Use `--done` (without a name) to batch-close all workspaces with
 status `done` in the current dock.
@@ -316,10 +326,10 @@ bay ws close --done
 bay ws close --done --force
 ```
 
-#### `bay ws show [name|self] [--json]`
+#### `bay ws show [name] [--json]`
 
 Show workspace details: path, branch, PR, status, surfaces. Defaults
-to `self`.
+to the current workspace; pass `self` explicitly for the same effect.
 
 ```
 bay ws show
@@ -327,10 +337,11 @@ bay ws show auth-fix
 bay ws show self --json
 ```
 
-#### `bay ws rename <name|self> <new-name>`
+#### `bay ws rename <name> <new-name>`
 
 Rename a workspace. Overrides auto-abbreviation permanently. Names
-must match `[a-zA-Z0-9_-]+`.
+must match `[a-zA-Z0-9_-]+`. Pass `self` as the first arg to rename
+the current workspace.
 
 ```
 bay ws rename auth-fix mem-refactor
@@ -385,54 +396,68 @@ Cycle to the next or previous workspace within the current dock.
 
 ### Surface commands
 
-#### `bay surface new [workspace] [--agent TYPE|--shell|--cmd "..."] [--window|--split h|v] [--name NAME]`
+#### `bay surface new [name] [--ws WS] [--dock DOCK] [--agent TYPE|--shell|--cmd "..."] [--window|--split h|v]`
 
-Add a surface to a workspace. Defaults to a vertical split in the
-current tmux window. Use `--window` for a new tmux window.
+Add a surface to a workspace. The positional names the new surface;
+`--ws` selects which workspace it goes in (default: current).
+Defaults to a vertical split in the current tmux window. Use
+`--window` for a new tmux window.
 
 Alias: `bay sf new`.
 
 ```
-bay surface new --shell                     # shell pane (split)
+bay surface new                             # auto-named shell, current ws
+bay surface new tests                       # surface named "tests"
 bay surface new --window --agent codex      # agent in new window
-bay surface new auth-fix --cmd "npm test"   # cmd in another workspace
+bay surface new tests --cmd "npm test"      # named cmd surface
+bay surface new tests --ws auth-fix         # in a different workspace
 bay sf new --split h                        # horizontal split
-bay sf new --name tests --cmd "npm test"    # named surface
 ```
 
-#### `bay surface close [workspace] [--surface NAME]`
+#### `bay surface close <name> [--ws WS] [--dock DOCK] [--force]`
 
-Close a surface. Defaults to current pane. Use `--surface` to target
-a specific surface by name.
-
-```
-bay surface close
-bay sf close --surface shell
-```
-
-#### `bay surface restart [workspace] [--surface NAME]`
-
-Respawn a surface's process. For agent surfaces, uses `resume_args`
-from agent config (e.g., `--continue` for Claude Code) to reconnect
-to the existing session. The worktree and git state are preserved.
+Close a named surface. Pass `self` to close the current pane's
+surface. Agent surfaces prompt for confirmation unless `--force`.
 
 ```
-bay surface restart
-bay sf restart --surface agent
+bay sf close shell-2
+bay sf close self
+bay sf close agent --force
 ```
+
+#### `bay surface restart [name] [--ws WS] [--dock DOCK]`
+
+Respawn a surface's process. Defaults to the current pane's surface.
+For agent surfaces, uses `resume_args` from agent config (e.g.,
+`--continue` for Claude Code) to reconnect to the existing session.
+The worktree and git state are preserved.
+
+```
+bay surface restart                         # current pane
+bay sf restart agent                        # named surface
+```
+
+#### `bay surface show [name] [--ws WS] [--dock DOCK]`
+
+Print details for a surface. Defaults to the current pane's surface.
+
+#### `bay surface rename <old> <new> [--ws WS] [--dock DOCK]`
+
+Rename a surface. Pass `self` as `<old>` to rename the current
+surface.
 
 ### Top-level shorthands
 
 ```
 bay go [query]         → bay surface go [query]
-bay shell [workspace]  → bay surface new --shell [workspace]
-bay edit [name|self]   → open workspace in configured editor
+bay shell [name]       → bay surface new --shell [name]
+bay edit [workspace]   → open workspace in configured editor
 bay ls                 → list everything
 bay pwd                → show current bay context
 bay recover            → reconstruct state after reboot
 ```
 
-#### `bay edit [name|self] [--all] [--set EDITOR] [--show]`
+#### `bay edit [workspace] [--all] [--set EDITOR] [--show]`
 
 Open a workspace in the configured editor. For GUI editors (Cursor,
 VS Code, Zed), creates a `gui-app` surface so the editor appears in
@@ -449,14 +474,16 @@ bay edit --set cursor       # save editor preference
 bay edit --show             # show which editor would be used
 ```
 
-#### `bay shell [workspace] [--window] [--name NAME]`
+#### `bay shell [name] [--ws WS] [--dock DOCK] [--window] [--split h|v]`
 
-Open a shell surface. Defaults to vertical split in current workspace.
+Open a shell surface in a workspace. The positional names the new
+shell; `--ws` selects which workspace it goes in (default: current).
 
 ```
-bay shell                   # split in current workspace
-bay shell auth-fix          # shell for specific workspace
+bay shell                   # auto-named shell in current workspace
+bay shell logs              # named "logs"
 bay shell --window          # new tmux window instead of split
+bay shell logs --ws auth-fix # in a different workspace
 ```
 
 ### Global commands
@@ -534,11 +561,12 @@ and creates `.worktreeinclude` if missing.
 ### Spin up a workspace for a task
 
 ```
-bay ws new labs --name auth-fix
+bay ws new auth-fix --dock labs
 ```
 
 Creates a worktree workspace. Opens a shell by default. Use `--agent`
-to launch the dock's default agent instead.
+to launch the dock's default agent instead. Drop `--dock` to target
+the current dock from your tmux session.
 
 ### Track progress from inside
 
@@ -595,7 +623,7 @@ bay ws go --next-waiting
 ### Use an existing directory
 
 ```
-bay ws new labs --dir ~/projects/foo
+bay ws new my-foo --dock labs --dir ~/projects/foo
 ```
 
 External workspaces let bay manage tmux recovery for directories it
@@ -620,9 +648,9 @@ bay ws close --done
 ### Manage multiple concurrent PRs
 
 ```
-bay ws new labs --name auth-fix
-bay ws new labs --name perf-regression
-bay ws new labs --name update-deps
+bay ws new auth-fix --dock labs
+bay ws new perf-regression --dock labs
+bay ws new update-deps --dock labs
 bay ls
 ```
 

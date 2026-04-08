@@ -79,7 +79,7 @@ tmux tab. Your login bug work is untouched.
 A teammate pings you for a review? Create a third:
 
 ```
-bay ws new --name review
+bay ws new review
 ```
 
 Switch between all of them with `Option+Shift+j` / `Option+Shift+k` (or

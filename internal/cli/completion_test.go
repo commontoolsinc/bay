@@ -61,15 +61,17 @@ func TestSurfaceGoCmd_HasNextWaitingFlag(t *testing.T) {
 func TestCompletionsRegistered(t *testing.T) {
 	root := NewRootCmd("test")
 
-	// These commands should have ValidArgsFunction set
+	// These commands should have ValidArgsFunction set on their
+	// positional. Commands whose positional is a free-form name (the
+	// create-verbs ws new / surface new / shell) intentionally have
+	// no ValidArgsFunction — see TestCreateVerbs_PositionalsAreFreeText.
 	withCompletions := []string{
 		"ws close", "ws show", "ws rename",
 		"ws go",
-		"dock close", "dock recover",
-		"ws new",
-		// surface verbs (sf X form)
+		"dock close", "dock recover", "dock tree",
+		// surface verbs (sf X form) — close/restart/show/rename target
+		// existing surfaces by name.
 		"surface close", "surface restart", "surface show", "surface rename",
-		"surface new",
 		// top-level surface verbs
 		"close", "show", "rename", "restart",
 		// bay new subcommands with positional completions
@@ -83,6 +85,26 @@ func TestCompletionsRegistered(t *testing.T) {
 		}
 		if cmd.ValidArgsFunction == nil {
 			t.Errorf("command %q has no ValidArgsFunction", path)
+		}
+	}
+}
+
+// TestCreateVerbs_PositionalsAreFreeText pins the contract that
+// ws new / surface new / shell have NO positional completion. Their
+// positional names a brand-new thing the user is about to create —
+// completing it from existing names would be misleading and would
+// invite the same kind of dock-name-vs-workspace-name confusion this
+// PR exists to fix.
+func TestCreateVerbs_PositionalsAreFreeText(t *testing.T) {
+	root := NewRootCmd("test")
+	for _, path := range []string{"ws new", "surface new", "shell"} {
+		cmd := findCmd(root, path)
+		if cmd == nil {
+			t.Errorf("command %q not found", path)
+			continue
+		}
+		if cmd.ValidArgsFunction != nil {
+			t.Errorf("command %q has a positional ValidArgsFunction; create-verb positionals must be free text", path)
 		}
 	}
 }
@@ -301,12 +323,16 @@ func TestDockFlagCompletions(t *testing.T) {
 }
 
 func TestFlagCompletions_WsAndDockOnSurfaceVerbs(t *testing.T) {
-	// Verify --ws and --dock have completion functions registered on the
-	// surface verb commands.
+	// Verify --ws and --dock have completion functions registered on
+	// the surface verb commands. surface new and shell are in this
+	// list now that their positional is the surface name and the
+	// workspace target moved to --ws (PR #112).
 	root := NewRootCmd("test")
 	for _, path := range []string{
+		"surface new",
 		"surface close", "surface restart", "surface show", "surface rename",
 		"close", "show", "rename", "restart",
+		"shell",
 		"new shell", "new agent", "new cmd",
 	} {
 		cmd := findCmd(root, path)
@@ -323,6 +349,22 @@ func TestFlagCompletions_WsAndDockOnSurfaceVerbs(t *testing.T) {
 		if cmd.Flags().Lookup("dock") == nil {
 			t.Errorf("command %q missing --dock flag", path)
 		}
+	}
+}
+
+// TestFlagCompletions_DockOnWsNew pins that bay ws new exposes a
+// --dock flag (the replacement for the old positional). The flag
+// completion is registered against the same dockFlagCompletions
+// helper used elsewhere — there's no public way to inspect cobra's
+// flag-completion map, so this test only verifies the flag exists.
+func TestFlagCompletions_DockOnWsNew(t *testing.T) {
+	root := NewRootCmd("test")
+	cmd := findCmd(root, "ws new")
+	if cmd == nil {
+		t.Fatal("ws new command not found")
+	}
+	if cmd.Flags().Lookup("dock") == nil {
+		t.Error("ws new missing --dock flag")
 	}
 }
 

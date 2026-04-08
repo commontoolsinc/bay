@@ -39,21 +39,32 @@ func newWsCmd() *cobra.Command {
 func newWsNewCmd() *cobra.Command {
 	var opts engine.WsNewOptions
 	var shell bool
+	var dockFlag string
 
 	cmd := &cobra.Command{
-		Use:   "new [dock]",
+		Use:   "new [name]",
 		Short: "Create a new workspace",
-		Args:  cobra.MaximumNArgs(1),
+		Long: `Create a new workspace in a dock.
+
+  bay ws new                          create in current dock, auto-named
+  bay ws new login-bug                create with display name "login-bug"
+  bay ws new --branch fix/login-bug   create on a new git branch
+  bay ws new --dock labs              create in a specific dock`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
 				return err
 			}
 
+			// Positional is the workspace's display name.
 			if len(args) > 0 {
-				opts.Dock = args[0]
-			} else {
-				// Try: infer dock from current tmux session.
+				opts.Name = args[0]
+			}
+
+			// Resolve dock: explicit --dock > current tmux session > auto-bootstrap.
+			opts.Dock = dockFlag
+			if opts.Dock == "" {
 				dock, tmuxErr := eng.Tmux.CurrentSession()
 				if tmuxErr == nil {
 					m, _ := eng.LoadManifest()
@@ -61,15 +72,13 @@ func newWsNewCmd() *cobra.Command {
 						opts.Dock = dock
 					}
 				}
-
-				// Fallback: auto-bootstrap from CWD.
-				if opts.Dock == "" {
-					dockName, bootstrapErr := autoBootstrap(eng)
-					if bootstrapErr != nil {
-						return bootstrapErr
-					}
-					opts.Dock = dockName
+			}
+			if opts.Dock == "" {
+				dockName, bootstrapErr := autoBootstrap(eng)
+				if bootstrapErr != nil {
+					return bootstrapErr
 				}
+				opts.Dock = dockName
 			}
 
 			// Shell-first default: if neither --agent nor --shell was
@@ -106,9 +115,9 @@ func newWsNewCmd() *cobra.Command {
 		},
 	}
 
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (defaults to current tmux session)")
 	cmd.Flags().StringVar(&opts.Repo, "repo", "", "repo name")
 	cmd.Flags().StringVar(&opts.Dir, "dir", "", "external directory (creates external workspace)")
-	cmd.Flags().StringVar(&opts.Name, "name", "", "display name")
 	cmd.Flags().StringVar(&opts.Agent, "agent", "", "agent type (bare --agent uses dock default)")
 	cmd.Flags().BoolVar(&shell, "shell", false, "open shell instead of agent")
 	cmd.Flags().StringVar(&opts.Branch, "branch", "", "create and checkout a git branch in the worktree")
@@ -122,10 +131,11 @@ func newWsCloseCmd() *cobra.Command {
 	var dockFlag string
 
 	cmd := &cobra.Command{
-		Use:     "close [name|self]",
+		Use:     "close [name]",
 		Aliases: []string{"rm"},
 		Short:   "Close a workspace and all its surfaces",
-		Long: `Close a workspace and all its windows.
+		Long: `Close a workspace and all its windows. Pass "self" to close the current
+workspace, or omit the name and use --done to close finished workspaces.
 
   bay ws close w1               close a specific workspace
   bay ws close labs:w1          dock-qualified
@@ -190,7 +200,7 @@ func newWsShowCmd() *cobra.Command {
 	var dockFlag string
 
 	cmd := &cobra.Command{
-		Use:     "show [name|self]",
+		Use:     "show [name]",
 		Aliases: []string{"cat"},
 		Short:   "Show workspace details (default: current)",
 		Args:    cobra.MaximumNArgs(1),
@@ -269,9 +279,9 @@ func newWsRenameCmd() *cobra.Command {
 	var dockFlag string
 
 	cmd := &cobra.Command{
-		Use:     "rename <name|self> <new-name>",
+		Use:     "rename <name> <new-name>",
 		Aliases: []string{"mv"},
-		Short:   "Rename a workspace display name",
+		Short:   "Rename a workspace display name (use 'self' for current)",
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()

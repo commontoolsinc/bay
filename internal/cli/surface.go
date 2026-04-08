@@ -38,16 +38,19 @@ func newSurfaceCmd() *cobra.Command {
 func newSurfaceNewCmd() *cobra.Command {
 	var opts surfaceNewOpts
 	var shell, window bool
+	var wsFlag, dockFlag string
 
 	cmd := &cobra.Command{
-		Use:   "new [workspace]",
+		Use:   "new [name]",
 		Short: "Add a surface to a workspace",
-		Long: `Add a surface to a workspace.
+		Long: `Add a surface to a workspace. The positional is the new surface's
+display name; --ws/--dock select the target workspace.
 
-  bay surface new              split pane in current workspace
-  bay surface new --window     new tmux window in current workspace
-  bay surface new auth-fix     new surface for that workspace
-  bay sf new --agent codex     add an agent surface`,
+  bay surface new                          split a shell into the current workspace
+  bay surface new logs                     new surface named "logs"
+  bay surface new --window                 new tmux window instead of split
+  bay surface new --ws auth-fix            target a different workspace
+  bay sf new --agent codex                 add an agent surface`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -55,12 +58,14 @@ func newSurfaceNewCmd() *cobra.Command {
 				return err
 			}
 
-			var dockName, wsName string
 			if len(args) > 0 {
-				dockName, wsName, err = resolveTarget(eng, args[0])
-			} else {
-				dockName, wsName, err = eng.ResolveSelf()
+				if err := validateSurfaceName(args[0]); err != nil {
+					return err
+				}
+				opts.Name = args[0]
 			}
+
+			dockName, wsName, err := resolveSurfaceWorkspace(eng, wsFlag, dockFlag)
 			if err != nil {
 				return err
 			}
@@ -83,12 +88,13 @@ func newSurfaceNewCmd() *cobra.Command {
 		},
 	}
 
+	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (defaults to current)")
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (with --ws to disambiguate)")
 	cmd.Flags().StringVar(&opts.Agent, "agent", "", "agent type")
 	cmd.Flags().BoolVar(&shell, "shell", false, "open a shell")
 	cmd.Flags().StringVar(&opts.Command, "cmd", "", "command to run")
 	cmd.Flags().StringVar(&opts.SplitDir, "split", "", "split direction (h or v)")
 	cmd.Flags().BoolVar(&window, "window", false, "open as new tmux window instead of split")
-	cmd.Flags().StringVar(&opts.Name, "name", "", "surface name")
 
 	return cmd
 }
@@ -153,7 +159,7 @@ func newSurfaceCloseCmd() *cobra.Command {
 	var force bool
 
 	cmd := &cobra.Command{
-		Use:     "close <name|self>",
+		Use:     "close <name>",
 		Aliases: []string{"rm"},
 		Short:   "Close a surface",
 		Long: `Close a surface by name. Use 'self' to target the current surface.
@@ -368,10 +374,10 @@ func newSurfaceShowCmd() *cobra.Command {
 	var wsFlag, dockFlag string
 
 	cmd := &cobra.Command{
-		Use:     "show <name>",
+		Use:     "show [name]",
 		Aliases: []string{"cat"},
-		Short:   "Show surface details",
-		Args:    cobra.ExactArgs(1),
+		Short:   "Show surface details (default: current)",
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
@@ -388,12 +394,14 @@ func newSurfaceShowCmd() *cobra.Command {
 }
 
 // runSurfaceShow prints details for a named surface. Shared by `bay sf show`
-// and the top-level `bay show`. Accepts the `self` keyword.
-//
-// Precondition: args must contain exactly one element. Cobra's ExactArgs(1)
-// enforces this in production; callers from tests should pass the same.
+// and the top-level `bay show`. Accepts the `self` keyword, and a bare
+// no-arg invocation defaults to the current pane's surface.
 func runSurfaceShow(eng *engine.Engine, args []string, wsFlag, dockFlag string) error {
-	dockName, wsName, sName, err := resolveSurfaceArgOrSelf(eng, args[0], wsFlag, dockFlag)
+	target := "self"
+	if len(args) > 0 {
+		target = args[0]
+	}
+	dockName, wsName, sName, err := resolveSurfaceArgOrSelf(eng, target, wsFlag, dockFlag)
 	if err != nil {
 		return err
 	}

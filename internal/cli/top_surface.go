@@ -257,7 +257,7 @@ func newTopCloseCmd() *cobra.Command {
 	var force bool
 
 	cmd := &cobra.Command{
-		Use:     "close <name|self>",
+		Use:     "close <name>",
 		Aliases: []string{"rm"},
 		Short:   "Close a surface",
 		Long: `Close a surface by name. Use 'self' to target the current surface.
@@ -294,10 +294,10 @@ func newTopShowCmd() *cobra.Command {
 	var wsFlag, dockFlag string
 
 	cmd := &cobra.Command{
-		Use:     "show <name>",
+		Use:     "show [name]",
 		Aliases: []string{"cat"},
-		Short:   "Show surface details",
-		Args:    cobra.ExactArgs(1),
+		Short:   "Show surface details (default: current)",
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {

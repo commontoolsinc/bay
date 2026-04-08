@@ -172,15 +172,19 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	surface.Tmux.WindowID = windowID
 	surface.Tmux.LayoutGroup = 1
 
-	// Build workspace.
+	// Build workspace. NameOverridden is set when the user passed an
+	// explicit name, so the post-branch auto-rename block below (and
+	// the SyncAll branch detector) won't silently overwrite the
+	// user's choice with a branch-derived name.
 	ws := manifest.Workspace{
-		Name:       displayName,
-		Type:       wsType,
-		Path:       wsPath,
-		Status:     manifest.WorkspaceStatusIdle,
-		LastActive: time.Now().Unix(),
-		Worktree:   worktreeAttrs,
-		Surfaces:   []manifest.Surface{},
+		Name:           displayName,
+		NameOverridden: nameExplicit,
+		Type:           wsType,
+		Path:           wsPath,
+		Status:         manifest.WorkspaceStatusIdle,
+		LastActive:     time.Now().Unix(),
+		Worktree:       worktreeAttrs,
+		Surfaces:       []manifest.Surface{},
 	}
 
 	var finalName string

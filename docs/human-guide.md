@@ -84,7 +84,7 @@ From inside a dock:
 bay ws new                  # shell workspace (default)
 bay ws new --agent          # uses dock's default agent
 bay ws new --agent codex    # specific agent
-bay ws new --name auth-fix  # with a display name
+bay ws new auth-fix         # with a display name (positional)
 bay ws new --branch fix-it  # create and checkout a branch
 ```
 
@@ -348,22 +348,27 @@ Agent surfaces have valuable conversation context:
 
 ### Workspace management
 
+Across all create-verbs the rule is the same: the positional names the
+thing being created. Container (dock, workspace) is selected via flags
+or, when omitted, inherited from the current tmux session.
+
 ```
-bay ws new [dock]                           # new workspace (shell default)
-bay ws new [dock] --agent                   # with dock's default agent
-bay ws new [dock] --agent codex             # with specific agent
-bay ws new [dock] --shell                   # explicit shell
-bay ws new [dock] --name <n>                # with display name
-bay ws new [dock] --branch <b>              # create and checkout branch
-bay ws new [dock] --repo <r>                # override dock's repo
-bay ws new [dock] --dir <path>              # external workspace
-bay ws close <name|self>                    # close (safety checks)
-bay ws close <name|self> --force            # skip safety checks
+bay ws new [name]                           # new workspace (shell default)
+bay ws new [name] --dock <d>                # target a specific dock
+bay ws new [name] --agent                   # with dock's default agent
+bay ws new [name] --agent codex             # with specific agent
+bay ws new [name] --shell                   # explicit shell
+bay ws new [name] --branch <b>              # create and checkout branch
+bay ws new [name] --repo <r>                # override dock's repo
+bay ws new [name] --dir <path>              # external workspace
+bay ws close [name]                         # close (safety checks; 'self' for current)
+bay ws close [name] --force                 # skip safety checks
 bay ws close --done                         # close all done workspaces
 bay ws close --done --force                 # force close all done
-bay ws show [name|self]                     # detailed view (default: self)
-bay ws show [name|self] --json              # machine-readable
-bay ws rename <name|self> <new-name>        # permanent rename
+bay ws show [name]                          # detailed view (default: current)
+bay ws show [name] --json                   # machine-readable
+bay ws rename <name> <new-name>             # permanent rename ('self' for current)
+bay ws tree                                 # tree of current dock
 bay ws go [query]                           # workspace picker (intra-dock)
 bay ws go --waiting                         # filter to waiting workspaces
 bay ws go --next-waiting                    # cycle to next waiting workspace
@@ -374,16 +379,18 @@ bay ws prev                                 # prev workspace in dock
 ### Surface management
 
 ```
-bay surface new [workspace]                 # shell split (default)
-bay surface new --shell                     # explicit shell
-bay surface new --agent <type>              # agent surface
-bay surface new --cmd "npm test"            # command surface
-bay surface new --window                    # new tmux window instead of split
-bay surface new --split h                   # horizontal split (default: v)
-bay surface new --name <n>                  # with custom name
-bay surface close <name|self>               # close a surface (prompts on agent surfaces)
-bay surface close <name|self> --force       # skip the agent confirmation prompt
+bay surface new [name]                      # shell split (default), positional names the surface
+bay surface new [name] --ws <w>             # target a different workspace
+bay surface new [name] --shell              # explicit shell
+bay surface new [name] --agent <type>       # agent surface
+bay surface new [name] --cmd "npm test"     # command surface
+bay surface new [name] --window             # new tmux window instead of split
+bay surface new [name] --split h            # horizontal split (default: v)
+bay surface close <name>                    # close a surface ('self' for current; prompts on agents)
+bay surface close <name> --force            # skip the agent confirmation prompt
 bay surface restart [name]                  # restart a surface (defaults to current)
+bay surface show [name]                     # show details (defaults to current)
+bay surface rename <old> <new>              # rename ('self' as <old> targets current)
 bay surface go [query]                      # surface picker (intra-workspace)
 bay surface go --index <n>                  # jump to surface by index (no keybinding)
 bay surface go --next-waiting               # next waiting surface
@@ -405,15 +412,16 @@ bay new shell [name]            # bay surface new --shell, with optional name
 bay new agent <type> [name]     # bay surface new --agent <type>
 bay new cmd "<command>" [name]  # bay surface new --cmd <command>
 bay new edit [workspace]        # alias for bay edit
-bay close <name|self>           # alias for bay surface close (prompts on agents)
-bay show <name>                 # alias for bay surface show
+bay close <name>                # alias for bay surface close (prompts on agents)
+bay show [name]                 # alias for bay surface show (defaults to current)
 bay rename <old> <new>          # alias for bay surface rename
 bay go [query]                  # alias for bay surface go (intra-workspace)
 bay go --index <n>              # jump to surface by index (no keybinding)
 bay go --next-waiting           # next waiting surface
-bay shell [workspace]           # alias for bay surface new --shell
-bay shell --window              # shell in new tmux window
-bay edit [name|self]            # open workspace in editor (creates GUI surface)
+bay shell [name]                # bay surface new --shell, positional names the shell
+bay shell [name] --window       # shell in new tmux window
+bay shell [name] --ws <w>       # target a different workspace
+bay edit [workspace]            # open workspace in editor (creates GUI surface)
 bay edit --all                  # open all workspaces in current dock
 bay edit --set <editor>         # set default editor
 bay edit --show                 # show which editor would be used
@@ -720,8 +728,8 @@ bay repo add frontend ~/projects/frontend
 bay repo add backend ~/projects/backend
 bay dock new feature-work --repo frontend --agent claude
 
-bay ws new feature-work --name ui-changes          # uses frontend
-bay ws new feature-work --name api-changes --repo backend
+bay ws new ui-changes --dock feature-work          # uses frontend
+bay ws new api-changes --dock feature-work --repo backend
 ```
 
 Both workspaces live in the same tmux session. Navigate between them
