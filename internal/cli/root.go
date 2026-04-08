@@ -147,6 +147,9 @@ func NewRootCmd(version string) *cobra.Command {
 	versionCmd := newVersionCmd(version)
 	versionCmd.GroupID = "other"
 
+	configCmd := newConfigCmd()
+	configCmd.GroupID = "infra"
+
 	root.AddCommand(
 		wsCmd,
 		surfaceCmd,
@@ -164,6 +167,7 @@ func NewRootCmd(version string) *cobra.Command {
 		statusLineCmd,
 		dockCmd,
 		repoCmd,
+		configCmd,
 		setupCmd,
 		recoverCmd,
 		doctorCmd,
@@ -171,7 +175,6 @@ func NewRootCmd(version string) *cobra.Command {
 		addPromptCmd,
 		versionCmd,
 		newAgentGuideCmd(), // hidden, for skill
-		newConfigHelpCmd(), // hidden, for bay help config
 	)
 
 	RegisterCompletion(root)

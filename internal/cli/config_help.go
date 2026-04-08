@@ -1,11 +1,8 @@
 package cli
 
-import (
-	"fmt"
-
-	"github.com/spf13/cobra"
-)
-
+// configHelpText is the long-help body of the `bay config` parent
+// command — describes the schema users hand-edit. Lives in its own
+// file so the parent command code stays focused.
 const configHelpText = `Bay Configuration — ~/.config/bay/config.toml
 
 Bay's config file holds user preferences and optional overrides.
@@ -39,6 +36,8 @@ EDITOR
   command = "cursor"
   gui = true                      # optional; auto-detected from command
 
+  Or via the CLI: 'bay config editor cursor'.
+
 PER-DOCK OVERRIDES
 
   Override defaults for a specific dock. Only set fields you want
@@ -62,17 +61,3 @@ EXAMPLE MINIMAL CONFIG
 
 That's enough. Everything else is optional or auto-detected.
 `
-
-func newConfigHelpCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:    "config",
-		Short:  "Show config file documentation",
-		Hidden: true,
-		Args:   cobra.NoArgs,
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Print(configHelpText)
-		},
-	}
-	cmd.SetHelpTemplate(configHelpText)
-	return cmd
-}

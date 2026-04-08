@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
@@ -66,15 +65,4 @@ func (e *Engine) EditAllParentDir(dockName string) (string, error) {
 		return "", fmt.Errorf("unknown repo %q", dock.Repo)
 	}
 	return repo.EffectiveWorktreeDir(), nil
-}
-
-// SetEditor sets the editor command in the config and saves.
-func (e *Engine) SetEditor(command string) error {
-	e.Config.Editor.Command = command
-	if e.configPath != "" {
-		if err := config.Save(e.configPath, e.Config); err != nil {
-			return fmt.Errorf("saving config: %w", err)
-		}
-	}
-	return nil
 }

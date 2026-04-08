@@ -423,9 +423,18 @@ bay shell [name] --window       # shell in new tmux window
 bay shell [name] --ws <w>       # target a different workspace
 bay edit [workspace]            # open workspace in editor (creates GUI surface)
 bay edit --all                  # open all workspaces in current dock
-bay edit --set <editor>         # set default editor
-bay edit --show                 # show which editor would be used
 bay restart [name]              # alias for bay surface restart
+```
+
+### Config
+
+```
+bay config                      # show config-format docs (long help)
+bay config edit                 # open ~/.config/bay/config.toml in your editor
+bay config show                 # print the effective config
+bay config path                 # print the config file path
+bay config editor               # show the resolved editor command
+bay config editor <name>        # set the default editor (e.g. cursor, code, nvim)
 ```
 
 ### Navigation summary
@@ -552,8 +561,8 @@ worktrees appear as subdirectories.
 
 Configure with:
 ```
-bay edit --set cursor       # save preference
-bay edit --show             # check current editor
+bay config editor cursor    # save preference
+bay config editor           # check current editor
 ```
 
 ## Monitoring
