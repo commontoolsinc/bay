@@ -141,9 +141,9 @@ func NewRootCmd(version string) *cobra.Command {
 	monitorCmd := newMonitorCmd()
 	monitorCmd.GroupID = "infra"
 
-	// Other commands
-	addPromptCmd := newAddPromptCmd()
-	addPromptCmd.GroupID = "other"
+	// Other commands. add-prompt now lives under bay monitor — it
+	// extends the monitor's pattern set, so it belongs in that
+	// namespace. See newMonitorCmd().
 	versionCmd := newVersionCmd(version)
 	versionCmd.GroupID = "other"
 
@@ -172,7 +172,6 @@ func NewRootCmd(version string) *cobra.Command {
 		recoverCmd,
 		doctorCmd,
 		monitorCmd,
-		addPromptCmd,
 		versionCmd,
 		newAgentGuideCmd(), // hidden, for skill
 	)

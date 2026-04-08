@@ -495,7 +495,7 @@ bay setup                                   # first-time setup
 bay recover                                 # reconstruct all state after reboot
 bay doctor                                  # health checks
 bay monitor start|stop|status               # manage background monitor
-bay add-prompt                              # capture waiting detection pattern
+bay monitor add-prompt                      # capture waiting detection pattern
 bay completion bash|zsh|fish                # generate completion script
 bay version                                 # show version + commit
 ```
@@ -591,8 +591,8 @@ Do you want to proceed
 ```
 
 When you see a prompt the monitor does not catch, press `Option+Shift+p` or
-run `bay add-prompt` to capture the current pane text and add it as a
-pattern. Edit the file afterward to generalize it to a regex.
+run `bay monitor add-prompt` to capture the current pane text and add it as
+a pattern. Edit the file afterward to generalize it to a regex.
 
 ### Merge detection
 
@@ -793,7 +793,7 @@ merged workspaces.
 
 **"The waiting indicator isn't working."**
 Check `bay monitor status`. If running, the prompt text probably doesn't
-match any pattern. Use `bay add-prompt` to capture it, then edit
+match any pattern. Use `bay monitor add-prompt` to capture it, then edit
 `bay-prompts.txt` to generalize to a regex.
 
 **"I want to use bay with an agent that isn't Claude or Codex."**

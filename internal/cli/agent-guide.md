@@ -538,15 +538,15 @@ Health checks: config validity, repo accessibility, agent availability,
 manifest consistency, monitor status, tmux keybindings, bay awareness
 in repos.
 
-#### `bay monitor start|stop|status`
+#### `bay monitor start|stop|status|add-prompt`
 
 Manage the background pane monitor. Detects when agents are waiting
 for input and highlights those tmux windows. Also handles
 activity-gated merge detection.
 
-#### `bay add-prompt [name]`
-
-Capture pane text to create a new agent-waiting detection pattern.
+`bay monitor add-prompt [name]` captures pane text to create a new
+agent-waiting detection pattern. Auto-starts the monitor if it isn't
+running, since a new pattern is dead weight until the monitor reads it.
 
 ### Dock management
 

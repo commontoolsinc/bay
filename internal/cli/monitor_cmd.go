@@ -25,6 +25,8 @@ func newMonitorCmd() *cobra.Command {
 		// running monitor subcommands — `monitor stop` auto-starting
 		// then stopping is absurd, `monitor status` should be a pure
 		// inspector, and `monitor run` is the monitor itself.
+		// Children that DO need the monitor running (like add-prompt)
+		// override this with the force-autostart annotation.
 		Annotations: map[string]string{noMonitorAutostartAnnotation: "true"},
 	}
 
@@ -33,6 +35,7 @@ func newMonitorCmd() *cobra.Command {
 		newMonitorStopCmd(),
 		newMonitorStatusCmd(),
 		newMonitorRunCmd(),
+		newAddPromptCmd(),
 	)
 
 	return cmd

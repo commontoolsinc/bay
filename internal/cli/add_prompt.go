@@ -12,7 +12,12 @@ func newAddPromptCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "add-prompt [name]",
 		Short: "Capture agent-waiting pattern from current pane",
-		Args:  cobra.MaximumNArgs(1),
+		// Override the inherited no-autostart from the monitor parent.
+		// This command's whole purpose is to extend the monitor's
+		// pattern set — a new pattern is dead weight until the
+		// monitor reads it. Auto-start is the right default.
+		Annotations: map[string]string{forceMonitorAutostartAnnotation: "true"},
+		Args:        cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
