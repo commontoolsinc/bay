@@ -214,7 +214,7 @@ Surface metadata is aligned across the whole dock — the `type=` column on
 Other useful commands:
 
 - `bay pwd` — where am I? (repo, dock, workspace, surface)
-- `bay ws show self` — detailed info about the current workspace
+- `bay ws show` — detailed info about the current workspace
 - `bay doctor` — health checks (keybindings, agents, repos)
 
 ## 7. Clean up
