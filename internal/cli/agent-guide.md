@@ -457,7 +457,7 @@ bay pwd                → show current bay context
 bay recover            → reconstruct state after reboot
 ```
 
-#### `bay edit [workspace] [--all] [--set EDITOR] [--show]`
+#### `bay edit [workspace] [--all]`
 
 Open a workspace in the configured editor. For GUI editors (Cursor,
 VS Code, Zed), creates a `gui-app` surface so the editor appears in
@@ -470,9 +470,25 @@ Editor resolution: config `[editor].command` > `$VISUAL` > `$EDITOR`
 bay edit                    # open current workspace
 bay edit auth-fix           # open specific workspace
 bay edit --all              # open all workspaces in dock
-bay edit --set cursor       # save editor preference
-bay edit --show             # show which editor would be used
 ```
+
+For editor configuration, see `bay config editor` below.
+
+#### `bay config edit|show|path|editor [name]`
+
+Manage bay's config file (`~/.config/bay/config.toml`).
+
+```
+bay config                      # show config-format docs
+bay config edit                 # open config in your editor
+bay config show                 # print effective config (TOML)
+bay config path                 # print config file path
+bay config editor               # print resolved editor command
+bay config editor cursor        # set the default editor
+```
+
+The `editor` subcommand replaces the old `bay edit --set` and
+`bay edit --show` flags.
 
 #### `bay shell [name] [--ws WS] [--dock DOCK] [--window] [--split h|v]`
 

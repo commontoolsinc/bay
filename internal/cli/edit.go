@@ -12,8 +12,7 @@ import (
 )
 
 func newEditCmd() *cobra.Command {
-	var all, showEditor bool
-	var setEditor string
+	var all bool
 
 	cmd := &cobra.Command{
 		Use:   "edit [workspace]",
@@ -23,11 +22,11 @@ func newEditCmd() *cobra.Command {
   bay edit              open current workspace
   bay edit auth-fix     open specific workspace
   bay edit --all        open all workspaces in current dock
-  bay edit --set cursor set your default editor
-  bay edit --show       show which editor would be used
+
+For editor configuration, see 'bay config editor'.
 
 Editor resolution order:
-  1. [editor].command in config (set with --set)
+  1. [editor].command in config (set via 'bay config editor <name>')
   2. $VISUAL
   3. $EDITOR
   4. Probe: cursor, code, zed, nvim, vim`,
@@ -36,30 +35,6 @@ Editor resolution order:
 			eng, err := newEngine()
 			if err != nil {
 				return err
-			}
-
-			// Handle --set: save editor preference and return
-			if setEditor != "" {
-				if err := eng.SetEditor(setEditor); err != nil {
-					return err
-				}
-				fmt.Printf("Editor set to %q\n", setEditor)
-				return nil
-			}
-
-			// Handle --show: print resolved editor and exit
-			if showEditor {
-				editorCmd, isGUI := resolveEditor(eng.Config)
-				if editorCmd == "" {
-					fmt.Println("No editor configured or detected.")
-				} else {
-					editorType := "terminal"
-					if isGUI {
-						editorType = "GUI"
-					}
-					fmt.Printf("%s (%s)\n", editorCmd, editorType)
-				}
-				return nil
 			}
 
 			if all {
@@ -75,8 +50,6 @@ Editor resolution order:
 	}
 
 	cmd.Flags().BoolVar(&all, "all", false, "open all active workspaces")
-	cmd.Flags().StringVar(&setEditor, "set", "", "set default editor (e.g., cursor, code, nvim)")
-	cmd.Flags().BoolVar(&showEditor, "show", false, "show which editor would be used")
 
 	return cmd
 }
