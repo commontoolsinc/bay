@@ -638,6 +638,94 @@ func TestWsClose_Worktree(t *testing.T) {
 	}
 }
 
+func TestWsClose_DeletesPushedBranch(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Branch: "fix/cleanup"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	// The worktree path must exist for safety checks to run.
+	os.MkdirAll(ws.Path, 0o755)
+
+	// Branch is pushed (HasUnpushedCommits returns false — the default).
+	if err := eng.WsClose("labs", ws.Name, false); err != nil {
+		t.Fatalf("WsClose: %v", err)
+	}
+
+	mockGit := eng.Git.(*git.Mock)
+	deleted := mockGit.DeletedBranches()
+	if len(deleted) != 1 {
+		t.Fatalf("expected 1 branch deleted, got %d: %v", len(deleted), deleted)
+	}
+	if deleted[0].Args[1] != "fix/cleanup" {
+		t.Errorf("deleted branch = %q, want fix/cleanup", deleted[0].Args[1])
+	}
+}
+
+func TestWsClose_KeepsBranchWhenUnpushed(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Branch: "fix/wip"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	// Mark the workspace as having unpushed commits.
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetUnpushed(ws.Path, true)
+
+	// Force close (non-force would refuse due to unpushed commits).
+	if err := eng.WsClose("labs", ws.Name, true); err != nil {
+		t.Fatalf("WsClose --force: %v", err)
+	}
+
+	// Branch should NOT be deleted — unpushed commits exist.
+	if len(mockGit.DeletedBranches()) != 0 {
+		t.Errorf("branch should not be deleted when unpushed commits exist; got %v", mockGit.DeletedBranches())
+	}
+}
+
+func TestWsClose_DeletesPushedBranchOnForce(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Branch: "fix/done"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	// Branch is pushed (default mock behavior).
+	if err := eng.WsClose("labs", ws.Name, true); err != nil {
+		t.Fatalf("WsClose --force: %v", err)
+	}
+
+	mockGit := eng.Git.(*git.Mock)
+	if len(mockGit.DeletedBranches()) != 1 {
+		t.Errorf("expected pushed branch to be deleted on force close; got %d deletions", len(mockGit.DeletedBranches()))
+	}
+}
+
+func TestWsClose_NoBranchNoDelete(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	// Workspace with no branch (scratch/detached).
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+
+	if err := eng.WsClose("labs", "w1", false); err != nil {
+		t.Fatalf("WsClose: %v", err)
+	}
+
+	mockGit := eng.Git.(*git.Mock)
+	if len(mockGit.DeletedBranches()) != 0 {
+		t.Errorf("no branch to delete for scratch workspace; got %v", mockGit.DeletedBranches())
+	}
+}
+
 func TestWsClose_Dirty(t *testing.T) {
 	eng, _ := testEngine(t)
 

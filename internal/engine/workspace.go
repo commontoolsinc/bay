@@ -313,7 +313,12 @@ func (e *Engine) closeWorkspaceState(dockName, wsName string, force bool) ([]str
 		return nil, fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
 	}
 
-	// Safety checks for worktree workspaces.
+	// Safety checks for worktree workspaces + determine if the branch
+	// is safe to delete after the worktree is removed. The gate is
+	// HasUnpushedCommits, not git's merge-into-default check — a
+	// pushed-but-unmerged PR branch is safe to delete locally because
+	// the work exists on the remote.
+	branchSafeToDelete := false
 	if ws.Type == manifest.WorkspaceTypeWorktree && !force {
 		if _, statErr := os.Stat(ws.Path); statErr == nil {
 			dirty, err := e.Git.IsDirty(ws.Path)
@@ -330,6 +335,22 @@ func (e *Engine) closeWorkspaceState(dockName, wsName string, force bool) ([]str
 			}
 			if unpushed {
 				return nil, fmt.Errorf("workspace %q has unpushed commits (use --force to override)", wsName)
+			}
+			// Safety checks passed → branch is pushed.
+			if ws.Worktree != nil && ws.Worktree.Branch != "" {
+				branchSafeToDelete = true
+			}
+		}
+	} else if force && ws.Type == manifest.WorkspaceTypeWorktree {
+		// Force close: still check if the branch is pushed (best-effort)
+		// so we can clean it up. Don't block the close if the check
+		// fails — just skip the branch delete.
+		if ws.Worktree != nil && ws.Worktree.Branch != "" {
+			if _, statErr := os.Stat(ws.Path); statErr == nil {
+				unpushed, err := e.Git.HasUnpushedCommits(ws.Path)
+				if err == nil && !unpushed {
+					branchSafeToDelete = true
+				}
 			}
 		}
 	}
@@ -356,6 +377,12 @@ func (e *Engine) closeWorkspaceState(dockName, wsName string, force bool) ([]str
 				if !force {
 					return nil, fmt.Errorf("removing worktree: %w", err)
 				}
+			}
+			// Delete the local branch now that the worktree is gone.
+			// git refuses to delete a branch checked out in a worktree,
+			// so this must come after RemoveWorktree.
+			if branchSafeToDelete {
+				_ = e.Git.DeleteBranch(repoPath, ws.Worktree.Branch)
 			}
 			wtDir := repo.EffectiveWorktreeDir()
 			_ = os.Remove(wtDir)
