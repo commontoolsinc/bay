@@ -313,7 +313,9 @@ bay ws new auth-fix --branch fix-auth       # create and checkout branch
 
 Close a workspace and all its surfaces. For worktree workspaces,
 checks for uncommitted changes and unpushed commits. Refuses if dirty
-unless `--force` is used. Pass `self` to close the current workspace.
+unless `--force` is used. If the branch has been pushed, bay deletes
+the local branch on close — no stale branches left behind. Pass
+`self` to close the current workspace.
 
 Use `--done` (without a name) to batch-close all workspaces with
 status `done` in the current dock.
