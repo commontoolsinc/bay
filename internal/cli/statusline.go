@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/commontoolsinc/bay/internal/manifest"
+	tmuxpkg "github.com/commontoolsinc/bay/internal/tmux"
 	"github.com/spf13/cobra"
 )
 
@@ -23,18 +24,25 @@ Fields: name, branch, pr, status, dock, merged, full`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			field := args[0]
 
-			eng, err := newEngine()
-			if err != nil {
-				return nil // silent in status line context
-			}
+			// Fast path: skip newEngine() entirely. status-line
+			// only needs a tmux connection (for the current window
+			// ID) and the manifest (for workspace data). No config
+			// parse, no git interface, no engine construction.
+			t := tmuxpkg.NewReal()
 
-			winID, err := eng.Tmux.CurrentWindowID()
+			winID, err := t.CurrentWindowID()
 			if err != nil {
 				return nil // not in tmux
 			}
 
-			dockName, _, ws, err := eng.ResolveByWindowID(winID)
+			p := bayPaths()
+			m, err := manifest.Load(p.ManifestFile)
 			if err != nil {
+				return nil // can't load manifest
+			}
+
+			dockName, ws := resolveWindowID(m, winID)
+			if ws == nil {
 				return nil // not a bay window
 			}
 
@@ -55,20 +63,16 @@ Fields: name, branch, pr, status, dock, merged, full`,
 			case "dock":
 				out = dockName
 			case "merged":
-				// Count of workspaces with status=done in the current dock.
-				m, loadErr := eng.LoadManifest()
-				if loadErr == nil {
-					dock := m.FindDock(dockName)
-					if dock != nil {
-						count := 0
-						for _, w := range dock.Workspaces {
-							if w.Status == manifest.WorkspaceStatusDone {
-								count++
-							}
+				dock := m.FindDock(dockName)
+				if dock != nil {
+					count := 0
+					for _, w := range dock.Workspaces {
+						if w.Status == manifest.WorkspaceStatusDone {
+							count++
 						}
-						if count > 0 {
-							out = fmt.Sprintf("%d merged", count)
-						}
+					}
+					if count > 0 {
+						out = fmt.Sprintf("%d merged", count)
 					}
 				}
 			case "full":
@@ -85,7 +89,7 @@ Fields: name, branch, pr, status, dock, merged, full`,
 				}
 				out = strings.Join(parts, " | ")
 			default:
-				return fmt.Errorf("unknown field %q; valid fields: name, branch, pr, status, dock, full", field)
+				return fmt.Errorf("unknown field %q; valid fields: name, branch, pr, status, dock, merged, full", field)
 			}
 
 			if out != "" {
@@ -96,4 +100,21 @@ Fields: name, branch, pr, status, dock, merged, full`,
 	}
 
 	return cmd
+}
+
+// resolveWindowID finds the dock and workspace that own a tmux window ID.
+// Returns ("", nil) if no match is found.
+func resolveWindowID(m *manifest.Manifest, windowID string) (string, *manifest.Workspace) {
+	for i := range m.Docks {
+		dock := &m.Docks[i]
+		for j := range dock.Workspaces {
+			ws := &dock.Workspaces[j]
+			for _, s := range ws.Surfaces {
+				if s.Tmux != nil && s.Tmux.WindowID == windowID {
+					return dock.Name, ws
+				}
+			}
+		}
+	}
+	return "", nil
 }
