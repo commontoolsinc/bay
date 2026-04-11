@@ -34,8 +34,8 @@ cd ~/projects/bay-tutorial
 bay ws new
 ```
 
-Bay creates a **workspace** — a fresh git worktree with its own branch
-and files, inside a new tmux session. Attach to it:
+Bay creates a **workspace** — a fresh git worktree with a clean copy
+of your default branch, inside a new tmux session. Attach to it:
 
 ```
 tmux attach -t bay-tutorial
@@ -48,39 +48,45 @@ workspaces, adding shells, navigating — happens inside this session.
 > **What just happened?** Bay detected your git repo, created a
 > worktree at `~/projects/bay-tutorial-worktrees/<name>`, and started
 > a tmux session called `bay-tutorial` with a window for your
-> workspace. Bay tracks all of this in its state file at
+> workspace. The worktree starts on detached HEAD — it has the
+> default branch's content but isn't on any named branch yet. Bay
+> tracks all of this in its state file at
 > `~/.local/share/bay/manifest.json` — you don't need to touch it.
 
 ## 2. Work in your workspace
 
-This is just a normal directory with a normal git checkout. Do whatever
-you'd normally do:
+Your workspace is a normal directory with a normal git checkout. To
+start working on a branch, use `--branch` when creating a workspace:
 
 ```
-git checkout -b fix/login-bug
-# edit files, run tests, etc.
+bay ws new --branch fix/login-bug
 ```
 
-Within a few seconds the tmux tab name updates from its placeholder to
-`login-bug` — bay watches your branch in the background and keeps the
-name in sync.
+That creates a second workspace on a new `fix/login-bug` branch.
+Within a few seconds the tmux tab name updates to `login-bug` — bay
+watches your branch in the background and keeps the name in sync.
 
-Now you realize the auth refactor should be its own PR. Create a second
+You can also create a branch manually in an existing workspace with
+`git checkout -b`, and bay picks up the change the same way.
+
+Now you realize the auth refactor should be its own PR. Create a third
 workspace:
 
 ```
 bay ws new --branch fix/auth-refactor
 ```
 
-That creates a fresh worktree on a new branch. Both workspaces are
-completely independent — different branch, different files, different
-tmux tab. Your login bug work is untouched.
+Each workspace is completely independent — different branch, different
+files, different tmux tab. Your login bug work is untouched.
 
-A teammate pings you for a review? Create a third:
+A teammate pings you for a review? Create a workspace for it:
 
 ```
 bay ws new review
 ```
+
+That creates a workspace with no branch — useful for scratch work,
+exploring code, or running tests against main.
 
 Switch between all of them with `Option+Shift+j` / `Option+Shift+k` (or
 `bay ws go`).
