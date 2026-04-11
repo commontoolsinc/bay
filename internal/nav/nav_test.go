@@ -42,7 +42,7 @@ func buildTestManifest() *manifest.Manifest {
 					Status:   manifest.WorkspaceStatusActive,
 					Worktree: &manifest.WorktreeAttrs{Repo: "core", Branch: "feature/nav-support"},
 					Surfaces: []manifest.Surface{
-						{ID: 1, Name: "agent", Type: manifest.SurfaceTypeAgent, Backend: manifest.SurfaceBackendTmux, Tmux: &manifest.TmuxAttrs{WindowID: "@4", PaneID: "%7", LayoutGroup: 1}},
+						{ID: 1, Name: "agent", Type: manifest.SurfaceTypeAgent, Backend: manifest.SurfaceBackendTmux, Tmux: &manifest.TmuxAttrs{WindowID: "@5", PaneID: "%7", LayoutGroup: 1}},
 					},
 				},
 			},
@@ -51,21 +51,22 @@ func buildTestManifest() *manifest.Manifest {
 	return m
 }
 
-// buildTestTmux creates a tmux mock with windows and waiting options set.
+// buildTestTmux creates a tmux mock with sessions and windows matching
+// the manifest from buildTestManifest. Auto-generated window IDs:
+// labs:NewSession→@1, core:NewSession→@2, labs:@3, labs:@4, core:@5.
+// The manifest uses @1 (labs:mem-refactor), @3 (labs:fix-auth),
+// @5 (core:nav-feature).
 func buildTestTmux(waitingWindows map[string]bool) *tmux.Mock {
 	mock := tmux.NewMock()
-	mock.NewSession("bay")
-	w1, _ := mock.NewWindow("bay", "main", "/tmp")
-	w3, _ := mock.NewWindow("bay", "main", "/tmp")
-	w4, _ := mock.NewWindow("bay", "main", "/tmp")
+	mock.NewSession("labs")                        // default window @1
+	mock.NewSession("core")                        // default window @2
+	mock.NewWindow("labs", "mem-refactor", "/tmp") // @3
+	mock.NewWindow("labs", "fix-auth", "/tmp")     // @4
+	mock.NewWindow("core", "nav-feature", "/tmp")  // @5
 
-	ids := []string{w1, w3, w4}
-	for _, id := range ids {
-		if waitingWindows[id] {
-			mock.SetWindowOption(id, "@bay-waiting", "1")
-		}
+	for id := range waitingWindows {
+		mock.SetWindowOption(id, "@bay-waiting", "1")
 	}
-
 	mock.Calls = nil
 	return mock
 }
@@ -401,9 +402,8 @@ func buildSurfaceWorkspace() *manifest.Workspace {
 
 func TestCollectSurfaces_IncludesGUI(t *testing.T) {
 	ws := buildSurfaceWorkspace()
-	mock := tmux.NewMock()
 
-	entries := CollectSurfaces(ws, mock, "")
+	entries := CollectSurfaces(ws, "", nil)
 
 	if len(entries) != 4 {
 		t.Fatalf("expected 4 surface entries (3 tmux + 1 gui), got %d", len(entries))
@@ -423,9 +423,8 @@ func TestCollectSurfaces_IncludesGUI(t *testing.T) {
 
 func TestCollectSurfaces(t *testing.T) {
 	ws := buildSurfaceWorkspace()
-	mock := tmux.NewMock()
 
-	entries := CollectSurfaces(ws, mock, "%2")
+	entries := CollectSurfaces(ws, "%2", nil)
 
 	if len(entries) != 4 {
 		t.Fatalf("expected 4 surface entries, got %d", len(entries))
@@ -443,9 +442,8 @@ func TestCollectSurfaces(t *testing.T) {
 
 func TestCollectSurfaces_NoCurrent(t *testing.T) {
 	ws := buildSurfaceWorkspace()
-	mock := tmux.NewMock()
 
-	entries := CollectSurfaces(ws, mock, "%999")
+	entries := CollectSurfaces(ws, "%999", nil)
 
 	for _, e := range entries {
 		if e.Current {
@@ -456,8 +454,7 @@ func TestCollectSurfaces_NoCurrent(t *testing.T) {
 
 func TestNextSurface(t *testing.T) {
 	ws := buildSurfaceWorkspace()
-	mock := tmux.NewMock()
-	entries := CollectSurfaces(ws, mock, "%1") // current = agent (index 0)
+	entries := CollectSurfaces(ws, "%1", nil) // current = agent (index 0)
 
 	next, idx := NextSurface(entries)
 	if next == nil || next.Name != "shell" || idx != 1 {
@@ -467,11 +464,10 @@ func TestNextSurface(t *testing.T) {
 
 func TestNextSurface_WrapsAround(t *testing.T) {
 	ws := buildSurfaceWorkspace()
-	mock := tmux.NewMock()
 	// Current = editor (index 3, last). Next should wrap to agent (index 0).
 	// Editor is GUI so we mark current by absence — set a non-matching pane
 	// and manually mark the entry.
-	entries := CollectSurfaces(ws, mock, "")
+	entries := CollectSurfaces(ws, "", nil)
 	entries[3].Current = true
 
 	next, idx := NextSurface(entries)
@@ -482,8 +478,7 @@ func TestNextSurface_WrapsAround(t *testing.T) {
 
 func TestPrevSurface(t *testing.T) {
 	ws := buildSurfaceWorkspace()
-	mock := tmux.NewMock()
-	entries := CollectSurfaces(ws, mock, "%2") // current = shell (index 1)
+	entries := CollectSurfaces(ws, "%2", nil) // current = shell (index 1)
 
 	prev, idx := PrevSurface(entries)
 	if prev == nil || prev.Name != "agent" || idx != 0 {
@@ -493,8 +488,7 @@ func TestPrevSurface(t *testing.T) {
 
 func TestPrevSurface_WrapsAround(t *testing.T) {
 	ws := buildSurfaceWorkspace()
-	mock := tmux.NewMock()
-	entries := CollectSurfaces(ws, mock, "%1") // current = agent (index 0, first)
+	entries := CollectSurfaces(ws, "%1", nil) // current = agent (index 0, first)
 
 	prev, idx := PrevSurface(entries)
 	if prev == nil || prev.Name != "editor" || idx != 3 {
@@ -504,8 +498,7 @@ func TestPrevSurface_WrapsAround(t *testing.T) {
 
 func TestSurfaceByIndex(t *testing.T) {
 	ws := buildSurfaceWorkspace()
-	mock := tmux.NewMock()
-	entries := CollectSurfaces(ws, mock, "")
+	entries := CollectSurfaces(ws, "", nil)
 
 	s := SurfaceByIndex(entries, 1)
 	if s == nil || s.Name != "agent" {
@@ -531,8 +524,7 @@ func TestSurfaceByIndex(t *testing.T) {
 
 func TestNextSurface_NoCurrent(t *testing.T) {
 	ws := buildSurfaceWorkspace()
-	mock := tmux.NewMock()
-	entries := CollectSurfaces(ws, mock, "%999") // no match
+	entries := CollectSurfaces(ws, "%999", nil) // no match
 
 	next, idx := NextSurface(entries)
 	if next == nil || next.Name != "agent" || idx != 0 {
