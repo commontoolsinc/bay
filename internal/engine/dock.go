@@ -254,94 +254,101 @@ func (e *Engine) List() ([]DockInfo, error) {
 
 		for j := range dock.Workspaces {
 			ws := &dock.Workspaces[j]
-			wsPath := config.ExpandPath(ws.Path)
-			_, statErr := os.Stat(wsPath)
-
-			branch := ""
-			pr := ""
-			if ws.Worktree != nil {
-				branch = ws.Worktree.Branch
-				pr = ws.Worktree.PR
-			}
-
-			wsInfo := WorkspaceInfo{
-				Name:         ws.Name,
-				Type:         string(ws.Type),
-				Path:         ws.Path,
-				Branch:       branch,
-				PR:           pr,
-				Status:       string(ws.Status),
-				Missing:      ws.Path != "" && statErr != nil,
-				DefaultAgent: agent,
-				SyncStatus:   manifest.SyncStatusOK,
-				SurfaceCount: len(ws.Surfaces),
-			}
-
-			if wsInfo.Missing {
-				wsInfo.SyncStatus = manifest.SyncStatusMissing
-			}
-
-			for _, s := range ws.Surfaces {
-				sInfo := SurfaceInfo{
-					ID:      s.ID,
-					Name:    s.Name,
-					Type:    string(s.Type),
-					Backend: string(s.Backend),
-					Status:  manifest.SyncStatusOK,
-				}
-				if s.Agent != nil {
-					sInfo.Agent = *s.Agent
-				}
-				if s.Command != nil {
-					sInfo.Command = *s.Command
-				}
-
-				// Check liveness for tmux surfaces.
-				if s.Tmux != nil && s.Tmux.WindowID != "" {
-					exists, _ := e.Tmux.WindowExists(s.Tmux.WindowID)
-					if !exists {
-						sInfo.Status = manifest.SyncStatusStale
-						wsInfo.Stale = true
-					} else {
-						val, err := e.Tmux.GetWindowOption(s.Tmux.WindowID, "@bay-waiting")
-						if err == nil && val == "1" {
-							wsInfo.Waiting = true
-						}
-					}
-				}
-
-				wsInfo.Surfaces = append(wsInfo.Surfaces, sInfo)
-			}
-
-			if wsInfo.Missing {
-				wsInfo.Stale = false
-			}
-			if wsInfo.SyncStatus == manifest.SyncStatusOK && wsInfo.Stale {
-				wsInfo.SyncStatus = manifest.SyncStatusStale
-			}
-			info.Workspaces = append(info.Workspaces, wsInfo)
+			info.Workspaces = append(info.Workspaces, e.buildWorkspaceInfo(ws, agent))
 		}
 		docks = append(docks, info)
 	}
 	return docks, nil
 }
 
-// WorkspaceInfo returns the runtime view for a single workspace.
+// buildWorkspaceInfo constructs a WorkspaceInfo from a manifest workspace,
+// checking path existence and tmux liveness for each surface.
+func (e *Engine) buildWorkspaceInfo(ws *manifest.Workspace, agent string) WorkspaceInfo {
+	wsPath := config.ExpandPath(ws.Path)
+	_, statErr := os.Stat(wsPath)
+
+	branch := ""
+	pr := ""
+	if ws.Worktree != nil {
+		branch = ws.Worktree.Branch
+		pr = ws.Worktree.PR
+	}
+
+	wsInfo := WorkspaceInfo{
+		Name:         ws.Name,
+		Type:         string(ws.Type),
+		Path:         ws.Path,
+		Branch:       branch,
+		PR:           pr,
+		Status:       string(ws.Status),
+		Missing:      ws.Path != "" && statErr != nil,
+		DefaultAgent: agent,
+		SyncStatus:   manifest.SyncStatusOK,
+		SurfaceCount: len(ws.Surfaces),
+	}
+
+	if wsInfo.Missing {
+		wsInfo.SyncStatus = manifest.SyncStatusMissing
+	}
+
+	for _, s := range ws.Surfaces {
+		sInfo := SurfaceInfo{
+			ID:      s.ID,
+			Name:    s.Name,
+			Type:    string(s.Type),
+			Backend: string(s.Backend),
+			Status:  manifest.SyncStatusOK,
+		}
+		if s.Agent != nil {
+			sInfo.Agent = *s.Agent
+		}
+		if s.Command != nil {
+			sInfo.Command = *s.Command
+		}
+
+		if s.Tmux != nil && s.Tmux.WindowID != "" {
+			exists, _ := e.Tmux.WindowExists(s.Tmux.WindowID)
+			if !exists {
+				sInfo.Status = manifest.SyncStatusStale
+				wsInfo.Stale = true
+			} else {
+				val, err := e.Tmux.GetWindowOption(s.Tmux.WindowID, "@bay-waiting")
+				if err == nil && val == "1" {
+					wsInfo.Waiting = true
+				}
+			}
+		}
+
+		wsInfo.Surfaces = append(wsInfo.Surfaces, sInfo)
+	}
+
+	if wsInfo.Missing {
+		wsInfo.Stale = false
+	}
+	if wsInfo.SyncStatus == manifest.SyncStatusOK && wsInfo.Stale {
+		wsInfo.SyncStatus = manifest.SyncStatusStale
+	}
+	return wsInfo
+}
+
+// WorkspaceInfoByName returns the runtime view for a single workspace.
+// This does NOT call List() or SyncAll — it loads the manifest and
+// builds info for just the requested workspace. Callers that display
+// data should call SyncAll first.
 func (e *Engine) WorkspaceInfoByName(dockName, wsName string) (*WorkspaceInfo, error) {
-	docks, err := e.List()
+	m, err := e.LoadManifest()
 	if err != nil {
 		return nil, err
 	}
-	for _, dock := range docks {
-		if dock.Name != dockName {
-			continue
-		}
-		for i := range dock.Workspaces {
-			if dock.Workspaces[i].Name == wsName {
-				return &dock.Workspaces[i], nil
-			}
-		}
+	dock := m.FindDock(dockName)
+	if dock == nil {
+		return nil, fmt.Errorf("unknown dock %q", dockName)
+	}
+	ws := dock.FindWorkspace(wsName)
+	if ws == nil {
 		return nil, fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
 	}
-	return nil, fmt.Errorf("unknown dock %q", dockName)
+	agent := e.resolvedDockAgent(dockName, m)
+	info := e.buildWorkspaceInfo(ws, agent)
+	return &info, nil
 }
