@@ -367,6 +367,40 @@ func probeAgent() string {
 	return ""
 }
 
+// resolveCurrentDock resolves the dock for listing commands. Tries:
+// 1. Current tmux session (if it's a bay dock)
+// 2. CWD → git repo → matching dock in the manifest
+// Returns the dock name and repo name, or an error if neither works.
+func resolveCurrentDock(eng *engine.Engine) (dockName, repoName string, err error) {
+	m, _ := eng.LoadManifest()
+
+	// Try: current tmux session.
+	if sess, tmuxErr := eng.Tmux.CurrentSession(); tmuxErr == nil {
+		if m != nil && m.FindDock(sess) != nil {
+			dock := m.FindDock(sess)
+			return sess, dock.Repo, nil
+		}
+	}
+
+	// Fallback: CWD → git repo → matching dock.
+	if m != nil {
+		cwd, cwdErr := os.Getwd()
+		if cwdErr == nil {
+			if repoRoot, rootErr := eng.Git.RepoRoot(cwd); rootErr == nil {
+				repoBase := filepath.Base(repoRoot)
+				for i := range m.Docks {
+					d := &m.Docks[i]
+					if d.Repo == repoBase {
+						return d.Name, d.Repo, nil
+					}
+				}
+			}
+		}
+	}
+
+	return "", "", fmt.Errorf("cannot determine current dock — not in a tmux session or a known git repo")
+}
+
 // resolveTarget resolves "self" or a workspace query.
 func resolveTarget(eng *engine.Engine, target string) (string, string, error) {
 	if target == "self" {
@@ -386,9 +420,9 @@ func newWsLsCmd() *cobra.Command {
 				return err
 			}
 
-			currentSession, tmuxErr := eng.Tmux.CurrentSession()
-			if tmuxErr != nil {
-				return fmt.Errorf("not in a tmux session — cannot determine current dock")
+			dockName, repo, err := resolveCurrentDock(eng)
+			if err != nil {
+				return err
 			}
 
 			docks, err := eng.List()
@@ -396,16 +430,8 @@ func newWsLsCmd() *cobra.Command {
 				return err
 			}
 
-			repo := ""
-			m, _ := eng.LoadManifest()
-			if m != nil {
-				if dock := m.FindDock(currentSession); dock != nil {
-					repo = dock.Repo
-				}
-			}
-
 			view := BuildListView(docks, ListViewOptions{
-				Focus:     ListFocus{Kind: FocusDock, Repo: repo, Dock: currentSession},
+				Focus:     ListFocus{Kind: FocusDock, Repo: repo, Dock: dockName},
 				Recursive: false,
 			})
 			view.SetCurrentContext(eng)
@@ -428,9 +454,9 @@ func newWsTreeCmd() *cobra.Command {
 				return err
 			}
 
-			currentSession, tmuxErr := eng.Tmux.CurrentSession()
-			if tmuxErr != nil {
-				return fmt.Errorf("not in a tmux session — cannot determine current dock")
+			dockName, repo, err := resolveCurrentDock(eng)
+			if err != nil {
+				return err
 			}
 
 			docks, err := eng.List()
@@ -438,16 +464,8 @@ func newWsTreeCmd() *cobra.Command {
 				return err
 			}
 
-			repo := ""
-			m, _ := eng.LoadManifest()
-			if m != nil {
-				if dock := m.FindDock(currentSession); dock != nil {
-					repo = dock.Repo
-				}
-			}
-
 			view := BuildListView(docks, ListViewOptions{
-				Focus:     ListFocus{Kind: FocusDock, Repo: repo, Dock: currentSession},
+				Focus:     ListFocus{Kind: FocusDock, Repo: repo, Dock: dockName},
 				Recursive: true,
 			})
 			view.SetCurrentContext(eng)
