@@ -240,7 +240,7 @@ var bayKeybindings = []bayKeybinding{
 	{"M-A", "bay ws go --next-waiting", "Option+A: next waiting workspace", "run-shell"},
 
 	// Utility
-	{"M-w", "bay sf close", "Option+w: close current surface (or pane)", "run-shell"},
+	{"M-w", "bay sf close self", "Option+w: close current surface (or pane)", "run-shell"},
 	{"M-s", "bay shell", "Option+s: split a shell pane", "run-shell"},
 }
 
