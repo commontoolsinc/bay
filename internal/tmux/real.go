@@ -81,7 +81,7 @@ func (r *Real) ListSessions() ([]Session, error) {
 // --- Windows ---
 
 func (r *Real) NewWindow(session string, name string, cwd string) (string, error) {
-	out, err := run("new-window", "-t", session, "-n", name, "-c", cwd, "-P", "-F", "#{window_id}")
+	out, err := run("new-window", "-a", "-t", session, "-n", name, "-c", cwd, "-P", "-F", "#{window_id}")
 	if err != nil {
 		return "", err
 	}
