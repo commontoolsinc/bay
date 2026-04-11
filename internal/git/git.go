@@ -23,6 +23,7 @@ type Interface interface {
 
 	// Branch operations
 	CreateBranch(path, branchName string) error
+	DeleteBranch(repoPath, branchName string) error
 
 	// PR detection
 	PRForBranch(path, branch string) (string, error)

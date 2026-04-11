@@ -137,6 +137,11 @@ func (m *Mock) RemovedWorktrees() []Call {
 	return m.Calls("RemoveWorktree")
 }
 
+// DeletedBranches returns all DeleteBranch calls.
+func (m *Mock) DeletedBranches() []Call {
+	return m.Calls("DeleteBranch")
+}
+
 // --- Interface implementation ---
 
 func (m *Mock) Clone(url, destPath string) error {
@@ -218,6 +223,11 @@ func (m *Mock) AddToGitignore(repoPath, filename string) error {
 func (m *Mock) CreateBranch(path, branchName string) error {
 	m.record("CreateBranch", path, branchName)
 	m.repo(path).branch = branchName
+	return nil
+}
+
+func (m *Mock) DeleteBranch(repoPath, branchName string) error {
+	m.record("DeleteBranch", repoPath, branchName)
 	return nil
 }
 

@@ -146,6 +146,14 @@ func (r *Real) CreateBranch(path, branchName string) error {
 	return nil
 }
 
+func (r *Real) DeleteBranch(repoPath, branchName string) error {
+	cmd := exec.Command("git", "-C", repoPath, "branch", "-D", branchName)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git branch -D: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
 // PRForBranch looks up the PR number for the given branch via `gh pr view`.
 //
 // Return semantics (important for the PRChecked sentinel in the caller):
