@@ -42,8 +42,24 @@ tmux attach -t bay-tutorial
 ```
 
 You're now in a tmux session managed by bay, with a shell cd'd into
-your workspace's worktree. Everything you do from here — creating more
-workspaces, adding shells, navigating — happens inside this session.
+your workspace's worktree. Run `bay ls` to see what bay created:
+
+```
+bay ls
+```
+
+```
+repo bay-tutorial
+  dock bay-tutorial *
+    workspace w1 *
+      surface shell *  type=shell
+```
+
+One repo, one dock (the tmux session), one workspace with a shell
+surface. `bay ls` is context-sensitive — from inside a workspace it
+shows you that workspace and its surfaces. Everything you do from
+here — creating more workspaces, adding shells, navigating — happens
+inside this session.
 
 > **What just happened?** Bay detected your git repo, created a
 > worktree at `~/projects/bay-tutorial-worktrees/<name>`, and started
@@ -87,6 +103,25 @@ bay ws new review
 
 That creates a workspace with no branch — useful for scratch work,
 exploring code, or running tests against main.
+
+To see all workspaces in the dock, use `bay ws ls`:
+
+```
+bay ws ls
+```
+
+```
+repo bay-tutorial
+  dock bay-tutorial *
+    workspace w1             surfaces=1
+    workspace login-bug      branch=fix/login-bug status=active surfaces=1
+    workspace auth-refactor  branch=fix/auth-refactor status=active surfaces=1
+    workspace review *       surfaces=1
+```
+
+Four workspaces in creation order. The two with `--branch` show their
+branch and status; `review` and `w1` have no branch. The `*` marks
+where you are now.
 
 Switch between all of them with `Option+Shift+j` / `Option+Shift+k` (or
 `bay ws go`).
@@ -177,32 +212,20 @@ bay restart
 Bay uses `--continue` (or whatever `resume_args` you've configured) so
 the conversation picks up where it left off.
 
-## 6. See what you have
+## 6. Inspect
 
-```
-bay ls
-```
-
-Shows the workspaces in your current dock with a per-workspace surface count.
-Within each dock, the metadata column is aligned so attributes are easy to scan
-across rows:
-
-```
-repo myproject
-  dock myproject *
-    workspace login-bug *  branch=fix/login-bug status=active surfaces=2
-    workspace review       surfaces=2
-```
-
-For the full hierarchy including each surface:
+You've already seen `bay ls` (focused on one workspace with its
+surfaces) and `bay ws ls` (all workspaces in the dock). `bay ls` is
+context-sensitive — it zooms in based on where you are. For the full
+hierarchy including every surface across all workspaces:
 
 ```
 bay tree
 ```
 
 ```
-repo myproject
-  dock myproject *
+repo bay-tutorial
+  dock bay-tutorial *
     workspace login-bug *  branch=fix/login-bug status=active
       surface shell    type=shell
       surface monitor  type=cmd
@@ -210,10 +233,6 @@ repo myproject
       surface agent    type=agent agent=claude
       surface shell    type=shell
 ```
-
-Surface metadata is aligned across the whole dock — the `type=` column on
-`agent` under `review` lines up with the `type=` column on `monitor` under
-`login-bug`, even though they're under different workspaces.
 
 (`bay ls -R` does the same thing — `tree` is the friendlier alias.)
 
