@@ -239,9 +239,12 @@ var bayKeybindings = []bayKeybinding{
 	{"M-G", "bay ws go", "Option+G: pick workspace in dock", "display-popup -E"},
 	{"M-A", "bay ws go --next-waiting", "Option+A: next waiting workspace", "run-shell"},
 
+	// Creation
+	{"M-c", "bay ws new", "Option+c: create workspace in current dock", "run-shell"},
+	{"M-s", "bay shell", "Option+s: split a shell pane", "run-shell"},
+
 	// Utility
 	{"M-w", "bay sf close self", "Option+w: close current surface (or pane)", "run-shell"},
-	{"M-s", "bay shell", "Option+s: split a shell pane", "run-shell"},
 }
 
 const bayKeybindingsMarker = "# Bay keybindings"

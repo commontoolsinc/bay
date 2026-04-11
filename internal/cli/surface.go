@@ -440,19 +440,23 @@ func newSurfaceRenameCmd() *cobra.Command {
 	var wsFlag, dockFlag string
 
 	cmd := &cobra.Command{
-		Use:     "rename <old> <new>",
+		Use:     "rename [old] <new>",
 		Aliases: []string{"mv"},
-		Short:   "Rename a surface",
-		Long: `Rename a surface. The <old> name may include a workspace prefix.
+		Short:   "Rename a surface (defaults to current)",
+		Long: `Rename a surface. With one arg, renames the current surface.
 
+  bay sf rename agent2                    rename current surface
   bay sf rename agent agent2              rename in current workspace
   bay sf rename w1:agent agent2           rename agent in workspace w1
   bay sf rename agent agent2 --ws w1      same as w1:agent`,
-		Args: cobra.ExactArgs(2),
+		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
 				return err
+			}
+			if len(args) == 1 {
+				args = []string{"self", args[0]}
 			}
 			return runSurfaceRename(eng, args, wsFlag, dockFlag)
 		},

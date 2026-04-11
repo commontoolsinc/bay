@@ -234,16 +234,28 @@ func newDockTreeCmd() *cobra.Command {
 
 func newDockRenameCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "rename <old> <new>",
+		Use:     "rename [old] <new>",
 		Aliases: []string{"mv"},
-		Short:   "Rename a dock",
-		Args:    cobra.ExactArgs(2),
+		Short:   "Rename a dock (defaults to current)",
+		Args:    cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
 				return err
 			}
-			return eng.DockRename(args[0], args[1])
+			var oldName, newName string
+			if len(args) == 1 {
+				dockName, _, err := eng.ResolveSelf()
+				if err != nil {
+					return fmt.Errorf("cannot determine current dock: %w", err)
+				}
+				oldName = dockName
+				newName = args[0]
+			} else {
+				oldName = args[0]
+				newName = args[1]
+			}
+			return eng.DockRename(oldName, newName)
 		},
 	}
 }

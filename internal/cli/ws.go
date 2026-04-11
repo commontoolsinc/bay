@@ -98,17 +98,21 @@ func newWsNewCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Workspace %s created in dock %s (path: %s)\n",
-				ws.Name, opts.Dock, ws.Path)
-
 			// Suggest how to get into the workspace if not already there.
 			currentSession, tmuxErr := eng.Tmux.CurrentSession()
 			if tmuxErr != nil {
-				// Not in tmux at all.
+				// Not in tmux — print helpful attach hint.
+				fmt.Printf("Workspace %s created in dock %s (path: %s)\n",
+					ws.Name, opts.Dock, ws.Path)
 				fmt.Printf("\nAttach with:\n  tmux attach -t %s\n", opts.Dock)
 			} else if currentSession != opts.Dock {
-				// In tmux but different session.
+				// In tmux but different session — print switch hint.
+				fmt.Printf("Workspace %s created in dock %s (path: %s)\n",
+					ws.Name, opts.Dock, ws.Path)
 				fmt.Printf("\nSwitch with:\n  tmux switch-client -t %s\n", opts.Dock)
+			} else {
+				// Already in the right dock — flash in status bar.
+				_ = eng.Tmux.DisplayMessage(fmt.Sprintf("Created workspace %s", ws.Name))
 			}
 
 			return nil
@@ -279,22 +283,31 @@ func newWsRenameCmd() *cobra.Command {
 	var dockFlag string
 
 	cmd := &cobra.Command{
-		Use:     "rename <name> <new-name>",
+		Use:     "rename [name] <new-name>",
 		Aliases: []string{"mv"},
-		Short:   "Rename a workspace display name (use 'self' for current)",
-		Args:    cobra.ExactArgs(2),
+		Short:   "Rename a workspace (defaults to current)",
+		Args:    cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
 				return err
 			}
 
-			dockName, wsID, err := resolveWsArg(eng, args[0], dockFlag)
+			var source, newName string
+			if len(args) == 1 {
+				source = "self"
+				newName = args[0]
+			} else {
+				source = args[0]
+				newName = args[1]
+			}
+
+			dockName, wsID, err := resolveWsArg(eng, source, dockFlag)
 			if err != nil {
 				return err
 			}
 
-			return eng.WsRename(dockName, wsID, args[1])
+			return eng.WsRename(dockName, wsID, newName)
 		},
 	}
 

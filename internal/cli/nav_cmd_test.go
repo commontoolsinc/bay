@@ -544,6 +544,63 @@ func TestWsCycle_NoFlashOnSingleWorkspace(t *testing.T) {
 	}
 }
 
+// --- ws rename self ---
+
+func TestWsRename_SelfResolution(t *testing.T) {
+	eng := selfFixture(t) // dock=labs, ws=w1, current surface=second
+
+	dockName, wsID, err := resolveWsArg(eng, "self", "")
+	if err != nil {
+		t.Fatalf("resolveWsArg self: %v", err)
+	}
+	if err := eng.WsRename(dockName, wsID, "renamed-ws"); err != nil {
+		t.Fatalf("WsRename: %v", err)
+	}
+
+	ws, err := eng.WsShow("labs", "renamed-ws")
+	if err != nil {
+		t.Fatalf("WsShow after rename: %v", err)
+	}
+	if ws.Name != "renamed-ws" {
+		t.Errorf("ws name = %q, want renamed-ws", ws.Name)
+	}
+}
+
+// --- dock rename self ---
+
+func TestDockRename_SelfResolution(t *testing.T) {
+	eng := selfFixture(t) // dock=labs, ws=w1, current surface=second
+
+	dockName, _, err := eng.ResolveSelf()
+	if err != nil {
+		t.Fatalf("ResolveSelf: %v", err)
+	}
+	if dockName != "labs" {
+		t.Fatalf("expected current dock=labs, got %q", dockName)
+	}
+	if err := eng.DockRename("labs", "renamed-dock"); err != nil {
+		t.Fatalf("DockRename: %v", err)
+	}
+
+	// Verify old dock is gone and new one exists.
+	m, _ := eng.LoadManifest()
+	foundOld, foundNew := false, false
+	for _, d := range m.Docks {
+		if d.Name == "labs" {
+			foundOld = true
+		}
+		if d.Name == "renamed-dock" {
+			foundNew = true
+		}
+	}
+	if foundOld {
+		t.Error("dock 'labs' still present after rename")
+	}
+	if !foundNew {
+		t.Error("dock 'renamed-dock' not found after rename")
+	}
+}
+
 // --- autoBootstrap ---
 
 func TestAutoBootstrap_CreatesRepoAndDock(t *testing.T) {

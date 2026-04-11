@@ -53,10 +53,10 @@ func TestPositionalShapes(t *testing.T) {
 		{[]string{"surface", "close"}, "close <name>", "surface close positional must be name"},
 		{[]string{"ws", "close"}, "close [name]", "ws close has --done so positional is optional"},
 
-		// Rename: two positionals, no '|self' marker in usage.
-		{[]string{"rename"}, "rename <old> <new>", "top-level rename — surface form"},
-		{[]string{"surface", "rename"}, "rename <old> <new>", "surface rename"},
-		{[]string{"ws", "rename"}, "rename <name> <new-name>", "ws rename"},
+		// Rename: first positional optional (defaults to self).
+		{[]string{"rename"}, "rename [name] <new-name>", "top-level rename — workspace form"},
+		{[]string{"surface", "rename"}, "rename [old] <new>", "surface rename"},
+		{[]string{"ws", "rename"}, "rename [name] <new-name>", "ws rename"},
 	}
 
 	for _, c := range cases {
