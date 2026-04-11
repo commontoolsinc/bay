@@ -1234,6 +1234,33 @@ func TestDockClose(t *testing.T) {
 	}
 }
 
+// TestDockClose_PropagatesManifestWriteError pins the fix from bucket B
+// item 8: DockClose used to swallow errors from withManifest and
+// config.Save. Now it propagates them. This test makes the manifest
+// directory read-only so the lock file creation fails, then verifies
+// the error surfaces.
+func TestDockClose_PropagatesManifestWriteError(t *testing.T) {
+	eng, _ := testEngine(t)
+	// Dock "labs" starts with no workspaces, so closeWorkspaceState
+	// loop is empty. The error comes from the RemoveDock withManifest.
+
+	// Make the manifest directory non-writable so the lock file can't
+	// be created.
+	dir := filepath.Dir(eng.manifestPath)
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	defer os.Chmod(dir, 0o755)
+
+	err := eng.DockClose("labs", false)
+	if err == nil {
+		t.Fatal("expected error when manifest write fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "removing dock from manifest") {
+		t.Errorf("expected 'removing dock from manifest' in error, got: %v", err)
+	}
+}
+
 func TestRecover(t *testing.T) {
 	eng, _ := testEngine(t)
 
