@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/commontoolsinc/bay/internal/engine"
 	"github.com/commontoolsinc/bay/internal/manifest"
@@ -301,18 +302,33 @@ func newTopShowCmd() *cobra.Command {
 	return cmd
 }
 
-// newTopRenameCmd is `bay rename` — rename a surface (alias: mv, hidden).
+// newTopRenameCmd is `bay rename` — rename the current tab.
+//
+// Design note: bay does not have an explicit entity for a tmux
+// window. Surfaces are grouped into windows via their LayoutGroup
+// field, and the window's tab name is derived from the first
+// surface in the group. "bay rename foo" renames the tab, which
+// means renaming the workspace (for primary windows) or the
+// tab-owning surface (for secondary windows). If this mapping
+// proves confusing — e.g., the user expects to rename a specific
+// pane rather than the tab — we may need to introduce an explicit
+// Window entity with its own name, separate from both workspaces
+// and surfaces. The LayoutGroup integer would become a reference
+// to a named Window record in the manifest.
 func newTopRenameCmd() *cobra.Command {
 	var dockFlag string
 
 	cmd := &cobra.Command{
 		Use:     "rename [name] <new-name>",
 		Aliases: []string{"mv"},
-		Short:   "Rename a workspace (defaults to current)",
-		Long: `Rename a workspace. With one arg, renames the current workspace.
+		Short:   "Rename the current tab (workspace or secondary window)",
+		Long: `Rename the current tab. With one arg, renames the current tab:
+  - In a primary window: renames the workspace.
+  - In a secondary window: renames the tab-owning surface.
 
-  bay rename foo                       rename current workspace to foo
-  bay rename old-name new-name         rename by name
+  bay rename foo                       rename current tab to foo
+  bay rename :foo                      same (leading colon is stripped)
+  bay rename old-name new-name         rename workspace by name
   bay rename old-name new-name --dock d  rename in a specific dock`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -321,20 +337,50 @@ func newTopRenameCmd() *cobra.Command {
 				return err
 			}
 
-			var source, newName string
 			if len(args) == 1 {
-				source = "self"
-				newName = args[0]
-			} else {
-				source = args[0]
-				newName = args[1]
+				newName := strings.TrimPrefix(args[0], ":")
+
+				// Determine if we're in a primary or secondary window.
+				dockName, wsName, err := eng.ResolveSelf()
+				if err != nil {
+					return err
+				}
+
+				ws, err := eng.WsShow(dockName, wsName)
+				if err != nil {
+					return err
+				}
+				paneID, _ := eng.Tmux.CurrentPaneID()
+				layoutGroup := 0
+				for _, s := range ws.Surfaces {
+					if s.Tmux != nil && s.Tmux.PaneID == paneID {
+						layoutGroup = s.Tmux.LayoutGroup
+						break
+					}
+				}
+
+				if layoutGroup <= 1 {
+					// Primary window — rename the workspace.
+					return eng.WsRename(dockName, wsName, newName)
+				}
+
+				// Secondary window — rename the tab-owning surface
+				// (first surface in this layout group by slice order).
+				for _, s := range ws.Surfaces {
+					if s.Tmux != nil && s.Tmux.LayoutGroup == layoutGroup {
+						return eng.SurfaceRename(dockName, wsName, s.Name, newName)
+					}
+				}
+				return fmt.Errorf("could not determine tab-owning surface")
 			}
 
+			// Two args: explicit workspace rename (existing behavior).
+			source := args[0]
+			newName := args[1]
 			dockName, wsID, err := resolveWsArg(eng, source, dockFlag)
 			if err != nil {
 				return err
 			}
-
 			return eng.WsRename(dockName, wsID, newName)
 		},
 	}

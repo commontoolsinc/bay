@@ -671,11 +671,27 @@ func (e *Engine) ResolveByWindowID(tmuxWindowID string) (dockName, wsName string
 }
 
 // updateWindowNames renames all tmux windows for a workspace's surfaces.
-func (e *Engine) updateWindowNames(ws *manifest.Workspace, name string) {
+// Primary windows (layout group 1) get the workspace name; secondary windows
+// get ":surfacename" where surfacename is the first surface in the group.
+func (e *Engine) updateWindowNames(ws *manifest.Workspace, wsName string) {
+	// Build a map of layout group → first surface name (by slice order).
+	firstInGroup := map[int]string{}
+	for _, s := range ws.Surfaces {
+		if s.Tmux != nil && s.Tmux.LayoutGroup > 0 {
+			if _, ok := firstInGroup[s.Tmux.LayoutGroup]; !ok {
+				firstInGroup[s.Tmux.LayoutGroup] = s.Name
+			}
+		}
+	}
+
 	seen := map[string]bool{}
 	for _, s := range ws.Surfaces {
 		if s.Tmux != nil && s.Tmux.WindowID != "" && !seen[s.Tmux.WindowID] {
-			_ = e.Tmux.RenameWindow(s.Tmux.WindowID, name)
+			if s.Tmux.LayoutGroup <= 1 {
+				_ = e.Tmux.RenameWindow(s.Tmux.WindowID, wsName)
+			} else if surfName := firstInGroup[s.Tmux.LayoutGroup]; surfName != "" {
+				_ = e.Tmux.RenameWindow(s.Tmux.WindowID, ":"+surfName)
+			}
 			seen[s.Tmux.WindowID] = true
 		}
 	}

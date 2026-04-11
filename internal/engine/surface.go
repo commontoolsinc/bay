@@ -112,8 +112,13 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 			_ = e.Tmux.KillPane(newPaneID)
 		}
 	} else {
-		// Create a new tmux window.
-		winID, err := e.Tmux.NewWindow(dockName, ws.Name, ws.Path)
+		// Create a new tmux window. Secondary windows get a ":surfacename"
+		// tab name; the first window keeps the workspace name.
+		windowName := ws.Name
+		if len(ws.Surfaces) > 0 {
+			windowName = ":" + name
+		}
+		winID, err := e.Tmux.NewWindow(dockName, windowName, ws.Path)
 		if err != nil {
 			return fmt.Errorf("creating tmux window: %w", err)
 		}
@@ -155,7 +160,7 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 	surface.Tmux.SplitFrom = splitFromSurface
 	surface.Tmux.SplitDir = splitDir
 
-	return e.withManifest(func(m *manifest.Manifest) error {
+	err = e.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)
 		if dock == nil {
 			rollbackSurface()
@@ -175,6 +180,16 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 		ws.LastActive = time.Now().Unix()
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	// If this is a secondary window and the name was uniquified (e.g.,
+	// "shell" → "shell-2"), update the tmux window name to match.
+	if layoutGroup > 1 && surface.Name != name {
+		_ = e.Tmux.RenameWindow(tmuxWindowID, ":"+surface.Name)
+	}
+	return nil
 }
 
 // SurfaceAddGUI adds a GUI application surface (e.g., an editor) to a workspace.
@@ -353,6 +368,12 @@ func (e *Engine) SurfaceRename(dockName, wsName, oldName, newName string) error 
 		}
 		s.Name = newName
 		ws.LastActive = time.Now().Unix()
+
+		// Update tmux window names if this surface could be a tab owner
+		// (i.e. it lives in a secondary layout group).
+		if s.Tmux != nil && s.Tmux.LayoutGroup > 1 {
+			e.updateWindowNames(ws, ws.Name)
+		}
 		return nil
 	})
 }
