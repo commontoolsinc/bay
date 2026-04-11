@@ -228,7 +228,7 @@ func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string,
 		}
 	}
 
-	return eng.SurfaceClose(dockName, wsName, sName)
+	return eng.SurfaceClose(dockName, wsName, sName, force)
 }
 
 func newSurfaceRestartCmd() *cobra.Command {

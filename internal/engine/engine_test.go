@@ -812,7 +812,7 @@ func TestSurfaceClose(t *testing.T) {
 	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell", "", "", "")
 
 	// Close the second surface
-	err = eng.SurfaceClose("labs", "w1", "shell")
+	err = eng.SurfaceClose("labs", "w1", "shell", false)
 	if err != nil {
 		t.Fatalf("SurfaceClose failed: %v", err)
 	}
@@ -820,6 +820,32 @@ func TestSurfaceClose(t *testing.T) {
 	ws, _ := eng.WsShow("labs", "w1")
 	if len(ws.Surfaces) != 1 {
 		t.Errorf("expected 1 surface after close, got %d", len(ws.Surfaces))
+	}
+}
+
+func TestSurfaceClose_LastSurfaceClosesWorkspace(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+
+	// w1 has one default surface. Closing it should also remove the workspace.
+	ws, _ := eng.WsShow("labs", "w1")
+	if len(ws.Surfaces) != 1 {
+		t.Fatalf("expected 1 surface, got %d", len(ws.Surfaces))
+	}
+	surfaceName := ws.Surfaces[0].Name
+
+	if err := eng.SurfaceClose("labs", "w1", surfaceName, false); err != nil {
+		t.Fatalf("SurfaceClose: %v", err)
+	}
+
+	// Workspace should be gone.
+	_, err = eng.WsShow("labs", "w1")
+	if err == nil {
+		t.Error("workspace w1 still exists after closing its last surface")
 	}
 }
 
@@ -856,7 +882,7 @@ func TestSurfaceClose_PersistsManifestBeforeKill(t *testing.T) {
 		}
 	}
 
-	if err := eng.SurfaceClose("labs", "w1", "shell-2"); err != nil {
+	if err := eng.SurfaceClose("labs", "w1", "shell-2", false); err != nil {
 		t.Fatalf("SurfaceClose: %v", err)
 	}
 }
@@ -1141,7 +1167,7 @@ func TestSurfaceClose_GUI(t *testing.T) {
 	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	eng.SurfaceAddGUI("labs", "w1", "editor", "cursor", os.Getpid())
 
-	err := eng.SurfaceClose("labs", "w1", "editor")
+	err := eng.SurfaceClose("labs", "w1", "editor", false)
 	if err != nil {
 		t.Fatalf("SurfaceClose: %v", err)
 	}
