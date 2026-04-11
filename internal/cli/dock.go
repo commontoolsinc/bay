@@ -115,25 +115,13 @@ func newDockShowCmd() *cobra.Command {
 			if mDock.Repo != "" {
 				fmt.Printf("  repo:     %s\n", mDock.Repo)
 			}
-			agent := mDock.Agent
-			if dc, ok := eng.Config.Docks[name]; ok && dc.Agent != "" {
-				agent = dc.Agent
-			}
-			if agent != "" {
+			if agent := eng.Config.ResolvedDockAgent(name, mDock.Agent); agent != "" {
 				fmt.Printf("  agent:    %s\n", agent)
 			}
-			agentArgs := mDock.AgentArgs
-			if dc, ok := eng.Config.Docks[name]; ok && len(dc.AgentArgs) > 0 {
-				agentArgs = dc.AgentArgs
-			}
-			if len(agentArgs) > 0 {
+			if agentArgs := eng.Config.ResolvedDockAgentArgs(name, mDock.AgentArgs); len(agentArgs) > 0 {
 				fmt.Printf("  agent_args: %s\n", strings.Join(agentArgs, " "))
 			}
-			terminal := ""
-			if dc, ok := eng.Config.Docks[name]; ok {
-				terminal = dc.Terminal
-			}
-			if terminal != "" {
+			if terminal := eng.Config.ResolvedDockTerminal(name); terminal != "" {
 				fmt.Printf("  terminal: %s\n", terminal)
 			}
 
