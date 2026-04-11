@@ -221,6 +221,7 @@ func newWsShowCmd() *cobra.Command {
 				return err
 			}
 
+			eng.SyncAll()
 			wsInfo, err := eng.WorkspaceInfoByName(dockName, wsID)
 			if err != nil {
 				return err
