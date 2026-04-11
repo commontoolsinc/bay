@@ -14,7 +14,7 @@ where you left off — even after a reboot.
 
 This tutorial walks through the full lifecycle in about 10 minutes.
 
-**You'll need:** bay, tmux, and git.
+**You'll need:** bay (install with `go install ./cmd/bay`), tmux, and git.
 
 ---
 
@@ -38,24 +38,21 @@ tmux attach -t bay-tutorial
 ```
 
 You're now in a tmux session managed by bay, with a shell cd'd into
-your workspace's worktree. Run `bay ls` to see what bay created:
+your workspace's worktree. Run `bay ws ls` to see what bay created:
 
 ```
-bay ls
+bay ws ls
 ```
 
 ```
 repo bay-tutorial
   dock bay-tutorial *
-    workspace w1 *
-      surface shell *  type=shell
+    workspace w1 *  surfaces=1
 ```
 
-One repo, one dock, one workspace with a shell surface. `bay ls` is
-context-sensitive — from inside a workspace it
-shows you that workspace and its surfaces. Everything you do from
-here — creating more workspaces, adding shells, navigating — happens
-inside this session.
+One repo, one dock, one workspace with a shell surface. Everything
+you do from here — creating more workspaces, adding shells,
+navigating — happens inside this session.
 
 > **What just happened?** Bay detected your git repo, created a
 > worktree at `~/projects/bay-tutorial-worktrees/<name>`, and started
@@ -119,8 +116,8 @@ Four workspaces in creation order. The two with `--branch` show their
 branch and status; `review` and `w1` have no branch. The `*` marks
 where you are now.
 
-Switch between all of them with `Option+Shift+j` / `Option+Shift+k` (or
-`bay ws go`).
+Switch between them with `Option+Shift+j` / `Option+Shift+k` (requires
+`bay setup`) or `bay ws go`.
 
 ## 3. Add tools to your workspace
 
@@ -151,8 +148,23 @@ Bay auto-detects your editor (Cursor, VS Code, Zed, nvim, vim). For
 GUI editors, it tracks the window so you can jump back to it with the
 same navigation keys as everything else.
 
-Now your workspace has a shell, a system monitor, and an editor — all
-navigable.
+Run `bay ls` to see the current workspace's surfaces:
+
+```
+bay ls
+```
+
+```
+repo bay-tutorial
+  dock bay-tutorial *
+    workspace login-bug *  branch=fix/login-bug status=active
+      surface shell *    type=shell
+      surface shell-2    type=shell
+      surface monitor    type=cmd
+```
+
+Three surfaces, all navigable. (`bay ws ls` shows all workspaces;
+`bay ls` shows the one you're in.)
 
 ## 4. Navigate
 
@@ -181,10 +193,6 @@ bay go shell        # jump to the shell surface
 bay ws go review    # jump to the review workspace
 ```
 
-> **Setup note:** The Option-key shortcuts require `bay setup` to
-> install tmux keybindings. Without them, use the `bay go` / `bay ws go`
-> commands directly.
-
 ## 5. Add an AI agent
 
 ```
@@ -209,10 +217,7 @@ the conversation picks up where it left off.
 
 ## 6. Inspect
 
-You've already seen `bay ls` (focused on one workspace with its
-surfaces) and `bay ws ls` (all workspaces in the dock). `bay ls` is
-context-sensitive — it zooms in based on where you are. For the full
-hierarchy including every surface across all workspaces:
+To see every workspace and surface at once, use `bay tree`:
 
 ```
 bay tree
@@ -228,8 +233,6 @@ repo bay-tutorial
       surface agent    type=agent agent=claude
       surface shell    type=shell
 ```
-
-(`bay ls -R` does the same thing — `tree` is the friendlier alias.)
 
 Other useful commands:
 
