@@ -11,7 +11,7 @@ A **workspace** is a managed working directory with metadata (branch,
 PR, status). Each workspace has:
 - A **name** — the primary identifier. Defaults to auto-abbreviated
   branch name (stripping prefixes like `feature/`, `fix/`). Can be
-  overridden with `bay ws rename`, which sticks permanently.
+  overridden with `bay rename` (or `bay ws rename`), which sticks permanently.
 - A **full reference** — `dock:name` (e.g., `labs:auth-fix`). Bare
   name (`auth-fix`) works when unambiguous across docks.
 
@@ -339,15 +339,15 @@ bay ws show auth-fix
 bay ws show self --json
 ```
 
-#### `bay ws rename <name> <new-name>`
+#### `bay ws rename [name] <new-name>`
 
 Rename a workspace. Overrides auto-abbreviation permanently. Names
-must match `[a-zA-Z0-9_-]+`. Pass `self` as the first arg to rename
-the current workspace.
+must match `[a-zA-Z0-9_-]+`. With one arg, renames the current
+workspace.
 
 ```
-bay ws rename auth-fix mem-refactor
-bay ws rename self mem-refactor
+bay ws rename mem-refactor                 # rename current workspace
+bay ws rename auth-fix mem-refactor        # rename by name
 ```
 
 ### Navigation
@@ -443,10 +443,9 @@ bay sf restart agent                        # named surface
 
 Print details for a surface. Defaults to the current pane's surface.
 
-#### `bay surface rename <old> <new> [--ws WS] [--dock DOCK]`
+#### `bay surface rename [old] <new> [--ws WS] [--dock DOCK]`
 
-Rename a surface. Pass `self` as `<old>` to rename the current
-surface.
+Rename a surface. With one arg, renames the current surface.
 
 ### Top-level shorthands
 
