@@ -16,6 +16,10 @@ This tutorial walks through the full lifecycle in about 10 minutes.
 
 **You'll need:** bay (install with `go install ./cmd/bay`), tmux, and git.
 
+**Cleaning up:** When you're done, `bay repo remove bay-tutorial --force`
+removes all workspaces and bay state. Then `rm -rf /tmp/bay-tutorial`
+removes the repo itself.
+
 ---
 
 ## 1. Create your first workspace
@@ -25,8 +29,8 @@ tmux, open a new terminal window first — bay creates its own tmux
 session and you'll attach to it in a moment.
 
 ```
-git clone https://github.com/octocat/Hello-World.git ~/projects/bay-tutorial
-cd ~/projects/bay-tutorial
+git clone https://github.com/octocat/Hello-World.git /tmp/bay-tutorial
+cd /tmp/bay-tutorial
 bay ws new
 ```
 
@@ -55,7 +59,7 @@ you do from here — creating more workspaces, adding shells,
 navigating — happens inside this session.
 
 > **What just happened?** Bay detected your git repo, created a
-> worktree at `~/projects/bay-tutorial-worktrees/<name>`, and started
+> worktree at `/tmp/bay-tutorial-worktrees/<name>`, and started
 > a tmux session called `bay-tutorial` with a window for your
 > workspace. The worktree starts on detached HEAD — it has the
 > default branch's content but isn't on any named branch yet. Bay
