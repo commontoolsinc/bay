@@ -100,7 +100,16 @@ func newMonitorRunCmd() *cobra.Command {
 				cancel()
 			}()
 
-			return mon.Run(ctx)
+			err = mon.Run(ctx)
+			// context.Canceled is the normal shutdown path (SIGINT/
+			// SIGTERM received). Don't report it as an error — the
+			// monitor shares stderr with the terminal, so "Error:
+			// context canceled" would confuse users running
+			// `bay monitor stop`.
+			if err != nil && err == context.Canceled {
+				return nil
+			}
+			return err
 		},
 	}
 }
