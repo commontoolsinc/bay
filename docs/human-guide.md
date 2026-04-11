@@ -361,8 +361,8 @@ bay ws new [name] --shell                   # explicit shell
 bay ws new [name] --branch <b>              # create and checkout branch
 bay ws new [name] --repo <r>                # override dock's repo
 bay ws new [name] --dir <path>              # external workspace
-bay ws close [name]                         # close (safety checks; 'self' for current)
-bay ws close [name] --force                 # skip safety checks
+bay ws close [name]                         # close + delete pushed branch ('self' for current)
+bay ws close [name] --force                 # skip safety checks (keeps unpushed branches)
 bay ws close --done                         # close all done workspaces
 bay ws close --done --force                 # force close all done
 bay ws show [name]                          # detailed view (default: current)
