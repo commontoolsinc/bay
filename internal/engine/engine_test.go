@@ -2512,6 +2512,40 @@ func TestSyncAll_RemovesDeadPaneSurface(t *testing.T) {
 	}
 }
 
+// TestSyncAll_PreservesSurfacesWhenSessionDead verifies that SyncAll
+// does NOT strip surfaces when the dock's tmux session is gone. If
+// the session is dead (reboot, manual kill-server), the surfaces are
+// needed for `bay recover` to know what to recreate. Stripping them
+// leaves the workspaces with surfaces=0 and recover reports "nothing
+// to recover."
+func TestSyncAll_PreservesSurfacesWhenSessionDead(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+
+	// Verify the workspace has a surface.
+	ws, _ := eng.WsShow("labs", "w1")
+	if len(ws.Surfaces) != 1 {
+		t.Fatalf("expected 1 surface, got %d", len(ws.Surfaces))
+	}
+
+	// Kill the tmux session — simulates reboot or manual kill.
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.KillSession("labs")
+
+	// SyncAll should NOT remove the surfaces — the session is dead,
+	// and recovery needs the surface records to recreate them.
+	eng.SyncAll()
+
+	ws, _ = eng.WsShow("labs", "w1")
+	if len(ws.Surfaces) != 1 {
+		t.Errorf("SyncAll stripped surfaces when session was dead; got %d surfaces, want 1 (preserved for recovery)", len(ws.Surfaces))
+	}
+}
+
 // --- ResolveSelf with symlinked CWD ---
 
 // On macOS the user's CWD often differs from a stored workspace path by a

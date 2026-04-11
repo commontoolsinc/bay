@@ -141,7 +141,15 @@ func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace)
 		}
 	}
 
-	update.deadSurfaceIDs = e.deadSurfaceIDs(ws)
+	// Only clean up dead surfaces if the dock's tmux session is alive.
+	// If the session is gone (reboot, manual kill), the surfaces are
+	// needed for `bay recover` to know what to recreate. Stripping
+	// them here would leave workspaces with surfaces=0 and recover
+	// would report "nothing to recover."
+	sessionAlive, _ := e.Tmux.HasSession(dock.Name)
+	if sessionAlive {
+		update.deadSurfaceIDs = e.deadSurfaceIDs(ws)
+	}
 	if !update.branchChanged && !update.prChanged && !update.mergedDone && len(update.deadSurfaceIDs) == 0 {
 		return workspaceSyncUpdate{}, false
 	}
