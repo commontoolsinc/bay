@@ -95,6 +95,7 @@ func registerCompletions(root *cobra.Command) {
 		"ws close", "ws show", "ws rename",
 		"edit",
 		"new edit",
+		"rename",
 	} {
 		if cmd := findCmd(root, path); cmd != nil {
 			cmd.ValidArgsFunction = wsCompl
@@ -104,7 +105,7 @@ func registerCompletions(root *cobra.Command) {
 	// Surface-name positional: sf verbs and the top-level surface verbs.
 	for _, path := range []string{
 		"surface close", "surface restart", "surface show", "surface rename",
-		"close", "show", "rename", "restart",
+		"close", "show", "restart",
 	} {
 		if cmd := findCmd(root, path); cmd != nil {
 			cmd.ValidArgsFunction = sfCompl
@@ -159,7 +160,7 @@ func registerCompletions(root *cobra.Command) {
 	for _, path := range []string{
 		"surface new",
 		"surface close", "surface restart", "surface show", "surface rename",
-		"close", "show", "rename", "restart",
+		"close", "show", "restart",
 		"shell",
 		"new shell", "new agent", "new cmd",
 	} {
@@ -173,7 +174,7 @@ func registerCompletions(root *cobra.Command) {
 			cmd.RegisterFlagCompletionFunc("split", splitCompletions)
 		}
 	}
-	for _, path := range []string{"ws close", "ws show", "ws rename"} {
+	for _, path := range []string{"ws close", "ws show", "ws rename", "rename"} {
 		if cmd := findCmd(root, path); cmd != nil {
 			cmd.RegisterFlagCompletionFunc("dock", dockFlagCompl)
 		}

@@ -559,8 +559,8 @@ func TestRoot_SurfaceGroupExists(t *testing.T) {
 func TestRoot_TopLevelSurfaceVerbsRegistered(t *testing.T) {
 	root := NewRootCmd("test")
 
-	want := []string{"new", "close", "show", "rename"}
-	for _, name := range want {
+	surfaceVerbs := []string{"new", "close", "show"}
+	for _, name := range surfaceVerbs {
 		c, _, err := root.Find([]string{name})
 		if err != nil {
 			t.Errorf("could not find top-level command %q: %v", name, err)
@@ -572,6 +572,14 @@ func TestRoot_TopLevelSurfaceVerbsRegistered(t *testing.T) {
 		if c.GroupID != "surface" {
 			t.Errorf("command %q has GroupID %q, want surface", name, c.GroupID)
 		}
+	}
+
+	// bay rename targets workspaces, not surfaces.
+	renameCmd, _, err := root.Find([]string{"rename"})
+	if err != nil {
+		t.Errorf("could not find top-level command rename: %v", err)
+	} else if renameCmd.GroupID != "workspace" {
+		t.Errorf("command rename has GroupID %q, want workspace", renameCmd.GroupID)
 	}
 }
 

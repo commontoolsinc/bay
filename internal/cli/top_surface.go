@@ -315,29 +315,43 @@ func newTopShowCmd() *cobra.Command {
 
 // newTopRenameCmd is `bay rename` — rename a surface (alias: mv, hidden).
 func newTopRenameCmd() *cobra.Command {
-	var wsFlag, dockFlag string
+	var dockFlag string
 
 	cmd := &cobra.Command{
-		Use:     "rename <old> <new>",
+		Use:     "rename [name] <new-name>",
 		Aliases: []string{"mv"},
-		Short:   "Rename a surface",
-		Long: `Rename a surface. The <old> name may include a workspace prefix.
+		Short:   "Rename a workspace (defaults to current)",
+		Long: `Rename a workspace. With one arg, renames the current workspace.
 
-  bay rename agent agent2              rename in current workspace
-  bay rename w1:agent agent2           rename agent in workspace w1
-  bay rename agent agent2 --ws w1      same as w1:agent`,
-		Args: cobra.ExactArgs(2),
+  bay rename foo                       rename current workspace to foo
+  bay rename old-name new-name         rename by name
+  bay rename old-name new-name --dock d  rename in a specific dock`,
+		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
 				return err
 			}
-			return runSurfaceRename(eng, args, wsFlag, dockFlag)
+
+			var source, newName string
+			if len(args) == 1 {
+				source = "self"
+				newName = args[0]
+			} else {
+				source = args[0]
+				newName = args[1]
+			}
+
+			dockName, wsID, err := resolveWsArg(eng, source, dockFlag)
+			if err != nil {
+				return err
+			}
+
+			return eng.WsRename(dockName, wsID, newName)
 		},
 	}
 
-	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (disambiguates with --dock)")
-	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (only valid with --ws or a workspace prefix)")
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare workspace name)")
 
 	return cmd
 }

@@ -72,7 +72,7 @@ func TestCompletionsRegistered(t *testing.T) {
 		// surface verbs (sf X form) — close/restart/show/rename target
 		// existing surfaces by name.
 		"surface close", "surface restart", "surface show", "surface rename",
-		// top-level surface verbs
+		// top-level verbs (close/show/restart target surfaces, rename targets workspaces)
 		"close", "show", "rename", "restart",
 		// bay new subcommands with positional completions
 		"new agent", "new edit",
@@ -141,7 +141,7 @@ func TestSurfaceCommands_UseSurfaceCompletions(t *testing.T) {
 
 	for _, path := range []string{
 		"surface close", "surface restart", "surface show", "surface rename",
-		"close", "show", "rename", "restart",
+		"close", "show", "restart",
 	} {
 		cmd := findCmd(root, path)
 		if cmd == nil || cmd.ValidArgsFunction == nil {
@@ -331,7 +331,7 @@ func TestFlagCompletions_WsAndDockOnSurfaceVerbs(t *testing.T) {
 	for _, path := range []string{
 		"surface new",
 		"surface close", "surface restart", "surface show", "surface rename",
-		"close", "show", "rename", "restart",
+		"close", "show", "restart",
 		"shell",
 		"new shell", "new agent", "new cmd",
 	} {
