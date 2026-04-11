@@ -20,6 +20,11 @@ This tutorial walks through the full lifecycle in about 10 minutes.
 
 **You'll need:** bay (built from this repo with `go install ./cmd/bay`), tmux, and git.
 
+Bay organizes your work in three levels: a **dock** is a tmux session
+for one project, a **workspace** is a git worktree inside that session,
+and **surfaces** are the panes and windows attached to a workspace —
+shells, AI agents, editors. You'll see all three in a moment.
+
 ---
 
 ## 1. Create your first workspace
