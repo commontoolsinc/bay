@@ -6,24 +6,15 @@ got uncommitted changes and a dev server running. Either way, you need
 multiple copies of the repo, each on its own branch, each with their
 own state — without stashing, cloning, or losing your place.
 
-Bay gives each task its own isolated copy of the repo (a git worktree),
-its own tmux session, and keeps track of everything. Jump between tasks
-instantly, add shells and editors alongside your work, and pick up
-right where you left off — even after a reboot.
-
-Bay is terminal-first: your workspaces live in tmux sessions and you
-navigate between them from the command line. GUI editors (Cursor, VS
-Code, etc.) are supported as launchable surfaces you can jump to, but
-the home base is tmux.
+Bay gives each task its own **workspace** — an isolated git worktree
+inside a **dock** (a tmux session for one project). Each workspace has
+**surfaces**: the shells, AI agents, and editors you work in and
+navigate between. Jump between tasks instantly, and pick up right
+where you left off — even after a reboot.
 
 This tutorial walks through the full lifecycle in about 10 minutes.
 
-**You'll need:** bay (built from this repo with `go install ./cmd/bay`), tmux, and git.
-
-Bay organizes your work in three levels: a **dock** is a tmux session
-for one project, a **workspace** is a git worktree inside that session,
-and **surfaces** are the panes and windows attached to a workspace —
-shells, AI agents, editors. You'll see all three in a moment.
+**You'll need:** bay, tmux, and git.
 
 ---
 
@@ -39,8 +30,8 @@ cd ~/projects/bay-tutorial
 bay ws new
 ```
 
-Bay creates a **workspace** — a fresh git worktree with a clean copy
-of your default branch, inside a new tmux session. Attach to it:
+Bay creates a workspace with a clean copy of your default branch.
+Attach to the dock:
 
 ```
 tmux attach -t bay-tutorial
@@ -60,8 +51,8 @@ repo bay-tutorial
       surface shell *  type=shell
 ```
 
-One repo, one dock (the tmux session), one workspace with a shell
-surface. `bay ls` is context-sensitive — from inside a workspace it
+One repo, one dock, one workspace with a shell surface. `bay ls` is
+context-sensitive — from inside a workspace it
 shows you that workspace and its surfaces. Everything you do from
 here — creating more workspaces, adding shells, navigating — happens
 inside this session.
@@ -133,8 +124,7 @@ Switch between all of them with `Option+Shift+j` / `Option+Shift+k` (or
 
 ## 3. Add tools to your workspace
 
-A workspace starts with one shell, but you can add more. Bay calls
-these **surfaces** — anything you can focus and jump to.
+A workspace starts with one shell, but you can add more surfaces.
 
 Split a second shell (for running tests while you edit):
 
@@ -296,8 +286,6 @@ another repo. Create workspaces from it with `bay ws new --repo backend`.
 
 **Explicit control:** The zero-config flow creates docks automatically.
 For more control: `bay dock new myproject --repo myproject --agent claude`.
-A **dock** is a tmux session that groups workspaces — think of it as
-"the terminal window for this project."
 
 **Status line:** Add `#(bay status-line full)` to your tmux `status-right`
 to always see your current workspace. Other field names: `name`, `branch`,
