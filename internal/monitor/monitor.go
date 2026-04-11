@@ -37,10 +37,6 @@ const (
 	// captureLinesCount is how many lines to capture from each pane.
 	captureLinesCount = 20
 
-	// PRCheckCycles is how many check cycles between PR detection runs.
-	// With a default 3-second interval, 20 cycles = ~60 seconds.
-	PRCheckCycles = 20
-
 	// MergeCheckCycles is how many check cycles between merge detection runs.
 	// With a default 3-second interval, 100 cycles = ~5 minutes.
 	MergeCheckCycles = 100
@@ -181,12 +177,6 @@ func (m *Monitor) CheckOnce() error {
 	// Periodic background tasks (slower cadence than prompt checking).
 	m.cycle++
 	manifestDirty := false
-
-	if m.git != nil && m.cycle%PRCheckCycles == 0 {
-		if m.detectPRs(mf) {
-			manifestDirty = true
-		}
-	}
 
 	if m.git != nil && m.cycle%MergeCheckCycles == 0 {
 		if m.detectMerges(mf) {

@@ -93,7 +93,7 @@ func surfaceArgFixture(t *testing.T) *engine.Engine {
 	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
 		t.Fatalf("WsNew labs:w1: %v", err)
 	}
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeAgent, "agent", "claude", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd labs:w1:agent: %v", err)
 	}
 
@@ -101,7 +101,7 @@ func surfaceArgFixture(t *testing.T) *engine.Engine {
 	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs2", Name: "w1", Shell: true}); err != nil {
 		t.Fatalf("WsNew labs2:w1: %v", err)
 	}
-	if err := eng.SurfaceAdd("labs2", "w1", manifest.SurfaceTypeAgent, "agent", "claude", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs2", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd labs2:w1:agent: %v", err)
 	}
 
@@ -109,7 +109,7 @@ func surfaceArgFixture(t *testing.T) *engine.Engine {
 	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "solo", Shell: true}); err != nil {
 		t.Fatalf("WsNew labs:solo: %v", err)
 	}
-	if err := eng.SurfaceAdd("labs", "solo", manifest.SurfaceTypeAgent, "agent", "claude", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "solo", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd labs:solo:agent: %v", err)
 	}
 
@@ -303,7 +303,7 @@ func selfFixture(t *testing.T) *engine.Engine {
 	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "second", "", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "second", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd second: %v", err)
 	}
 	ws, _ := eng.WsShow("labs", "w1")
@@ -329,7 +329,7 @@ func TestResolveSurfaceArgOrSelf_VirtualSelf(t *testing.T) {
 func TestResolveSurfaceArgOrSelf_LiteralWinsOverVirtual(t *testing.T) {
 	eng := selfFixture(t)
 	// Add a literal surface named "self" — should win over the virtual lookup.
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "self", "", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "self", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd self: %v", err)
 	}
 

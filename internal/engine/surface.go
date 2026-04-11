@@ -44,8 +44,26 @@ func (e *Engine) preferredSplitTarget(ws *manifest.Workspace) *manifest.Surface 
 	return nil
 }
 
+// SurfaceAddOptions holds the parameters for adding a surface.
+type SurfaceAddOptions struct {
+	DockName string
+	WsName   string
+	Type     manifest.SurfaceType
+	Name     string
+	Agent    string
+	Command  string
+	SplitDir string
+}
+
 // SurfaceAdd adds a new surface to a workspace.
-func (e *Engine) SurfaceAdd(dockName, wsName string, surfaceType manifest.SurfaceType, name, agent, cmd, splitDir string) error {
+func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
+	dockName := opts.DockName
+	wsName := opts.WsName
+	surfaceType := opts.Type
+	name := opts.Name
+	agent := opts.Agent
+	cmd := opts.Command
+	splitDir := opts.SplitDir
 	m, err := e.LoadManifest()
 	if err != nil {
 		return err

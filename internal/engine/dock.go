@@ -213,17 +213,22 @@ func (e *Engine) DockClose(name string, force bool) error {
 	}
 
 	// Remove dock from manifest.
-	_ = e.withManifest(func(m *manifest.Manifest) error {
+	if err := e.withManifest(func(m *manifest.Manifest) error {
 		return m.RemoveDock(name)
-	})
+	}); err != nil {
+		return fmt.Errorf("removing dock from manifest: %w", err)
+	}
 
 	// Remove config overrides.
 	delete(e.Config.Docks, name)
 	if e.configPath != "" {
-		_ = config.Save(e.configPath, e.Config)
+		if err := config.Save(e.configPath, e.Config); err != nil {
+			return fmt.Errorf("saving config: %w", err)
+		}
 	}
 
 	// All manifest state is persisted. Now kill the tmux session.
+	// KillSession errors are non-fatal — the session may already be dead.
 	_ = e.Tmux.KillSession(name)
 	return nil
 }
