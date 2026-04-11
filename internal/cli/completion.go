@@ -88,8 +88,7 @@ func registerCompletions(root *cobra.Command) {
 	dockFlagCompl := dockFlagCompletions()
 
 	// Workspace-target positional: ws verbs operate on workspaces.
-	// surface new / shell / ws new no longer take a workspace
-	// positional — see PR #112. Their target is selected via
+	// surface new / shell / ws new select their target via
 	// --ws/--dock flags, not a positional, so they're not in this list.
 	for _, path := range []string{
 		"ws close", "ws show", "ws rename",

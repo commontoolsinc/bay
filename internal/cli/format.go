@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/commontoolsinc/bay/internal/engine"
+	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
 type FocusKind string
@@ -286,7 +287,7 @@ func appendMeta(parts []string, key, value string) []string {
 }
 
 func syncSuffix(sync string) []string {
-	if sync == "" || sync == "ok" {
+	if sync == "" || sync == manifest.SyncStatusOK {
 		return nil
 	}
 	return []string{kv("sync", sync)}
@@ -295,7 +296,7 @@ func syncSuffix(sync string) []string {
 func workspaceMeta(ws engine.WorkspaceInfo, showCounts bool) string {
 	var parts []string
 	parts = appendMeta(parts, "branch", ws.Branch)
-	if ws.Status != "" && ws.Status != "idle" {
+	if ws.Status != "" && ws.Status != string(manifest.WorkspaceStatusIdle) {
 		parts = appendMeta(parts, "status", ws.Status)
 	}
 	if showCounts {
@@ -470,7 +471,7 @@ func FormatWorkspaceShow(repoName, dockName string, ws *engine.WorkspaceInfo, lo
 	if ws.DefaultAgent != "" {
 		fmt.Fprintf(&b, "%s\n", labelValue("default agent", ws.DefaultAgent))
 	}
-	if ws.SyncStatus != "" && ws.SyncStatus != "ok" {
+	if ws.SyncStatus != "" && ws.SyncStatus != manifest.SyncStatusOK {
 		fmt.Fprintf(&b, "%s\n", labelValue("sync", ws.SyncStatus))
 	}
 	sfRows := make([]alignedRow, len(ws.Surfaces))

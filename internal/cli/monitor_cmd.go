@@ -2,18 +2,12 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/commontoolsinc/bay/internal/config"
-	"github.com/commontoolsinc/bay/internal/engine"
-	gitpkg "github.com/commontoolsinc/bay/internal/git"
 	"github.com/commontoolsinc/bay/internal/monitor"
-	tmuxpkg "github.com/commontoolsinc/bay/internal/tmux"
 	"github.com/spf13/cobra"
 )
 
@@ -39,23 +33,14 @@ func newMonitorCmd() *cobra.Command {
 }
 
 func newMonitorWithConfig() (*monitor.Monitor, error) {
-	p := bayPaths()
-	cfg, err := config.Load(p.ConfigFile)
+	eng, err := newEngine()
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			cfg = config.DefaultConfig()
-		} else {
-			return nil, err
-		}
+		return nil, err
 	}
-
-	t := tmuxpkg.NewReal()
-	g := gitpkg.NewReal()
-	mon := monitor.NewWithGit(t, g, p.ManifestFile, p.PatternsFile, p.PIDFile, cfg.Monitor.EffectiveInterval())
-	// Wire the same engine the CLI uses so the monitor's per-cycle
-	// SyncAll picks up branch changes and renames tmux windows in the
-	// background. Re-uses tmux + git instances above.
-	mon.SetEngine(engine.New(cfg, p.ConfigFile, p.ManifestFile, p.ArchiveFile, t, g))
+	p := bayPaths()
+	cfg := eng.Config
+	mon := monitor.NewWithGit(eng.Tmux, eng.Git, p.ManifestFile, p.PatternsFile, p.PIDFile, cfg.Monitor.EffectiveInterval())
+	mon.SetEngine(eng)
 	return mon, nil
 }
 

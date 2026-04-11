@@ -268,12 +268,12 @@ func (e *Engine) List() ([]DockInfo, error) {
 				Status:       string(ws.Status),
 				Missing:      ws.Path != "" && statErr != nil,
 				DefaultAgent: agent,
-				SyncStatus:   "ok",
+				SyncStatus:   manifest.SyncStatusOK,
 				SurfaceCount: len(ws.Surfaces),
 			}
 
 			if wsInfo.Missing {
-				wsInfo.SyncStatus = "missing"
+				wsInfo.SyncStatus = manifest.SyncStatusMissing
 			}
 
 			for _, s := range ws.Surfaces {
@@ -282,7 +282,7 @@ func (e *Engine) List() ([]DockInfo, error) {
 					Name:    s.Name,
 					Type:    string(s.Type),
 					Backend: string(s.Backend),
-					Status:  "ok",
+					Status:  manifest.SyncStatusOK,
 				}
 				if s.Agent != nil {
 					sInfo.Agent = *s.Agent
@@ -295,7 +295,7 @@ func (e *Engine) List() ([]DockInfo, error) {
 				if s.Tmux != nil && s.Tmux.WindowID != "" {
 					exists, _ := e.Tmux.WindowExists(s.Tmux.WindowID)
 					if !exists {
-						sInfo.Status = "stale"
+						sInfo.Status = manifest.SyncStatusStale
 						wsInfo.Stale = true
 					} else {
 						val, err := e.Tmux.GetWindowOption(s.Tmux.WindowID, "@bay-waiting")
@@ -311,8 +311,8 @@ func (e *Engine) List() ([]DockInfo, error) {
 			if wsInfo.Missing {
 				wsInfo.Stale = false
 			}
-			if wsInfo.SyncStatus == "ok" && wsInfo.Stale {
-				wsInfo.SyncStatus = "stale"
+			if wsInfo.SyncStatus == manifest.SyncStatusOK && wsInfo.Stale {
+				wsInfo.SyncStatus = manifest.SyncStatusStale
 			}
 			info.Workspaces = append(info.Workspaces, wsInfo)
 		}

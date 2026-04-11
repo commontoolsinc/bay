@@ -26,8 +26,6 @@ type recoverOutcome struct {
 }
 
 // Recover reconstructs all tmux state from the manifest after reboot.
-// Note: agent config files are no longer generated during recovery.
-// Agents are relaunched directly; project-level CLAUDE.md provides bay awareness.
 func (e *Engine) Recover() ([]RecoverResult, error) {
 	m, err := e.LoadManifest()
 	if err != nil {

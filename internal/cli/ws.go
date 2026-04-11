@@ -9,6 +9,7 @@ import (
 
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/engine"
+	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/commontoolsinc/bay/internal/nav"
 	"github.com/commontoolsinc/bay/internal/picker"
 	"github.com/spf13/cobra"
@@ -163,7 +164,7 @@ workspace, or omit the name and use --done to close finished workspaces.
 					}
 				}
 
-				closed, skipped, closeErr := eng.WsCloseByStatus(dockName, "done", force)
+				closed, skipped, closeErr := eng.WsCloseByStatus(dockName, string(manifest.WorkspaceStatusDone), force)
 				for _, c := range closed {
 					fmt.Printf("Closed %s\n", c)
 				}
