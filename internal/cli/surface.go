@@ -353,6 +353,7 @@ func newSurfaceLsCmd() *cobra.Command {
 				return fmt.Errorf("not in a bay workspace")
 			}
 
+			eng.SyncAll()
 			ws, err := eng.WsShow(dockName, wsName)
 			if err != nil {
 				return err
@@ -414,6 +415,7 @@ func runSurfaceShow(eng *engine.Engine, args []string, wsFlag, dockFlag string) 
 		return err
 	}
 
+	eng.SyncAll()
 	ws, err := eng.WsShow(dockName, wsName)
 	if err != nil {
 		return err

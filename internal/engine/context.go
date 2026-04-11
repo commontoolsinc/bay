@@ -18,9 +18,10 @@ type Context struct {
 }
 
 // CurrentContext resolves the current Bay context from cwd and tmux state.
+// This is a read-only query — it does NOT call SyncAll. The monitor
+// handles background sync; callers that need the freshest state should
+// call SyncAll explicitly before calling this.
 func (e *Engine) CurrentContext() (*Context, error) {
-	e.SyncAll()
-
 	m, err := e.LoadManifest()
 	if err != nil {
 		return nil, err

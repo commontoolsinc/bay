@@ -575,9 +575,11 @@ func (e *Engine) WsRename(dockName, wsName, newName string) error {
 }
 
 // WsShow returns detailed information about a workspace.
+// This is a read-only manifest query — it does NOT call SyncAll.
+// Callers that display data to the user (bay ws show, bay sf ls)
+// should call SyncAll first. Callers that just need workspace state
+// for an operation (navigation, close, restart) can skip the sync.
 func (e *Engine) WsShow(dockName, wsName string) (*manifest.Workspace, error) {
-	e.SyncAll()
-
 	m, err := e.LoadManifest()
 	if err != nil {
 		return nil, err
