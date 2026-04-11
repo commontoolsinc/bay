@@ -182,11 +182,6 @@ Three surfaces, all navigable. (`bay ws ls` shows all workspaces;
 - `Option+Shift+j` / `Option+Shift+k` — next / previous workspace
 - `Option+Shift+g` — fuzzy picker for workspaces
 
-When you cycle with `Option+j/k` (or `Option+Shift+j/k`), bay flashes a
-brief position indicator at the top of the tmux window so you can see
-where you are in the list and what's nearby — `[3/5]  agent  shell` and
-so on, with the current item bold.
-
 The pattern: **without Shift = within your workspace, with Shift =
 between workspaces.**
 

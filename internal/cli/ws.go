@@ -567,7 +567,7 @@ func wsGo(eng *engine.Engine, args []string, waiting, nextWaiting bool) error {
 
 	if nextWaiting {
 		currentWinID, _ := eng.Tmux.CurrentWindowID()
-		entry, idx := nav.NextWaiting(entries, currentWinID)
+		entry, _ := nav.NextWaiting(entries, currentWinID)
 		if entry == nil {
 			fmt.Println("No waiting workspaces in this dock.")
 			return nil
@@ -575,7 +575,6 @@ func wsGo(eng *engine.Engine, args []string, waiting, nextWaiting bool) error {
 		if err := eng.Tmux.SelectWindow(entry.TmuxWindowID); err != nil {
 			return err
 		}
-		flashWsCycle(eng, entries, idx)
 		return nil
 	}
 
@@ -651,7 +650,6 @@ func wsCycle(eng *engine.Engine, forward bool) error {
 	if err := eng.Tmux.SelectWindow(dockEntries[next].TmuxWindowID); err != nil {
 		return err
 	}
-	flashWsCycle(eng, dockEntries, next)
 	return nil
 }
 

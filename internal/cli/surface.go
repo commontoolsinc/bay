@@ -514,7 +514,7 @@ func surfaceGo(eng *engine.Engine, args []string, index int, nextWaiting bool) e
 	}
 
 	if nextWaiting {
-		target, idx := nav.NextWaitingSurface(entries)
+		target, _ := nav.NextWaitingSurface(entries)
 		if target == nil {
 			fmt.Println("No waiting surfaces in this workspace.")
 			return nil
@@ -522,7 +522,6 @@ func surfaceGo(eng *engine.Engine, args []string, index int, nextWaiting bool) e
 		if err := focusSurface(eng, target, dockName, wsName); err != nil {
 			return err
 		}
-		flashSurfaceCycle(eng, entries, idx)
 		return nil
 	}
 
@@ -577,16 +576,14 @@ func surfaceCycle(eng *engine.Engine, forward bool) error {
 	}
 
 	var target *nav.SurfaceEntry
-	var targetIdx int
 	if forward {
-		target, targetIdx = nav.NextSurface(entries)
+		target, _ = nav.NextSurface(entries)
 	} else {
-		target, targetIdx = nav.PrevSurface(entries)
+		target, _ = nav.PrevSurface(entries)
 	}
 	if err := focusSurface(eng, target, dockName, wsName); err != nil {
 		return err
 	}
-	flashSurfaceCycle(eng, entries, targetIdx)
 	return nil
 }
 
