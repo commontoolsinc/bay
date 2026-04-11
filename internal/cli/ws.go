@@ -110,9 +110,6 @@ func newWsNewCmd() *cobra.Command {
 				fmt.Printf("Workspace %s created in dock %s (path: %s)\n",
 					ws.Name, opts.Dock, ws.Path)
 				fmt.Printf("\nSwitch with:\n  tmux switch-client -t %s\n", opts.Dock)
-			} else {
-				// Already in the right dock — flash in status bar.
-				_ = eng.Tmux.DisplayMessage(fmt.Sprintf("Created workspace %s", ws.Name))
 			}
 
 			return nil

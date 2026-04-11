@@ -196,8 +196,9 @@ func (e *Engine) SurfaceAddGUI(dockName, wsName, name, appCommand string, pid in
 // when bay is invoked from inside the pane being closed, the user-visible
 // state is already correct by the time tmux SIGHUPs bay. See also
 // SurfaceRestart and the closeWorkspaceState helper for the same pattern.
-func (e *Engine) SurfaceClose(dockName, wsName, surfaceName string) error {
+func (e *Engine) SurfaceClose(dockName, wsName, surfaceName string, force bool) error {
 	var windowIDToKill, paneIDToKill string
+	wsEmpty := false
 
 	err := e.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)
@@ -227,6 +228,7 @@ func (e *Engine) SurfaceClose(dockName, wsName, surfaceName string) error {
 			return err
 		}
 		ws.LastActive = time.Now().Unix()
+		wsEmpty = len(ws.Surfaces) == 0
 		return nil
 	})
 	if err != nil {
@@ -241,6 +243,15 @@ func (e *Engine) SurfaceClose(dockName, wsName, surfaceName string) error {
 		_ = e.Tmux.KillWindow(windowIDToKill)
 	} else if paneIDToKill != "" {
 		_ = e.Tmux.KillPane(paneIDToKill)
+	}
+
+	// Auto-close the workspace if no surfaces remain. If the workspace
+	// has dirty/unpushed state, WsClose returns an error — surface is
+	// already gone, so just report the leftover workspace to the caller.
+	if wsEmpty {
+		if err := e.WsClose(dockName, wsName, force); err != nil {
+			return fmt.Errorf("surface closed, but workspace %q not removed: %w", wsName, err)
+		}
 	}
 	return nil
 }

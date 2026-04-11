@@ -66,7 +66,7 @@ func TestSurfaceClose_BumpsLastActive(t *testing.T) {
 	staleWorkspace(t, eng, "labs", "w1")
 	before := time.Now().Unix()
 
-	if err := eng.SurfaceClose("labs", "w1", "shell-2"); err != nil {
+	if err := eng.SurfaceClose("labs", "w1", "shell-2", false); err != nil {
 		t.Fatalf("SurfaceClose: %v", err)
 	}
 
