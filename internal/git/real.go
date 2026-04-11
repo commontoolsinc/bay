@@ -195,8 +195,18 @@ func (r *Real) IsMergedIntoDefault(path, branch string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	remoteDefault := "origin/" + defaultBranch
+	// A branch that has never been pushed to the remote is local-only
+	// and can't have been merged via a PR or remote merge. Without
+	// this check, a brand-new branch created from main (bay ws new
+	// --branch) is immediately detected as "merged" because
+	// merge-base --is-ancestor is trivially true when both refs
+	// point at the same commit (or after a fast-forward merge).
+	if _, err := revParse(path, "origin/"+branch); err != nil {
+		return false, nil // local-only branch → new, not merged
+	}
 	// Check if branch is an ancestor of the default branch.
-	cmd := exec.Command("git", "-C", path, "merge-base", "--is-ancestor", branch, "origin/"+defaultBranch)
+	cmd := exec.Command("git", "-C", path, "merge-base", "--is-ancestor", branch, remoteDefault)
 	err = cmd.Run()
 	if err == nil {
 		return true, nil // branch is merged
@@ -205,6 +215,15 @@ func (r *Real) IsMergedIntoDefault(path, branch string) (bool, error) {
 		return false, nil // not merged
 	}
 	return false, fmt.Errorf("git merge-base: %w", err)
+}
+
+func revParse(path, ref string) (string, error) {
+	cmd := exec.Command("git", "-C", path, "rev-parse", ref)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func (r *Real) DefaultBranch(repoPath string) (string, error) {
