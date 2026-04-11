@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/commontoolsinc/bay/internal/engine"
+	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/spf13/cobra"
 )
 
@@ -148,11 +149,11 @@ func newDockShowCmd() *cobra.Command {
 			idle, active, done := 0, 0, 0
 			for _, ws := range mDock.Workspaces {
 				switch ws.Status {
-				case "idle":
+				case manifest.WorkspaceStatusIdle:
 					idle++
-				case "active":
+				case manifest.WorkspaceStatusActive:
 					active++
-				case "done":
+				case manifest.WorkspaceStatusDone:
 					done++
 				}
 			}

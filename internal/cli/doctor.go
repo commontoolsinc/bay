@@ -231,7 +231,7 @@ func missingKeybindings(content string) []string {
 func tmuxKeybindingLines() []string {
 	var lines []string
 	for _, kb := range bayKeybindings {
-		lines = append(lines, fmt.Sprintf("bind-key -n %s %s '%s'", kb.key, kb.tmuxVerb, kb.cmd))
+		lines = append(lines, kb.canonicalLine())
 	}
 	return lines
 }

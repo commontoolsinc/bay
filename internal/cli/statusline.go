@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/spf13/cobra"
 )
 
@@ -61,7 +62,7 @@ Fields: name, branch, pr, status, dock, merged, full`,
 					if dock != nil {
 						count := 0
 						for _, w := range dock.Workspaces {
-							if w.Status == "done" {
+							if w.Status == manifest.WorkspaceStatusDone {
 								count++
 							}
 						}

@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"syscall"
+
+	"github.com/commontoolsinc/bay/internal/config"
 )
 
 // CurrentVersion is the manifest schema version.
@@ -36,6 +38,15 @@ const (
 	SurfaceTypeCmd    SurfaceType = "cmd"
 )
 
+// SyncStatus constants — workspace/surface sync health.
+type SyncStatus = string
+
+const (
+	SyncStatusOK      SyncStatus = "ok"
+	SyncStatusStale   SyncStatus = "stale"
+	SyncStatusMissing SyncStatus = "missing"
+)
+
 // SurfaceBackend constants — how bay interacts with a surface.
 const (
 	SurfaceBackendTmux SurfaceBackend = "tmux-pane"
@@ -57,9 +68,9 @@ type Repo struct {
 // EffectiveWorktreeDir returns the worktree directory, defaulting to {path}-worktrees.
 func (r Repo) EffectiveWorktreeDir() string {
 	if r.WorktreeDir != "" {
-		return expandPath(r.WorktreeDir)
+		return config.ExpandPath(r.WorktreeDir)
 	}
-	return expandPath(r.Path) + "-worktrees"
+	return config.ExpandPath(r.Path) + "-worktrees"
 }
 
 // Manifest is the top-level structure persisted as JSON.
@@ -570,18 +581,6 @@ func (s *Surface) Validate() []string {
 }
 
 // --- Private helpers ---
-
-// expandPath expands ~ to the user's home directory.
-func expandPath(path string) string {
-	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return path
-		}
-		return filepath.Join(home, path[2:])
-	}
-	return path
-}
 
 func lockFile(path string) (func(), error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)

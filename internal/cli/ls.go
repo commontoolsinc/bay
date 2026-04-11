@@ -6,6 +6,7 @@ import (
 
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/engine"
+	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/spf13/cobra"
 )
 
@@ -61,10 +62,10 @@ func newLsCmd() *cobra.Command {
 			for _, repo := range view.Repos {
 				for _, d := range repo.Docks {
 					for _, ws := range d.Workspaces {
-						if ws.SyncStatus == "stale" {
+						if ws.SyncStatus == manifest.SyncStatusStale {
 							hasStale = true
 						}
-						if ws.SyncStatus == "missing" {
+						if ws.SyncStatus == manifest.SyncStatusMissing {
 							hasMissing = true
 						}
 					}

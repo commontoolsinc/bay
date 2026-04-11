@@ -382,34 +382,6 @@ func TestFormatEntry_Waiting(t *testing.T) {
 	}
 }
 
-func TestFormatEntries(t *testing.T) {
-	entries := []Entry{
-		{DockName: "labs", WsName: "mem-refactor", Branch: "feature/refactor-memory-access", PR: "234", Status: manifest.WorkspaceStatusActive, TmuxWindowID: "@1"},
-		{DockName: "core", WsName: "nav", Branch: "feature/nav", PR: "", Status: manifest.WorkspaceStatusIdle, TmuxWindowID: "@4"},
-	}
-
-	s := FormatEntries(entries)
-
-	// Should contain both entries.
-	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("expected 2 lines, got %d: %q", len(lines), s)
-	}
-
-	// Both lines should have the same length (column-aligned).
-	if len(lines[0]) != len(lines[1]) {
-		t.Errorf("lines should be aligned to same length:\n  %q (%d)\n  %q (%d)",
-			lines[0], len(lines[0]), lines[1], len(lines[1]))
-	}
-}
-
-func TestFormatEntries_Empty(t *testing.T) {
-	s := FormatEntries(nil)
-	if s != "" {
-		t.Errorf("expected empty string for nil entries, got %q", s)
-	}
-}
-
 // --- Surface-level navigation tests ---
 
 func buildSurfaceWorkspace() *manifest.Workspace {

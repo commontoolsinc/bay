@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"os"
 	"strings"
+	"syscall"
 
+	"github.com/commontoolsinc/bay/internal/monitor"
 	"github.com/spf13/cobra"
 )
 
@@ -22,12 +25,18 @@ const noMonitorAutostartAnnotation = "bay-no-monitor-autostart"
 var ensureMonitorFn = ensureMonitor
 
 func ensureMonitor() {
+	p := bayPaths()
+	pid, err := monitor.ReadPIDFile(p.PIDFile)
+	if err == nil {
+		proc, err := os.FindProcess(pid)
+		if err == nil && proc.Signal(syscall.Signal(0)) == nil {
+			return // already running
+		}
+	}
+	// Not running — start it. Need a full monitor for Start() which
+	// forks `bay monitor run`.
 	mon, err := newMonitorWithConfig()
 	if err != nil {
-		return
-	}
-	running, _, _ := mon.Status()
-	if running {
 		return
 	}
 	_ = mon.Start()

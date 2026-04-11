@@ -126,16 +126,10 @@ With a positional argument, sets the editor command in the config.
 }
 
 // runConfigEditorSet loads the config at configPath, updates the
-// editor command, and saves. Used by `bay config editor <name>`.
-// Replaces the old `bay edit --set` flag.
+// editor command, and saves. Seeds a DefaultConfig on fresh installs.
 //
-// On a fresh install where the config file doesn't exist yet, this
-// seeds the file from DefaultConfig + the user's editor choice and
-// creates the parent directory if needed.
-//
-// Uses errors.Is(err, os.ErrNotExist) rather than os.IsNotExist —
-// the latter doesn't unwrap fmt.Errorf wraps and so silently fails to
-// detect the missing-file case after config.Load wraps its error.
+// Uses errors.Is because config.Load wraps its errors with fmt.Errorf,
+// and os.IsNotExist doesn't unwrap.
 func runConfigEditorSet(configPath, name string) error {
 	cfg, err := config.Load(configPath)
 	if err != nil {
