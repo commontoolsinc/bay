@@ -96,8 +96,7 @@ bay ws go                   # pick a workspace
 ```
 
 Or use keybindings: Option+j/k to cycle surfaces, Option+Shift+J/K to cycle
-workspaces. Cycling flashes a brief position indicator showing where you
-are in the list and what's nearby.
+workspaces.
 
 ### Check on things
 

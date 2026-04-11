@@ -215,69 +215,6 @@ func TestSurfaceCycle_Backward(t *testing.T) {
 	}
 }
 
-func TestSurfaceCycle_FlashesMessage(t *testing.T) {
-	eng, mockTmux, _, _ := testNavEngine(t)
-
-	ws, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
-	if err != nil {
-		t.Fatalf("WsNew: %v", err)
-	}
-	os.MkdirAll(ws.Path, 0o755)
-	eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"})
-	ws, _ = eng.WsShow("labs", "w1")
-
-	// Workspace defaults to surface name "shell" then "shell-2".
-	mockTmux.SetCurrentWindowID(ws.Surfaces[0].Tmux.WindowID)
-	mockTmux.SetCurrentPaneID(ws.Surfaces[0].Tmux.PaneID)
-
-	mockTmux.Calls = nil
-	if err := surfaceCycle(eng, true); err != nil {
-		t.Fatalf("surfaceCycle: %v", err)
-	}
-
-	msgs := mockTmux.DisplayMessages()
-	if len(msgs) != 1 {
-		t.Fatalf("expected 1 DisplayMessage call, got %d", len(msgs))
-	}
-	want := "[2/2]  " + ws.Surfaces[0].Name + "  #[bold]" + ws.Surfaces[1].Name + "#[default]"
-	if msgs[0] != want {
-		t.Errorf("flash message = %q, want %q", msgs[0], want)
-	}
-}
-
-func TestSurfaceGo_NextWaitingFlashesMessage(t *testing.T) {
-	eng, mockTmux, _, _ := testNavEngine(t)
-
-	ws, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
-	if err != nil {
-		t.Fatalf("WsNew: %v", err)
-	}
-	os.MkdirAll(ws.Path, 0o755)
-	eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"})
-	ws, _ = eng.WsShow("labs", "w1")
-
-	// Mark the second surface's window as waiting.
-	mockTmux.SetWindowOption(ws.Surfaces[1].Tmux.WindowID, "@bay-waiting", "1")
-
-	// Current = first surface; --next-waiting should jump to the second.
-	mockTmux.SetCurrentWindowID(ws.Surfaces[0].Tmux.WindowID)
-	mockTmux.SetCurrentPaneID(ws.Surfaces[0].Tmux.PaneID)
-
-	mockTmux.Calls = nil
-	if err := surfaceGo(eng, nil, 0, true); err != nil {
-		t.Fatalf("surfaceGo next-waiting: %v", err)
-	}
-
-	msgs := mockTmux.DisplayMessages()
-	if len(msgs) != 1 {
-		t.Fatalf("expected 1 DisplayMessage call, got %d", len(msgs))
-	}
-	want := "[2/2]  " + ws.Surfaces[0].Name + "  #[bold]" + ws.Surfaces[1].Name + "#[default]"
-	if msgs[0] != want {
-		t.Errorf("flash message = %q, want %q", msgs[0], want)
-	}
-}
-
 func TestSurfaceCycle_NoFlashOnSingleSurface(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 
@@ -467,61 +404,6 @@ func TestWsCycle_Backward(t *testing.T) {
 	}
 	if !foundSelect {
 		t.Error("expected SelectWindow for first workspace")
-	}
-}
-
-func TestWsCycle_FlashesMessage(t *testing.T) {
-	eng, mockTmux, _, _ := testNavEngine(t)
-
-	eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1"})
-	eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w2"})
-
-	ws1, _ := eng.WsShow("labs", "w1")
-	mockTmux.SetCurrentSession("labs")
-	mockTmux.SetCurrentWindowID(ws1.Surfaces[0].Tmux.WindowID)
-
-	mockTmux.Calls = nil
-	if err := wsCycle(eng, true); err != nil {
-		t.Fatalf("wsCycle: %v", err)
-	}
-
-	msgs := mockTmux.DisplayMessages()
-	if len(msgs) != 1 {
-		t.Fatalf("expected 1 DisplayMessage call, got %d", len(msgs))
-	}
-	want := "[2/2]  w1  #[bold]w2#[default]"
-	if msgs[0] != want {
-		t.Errorf("flash message = %q, want %q", msgs[0], want)
-	}
-}
-
-func TestWsGo_NextWaitingFlashesMessage(t *testing.T) {
-	eng, mockTmux, _, _ := testNavEngine(t)
-
-	eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1"})
-	eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w2"})
-
-	ws1, _ := eng.WsShow("labs", "w1")
-	ws2, _ := eng.WsShow("labs", "w2")
-
-	// Mark w2's window as waiting.
-	mockTmux.SetWindowOption(ws2.Surfaces[0].Tmux.WindowID, "@bay-waiting", "1")
-
-	mockTmux.SetCurrentSession("labs")
-	mockTmux.SetCurrentWindowID(ws1.Surfaces[0].Tmux.WindowID)
-
-	mockTmux.Calls = nil
-	if err := wsGo(eng, nil, false, true); err != nil {
-		t.Fatalf("wsGo next-waiting: %v", err)
-	}
-
-	msgs := mockTmux.DisplayMessages()
-	if len(msgs) != 1 {
-		t.Fatalf("expected 1 DisplayMessage call, got %d", len(msgs))
-	}
-	want := "[2/2]  w1  #[bold]w2#[default]"
-	if msgs[0] != want {
-		t.Errorf("flash message = %q, want %q", msgs[0], want)
 	}
 }
 
