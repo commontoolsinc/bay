@@ -178,7 +178,7 @@ A **workspace** is a working directory with metadata. Two types:
 
 Each workspace gets a display **name** that defaults to the
 auto-abbreviated branch name (`feature/refactor-memory` becomes
-`refactor-memory`). You can rename it with `bay ws rename`.
+`refactor-memory`). You can rename it with `bay rename` (or `bay ws rename`).
 
 ### Surfaces
 
@@ -367,7 +367,7 @@ bay ws close --done                         # close all done workspaces
 bay ws close --done --force                 # force close all done
 bay ws show [name]                          # detailed view (default: current)
 bay ws show [name] --json                   # machine-readable
-bay ws rename <name> <new-name>             # permanent rename ('self' for current)
+bay ws rename [name] <new-name>             # rename (defaults to current workspace)
 bay ws tree                                 # tree of current dock
 bay ws go [query]                           # workspace picker (intra-dock)
 bay ws go --waiting                         # filter to waiting workspaces
@@ -390,7 +390,7 @@ bay surface close <name>                    # close a surface ('self' for curren
 bay surface close <name> --force            # skip the agent confirmation prompt
 bay surface restart [name]                  # restart a surface (defaults to current)
 bay surface show [name]                     # show details (defaults to current)
-bay surface rename <old> <new>              # rename ('self' as <old> targets current)
+bay surface rename [old] <new>              # rename (defaults to current surface)
 bay surface go [query]                      # surface picker (intra-workspace)
 bay surface go --index <n>                  # jump to surface by index (no keybinding)
 bay surface go --next-waiting               # next waiting surface
@@ -414,7 +414,7 @@ bay new cmd "<command>" [name]  # bay surface new --cmd <command>
 bay new edit [workspace]        # alias for bay edit
 bay close <name>                # alias for bay surface close (prompts on agents)
 bay show [name]                 # alias for bay surface show (defaults to current)
-bay rename <old> <new>          # alias for bay surface rename
+bay rename [name] <new-name>    # rename workspace (defaults to current)
 bay go [query]                  # alias for bay surface go (intra-workspace)
 bay go --index <n>              # jump to surface by index (no keybinding)
 bay go --next-waiting           # next waiting surface
@@ -469,6 +469,7 @@ bay dock new <name> --repo <r> --agent <a>  # with default agent
 bay dock new <name> --terminal <t>          # with host terminal
 bay dock ls                                 # list docks (scoped if inside one)
 bay dock show <name>                        # detailed dock info
+bay dock rename [old] <new>                 # rename (defaults to current dock)
 bay dock close <name>                       # close all workspaces + kill session
 bay dock close <name> --force               # skip safety checks
 bay dock recover <name>                     # recover a single dock
@@ -501,7 +502,7 @@ bay version                                 # show version + commit
 
 ## Keybindings
 
-Bay installs 10 tmux keybindings, all using the Option (Meta) key. No
+Bay installs 11 tmux keybindings, all using the Option (Meta) key. No
 tmux prefix required -- just press the key combo directly.
 
 ### Surface navigation (intra-workspace)
@@ -522,12 +523,18 @@ tmux prefix required -- just press the key combo directly.
 | `Option+Shift+g` | Workspace picker (interactive popup) |
 | `Option+Shift+a` | Next waiting workspace |
 
+### Creation
+
+| Key | Action |
+|-----|--------|
+| `Option+c` | Create workspace in current dock |
+| `Option+s` | Split a shell pane |
+
 ### Utility
 
 | Key | Action |
 |-----|--------|
 | `Option+w` | Close current pane/surface |
-| `Option+s` | Split a shell pane |
 
 ### Pattern
 
@@ -834,3 +841,16 @@ restart and recovery.
 **"How do I see my editor in bay go?"**
 Use `bay edit` to open it. This creates a tracked editor surface. If you
 opened the editor outside bay, it won't appear in navigation.
+
+## Appendix: abbreviations
+
+| Short | Long |
+|-------|------|
+| `sf` | `surface` |
+| `ws` | `workspace` |
+| `ls` | `list` |
+| `mv` | `rename` |
+| `rm` | `close` |
+| `cat` | `show` |
+
+These work everywhere: `bay sf ls`, `bay ws mv`, `bay dock rm`, etc.
