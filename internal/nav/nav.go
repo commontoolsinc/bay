@@ -41,6 +41,10 @@ func CollectEntries(m *manifest.Manifest, tc tmux.Interface) []Entry {
 			continue
 		}
 
+		// Batch: get all waiting windows for this dock in one tmux
+		// call instead of one GetWindowOption per surface.
+		waitingWindows, _ := tc.WaitingWindowIDs(dockName)
+
 		for i := range dock.Workspaces {
 			ws := &dock.Workspaces[i]
 
@@ -51,7 +55,6 @@ func CollectEntries(m *manifest.Manifest, tc tmux.Interface) []Entry {
 				pr = ws.Worktree.PR
 			}
 
-			// Find the first tmux window ID and check waiting status.
 			var tmuxWindowID string
 			waiting := false
 			for _, s := range ws.Surfaces {
@@ -59,8 +62,7 @@ func CollectEntries(m *manifest.Manifest, tc tmux.Interface) []Entry {
 					if tmuxWindowID == "" {
 						tmuxWindowID = s.Tmux.WindowID
 					}
-					val, err := tc.GetWindowOption(s.Tmux.WindowID, "@bay-waiting")
-					if err == nil && val == "1" {
+					if waitingWindows[s.Tmux.WindowID] {
 						waiting = true
 					}
 				}
@@ -173,7 +175,9 @@ type SurfaceEntry struct {
 }
 
 // CollectSurfaces builds a list of surface entries for a workspace.
-func CollectSurfaces(ws *manifest.Workspace, tc tmux.Interface, currentPaneID string) []SurfaceEntry {
+// waitingWindows is a pre-computed set of window IDs with @bay-waiting=1,
+// obtained from a single tc.WaitingWindowIDs call by the caller.
+func CollectSurfaces(ws *manifest.Workspace, currentPaneID string, waitingWindows map[string]bool) []SurfaceEntry {
 	var entries []SurfaceEntry
 	for _, s := range ws.Surfaces {
 		e := SurfaceEntry{
@@ -187,11 +191,8 @@ func CollectSurfaces(ws *manifest.Workspace, tc tmux.Interface, currentPaneID st
 			if e.PaneID == currentPaneID && currentPaneID != "" {
 				e.Current = true
 			}
-			if e.WindowID != "" {
-				val, err := tc.GetWindowOption(e.WindowID, "@bay-waiting")
-				if err == nil && val == "1" {
-					e.Waiting = true
-				}
+			if waitingWindows[e.WindowID] {
+				e.Waiting = true
 			}
 		}
 		if s.GUI != nil {

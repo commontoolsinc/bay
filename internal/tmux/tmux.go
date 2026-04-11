@@ -40,6 +40,9 @@ type Interface interface {
 	CurrentWindowID() (string, error)
 	CurrentPaneID() (string, error)
 
+	// Batch queries
+	WaitingWindowIDs(session string) (map[string]bool, error) // windows with @bay-waiting=1
+
 	// Client display
 	DisplayMessage(msg string) error
 	ClientWidth() (int, error)

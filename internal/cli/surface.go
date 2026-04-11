@@ -503,7 +503,8 @@ func surfaceGo(eng *engine.Engine, args []string, index int, nextWaiting bool) e
 	}
 
 	currentPaneID, _ := eng.Tmux.CurrentPaneID()
-	entries := nav.CollectSurfaces(ws, eng.Tmux, currentPaneID)
+	waitingWindows, _ := eng.Tmux.WaitingWindowIDs(dockName)
+	entries := nav.CollectSurfaces(ws, currentPaneID, waitingWindows)
 
 	if len(entries) == 0 {
 		fmt.Println("No surfaces in this workspace.")
@@ -566,7 +567,8 @@ func surfaceCycle(eng *engine.Engine, forward bool) error {
 	}
 
 	currentPaneID, _ := eng.Tmux.CurrentPaneID()
-	entries := nav.CollectSurfaces(ws, eng.Tmux, currentPaneID)
+	waitingWindows, _ := eng.Tmux.WaitingWindowIDs(dockName)
+	entries := nav.CollectSurfaces(ws, currentPaneID, waitingWindows)
 
 	if len(entries) < 2 {
 		return nil

@@ -257,6 +257,22 @@ func (m *Mock) GetWindowOption(windowID string, option string) (string, error) {
 	return val, nil
 }
 
+func (m *Mock) WaitingWindowIDs(session string) (map[string]bool, error) {
+	m.record("WaitingWindowIDs", session)
+	if !m.sessions[session] {
+		return nil, fmt.Errorf("session %q not found", session)
+	}
+	result := make(map[string]bool)
+	for id, w := range m.windows {
+		if w.session == session {
+			if val, ok := w.options["@bay-waiting"]; ok && val == "1" {
+				result[id] = true
+			}
+		}
+	}
+	return result, nil
+}
+
 func (m *Mock) ListWindows(session string) ([]Window, error) {
 	m.record("ListWindows", session)
 	if !m.sessions[session] {
