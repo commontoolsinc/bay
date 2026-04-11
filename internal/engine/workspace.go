@@ -687,10 +687,9 @@ func (e *Engine) updateWindowNames(ws *manifest.Workspace, wsName string) {
 	seen := map[string]bool{}
 	for _, s := range ws.Surfaces {
 		if s.Tmux != nil && s.Tmux.WindowID != "" && !seen[s.Tmux.WindowID] {
-			if s.Tmux.LayoutGroup == 1 {
+			if s.Tmux.LayoutGroup <= 1 {
 				_ = e.Tmux.RenameWindow(s.Tmux.WindowID, wsName)
-			} else {
-				surfName := firstInGroup[s.Tmux.LayoutGroup]
+			} else if surfName := firstInGroup[s.Tmux.LayoutGroup]; surfName != "" {
 				_ = e.Tmux.RenameWindow(s.Tmux.WindowID, ":"+surfName)
 			}
 			seen[s.Tmux.WindowID] = true

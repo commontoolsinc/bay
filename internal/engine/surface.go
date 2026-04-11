@@ -369,8 +369,11 @@ func (e *Engine) SurfaceRename(dockName, wsName, oldName, newName string) error 
 		s.Name = newName
 		ws.LastActive = time.Now().Unix()
 
-		// Update tmux window names so secondary tabs reflect the rename.
-		e.updateWindowNames(ws, ws.Name)
+		// Update tmux window names if this surface could be a tab owner
+		// (i.e. it lives in a secondary layout group).
+		if s.Tmux != nil && s.Tmux.LayoutGroup > 1 {
+			e.updateWindowNames(ws, ws.Name)
+		}
 		return nil
 	})
 }
