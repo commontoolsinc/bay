@@ -158,7 +158,7 @@ func TestSurfaceCycle_Forward(t *testing.T) {
 	}
 	os.MkdirAll(ws.Path, 0o755)
 	// Add a second surface.
-	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell-2", "", "", "v")
+	eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"})
 
 	ws, _ = eng.WsShow("labs", "w1")
 
@@ -191,7 +191,7 @@ func TestSurfaceCycle_Backward(t *testing.T) {
 		t.Fatalf("WsNew: %v", err)
 	}
 	os.MkdirAll(ws.Path, 0o755)
-	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell-2", "", "", "v")
+	eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"})
 
 	ws, _ = eng.WsShow("labs", "w1")
 
@@ -223,7 +223,7 @@ func TestSurfaceCycle_FlashesMessage(t *testing.T) {
 		t.Fatalf("WsNew: %v", err)
 	}
 	os.MkdirAll(ws.Path, 0o755)
-	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell-2", "", "", "v")
+	eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"})
 	ws, _ = eng.WsShow("labs", "w1")
 
 	// Workspace defaults to surface name "shell" then "shell-2".
@@ -253,7 +253,7 @@ func TestSurfaceGo_NextWaitingFlashesMessage(t *testing.T) {
 		t.Fatalf("WsNew: %v", err)
 	}
 	os.MkdirAll(ws.Path, 0o755)
-	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell-2", "", "", "v")
+	eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"})
 	ws, _ = eng.WsShow("labs", "w1")
 
 	// Mark the second surface's window as waiting.
@@ -308,7 +308,7 @@ func TestSurfaceGo_QueryFilter(t *testing.T) {
 
 	ws, _ := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
 	os.MkdirAll(ws.Path, 0o755)
-	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeAgent, "agent", "claude", "", "v")
+	eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"})
 	ws, _ = eng.WsShow("labs", "w1")
 
 	mockTmux.SetCurrentWindowID(ws.Surfaces[0].Tmux.WindowID)
@@ -336,7 +336,7 @@ func TestSurfaceGo_IndexJump(t *testing.T) {
 
 	ws, _ := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
 	os.MkdirAll(ws.Path, 0o755)
-	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeAgent, "agent", "claude", "", "v")
+	eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"})
 	ws, _ = eng.WsShow("labs", "w1")
 
 	mockTmux.SetCurrentWindowID(ws.Surfaces[0].Tmux.WindowID)

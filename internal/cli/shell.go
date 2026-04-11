@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"github.com/commontoolsinc/bay/internal/engine"
 	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/spf13/cobra"
 )
@@ -40,7 +41,13 @@ shell's display name; --ws/--dock select the target workspace.
 				return err
 			}
 
-			return eng.SurfaceAdd(dockName, wsName, manifest.SurfaceTypeShell, surfaceName, "", "", surfaceSplitDir(splitDir, window))
+			return eng.SurfaceAdd(engine.SurfaceAddOptions{
+				DockName: dockName,
+				WsName:   wsName,
+				Type:     manifest.SurfaceTypeShell,
+				Name:     surfaceName,
+				SplitDir: surfaceSplitDir(splitDir, window),
+			})
 		},
 	}
 

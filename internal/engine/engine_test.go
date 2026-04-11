@@ -442,7 +442,7 @@ func TestSurfaceAdd_PersistsTmuxPaneID(t *testing.T) {
 		t.Fatalf("WsNew failed: %v", err)
 	}
 
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeAgent, "agent", "codex", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "codex", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd failed: %v", err)
 	}
 
@@ -465,7 +465,7 @@ func TestSurfaceAdd_UnknownAgentFailsWithoutPersistingSurface(t *testing.T) {
 		t.Fatalf("WsNew failed: %v", err)
 	}
 
-	err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeAgent, "agent", "ghostwriter", "", "v")
+	err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "ghostwriter", SplitDir: "v"})
 	if err == nil || !strings.Contains(err.Error(), `unknown agent "ghostwriter"`) {
 		t.Fatalf("SurfaceAdd error = %v, want unknown agent", err)
 	}
@@ -485,7 +485,7 @@ func TestSurfaceAdd_PrefersCurrentPaneAsSplitParent(t *testing.T) {
 	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell-2", "", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd shell-2 failed: %v", err)
 	}
 
@@ -496,7 +496,7 @@ func TestSurfaceAdd_PrefersCurrentPaneAsSplitParent(t *testing.T) {
 	mockTmux := eng.Tmux.(*tmux.Mock)
 	mockTmux.SetCurrentPaneID(ws.Surfaces[0].Tmux.PaneID)
 
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell-3", "", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-3", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd shell-3 failed: %v", err)
 	}
 
@@ -519,7 +519,7 @@ func TestSurfaceAdd_FallsBackToLastFocusedSurface(t *testing.T) {
 	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell-2", "", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd shell-2 failed: %v", err)
 	}
 
@@ -531,7 +531,7 @@ func TestSurfaceAdd_FallsBackToLastFocusedSurface(t *testing.T) {
 		t.Fatalf("SetLastFocused failed: %v", err)
 	}
 
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell-3", "", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-3", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd shell-3 failed: %v", err)
 	}
 
@@ -782,7 +782,7 @@ func TestSurfaceAdd_NewLayoutGroup(t *testing.T) {
 	}
 
 	// Add a new surface with empty splitDir = new tmux window / layout group
-	err = eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell", "", "", "")
+	err = eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell"})
 	if err != nil {
 		t.Fatalf("SurfaceAdd failed: %v", err)
 	}
@@ -809,7 +809,7 @@ func TestSurfaceClose(t *testing.T) {
 	}
 
 	// Open second surface in new layout group
-	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell", "", "", "")
+	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell"})
 
 	// Close the second surface
 	err = eng.SurfaceClose("labs", "w1", "shell", false)
@@ -861,7 +861,7 @@ func TestSurfaceClose_PersistsManifestBeforeKill(t *testing.T) {
 	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell-2", "", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 
@@ -1097,7 +1097,7 @@ func TestSurfaceAdd_Split(t *testing.T) {
 		t.Fatalf("WsNew failed: %v", err)
 	}
 
-	err = eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell", "", "", "h")
+	err = eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell", SplitDir: "h"})
 	if err != nil {
 		t.Fatalf("SurfaceAdd failed: %v", err)
 	}
@@ -1488,7 +1488,7 @@ func TestCmdSurfacePersistsCommand(t *testing.T) {
 	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 
 	// Add a cmd surface in a new layout group
-	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeCmd, "tail", "", "tail -f /var/log/syslog", "")
+	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeCmd, Name: "tail", Command: "tail -f /var/log/syslog"})
 
 	ws, _ := eng.WsShow("labs", "w1")
 	if len(ws.Surfaces) < 2 {
@@ -1507,7 +1507,7 @@ func TestSurfaceAddPersistsCommand(t *testing.T) {
 	eng, _ := testEngine(t)
 	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 
-	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeCmd, "watch", "", "watch df -h", "h")
+	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeCmd, Name: "watch", Command: "watch df -h", SplitDir: "h"})
 
 	ws, _ := eng.WsShow("labs", "w1")
 	s := ws.Surfaces[1]
@@ -1521,7 +1521,7 @@ func TestRecoverCmdSurface(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
-	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeCmd, "htop", "", "htop", "")
+	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeCmd, Name: "htop", Command: "htop"})
 
 	ws, _ := eng.WsShow("labs", "w1")
 	os.MkdirAll(ws.Path, 0o755)
@@ -1566,7 +1566,7 @@ func TestRecoverReconcilesSurfacesInExistingWindow(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
-	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell", "", "", "h")
+	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell", SplitDir: "h"})
 
 	ws, _ := eng.WsShow("labs", "w1")
 	os.MkdirAll(ws.Path, 0o755)
@@ -1602,7 +1602,7 @@ func TestRecover_UsesRecordedSplitParentAsSplitTarget(t *testing.T) {
 	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell-2", "", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd shell-2 failed: %v", err)
 	}
 
@@ -1615,7 +1615,7 @@ func TestRecover_UsesRecordedSplitParentAsSplitTarget(t *testing.T) {
 	if err := eng.SetLastFocused("labs", "w1", ws.Surfaces[1].ID); err != nil {
 		t.Fatalf("SetLastFocused failed: %v", err)
 	}
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell-3", "", "", "h"); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-3", SplitDir: "h"}); err != nil {
 		t.Fatalf("SurfaceAdd shell-3 failed: %v", err)
 	}
 
@@ -2191,7 +2191,7 @@ func TestSetLastFocused(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
-	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell-2", "", "", "v")
+	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"})
 	ws, _ := eng.WsShow("labs", "w1")
 
 	// Set last focused to second surface.
@@ -2379,7 +2379,7 @@ func TestCurrentContext(t *testing.T) {
 		t.Fatalf("WsNew failed: %v", err)
 	}
 	os.MkdirAll(ws.Path, 0o755)
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeAgent, "agent", "codex", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "codex", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd failed: %v", err)
 	}
 	ws, err = eng.WsShow("labs", "w1")
@@ -2456,7 +2456,7 @@ func TestSyncAll_RemovesStaleSurfaces(t *testing.T) {
 	}
 
 	// Add a second surface in a new layout group
-	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell", "", "", "")
+	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell"})
 	ws, _ := eng.WsShow("labs", "w1")
 	if len(ws.Surfaces) != 2 {
 		t.Fatalf("expected 2 surfaces, got %d", len(ws.Surfaces))
@@ -2515,7 +2515,7 @@ func TestSyncAll_RemovesDeadPaneSurface(t *testing.T) {
 	}
 
 	// Add a split pane in the same layout group
-	eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell", "", "", "h")
+	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell", SplitDir: "h"})
 	ws, _ := eng.WsShow("labs", "w1")
 	if len(ws.Surfaces) != 2 {
 		t.Fatalf("expected 2 surfaces, got %d", len(ws.Surfaces))
@@ -2929,7 +2929,7 @@ func TestRecover_FindWindowByNameRefreshesSurfaceIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeAgent, "agent", "codex", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "codex", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd failed: %v", err)
 	}
 	if err := os.MkdirAll(ws.Path, 0o755); err != nil {

@@ -683,18 +683,15 @@ func TestCheckOnce_DetectsPR(t *testing.T) {
 
 	mon := NewWithGit(mock, mockGit, manifestPath, patternsPath, pidPath, 1)
 
-	// Run enough cycles to trigger PR check (prCheckInterval).
-	for i := 0; i < PRCheckCycles+1; i++ {
-		mon.CheckOnce()
+	// Call detectPRs directly — CheckOnce no longer invokes it (SyncAll
+	// handles PR detection at the engine layer).
+	changed := mon.detectPRs(m)
+	if !changed {
+		t.Fatal("detectPRs returned false, want true")
 	}
 
-	// Reload manifest and verify PR was cached.
-	updated, err := manifest.Load(manifestPath)
-	if err != nil {
-		t.Fatalf("loading manifest: %v", err)
-	}
-	dock := updated.FindDock("dev")
-	ws := dock.FindWorkspace("test-ws")
+	// Verify PR was cached in the manifest struct.
+	ws := m.FindDock("dev").FindWorkspace("test-ws")
 	if ws.Worktree.PR != "99" {
 		t.Errorf("PR = %q, want 99", ws.Worktree.PR)
 	}
@@ -732,28 +729,23 @@ func TestCheckOnce_PRCheckedAtPreventsRecheckWithinTTL(t *testing.T) {
 
 	mon := NewWithGit(mock, mockGit, manifestPath, patternsPath, pidPath, 1)
 
-	// First PR-check cycle — mock returns "" (no PR).
-	for i := 0; i < PRCheckCycles+1; i++ {
-		mon.CheckOnce()
-	}
+	// First detectPRs call — mock returns "" (no PR).
+	mon.detectPRs(m)
 	firstCallCount := len(mockGit.Calls("PRForBranch"))
 	if firstCallCount != 1 {
-		t.Fatalf("expected 1 PRForBranch call after first cycle, got %d", firstCallCount)
+		t.Fatalf("expected 1 PRForBranch call after first detectPRs, got %d", firstCallCount)
 	}
 
 	// Verify PRCheckedAt sentinel was set.
-	updated, _ := manifest.Load(manifestPath)
-	ws := updated.FindDock("dev").FindWorkspace("test-ws")
+	ws := m.FindDock("dev").FindWorkspace("test-ws")
 	if ws.Worktree.PRCheckedAt == 0 {
 		t.Error("PRCheckedAt should be set after first definitive 'no PR' answer")
 	}
 
-	// Run many more cycles — mock should NOT be called again.
-	for i := 0; i < PRCheckCycles*3; i++ {
-		mon.CheckOnce()
-	}
+	// Call detectPRs again — NeedsPRCheck should gate it (TTL not expired).
+	mon.detectPRs(m)
 	if secondCount := len(mockGit.Calls("PRForBranch")); secondCount != firstCallCount {
-		t.Errorf("expected PRForBranch call count to stay at %d, got %d after additional cycles", firstCallCount, secondCount)
+		t.Errorf("expected PRForBranch call count to stay at %d, got %d after second detectPRs", firstCallCount, secondCount)
 	}
 }
 
@@ -785,16 +777,14 @@ func TestCheckOnce_SkipsPRDetectionForWorkspaceWithNoPath(t *testing.T) {
 
 	mon := NewWithGit(mock, mockGit, manifestPath, patternsPath, pidPath, 1)
 
-	for i := 0; i < PRCheckCycles+1; i++ {
-		if err := mon.CheckOnce(); err != nil {
-			t.Fatalf("CheckOnce: %v", err)
-		}
+	// Call detectPRs directly — workspace has no Path so should be skipped.
+	changed := mon.detectPRs(m)
+	if changed {
+		t.Error("detectPRs returned true for workspace with no path")
 	}
 
 	// PR should remain empty — workspace was skipped.
-	updated, _ := manifest.Load(manifestPath)
-	dock := updated.FindDock("dev")
-	ws := dock.FindWorkspace("test-ws")
+	ws := m.FindDock("dev").FindWorkspace("test-ws")
 	if ws.Worktree.PR != "" {
 		t.Errorf("PR = %q, want empty", ws.Worktree.PR)
 	}

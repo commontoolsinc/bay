@@ -60,7 +60,7 @@ func TestRunSurfaceClose_NonAgentSkipsPrompt(t *testing.T) {
 	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "extra", "", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "extra", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 
@@ -87,7 +87,7 @@ func TestRunSurfaceClose_DeclinedKeepsAgentSurface(t *testing.T) {
 	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeAgent, "claude", "claude", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "claude", Agent: "claude", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 
@@ -118,7 +118,7 @@ func TestRunSurfaceClose_ConfirmedClosesAgentSurface(t *testing.T) {
 	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeAgent, "claude", "claude", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "claude", Agent: "claude", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 
@@ -148,7 +148,7 @@ func TestRunSurfaceClose_ForceSkipsConfirmEntirely(t *testing.T) {
 	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeAgent, "claude", "claude", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "claude", Agent: "claude", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 

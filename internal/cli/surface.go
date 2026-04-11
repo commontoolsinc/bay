@@ -151,7 +151,15 @@ func runSurfaceNew(eng *engine.Engine, dockName, wsName string, opts surfaceNewO
 			name = "shell"
 		}
 	}
-	return eng.SurfaceAdd(dockName, wsName, opts.Type, name, opts.Agent, opts.Command, opts.SplitDir)
+	return eng.SurfaceAdd(engine.SurfaceAddOptions{
+		DockName: dockName,
+		WsName:   wsName,
+		Type:     opts.Type,
+		Name:     name,
+		Agent:    opts.Agent,
+		Command:  opts.Command,
+		SplitDir: opts.SplitDir,
+	})
 }
 
 func newSurfaceCloseCmd() *cobra.Command {

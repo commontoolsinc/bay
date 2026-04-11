@@ -215,7 +215,7 @@ func TestRunSurfaceClose_ByName(t *testing.T) {
 	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeAgent, "agent", "claude", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 
@@ -301,7 +301,7 @@ func TestRunSurfaceClose_Self(t *testing.T) {
 func TestRunSurfaceClose_LiteralSelfWins(t *testing.T) {
 	eng := selfFixture(t)
 	// Add a literal surface named "self" — bay close self should target it.
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "self", "", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "self", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd self: %v", err)
 	}
 
@@ -361,7 +361,7 @@ func TestRunSurfaceRestart_Self(t *testing.T) {
 
 func TestRunSurfaceRestart_LiteralSelfWins(t *testing.T) {
 	eng := selfFixture(t)
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "self", "", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "self", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd self: %v", err)
 	}
 	mockTmux := mockTmuxFromEngine(t, eng)
@@ -447,7 +447,7 @@ func TestRunSurfaceShow_FoundAndNotFound(t *testing.T) {
 	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeAgent, "agent", "claude", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 
@@ -470,7 +470,7 @@ func TestRunSurfaceRename(t *testing.T) {
 	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeAgent, "agent", "claude", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 

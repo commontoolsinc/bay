@@ -46,7 +46,7 @@ func TestSurfaceAdd_BumpsLastActive(t *testing.T) {
 	staleWorkspace(t, eng, "labs", "w1")
 	before := time.Now().Unix()
 
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell-2", "", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 
@@ -60,7 +60,7 @@ func TestSurfaceClose_BumpsLastActive(t *testing.T) {
 	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
-	if err := eng.SurfaceAdd("labs", "w1", manifest.SurfaceTypeShell, "shell-2", "", "", "v"); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 	staleWorkspace(t, eng, "labs", "w1")

@@ -684,18 +684,22 @@ func (e *Engine) updateWindowNames(ws *manifest.Workspace, name string) {
 // that this workspace is in active use, so its repo gets fetched on the next
 // merge-detection cycle.
 func (e *Engine) SetLastFocused(dockName, wsName string, surfaceID int) error {
-	return e.withManifest(func(m *manifest.Manifest) error {
+	return e.withManifestMaybe(func(m *manifest.Manifest) (bool, error) {
 		dock := m.FindDock(dockName)
 		if dock == nil {
-			return fmt.Errorf("unknown dock %q", dockName)
+			return false, fmt.Errorf("unknown dock %q", dockName)
 		}
 		ws := dock.FindWorkspace(wsName)
 		if ws == nil {
-			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
+			return false, fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
+		}
+		now := time.Now().Unix()
+		if ws.LastFocused == surfaceID && ws.LastActive == now {
+			return false, nil // no change
 		}
 		ws.LastFocused = surfaceID
-		ws.LastActive = time.Now().Unix()
-		return nil
+		ws.LastActive = now
+		return true, nil
 	})
 }
 

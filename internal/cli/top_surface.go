@@ -43,26 +43,31 @@ func newTopNewCmd() *cobra.Command {
 	return cmd
 }
 
-func newTopNewShellCmd() *cobra.Command {
+// topNewCmdSpec describes the differences between the shell/agent/cmd
+// subcommands of `bay new`. Everything else (flags, RunE shape, workspace
+// resolution) is identical and handled by newTopNewSurfaceCmd.
+type topNewCmdSpec struct {
+	use       string
+	short     string
+	long      string
+	args      cobra.PositionalArgs
+	buildOpts func(args []string, splitDir string, window bool) (surfaceNewOpts, error)
+}
+
+func newTopNewSurfaceCmd(spec topNewCmdSpec) *cobra.Command {
 	var wsFlag, dockFlag, splitDir string
 	var window bool
 
 	cmd := &cobra.Command{
-		Use:   "shell [name]",
-		Short: "Create a shell surface",
-		Args:  cobra.MaximumNArgs(1),
+		Use:   spec.use,
+		Short: spec.short,
+		Long:  spec.long,
+		Args:  spec.args,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts := surfaceNewOpts{
-				Type:     manifest.SurfaceTypeShell,
-				SplitDir: surfaceSplitDir(splitDir, window),
+			opts, err := spec.buildOpts(args, splitDir, window)
+			if err != nil {
+				return err
 			}
-			if len(args) > 0 {
-				if err := validateSurfaceName(args[0]); err != nil {
-					return err
-				}
-				opts.Name = args[0]
-			}
-
 			eng, err := newEngine()
 			if err != nil {
 				return err
@@ -83,20 +88,38 @@ func newTopNewShellCmd() *cobra.Command {
 	return cmd
 }
 
-func newTopNewAgentCmd() *cobra.Command {
-	var wsFlag, dockFlag, splitDir string
-	var window bool
+func newTopNewShellCmd() *cobra.Command {
+	return newTopNewSurfaceCmd(topNewCmdSpec{
+		use:   "shell [name]",
+		short: "Create a shell surface",
+		args:  cobra.MaximumNArgs(1),
+		buildOpts: func(args []string, splitDir string, window bool) (surfaceNewOpts, error) {
+			opts := surfaceNewOpts{
+				Type:     manifest.SurfaceTypeShell,
+				SplitDir: surfaceSplitDir(splitDir, window),
+			}
+			if len(args) > 0 {
+				if err := validateSurfaceName(args[0]); err != nil {
+					return opts, err
+				}
+				opts.Name = args[0]
+			}
+			return opts, nil
+		},
+	})
+}
 
-	cmd := &cobra.Command{
-		Use:   "agent <agent> [name]",
-		Short: "Create an agent surface",
-		Long: `Create an agent surface running the named agent.
+func newTopNewAgentCmd() *cobra.Command {
+	return newTopNewSurfaceCmd(topNewCmdSpec{
+		use:   "agent <agent> [name]",
+		short: "Create an agent surface",
+		long: `Create an agent surface running the named agent.
 
   bay new agent claude
   bay new agent codex codex-debug
   bay new agent claude --ws auth-fix --window`,
-		Args: cobra.RangeArgs(1, 2),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		args: cobra.RangeArgs(1, 2),
+		buildOpts: func(args []string, splitDir string, window bool) (surfaceNewOpts, error) {
 			opts := surfaceNewOpts{
 				Type:     manifest.SurfaceTypeAgent,
 				Agent:    args[0],
@@ -104,45 +127,26 @@ func newTopNewAgentCmd() *cobra.Command {
 			}
 			if len(args) > 1 {
 				if err := validateSurfaceName(args[1]); err != nil {
-					return err
+					return opts, err
 				}
 				opts.Name = args[1]
 			}
-
-			eng, err := newEngine()
-			if err != nil {
-				return err
-			}
-			dockName, wsName, err := resolveSurfaceWorkspace(eng, wsFlag, dockFlag)
-			if err != nil {
-				return err
-			}
-			return runSurfaceNew(eng, dockName, wsName, opts)
+			return opts, nil
 		},
-	}
-
-	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (defaults to current)")
-	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (with --ws to disambiguate)")
-	cmd.Flags().StringVar(&splitDir, "split", "", "split direction (h or v)")
-	cmd.Flags().BoolVar(&window, "window", false, "open as a new tmux window instead of a split")
-
-	return cmd
+	})
 }
 
 func newTopNewCmdCmd() *cobra.Command {
-	var wsFlag, dockFlag, splitDir string
-	var window bool
-
-	cmd := &cobra.Command{
-		Use:   `cmd "<command>" [name]`,
-		Short: "Create a cmd surface running a command",
-		Long: `Create a surface that runs an arbitrary command.
+	return newTopNewSurfaceCmd(topNewCmdSpec{
+		use:   `cmd "<command>" [name]`,
+		short: "Create a cmd surface running a command",
+		long: `Create a surface that runs an arbitrary command.
 
   bay new cmd "npm test"
   bay new cmd "npm test" tests
   bay new cmd "tail -f log.txt" --window`,
-		Args: cobra.RangeArgs(1, 2),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		args: cobra.RangeArgs(1, 2),
+		buildOpts: func(args []string, splitDir string, window bool) (surfaceNewOpts, error) {
 			opts := surfaceNewOpts{
 				Type:     manifest.SurfaceTypeCmd,
 				Command:  args[0],
@@ -150,29 +154,13 @@ func newTopNewCmdCmd() *cobra.Command {
 			}
 			if len(args) > 1 {
 				if err := validateSurfaceName(args[1]); err != nil {
-					return err
+					return opts, err
 				}
 				opts.Name = args[1]
 			}
-
-			eng, err := newEngine()
-			if err != nil {
-				return err
-			}
-			dockName, wsName, err := resolveSurfaceWorkspace(eng, wsFlag, dockFlag)
-			if err != nil {
-				return err
-			}
-			return runSurfaceNew(eng, dockName, wsName, opts)
+			return opts, nil
 		},
-	}
-
-	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (defaults to current)")
-	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (with --ws to disambiguate)")
-	cmd.Flags().StringVar(&splitDir, "split", "", "split direction (h or v)")
-	cmd.Flags().BoolVar(&window, "window", false, "open as a new tmux window instead of a split")
-
-	return cmd
+	})
 }
 
 func newTopNewEditCmd() *cobra.Command {
