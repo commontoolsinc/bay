@@ -174,11 +174,11 @@ var bayKeybindings = []bayKeybinding{
 	// Creation
 	{"M-c", "bay ws new", "Option+c: create workspace in current dock", "run-shell"},
 	{"M-s", "bay shell --window", "Option+s: shell in a new window", "run-shell"},
-	{"M-S", "bay shell --pane", "Option+S: split a shell pane", "run-shell"},
-	{"M-a", "bay agent", "Option+a: agent in a new window", "run-shell"},
-	{"M-A", "bay agent --pane", "Option+A: split an agent pane", "run-shell"},
-	{"M-e", "bay edit", "Option+e: open editor", "run-shell"},
-	{"M-E", "bay edit --pane", "Option+E: open editor as pane", "run-shell"},
+	{"M-S", "bay shell --pane", "Option+S: shell as split pane", "run-shell"},
+	{"M-a", "bay agent --window", "Option+a: agent in a new window", "run-shell"},
+	{"M-A", "bay agent --pane", "Option+A: agent as split pane", "run-shell"},
+	{"M-e", "bay edit --dock", "Option+e: dock editor", "run-shell"},
+	{"M-E", "bay edit --ws", "Option+E: workspace editor", "run-shell"},
 
 	// Utility
 	{"M-w", "bay sf close self", "Option+w: close current surface (or pane)", "run-shell"},
