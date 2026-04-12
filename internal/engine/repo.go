@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/commontoolsinc/bay/internal/config"
@@ -159,7 +160,8 @@ func (e *Engine) RepoRemove(name string, force bool) error {
 
 // RepoInit performs idempotent project setup for a repo:
 // - Appends bay awareness line to each agent's project_file if missing.
-// - Creates .worktreeinclude if it doesn't exist.
+// - Creates .worktreeinclude if it doesn't exist, and adds project files to it.
+// - Adds project files to .gitignore.
 func (e *Engine) RepoInit(name string) error {
 	repo, err := e.findRepo(name)
 	if err != nil {
@@ -202,6 +204,18 @@ func (e *Engine) RepoInit(name string) error {
 		}
 	}
 
+	// Ensure project files are in .worktreeinclude so they get
+	// copied into new worktrees automatically.
+	if err := ensureFileContainsLines(wtIncludePath, seen); err != nil {
+		return fmt.Errorf("updating .worktreeinclude: %w", err)
+	}
+
+	// Gitignore local project files (e.g. CLAUDE.local.md).
+	gitignorePath := filepath.Join(repoPath, ".gitignore")
+	if err := ensureFileContainsLines(gitignorePath, seen); err != nil {
+		return fmt.Errorf("updating .gitignore: %w", err)
+	}
+
 	return nil
 }
 
@@ -226,6 +240,79 @@ func ensureBayAwareness(path string) error {
 	defer f.Close()
 	_, err = f.WriteString(line)
 	return err
+}
+
+// RepoSync copies .worktreeinclude files from the repo root into all
+// existing worktrees for the given repo.
+func (e *Engine) RepoSync(name string) (int, error) {
+	repo, err := e.findRepo(name)
+	if err != nil {
+		return 0, err
+	}
+	repoPath := config.ExpandPath(repo.Path)
+	wtDir := repo.EffectiveWorktreeDir()
+
+	entries, err := os.ReadDir(wtDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("reading worktree dir: %w", err)
+	}
+
+	count := 0
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		wsPath := filepath.Join(wtDir, entry.Name())
+		if !e.Git.IsGitRepo(wsPath) {
+			continue
+		}
+		copyWorktreeIncludeFiles(repoPath, wsPath)
+		count++
+	}
+	return count, nil
+}
+
+// ensureFileContainsLines appends entries from the map to the file if they
+// don't already appear as whole lines. Creates the file if it doesn't exist.
+func ensureFileContainsLines(path string, entries map[string]bool) error {
+	data, _ := os.ReadFile(path)
+	existing := make(map[string]bool)
+	for line := range strings.SplitSeq(string(data), "\n") {
+		existing[strings.TrimSpace(line)] = true
+	}
+
+	var toAdd []string
+	for entry := range entries {
+		if !existing[entry] {
+			toAdd = append(toAdd, entry)
+		}
+	}
+	if len(toAdd) == 0 {
+		return nil
+	}
+	sort.Strings(toAdd)
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	content := string(data)
+	if len(content) > 0 && content[len(content)-1] != '\n' {
+		if _, err := f.WriteString("\n"); err != nil {
+			return err
+		}
+	}
+	for _, entry := range toAdd {
+		if _, err := f.WriteString(entry + "\n"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // RepoList returns all repos from the manifest.
