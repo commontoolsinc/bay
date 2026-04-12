@@ -377,50 +377,55 @@ bay ws prev                                 # prev workspace in dock
 
 ### Surface management
 
+`bay surface new` (or `bay sf new`) has subcommands for each surface type:
+
 ```
-bay surface new [name]                      # shell split (default), positional names the surface
-bay surface new [name] --ws <w>             # target a different workspace
-bay surface new [name] --shell              # explicit shell
-bay surface new [name] --agent <type>       # agent surface
-bay surface new [name] --cmd "npm test"     # command surface
-bay surface new [name] --window             # new tmux window instead of split
-bay surface new [name] --split h            # horizontal split (default: v)
-bay surface close <name>                    # close a surface ('self' for current; prompts on agents)
-bay surface close <name> --force            # skip the agent confirmation prompt
-bay surface restart [name]                  # restart a surface (defaults to current)
-bay surface show [name]                     # show details (defaults to current)
-bay surface rename [old] <new>              # rename (defaults to current surface)
-bay surface go [query]                      # surface picker (intra-workspace)
-bay surface go --index <n>                  # jump to surface by index (no keybinding)
-bay surface go --next-waiting               # next waiting surface
-bay surface next                            # next surface in workspace
-bay surface prev                            # prev surface in workspace
+bay surface new shell [name]               # shell split (default)
+bay surface new agent <type> [name]        # agent surface
+bay surface new cmd "<command>" [name]     # command surface
+bay surface new edit [workspace]           # editor surface
+bay surface new shell [name] --ws <w>      # target a different workspace
+bay surface new shell [name] --window      # new tmux window instead of split
+bay surface new shell [name] --split h     # horizontal split (default: v)
+bay surface close <name>                   # close a surface (prompts on agents)
+bay surface close <name> --force           # skip the agent confirmation prompt
+bay surface restart [name]                 # restart a surface (defaults to current)
+bay surface show [name]                    # show details (defaults to current)
+bay surface rename [old] <new>             # rename (defaults to current surface)
+bay surface go [query]                     # surface picker (intra-workspace)
+bay surface go --index <n>                 # jump to surface by index (no keybinding)
+bay surface go --next-waiting              # next waiting surface
+bay surface next                           # next surface in workspace
+bay surface prev                           # prev surface in workspace
 ```
 
 `sf` is an alias for `surface`:
 ```
-bay sf new --shell
+bay sf new shell
 bay sf close shell-2
 bay sf restart agent
 ```
 
 ### Top-level shortcuts
 
+`bay new` mirrors `bay surface new`:
+
 ```
-bay new shell [name]            # bay surface new --shell, with optional name
-bay new agent <type> [name]     # bay surface new --agent <type>
-bay new cmd "<command>" [name]  # bay surface new --cmd <command>
-bay new edit [workspace]        # alias for bay edit
+bay new shell [name]            # split a shell
+bay new agent <type> [name]     # start an agent
+bay new cmd "<command>" [name]  # run a command
+bay new edit [workspace]        # open the editor
 bay close <name>                # alias for bay surface close (prompts on agents)
 bay show [name]                 # alias for bay surface show (defaults to current)
 bay rename [name] <new-name>    # rename workspace (defaults to current)
 bay go [query]                  # alias for bay surface go (intra-workspace)
 bay go --index <n>              # jump to surface by index (no keybinding)
 bay go --next-waiting           # next waiting surface
-bay shell [name]                # bay surface new --shell, positional names the shell
+bay shell [name]                # shortcut for bay new shell
 bay shell [name] --window       # shell in new tmux window
 bay shell [name] --ws <w>       # target a different workspace
-bay edit [workspace]            # open workspace in editor (creates GUI surface)
+bay edit [workspace]            # open workspace in editor
+bay edit --editor vim           # use a specific editor this time
 bay edit --all                  # open all workspaces in current dock
 bay restart [name]              # alias for bay surface restart
 ```
@@ -553,21 +558,26 @@ conflicts with existing bindings and prompts before overwriting. Run
 
 ## Editor integration
 
-`bay edit` opens your workspace in a GUI or terminal editor.
+`bay edit` opens your workspace in an editor and creates a tracked
+**editor surface** so the editor appears in `bay go`.
 
 ```
 bay edit                    # current workspace
 bay edit auth-fix           # specific workspace
+bay edit --editor vim       # use a specific editor this time
 bay edit --all              # all workspaces in dock (multi-root)
+bay edit --split v          # vertical split instead of new window
 ```
 
-For GUI editors (Cursor, VS Code, Zed), bay creates a tracked **editor
-surface** so the editor appears in `bay go` and the surface picker. Bay
-probes editor liveness and removes dead surfaces automatically.
+**GUI editors** (Cursor, VS Code, Zed) launch detached. The surface
+persists until you close it with `bay close editor`.
 
-For terminal editors (nvim, vim), bay runs the editor in the foreground.
-With `--all`, terminal editors open the worktree parent directory so all
-worktrees appear as subdirectories.
+**Terminal editors** (nvim, vim) run in their own tmux pane (a new
+window by default, or a split with `--split`). When you quit the
+editor, the pane closes and the surface is cleaned up automatically.
+
+Editor resolution order: `--editor` flag, `[editor].command` in config,
+`$VISUAL`, `$EDITOR`, then probing for cursor/code/zed/nvim/vim.
 
 Configure with:
 ```

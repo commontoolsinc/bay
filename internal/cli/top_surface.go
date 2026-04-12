@@ -165,7 +165,8 @@ func newTopNewCmdCmd() *cobra.Command {
 }
 
 func newTopNewEditCmd() *cobra.Command {
-	var wsFlag, dockFlag string
+	var wsFlag, dockFlag, editorFlag, splitDir string
+	var window bool
 
 	cmd := &cobra.Command{
 		Use:   "edit [workspace]",
@@ -178,9 +179,11 @@ current workspace.
   bay new edit auth-fix              specific workspace (positional)
   bay new edit --ws auth-fix         same thing with a flag
   bay new edit --ws w1 --dock labs   dock-qualified via flags
+  bay new edit --editor vim          use a specific editor this time
+  bay new edit --split v             open as a vertical split
 
 This is equivalent to bare 'bay edit [workspace]'. Use 'bay edit' if you need
-the --all, --set, or --show utility flags.`,
+the --all utility flag.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -191,12 +194,15 @@ the --all, --set, or --show utility flags.`,
 			if err != nil {
 				return err
 			}
-			return runEditCreate(eng, target)
+			return runEditCreate(eng, target, editorFlag, editSplitDir(splitDir, window))
 		},
 	}
 
 	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (defaults to current)")
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (with --ws to disambiguate)")
+	cmd.Flags().StringVar(&editorFlag, "editor", "", "editor command (overrides config for this invocation)")
+	cmd.Flags().StringVar(&splitDir, "split", "", "split direction (h or v) instead of a new window")
+	cmd.Flags().BoolVar(&window, "window", false, "open as a new tmux window (default for terminal editors)")
 
 	return cmd
 }

@@ -161,7 +161,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		surfaceName = "shell"
 	}
 
-	surface, err := e.launchSurfaceInTmux(tmuxPaneID, dockName, surfaceType, agentName, "", agentArgs)
+	surface, err := e.launchSurfaceInTmux(tmuxPaneID, dockName, surfaceType, agentName, "", wsPath, agentArgs)
 	if err != nil {
 		_ = e.Tmux.KillWindow(windowID)
 		rollbackWorktree()

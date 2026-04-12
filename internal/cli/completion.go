@@ -144,10 +144,9 @@ func registerCompletions(root *cobra.Command) {
 		cmd.RegisterFlagCompletionFunc("agent", agentFlagCompletions)
 		cmd.RegisterFlagCompletionFunc("repo", repoCompletions)
 	}
-	if cmd := findCmd(root, "surface new"); cmd != nil {
-		cmd.RegisterFlagCompletionFunc("agent", agentFlagCompletions)
-		cmd.RegisterFlagCompletionFunc("split", splitCompletions)
-	}
+	// surface new is now a parent with shell/agent/cmd/edit subcommands
+	// (same objects as bay new). Flag completions are registered on those
+	// subcommands via "new shell", "new agent", etc. below.
 	if cmd := findCmd(root, "dock new"); cmd != nil {
 		cmd.RegisterFlagCompletionFunc("agent", agentFlagCompletions)
 		cmd.RegisterFlagCompletionFunc("repo", repoCompletions)
@@ -156,10 +155,7 @@ func registerCompletions(root *cobra.Command) {
 	// --ws and --dock flag completions on every surface verb that
 	// supports them. Workspace commands get --dock too. The bay new
 	// <kind> commands also get --split for symmetry with sf new.
-	// surface new and shell are in this loop now that their positional
-	// is the surface name and the workspace target moved to --ws.
 	for _, path := range []string{
-		"surface new",
 		"surface close", "surface restart", "surface show", "surface rename",
 		"close", "show", "restart",
 		"shell",
