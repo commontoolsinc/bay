@@ -16,6 +16,7 @@ func newLsCmd() *cobra.Command {
 	var dirtyOnly bool
 	var recursive bool
 	var longOutput bool
+	var shortOutput bool
 
 	cmd := &cobra.Command{
 		Use:     "ls",
@@ -55,7 +56,7 @@ func newLsCmd() *cobra.Command {
 				return nil
 			}
 
-			fmt.Print(FormatListView(view, longOutput))
+			fmt.Print(FormatListView(view, longOutput, shortOutput))
 
 			// Print advice for stale or missing workspaces visible in the output.
 			hasStale, hasMissing := false, false
@@ -87,6 +88,7 @@ func newLsCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&dirtyOnly, "dirty", false, "only show dirty workspaces")
 	cmd.Flags().BoolVarP(&recursive, "recursive", "R", false, "show full descendant tree from the current focus")
 	cmd.Flags().BoolVarP(&longOutput, "long", "l", false, "show extended details such as tmux IDs")
+	cmd.Flags().BoolVarP(&shortOutput, "short", "s", false, "compact output without labels or key names")
 
 	return cmd
 }

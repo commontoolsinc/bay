@@ -101,9 +101,9 @@ func TestBuildListView_DefaultIncludesRepos(t *testing.T) {
 // alignWidth directly.
 func TestAlignWidth_IgnoresRowsWithoutMeta(t *testing.T) {
 	rows := []alignedRow{
-		{prefix: "short", prefixWidth: 5, meta: "branch=foo"},
-		{prefix: "longer-prefix-with-no-meta", prefixWidth: 26, meta: ""},
-		{prefix: "medium", prefixWidth: 6, meta: "status=active"},
+		{prefix: "short", prefixWidth: 5, metaCols: []metaCol{{text: "branch=foo", width: 10}}},
+		{prefix: "longer-prefix-with-no-meta", prefixWidth: 26, metaCols: nil},
+		{prefix: "medium", prefixWidth: 6, metaCols: []metaCol{{text: "status=active", width: 13}}},
 	}
 	got := alignWidth(rows)
 	if got != 6 {
@@ -117,11 +117,49 @@ func TestAlignWidth_IgnoresRowsWithoutMeta(t *testing.T) {
 
 	// All rows meta-less.
 	allEmpty := []alignedRow{
-		{prefix: "a", prefixWidth: 1, meta: ""},
-		{prefix: "bb", prefixWidth: 2, meta: ""},
+		{prefix: "a", prefixWidth: 1, metaCols: nil},
+		{prefix: "bb", prefixWidth: 2, metaCols: nil},
 	}
 	if alignWidth(allEmpty) != 0 {
 		t.Errorf("alignWidth(all-meta-less) = %d, want 0", alignWidth(allEmpty))
+	}
+}
+
+// TestFormatListView_AlignsMetaColumnsAcrossRows verifies that individual
+// meta fields (e.g. surfaces=) align column-by-column across sibling rows,
+// even when some rows have more fields than others (branch, status, etc.).
+func TestFormatListView_AlignsMetaColumnsAcrossRows(t *testing.T) {
+	docks := []engine.DockInfo{
+		{
+			Name: "api",
+			Repo: "bay",
+			Workspaces: []engine.WorkspaceInfo{
+				{Name: "w1", SurfaceCount: 1, SyncStatus: "ok"},
+				{Name: "login-bug", Branch: "fix/login-bug", Status: "active", SurfaceCount: 1, SyncStatus: "ok"},
+				{Name: "auth-refactor", Branch: "fix/auth-refactor", Status: "active", SurfaceCount: 2, SyncStatus: "ok"},
+			},
+		},
+	}
+	view := BuildListView(docks, ListViewOptions{
+		Focus: ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
+	})
+	out := stripANSI(FormatListView(view, false, false))
+
+	// n= should appear at the same column on all three rows.
+	var surfCols []int
+	for _, line := range strings.Split(out, "\n") {
+		if idx := strings.Index(line, "n="); idx >= 0 {
+			surfCols = append(surfCols, idx)
+		}
+	}
+	if len(surfCols) != 3 {
+		t.Fatalf("expected 3 n= entries, got %d:\n%s", len(surfCols), out)
+	}
+	for i := 1; i < len(surfCols); i++ {
+		if surfCols[i] != surfCols[0] {
+			t.Errorf("surfaces= columns not aligned: %v\noutput:\n%s", surfCols, out)
+			break
+		}
 	}
 }
 
@@ -133,14 +171,14 @@ func TestFormatListView_AlignsWorkspaceMetaWithinDock(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
 		Focus: ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
 	})
-	out := stripANSI(FormatListView(view, false))
+	out := stripANSI(FormatListView(view, false, false))
 
 	var authLine, cleanupLine string
 	for _, line := range strings.Split(out, "\n") {
-		if strings.Contains(line, "workspace auth-fix") {
+		if strings.Contains(line, "ws auth-fix") {
 			authLine = line
 		}
-		if strings.Contains(line, "workspace cleanup") {
+		if strings.Contains(line, "ws cleanup") {
 			cleanupLine = line
 		}
 	}
@@ -148,13 +186,13 @@ func TestFormatListView_AlignsWorkspaceMetaWithinDock(t *testing.T) {
 		t.Fatalf("missing workspace lines:\n%s", out)
 	}
 
-	authMetaStart := strings.Index(authLine, "branch=")
-	cleanupMetaStart := strings.Index(cleanupLine, "branch=")
+	authMetaStart := strings.Index(authLine, "br=")
+	cleanupMetaStart := strings.Index(cleanupLine, "br=")
 	if authMetaStart < 0 || cleanupMetaStart < 0 {
 		t.Fatalf("could not find meta start:\nauth:    %q\ncleanup: %q", authLine, cleanupLine)
 	}
 	if authMetaStart != cleanupMetaStart {
-		t.Errorf("workspace meta columns not aligned:\n  auth-fix branch= at column %d\n  cleanup  branch= at column %d\n  auth:    %q\n  cleanup: %q",
+		t.Errorf("workspace meta columns not aligned:\n  auth-fix br= at column %d\n  cleanup  br= at column %d\n  auth:    %q\n  cleanup: %q",
 			authMetaStart, cleanupMetaStart, authLine, cleanupLine)
 	}
 }
@@ -194,18 +232,18 @@ func TestFormatListView_AlignsSurfaceMetaAcrossDock(t *testing.T) {
 		Focus:     ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
 		Recursive: true,
 	})
-	out := stripANSI(FormatListView(view, false))
+	out := stripANSI(FormatListView(view, false, false))
 
 	// All three surface lines (across two workspaces) should have
 	// "type=" at the same column.
 	var typeColumns []int
 	for _, line := range strings.Split(out, "\n") {
-		if !strings.Contains(line, "surface ") {
+		if !strings.Contains(line, "sf ") {
 			continue
 		}
-		idx := strings.Index(line, "type=")
+		idx := strings.Index(line, "ty=")
 		if idx < 0 {
-			t.Fatalf("surface line missing type= column: %q", line)
+			t.Fatalf("surface line missing ty= column: %q", line)
 		}
 		typeColumns = append(typeColumns, idx)
 	}
@@ -223,15 +261,15 @@ func TestBuildListView_DockFocusStopsAtWorkspacesByDefault(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
 		Focus: ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
 	})
-	out := stripANSI(FormatListView(view, false))
+	out := stripANSI(FormatListView(view, false, false))
 
-	if !strings.Contains(out, "dock api") {
+	if !strings.Contains(out, "dk api") {
 		t.Fatalf("dock focus output missing dock header:\n%s", out)
 	}
-	if !strings.Contains(out, "workspace auth-fix") || !strings.Contains(out, "workspace cleanup") {
+	if !strings.Contains(out, "ws auth-fix") || !strings.Contains(out, "ws cleanup") {
 		t.Fatalf("dock focus output missing workspaces:\n%s", out)
 	}
-	if strings.Contains(out, "surface ") {
+	if strings.Contains(out, "sf ") {
 		t.Fatalf("dock focus default should not recurse into surfaces:\n%s", out)
 	}
 }
@@ -240,16 +278,16 @@ func TestBuildListView_WorkspaceFocusShowsFullTree(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
 		Focus: ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "auth-fix"},
 	})
-	out := stripANSI(FormatListView(view, false))
+	out := stripANSI(FormatListView(view, false, false))
 
 	for _, want := range []string{
-		"repo bay",
-		"dock api",
-		"workspace auth-fix",
-		"surface agent",
-		"type=agent",
-		"agent=codex",
-		"type=cmd",
+		"rp bay",
+		"dk api",
+		"ws auth-fix",
+		"sf agent",
+		"ty=agent",
+		"ag=codex",
+		"ty=cmd",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("workspace focus output missing %q:\n%s", want, out)
@@ -261,9 +299,9 @@ func TestBuildListView_WorkspaceFocusRestrictsToDock(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
 		Focus: ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "auth-fix"},
 	})
-	out := stripANSI(FormatListView(view, false))
+	out := stripANSI(FormatListView(view, false, false))
 
-	if strings.Contains(out, "workspace landing") {
+	if strings.Contains(out, "ws landing") {
 		t.Fatalf("workspace focus should not include workspaces from other docks:\n%s", out)
 	}
 }
@@ -272,12 +310,12 @@ func TestFormatListView_SuppressesSyncOKAndShowsStale(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
 		Focus: ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
 	})
-	out := stripANSI(FormatListView(view, false))
+	out := stripANSI(FormatListView(view, false, false))
 
-	if strings.Contains(out, "sync=ok") {
-		t.Fatalf("sync=ok should be suppressed:\n%s", out)
+	if strings.Contains(out, "sy=ok") {
+		t.Fatalf("sy=ok should be suppressed:\n%s", out)
 	}
-	if !strings.Contains(out, "sync=stale") {
+	if !strings.Contains(out, "sy=stale") {
 		t.Fatalf("stale sync state should be shown:\n%s", out)
 	}
 }
@@ -304,8 +342,8 @@ func TestFormatWorkspaceShow_IncludesDefaultAgentAndSurfaces(t *testing.T) {
 		"dock api",
 		"default agent codex",
 		"surface agent",
-		"type=agent",
-		"agent=codex",
+		"ty=agent",
+		"ag=codex",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("workspace show missing %q:\n%s", want, out)
@@ -347,12 +385,12 @@ func TestBuildListView_FocusRepoFiltersRepos(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
 		Focus: ListFocus{Kind: FocusRepo, Repo: "bay"},
 	})
-	out := stripANSI(FormatListView(view, false))
+	out := stripANSI(FormatListView(view, false, false))
 
-	if !strings.Contains(out, "repo bay") {
+	if !strings.Contains(out, "rp bay") {
 		t.Fatalf("repo-focused output missing target repo:\n%s", out)
 	}
-	if strings.Contains(out, "repo other") {
+	if strings.Contains(out, "rp other") {
 		t.Fatalf("repo-focused output should not include other repos:\n%s", out)
 	}
 }
@@ -361,7 +399,7 @@ func TestFormatListView_ShowsWaitingIndicator(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
 		Focus: ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
 	})
-	out := stripANSI(FormatListView(view, false))
+	out := stripANSI(FormatListView(view, false, false))
 
 	if !strings.Contains(out, "\u23f3") {
 		t.Fatalf("expected waiting indicator in output:\n%s", out)
@@ -375,16 +413,16 @@ func TestFormatListView_HighlightsCurrentContext(t *testing.T) {
 	view.CurrentDock = "api"
 	view.CurrentWs = "auth-fix"
 
-	out := stripANSI(FormatListView(view, false))
+	out := stripANSI(FormatListView(view, false, false))
 
-	if !strings.Contains(out, "dock api *") {
+	if !strings.Contains(out, "dk api *") {
 		t.Fatalf("current dock should have * marker:\n%s", out)
 	}
-	if !strings.Contains(out, "workspace auth-fix *") {
+	if !strings.Contains(out, "ws auth-fix *") {
 		t.Fatalf("current workspace should have * marker:\n%s", out)
 	}
 	// Non-current workspace should NOT have marker.
-	if strings.Contains(out, "workspace cleanup *") {
+	if strings.Contains(out, "ws cleanup *") {
 		t.Fatalf("non-current workspace should not have * marker:\n%s", out)
 	}
 }
@@ -395,7 +433,7 @@ func TestFormatListView_NoHighlightWithoutContext(t *testing.T) {
 	})
 	// No CurrentDock/CurrentWs set.
 
-	out := stripANSI(FormatListView(view, false))
+	out := stripANSI(FormatListView(view, false, false))
 
 	if strings.Contains(out, " *") {
 		t.Fatalf("should have no * markers without current context:\n%s", out)
@@ -412,11 +450,11 @@ func TestFormatDockTree_IncludesNoRepoDocks(t *testing.T) {
 		},
 	}
 
-	out := stripANSI(FormatListView(BuildListView(docks, ListViewOptions{}), false))
-	if !strings.Contains(out, "repo (no repo)") {
+	out := stripANSI(FormatListView(BuildListView(docks, ListViewOptions{}), false, false))
+	if !strings.Contains(out, "rp (no repo)") {
 		t.Fatalf("missing synthetic no-repo container:\n%s", out)
 	}
-	if !strings.Contains(out, "dock tools") {
+	if !strings.Contains(out, "dk tools") {
 		t.Fatalf("missing no-repo dock:\n%s", out)
 	}
 }

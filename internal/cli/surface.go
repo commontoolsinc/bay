@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/commontoolsinc/bay/internal/engine"
@@ -132,6 +133,17 @@ func validateSurfaceName(name string) error {
 	return nil
 }
 
+// defaultCmdName derives a surface name from a command string.
+// Uses the first word, and if it looks like a path, just the base name.
+// Falls back to "cmd" if the command is empty.
+func defaultCmdName(command string) string {
+	fields := strings.Fields(command)
+	if len(fields) == 0 {
+		return "cmd"
+	}
+	return filepath.Base(fields[0])
+}
+
 // runSurfaceNew creates a new surface in (dockName, wsName). Shared by
 // `bay sf new` and the top-level `bay new` verbs. The caller is responsible
 // for resolving (dockName, wsName) and setting opts.Type.
@@ -146,7 +158,7 @@ func runSurfaceNew(eng *engine.Engine, dockName, wsName string, opts surfaceNewO
 		case manifest.SurfaceTypeAgent:
 			name = "agent"
 		case manifest.SurfaceTypeCmd:
-			name = "cmd"
+			name = defaultCmdName(opts.Command)
 		default:
 			name = "shell"
 		}

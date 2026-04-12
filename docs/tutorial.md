@@ -49,9 +49,9 @@ bay ws ls
 ```
 
 ```
-repo bay-tutorial
-  dock bay-tutorial *
-    workspace w1 *  surfaces=1
+rp bay-tutorial
+  dk bay-tutorial *
+    ws w1 *  n=1
 ```
 
 One repo, one dock, one workspace with a shell surface. Everything
@@ -108,17 +108,17 @@ bay ws ls
 ```
 
 ```
-repo bay-tutorial
-  dock bay-tutorial *
-    workspace w1             surfaces=1
-    workspace login-bug      branch=fix/login-bug status=active surfaces=1
-    workspace auth-refactor  branch=fix/auth-refactor status=active surfaces=1
-    workspace review *       surfaces=1
+rp bay-tutorial
+  dk bay-tutorial *
+    ws w1             n=1
+    ws login-bug      br=fix/login-bug  n=1
+    ws auth-refactor  br=fix/auth-refactor  n=1
+    ws review *       n=1
 ```
 
 Four workspaces in creation order. The two with `--branch` show their
-branch and status; `review` and `w1` have no branch. The `*` marks
-where you are now.
+branch; `review` and `w1` have no branch. The `*` marks where you
+are now.
 
 Switch between them with `Option+Shift+j` / `Option+Shift+k` (requires
 `bay setup`) or `bay ws go`.
@@ -159,12 +159,12 @@ bay ls
 ```
 
 ```
-repo bay-tutorial
-  dock bay-tutorial *
-    workspace login-bug *  branch=fix/login-bug status=active
-      surface shell *    type=shell
-      surface shell-2    type=shell
-      surface monitor    type=cmd
+rp bay-tutorial
+  dk bay-tutorial *
+    ws login-bug *  br=fix/login-bug
+      sf shell *    ty=shell
+      sf shell-2    ty=shell
+      sf monitor    ty=cmd
 ```
 
 Three surfaces, all navigable. (`bay ws ls` shows all workspaces;
@@ -223,14 +223,14 @@ bay tree
 ```
 
 ```
-repo bay-tutorial
-  dock bay-tutorial *
-    workspace login-bug *  branch=fix/login-bug status=active
-      surface shell    type=shell
-      surface monitor  type=cmd
-    workspace review
-      surface agent    type=agent agent=claude
-      surface shell    type=shell
+rp bay-tutorial
+  dk bay-tutorial *
+    ws login-bug *  br=fix/login-bug
+      sf shell    ty=shell
+      sf monitor  ty=cmd
+    ws review
+      sf agent    ty=agent ag=claude
+      sf shell    ty=shell
 ```
 
 Other useful commands:

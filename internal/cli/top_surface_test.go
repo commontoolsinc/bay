@@ -149,13 +149,13 @@ func TestRunSurfaceNew_CmdDefaultName(t *testing.T) {
 	ws, _ := eng.WsShow("labs", "w1")
 	foundCmd := false
 	for _, s := range ws.Surfaces {
-		if s.Type == manifest.SurfaceTypeCmd && strings.HasPrefix(s.Name, "cmd") {
+		if s.Type == manifest.SurfaceTypeCmd && strings.HasPrefix(s.Name, "tail") {
 			foundCmd = true
 			break
 		}
 	}
 	if !foundCmd {
-		t.Error("expected a cmd-typed surface with name prefix 'cmd'")
+		t.Error("expected a cmd-typed surface with name derived from command ('tail')")
 	}
 }
 
@@ -647,11 +647,11 @@ func TestRoot_SurfaceFlavoredCommandsInSurfaceGroup(t *testing.T) {
 func TestRoot_WsStaysInWorkspaceGroup(t *testing.T) {
 	root := NewRootCmd("test")
 
-	c, _, err := root.Find([]string{"ws"})
+	c, _, err := root.Find([]string{"workspace"})
 	if err != nil {
-		t.Fatalf("could not find ws: %v", err)
+		t.Fatalf("could not find workspace: %v", err)
 	}
 	if c.GroupID != "workspace" {
-		t.Errorf("ws GroupID = %q, want workspace", c.GroupID)
+		t.Errorf("workspace GroupID = %q, want workspace", c.GroupID)
 	}
 }
