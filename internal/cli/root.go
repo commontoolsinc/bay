@@ -65,7 +65,6 @@ Quick start:
   bay go [query]          jump to a surface
   bay ls                  see everything
   bay close [name]        close a surface (or current pane)
-  bay restart             restart current surface
   bay edit                open editor
 
 Run 'bay help' for all commands, or 'bay help <command>' for details.
@@ -106,8 +105,6 @@ func NewRootCmd(version string) *cobra.Command {
 	agentCmd.GroupID = "surface"
 	editCmd := newEditCmd()
 	editCmd.GroupID = "surface"
-	restartCmd := newRestartCmd()
-	restartCmd.GroupID = "surface"
 	topNewCmd := newTopNewCmd()
 	topNewCmd.GroupID = "surface"
 	topCloseCmd := newTopCloseCmd()
@@ -156,7 +153,6 @@ func NewRootCmd(version string) *cobra.Command {
 		shellCmd,
 		agentCmd,
 		editCmd,
-		restartCmd,
 		topNewCmd,
 		topCloseCmd,
 		topShowCmd,

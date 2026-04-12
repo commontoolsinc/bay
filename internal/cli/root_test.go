@@ -16,7 +16,7 @@ func TestNewRootCmd(t *testing.T) {
 		"dock": false, "repo": false, "workspace": false, "surface": false,
 		"go": false, "ls": false, "tree": false, "pwd": false, "recover": false, "doctor": false,
 		"setup": false, "monitor": false, "version": false,
-		"shell": false, "edit": false, "restart": false, "status-line": false,
+		"shell": false, "edit": false, "status-line": false,
 		"agent-guide": false,
 	}
 	for _, cmd := range root.Commands() {
@@ -54,16 +54,6 @@ func TestNewRootCmd_OldCommandsRemoved(t *testing.T) {
 	}
 }
 
-func TestRestartCommandExists(t *testing.T) {
-	root := NewRootCmd("test")
-	cmd, _, err := root.Find([]string{"restart"})
-	if err != nil {
-		t.Fatalf("finding restart: %v", err)
-	}
-	if cmd.Name() != "restart" {
-		t.Errorf("expected restart, got %q", cmd.Name())
-	}
-}
 
 func TestSurfaceSubcommands(t *testing.T) {
 	root := NewRootCmd("test")
@@ -72,7 +62,7 @@ func TestSurfaceSubcommands(t *testing.T) {
 		t.Fatalf("finding surface: %v", err)
 	}
 
-	expected := []string{"new", "close", "restart", "ls", "show", "rename", "go", "next", "prev"}
+	expected := []string{"new", "close", "ls", "show", "rename", "go", "next", "prev"}
 	found := map[string]bool{}
 	for _, cmd := range sf.Commands() {
 		found[cmd.Name()] = true

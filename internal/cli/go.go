@@ -5,7 +5,6 @@ import (
 )
 
 func newGoCmd() *cobra.Command {
-	var index int
 	var nextWaiting bool
 	var pick bool
 
@@ -17,7 +16,6 @@ This is an alias for "bay surface go".
 
   bay go                  pick from surfaces in current workspace
   bay go shell            jump to the shell surface
-  bay go --index 2        jump to surface #2
   bay go --next-waiting   jump to next waiting surface`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -28,11 +26,10 @@ This is an alias for "bay surface go".
 			if pick {
 				return surfaceGoPick(eng)
 			}
-			return surfaceGo(eng, args, index, nextWaiting)
+			return surfaceGo(eng, args, nextWaiting)
 		},
 	}
 
-	cmd.Flags().IntVar(&index, "index", 0, "jump to surface by 1-based index")
 	cmd.Flags().BoolVar(&nextWaiting, "next-waiting", false, "jump to next waiting surface")
 	cmd.Flags().BoolVar(&pick, "pick", false, "open picker in a popup (used by keybindings)")
 	cmd.Flags().MarkHidden("pick")
