@@ -112,19 +112,23 @@ func newTopNewShellCmd() *cobra.Command {
 
 func newTopNewAgentCmd() *cobra.Command {
 	return newTopNewSurfaceCmd(topNewCmdSpec{
-		use:   "agent <agent> [name]",
+		use:   "agent [type] [name]",
 		short: "Create an agent surface",
-		long: `Create an agent surface running the named agent.
+		long: `Create an agent surface. The agent type is optional — if omitted,
+uses the dock's default agent.
 
-  bay new agent claude
-  bay new agent codex codex-debug
-  bay new agent claude --ws auth-fix --window`,
-		args: cobra.RangeArgs(1, 2),
+  bay new agent                        dock's default agent
+  bay new agent claude                 specific agent
+  bay new agent codex codex-debug      specific agent with custom name
+  bay new agent --ws auth-fix --window in another workspace`,
+		args: cobra.MaximumNArgs(2),
 		buildOpts: func(args []string, splitDir string, window bool) (surfaceNewOpts, error) {
 			opts := surfaceNewOpts{
 				Type:     manifest.SurfaceTypeAgent,
-				Agent:    args[0],
 				SplitDir: surfaceSplitDir(splitDir, window),
+			}
+			if len(args) > 0 {
+				opts.Agent = args[0]
 			}
 			if len(args) > 1 {
 				if err := validateSurfaceName(args[1]); err != nil {

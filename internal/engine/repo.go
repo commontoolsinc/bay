@@ -168,13 +168,28 @@ func (e *Engine) RepoInit(name string) error {
 	repoPath := config.ExpandPath(repo.Path)
 
 	// Bay awareness: for each agent with a project_file, ensure it mentions bay.
-	for _, agent := range e.Config.Agents {
-		if agent.ProjectFile == "" {
+	seen := map[string]bool{}
+	for name := range config.KnownAgents {
+		info, _ := e.Config.ResolveAgent(name)
+		if info.ProjectFile == "" || seen[info.ProjectFile] {
 			continue
 		}
-		filePath := filepath.Join(repoPath, agent.ProjectFile)
+		seen[info.ProjectFile] = true
+		filePath := filepath.Join(repoPath, info.ProjectFile)
 		if err := ensureBayAwareness(filePath); err != nil {
-			return fmt.Errorf("updating %s: %w", agent.ProjectFile, err)
+			return fmt.Errorf("updating %s: %w", info.ProjectFile, err)
+		}
+	}
+	// Also check any custom agents in config.
+	for name := range e.Config.Agents {
+		info, _ := e.Config.ResolveAgent(name)
+		if info.ProjectFile == "" || seen[info.ProjectFile] {
+			continue
+		}
+		seen[info.ProjectFile] = true
+		filePath := filepath.Join(repoPath, info.ProjectFile)
+		if err := ensureBayAwareness(filePath); err != nil {
+			return fmt.Errorf("updating %s: %w", info.ProjectFile, err)
 		}
 	}
 

@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/engine"
 	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/commontoolsinc/bay/internal/nav"
@@ -342,13 +341,11 @@ func autoBootstrap(eng *engine.Engine) (string, error) {
 		}
 	}
 
-	// Probe for an agent on PATH.
+	// Probe for an agent on PATH and set as global default if unset.
 	agentName := probeAgent()
-	if agentName != "" {
-		if _, ok := eng.Config.Agents[agentName]; !ok {
-			eng.Config.Agents[agentName] = config.AgentConfig{Command: agentName}
-			_ = eng.SaveConfig()
-		}
+	if agentName != "" && eng.Config.DefaultAgent == "" {
+		eng.Config.DefaultAgent = agentName
+		_ = eng.SaveConfig()
 	}
 
 	// Create dock if not already present in manifest.

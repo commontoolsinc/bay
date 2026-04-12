@@ -59,7 +59,7 @@ func (e *Engine) DockNew(name, repo, agent, terminal string) error {
 	}
 
 	if agent != "" {
-		if _, ok := e.Config.Agents[agent]; !ok {
+		if _, ok := e.Config.ResolveAgent(agent); !ok {
 			return fmt.Errorf("unknown agent %q", agent)
 		}
 	}

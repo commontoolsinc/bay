@@ -12,23 +12,66 @@ import (
 
 // Config represents the top-level bay configuration.
 type Config struct {
-	Agents  map[string]AgentConfig `toml:"agents"`
-	Docks   map[string]DockConfig  `toml:"docks"`
-	Editor  EditorConfig           `toml:"editor"`
-	Monitor MonitorConfig          `toml:"monitor"`
+	DefaultAgent  string                `toml:"default_agent,omitempty"`
+	DefaultEditor string                `toml:"default_editor,omitempty"`
+	Agents        map[string]AgentConfig `toml:"agents,omitempty"`
+	Docks         map[string]DockConfig  `toml:"docks"`
+	Monitor       MonitorConfig          `toml:"monitor"`
 }
 
-// EditorConfig configures the editor launched by `bay edit`.
-type EditorConfig struct {
-	Command string `toml:"command"`
-	GUI     *bool  `toml:"gui,omitempty"` // nil = auto-detect from command name
-}
-
-// AgentConfig defines an agent type.
+// AgentConfig allows overriding built-in agent defaults.
+// Most users won't need this — the built-in registry covers claude,
+// codex, and gemini. Use this for custom agents or to override
+// resume_args / project_file for a known agent.
 type AgentConfig struct {
 	Command     string `toml:"command"`
 	ResumeArgs  string `toml:"resume_args,omitempty"`
 	ProjectFile string `toml:"project_file,omitempty"`
+}
+
+// AgentInfo describes a known or configured agent.
+type AgentInfo struct {
+	Command     string
+	ResumeArgs  string
+	ProjectFile string
+}
+
+// KnownAgents are built-in agent definitions, similar to how editors
+// have a built-in GUI detection list. These are used when no config
+// override exists for the agent.
+var KnownAgents = map[string]AgentInfo{
+	"claude": {Command: "claude", ResumeArgs: "--continue", ProjectFile: "CLAUDE.md"},
+	"codex":  {Command: "codex"},
+	"gemini": {Command: "gemini"},
+}
+
+// ResolveAgent returns the effective AgentInfo for a named agent,
+// checking config overrides first, then built-in defaults.
+func (c *Config) ResolveAgent(name string) (AgentInfo, bool) {
+	if ac, ok := c.Agents[name]; ok {
+		info := AgentInfo{
+			Command:     ac.Command,
+			ResumeArgs:  ac.ResumeArgs,
+			ProjectFile: ac.ProjectFile,
+		}
+		// Fill in gaps from built-in if the config only partially overrides.
+		if builtin, ok := KnownAgents[name]; ok {
+			if info.Command == "" {
+				info.Command = builtin.Command
+			}
+			if info.ResumeArgs == "" {
+				info.ResumeArgs = builtin.ResumeArgs
+			}
+			if info.ProjectFile == "" {
+				info.ProjectFile = builtin.ProjectFile
+			}
+		}
+		return info, info.Command != ""
+	}
+	if builtin, ok := KnownAgents[name]; ok {
+		return builtin, builtin.Command != ""
+	}
+	return AgentInfo{}, false
 }
 
 // DockConfig holds optional per-dock overrides.
@@ -133,9 +176,14 @@ func Save(path string, cfg *Config) error {
 // Validate checks the config for errors.
 func (c *Config) Validate() []string {
 	var errs []string
+	if c.DefaultAgent != "" {
+		if _, ok := c.ResolveAgent(c.DefaultAgent); !ok {
+			errs = append(errs, fmt.Sprintf("default_agent %q is not a known or configured agent", c.DefaultAgent))
+		}
+	}
 	for name, dock := range c.Docks {
 		if dock.Agent != "" {
-			if _, ok := c.Agents[dock.Agent]; !ok {
+			if _, ok := c.ResolveAgent(dock.Agent); !ok {
 				errs = append(errs, fmt.Sprintf("dock %q references unknown agent %q", name, dock.Agent))
 			}
 		}
@@ -143,13 +191,17 @@ func (c *Config) Validate() []string {
 	return errs
 }
 
-// ResolvedDockAgent returns the effective agent for a dock,
-// checking config overrides first, then the manifest default.
+// ResolvedDockAgent returns the effective agent for a dock.
+// Resolution order: per-dock config override → manifest dock default →
+// global default_agent in config.
 func (c *Config) ResolvedDockAgent(dockName, manifestDefault string) string {
 	if dc, ok := c.Docks[dockName]; ok && dc.Agent != "" {
 		return dc.Agent
 	}
-	return manifestDefault
+	if manifestDefault != "" {
+		return manifestDefault
+	}
+	return c.DefaultAgent
 }
 
 // ResolvedDockAgentArgs returns the effective agent args for a dock,

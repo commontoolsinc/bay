@@ -41,8 +41,10 @@ func TestDefaultSetupConfig(t *testing.T) {
 	if cfg == nil {
 		t.Fatal("defaultSetupConfig returned nil")
 	}
-	if len(cfg.Agents) == 0 {
-		t.Error("expected at least one agent defined")
+	// default_agent is set by probing PATH; may be empty in CI.
+	// Just verify the config is valid.
+	if cfg.Monitor.IntervalSeconds <= 0 {
+		t.Error("expected monitor interval > 0")
 	}
 }
 

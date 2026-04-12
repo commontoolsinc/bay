@@ -139,7 +139,8 @@ Do you want to proceed
 			// Install tmux keybindings
 			installKeybindings(reader)
 
-			// Configure editor
+			// Configure defaults
+			configureAgent(reader, configPath)
 			configureEditor(reader, configPath)
 
 			// Compile bay-focus helper (macOS only)
@@ -157,11 +158,7 @@ Do you want to proceed
 // defaultSetupConfig returns the default config for new installations.
 func defaultSetupConfig() *config.Config {
 	return &config.Config{
-		Agents: map[string]config.AgentConfig{
-			"claude": {Command: "claude", ProjectFile: "CLAUDE.md"},
-			"codex":  {Command: "codex"},
-			"gemini": {Command: "gemini"},
-		},
+		DefaultAgent: probeAgent(),
 		Monitor: config.MonitorConfig{
 			IntervalSeconds: 3,
 		},
@@ -423,6 +420,46 @@ func installKeybindings(reader *bufio.Reader) {
 	fmt.Println("Added.")
 }
 
+func configureAgent(reader *bufio.Reader, configPath string) {
+	fmt.Println()
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return
+	}
+
+	current := cfg.DefaultAgent
+	if current == "" {
+		current = probeAgent()
+	}
+
+	if current != "" {
+		fmt.Printf("Set default agent for 'bay agent' (common options: claude, codex, gemini)\n")
+		fmt.Printf("Agent [%s]: ", current)
+	} else {
+		fmt.Println("Set default agent for 'bay agent' (common options: claude, codex, gemini)")
+		fmt.Print("Agent: ")
+	}
+
+	answer, _ := reader.ReadString('\n')
+	answer = strings.TrimSpace(answer)
+
+	if answer == "" && current != "" {
+		// Accept the probed default.
+		answer = current
+	}
+	if answer == "" {
+		return
+	}
+
+	cfg.DefaultAgent = answer
+	if err := config.Save(configPath, cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not save agent setting: %v\n", err)
+		return
+	}
+	fmt.Printf("Default agent set to %q\n", answer)
+}
+
 func configureEditor(reader *bufio.Reader, configPath string) {
 	fmt.Println()
 
@@ -447,7 +484,7 @@ func configureEditor(reader *bufio.Reader, configPath string) {
 		return
 	}
 
-	cfg.Editor.Command = answer
+	cfg.DefaultEditor = answer
 	if err := config.Save(configPath, cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not save editor setting: %v\n", err)
 		return

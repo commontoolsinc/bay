@@ -73,7 +73,7 @@ func TestBayConfigEditor_NoArgPrintsResolvedEditor(t *testing.T) {
 	// Tests the helper that backs `bay config editor` (no arg).
 	// Format must match the old `bay edit --show` output:
 	// "<command> (<terminal|GUI>)" or "No editor configured or detected."
-	cfg := &config.Config{Editor: config.EditorConfig{Command: "nvim"}}
+	cfg := &config.Config{DefaultEditor: "nvim"}
 	got := configEditorGetString(cfg)
 	if got != "nvim (terminal)" {
 		t.Errorf("configEditorGetString = %q, want %q", got, "nvim (terminal)")
@@ -81,7 +81,7 @@ func TestBayConfigEditor_NoArgPrintsResolvedEditor(t *testing.T) {
 }
 
 func TestBayConfigEditor_NoArgWithGUIEditor(t *testing.T) {
-	cfg := &config.Config{Editor: config.EditorConfig{Command: "cursor"}}
+	cfg := &config.Config{DefaultEditor: "cursor"}
 	got := configEditorGetString(cfg)
 	if got != "cursor (GUI)" {
 		t.Errorf("configEditorGetString = %q, want %q", got, "cursor (GUI)")
@@ -121,8 +121,8 @@ func TestBayConfigEditor_WithArgPersistsEditor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loading config: %v", err)
 	}
-	if loaded.Editor.Command != "cursor" {
-		t.Errorf("persisted editor = %q, want cursor", loaded.Editor.Command)
+	if loaded.DefaultEditor != "cursor" {
+		t.Errorf("persisted editor = %q, want cursor", loaded.DefaultEditor)
 	}
 }
 
@@ -148,8 +148,8 @@ func TestRunConfigEditorSet_CreatesConfigWhenMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loading saved config: %v", err)
 	}
-	if loaded.Editor.Command != "cursor" {
-		t.Errorf("persisted editor = %q, want cursor", loaded.Editor.Command)
+	if loaded.DefaultEditor != "cursor" {
+		t.Errorf("persisted editor = %q, want cursor", loaded.DefaultEditor)
 	}
 }
 
@@ -205,9 +205,8 @@ func TestPrepareConfigFileForEdit_LeavesExistingFileAlone(t *testing.T) {
 
 	// Seed a config the user supposedly already wrote.
 	userCfg := &config.Config{
-		Agents: map[string]config.AgentConfig{"claude": {Command: "claude"}},
-		Docks:  map[string]config.DockConfig{},
-		Editor: config.EditorConfig{Command: "user-editor"},
+		Docks:         map[string]config.DockConfig{},
+		DefaultEditor: "user-editor",
 	}
 	if err := config.Save(configPath, userCfg); err != nil {
 		t.Fatalf("seeding user config: %v", err)
@@ -222,11 +221,8 @@ func TestPrepareConfigFileForEdit_LeavesExistingFileAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loading after prepare: %v", err)
 	}
-	if loaded.Editor.Command != "user-editor" {
-		t.Errorf("user's editor command was clobbered; got %q, want user-editor", loaded.Editor.Command)
-	}
-	if _, ok := loaded.Agents["claude"]; !ok {
-		t.Error("user's claude agent was clobbered")
+	if loaded.DefaultEditor != "user-editor" {
+		t.Errorf("user's editor command was clobbered; got %q, want user-editor", loaded.DefaultEditor)
 	}
 }
 
@@ -264,10 +260,7 @@ func TestEnsureConfigFileDir_NoOpWhenDirectoryExists(t *testing.T) {
 
 func TestBayConfigShow_OutputContainsExpectedFields(t *testing.T) {
 	cfg := &config.Config{
-		Agents: map[string]config.AgentConfig{
-			"claude": {Command: "claude"},
-		},
-		Editor: config.EditorConfig{Command: "nvim"},
+		DefaultEditor: "nvim",
 		Monitor: config.MonitorConfig{
 			IntervalSeconds: 5,
 		},
@@ -280,7 +273,7 @@ func TestBayConfigShow_OutputContainsExpectedFields(t *testing.T) {
 	// about. We don't pin the exact format because TOML re-rendering
 	// can vary; just verify the surface mentions agents, editor,
 	// monitor.
-	for _, want := range []string{"claude", "nvim", "5"} {
+	for _, want := range []string{"nvim", "5"} {
 		if !contains(out, want) {
 			t.Errorf("config show output missing %q; got:\n%s", want, out)
 		}

@@ -45,12 +45,12 @@ func newDoctorCmd() *cobra.Command {
 			}
 
 			// Check configured editor
-			if eng.Config.Editor.Command != "" {
-				if _, err := exec.LookPath(eng.Config.Editor.Command); err != nil {
-					fmt.Printf("[WARN] configured editor %q not found in PATH\n", eng.Config.Editor.Command)
+			if eng.Config.DefaultEditor != "" {
+				if _, err := exec.LookPath(eng.Config.DefaultEditor); err != nil {
+					fmt.Printf("[WARN] configured editor %q not found in PATH\n", eng.Config.DefaultEditor)
 					ok = false
 				} else {
-					fmt.Printf("[OK] editor %q available\n", eng.Config.Editor.Command)
+					fmt.Printf("[OK] editor %q available\n", eng.Config.DefaultEditor)
 				}
 			}
 
@@ -81,16 +81,17 @@ func newDoctorCmd() *cobra.Command {
 					fmt.Printf("[OK] repo %q accessible\n", repo.Name)
 
 					// Check bay awareness in agent project files.
-					for agentName, agent := range eng.Config.Agents {
-						if agent.ProjectFile == "" {
+					for agentName := range config.KnownAgents {
+						info, _ := eng.Config.ResolveAgent(agentName)
+						if info.ProjectFile == "" {
 							continue
 						}
-						pf := filepath.Join(path, agent.ProjectFile)
+						pf := filepath.Join(path, info.ProjectFile)
 						data, readErr := os.ReadFile(pf)
 						if readErr != nil {
-							fmt.Printf("[INFO] repo %q: %s not found (run bay repo init %s)\n", repo.Name, agent.ProjectFile, repo.Name)
+							fmt.Printf("[INFO] repo %q: %s not found (run bay repo init %s)\n", repo.Name, info.ProjectFile, repo.Name)
 						} else if !strings.Contains(string(data), "bay agent-guide") {
-							fmt.Printf("[INFO] repo %q: %s missing bay awareness for %s (run bay repo init %s)\n", repo.Name, agent.ProjectFile, agentName, repo.Name)
+							fmt.Printf("[INFO] repo %q: %s missing bay awareness for %s (run bay repo init %s)\n", repo.Name, info.ProjectFile, agentName, repo.Name)
 						}
 					}
 				}

@@ -208,12 +208,9 @@ func resolveEditorWithOverride(cfg *config.Config, override string) (string, boo
 
 func resolveEditor(cfg *config.Config) (command string, isGUI bool) {
 	// 1. Config
-	if cfg.Editor.Command != "" {
-		cmd := cfg.Editor.Command
-		gui := guiEditors[cmd]
-		if cfg.Editor.GUI != nil {
-			gui = *cfg.Editor.GUI
-		}
+	if cfg.DefaultEditor != "" {
+		cmd := cfg.DefaultEditor
+		gui := guiEditors[baseCommand(cmd)]
 		return cmd, gui
 	}
 

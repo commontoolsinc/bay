@@ -11,14 +11,23 @@ func (e *Engine) validateAgentName(agentName string) error {
 	if agentName == "" {
 		return fmt.Errorf("agent name is required")
 	}
-	agentCfg, ok := e.Config.Agents[agentName]
+	info, ok := e.Config.ResolveAgent(agentName)
 	if !ok {
 		return fmt.Errorf("unknown agent %q", agentName)
 	}
-	if strings.TrimSpace(agentCfg.Command) == "" {
+	if strings.TrimSpace(info.Command) == "" {
 		return fmt.Errorf("agent %q has no command configured", agentName)
 	}
 	return nil
+}
+
+// DefaultAgent returns the effective default agent for a dock, or "" if none.
+func (e *Engine) DefaultAgent(dockName string) string {
+	m, err := e.LoadManifest()
+	if err != nil {
+		return ""
+	}
+	return e.resolvedDockAgent(dockName, m)
 }
 
 func (e *Engine) resolveWorkspaceAgent(dockName string, m *manifest.Manifest, requested string, requireAgent bool) (string, error) {
@@ -47,8 +56,8 @@ func (e *Engine) buildAgentCommand(agentName string, agentArgs []string) (string
 	if err := e.validateAgentName(agentName); err != nil {
 		return "", err
 	}
-	agentCfg := e.Config.Agents[agentName]
-	parts := []string{agentCfg.Command}
+	info, _ := e.Config.ResolveAgent(agentName)
+	parts := []string{info.Command}
 	parts = append(parts, agentArgs...)
 	return strings.Join(parts, " "), nil
 }
@@ -59,10 +68,10 @@ func (e *Engine) buildAgentResumeCommand(agentName string, agentArgs []string) (
 	if err := e.validateAgentName(agentName); err != nil {
 		return "", err
 	}
-	agentCfg := e.Config.Agents[agentName]
-	parts := []string{agentCfg.Command}
-	if agentCfg.ResumeArgs != "" {
-		parts = append(parts, strings.Fields(agentCfg.ResumeArgs)...)
+	info, _ := e.Config.ResolveAgent(agentName)
+	parts := []string{info.Command}
+	if info.ResumeArgs != "" {
+		parts = append(parts, strings.Fields(info.ResumeArgs)...)
 	}
 	parts = append(parts, agentArgs...)
 	return strings.Join(parts, " "), nil
