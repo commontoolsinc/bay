@@ -502,9 +502,30 @@ func FormatListView(view ListView, long, short bool) string {
 			}
 			p, _ := indentedPrefix(1, "dk", dock.Name+dockMarker, short)
 			fmt.Fprintln(&b, p)
-			if len(dock.Workspaces) == 0 {
+			// Dock-level surfaces (e.g., dock editor).
+			if len(dock.Surfaces) > 0 {
+				var dockSfRows []alignedRow
+				for _, s := range dock.Surfaces {
+					sfP, sfW := indentedPrefix(2, "sf", s.Name, short)
+					dockSfRows = append(dockSfRows, alignedRow{
+						prefix:      sfP,
+						prefixWidth: sfW,
+						metaCols:    surfaceMetaCols(s, long, short),
+					})
+				}
+				dockSfAlign := alignWidth(dockSfRows)
+				dockSfColWidths := alignColumnWidths(dockSfRows)
+				for _, sr := range dockSfRows {
+					writeAlignedLine(&b, sr.prefix, sr.prefixWidth, sr.metaCols, dockSfAlign, dockSfColWidths)
+				}
+			}
+
+			if len(dock.Workspaces) == 0 && len(dock.Surfaces) == 0 {
 				p, _ := indentedPrefix(2, "", "(no workspaces)", short)
 				fmt.Fprintln(&b, p)
+				continue
+			}
+			if len(dock.Workspaces) == 0 {
 				continue
 			}
 			showChildren := view.Recursive || view.Focus.Kind == FocusWorkspace

@@ -176,20 +176,16 @@ func newTopNewEditCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "edit [workspace]",
-		Short: "Launch the editor on a workspace (creates an editor surface)",
-		Long: `Launch the editor on a workspace and register a tracked editor surface
-so it appears in 'bay go'. With no positional and no flags, opens the
-current workspace.
+		Short: "Launch a workspace-scoped editor surface",
+		Long: `Launch the editor on a specific workspace directory (creates a tracked
+editor surface). For a dock-scoped editor covering all workspaces,
+use 'bay edit' instead.
 
   bay new edit                       current workspace
-  bay new edit auth-fix              specific workspace (positional)
+  bay new edit auth-fix              specific workspace
   bay new edit --ws auth-fix         same thing with a flag
-  bay new edit --ws w1 --dock labs   dock-qualified via flags
   bay new edit --editor vim          use a specific editor this time
-  bay new edit --split v             open as a vertical split
-
-This is equivalent to bare 'bay edit [workspace]'. Use 'bay edit' if you need
-the --all utility flag.`,
+  bay new edit --pane                open as a split pane`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()

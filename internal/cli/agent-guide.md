@@ -454,7 +454,7 @@ open a shell instead.
 Terminal editors (nvim, vim) create a tracked surface in their own
 tmux window (or pane with `--pane`). The surface is cleaned up when
 the editor exits. GUI editors (Cursor, VS Code, Zed) launch and
-return — bay does not track them.
+return — running `bay edit` again focuses the existing window.
 
 Editor resolution: `--editor` flag > `default_editor` in config >
 `$VISUAL` > `$EDITOR` > probe (cursor, code, zed, nvim, vim).

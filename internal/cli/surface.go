@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -69,7 +68,6 @@ type surfaceNewOpts struct {
 	Name     string // surface display name; defaults derived from Type
 	SplitDir string
 }
-
 
 // validateSurfaceName rejects names containing a colon. Users who type
 // `bay new shell w1:logs` expecting colon-path semantics would otherwise
@@ -181,15 +179,27 @@ func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string,
 		}
 		return fmt.Errorf("specify a surface name (or 'self' to close the current surface)")
 	}
+
+	// Handle dock:name syntax for dock-level surfaces.
+	if sfName, ok := isDockSurface(args[0]); ok {
+		session, err := eng.Tmux.CurrentSession()
+		if err != nil {
+			return fmt.Errorf("not in a tmux session")
+		}
+		return eng.DockSurfaceClose(session, sfName)
+	}
+
 	dockName, wsName, sName, err := resolveSurfaceArgOrSelf(eng, args[0], wsFlag, dockFlag)
 	if err != nil {
 		return err
 	}
 
-	// Confirmation prompt for agent surfaces. Skipped entirely when --force
-	// is set; otherwise we look up the surface type and ask
-	// confirmAgentClose (which handles the TTY check and prompt itself,
-	// or returns the test stub's answer).
+	// wsName == "" means this resolved to a dock surface (via self).
+	if wsName == "" {
+		return eng.DockSurfaceClose(dockName, sName)
+	}
+
+	// Confirmation prompt for agent surfaces.
 	if !force {
 		ws, err := eng.WsShow(dockName, wsName)
 		if err != nil {
@@ -199,14 +209,13 @@ func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string,
 		if s != nil && s.Type == manifest.SurfaceTypeAgent {
 			if !confirmAgentClose(s.Name) {
 				fmt.Fprintln(os.Stderr, "not closing.")
-				return nil // user declined; not an error
+				return nil
 			}
 		}
 	}
 
 	return eng.SurfaceClose(dockName, wsName, sName, force)
 }
-
 
 func newSurfaceGoCmd() *cobra.Command {
 	var nextWaiting bool
@@ -518,12 +527,6 @@ func surfaceCycle(eng *engine.Engine, forward bool) error {
 
 // focusSurface switches focus to a surface and records it as last-focused.
 func focusSurface(eng *engine.Engine, entry *nav.SurfaceEntry, dockName, wsName string) error {
-	// GUI surface: launch the editor CLI to activate its window.
-	if entry.AppCommand != "" {
-		_ = eng.SetLastFocused(dockName, wsName, entry.ID)
-		return focusGUISurface(entry)
-	}
-	// Tmux surface: select window + pane.
 	if entry.WindowID != "" {
 		if err := eng.Tmux.SelectWindow(entry.WindowID); err != nil {
 			return err
@@ -536,20 +539,6 @@ func focusSurface(eng *engine.Engine, entry *nav.SurfaceEntry, dockName, wsName 
 	}
 	_ = eng.SetLastFocused(dockName, wsName, entry.ID)
 	return nil
-}
-
-// focusGUISurface activates a GUI application by re-running its CLI command.
-// Editors like cursor and code reuse their existing window when launched
-// on an already-open path.
-func focusGUISurface(entry *nav.SurfaceEntry) error {
-	args := strings.Fields(entry.AppCommand)
-	if len(args) == 0 {
-		return nil
-	}
-	cmd := exec.Command(args[0], args[1:]...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Start()
 }
 
 // pickSurface shows the built-in picker for surface selection.

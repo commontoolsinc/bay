@@ -84,6 +84,7 @@ func (e *Engine) DockRecover(name string) (RecoverResult, error) {
 	}
 
 	outcome := e.recoverDockWorkspaces(dock, agentArgs)
+	e.recoverDockSurfaces(dock, &outcome)
 	e.cleanPlaceholders(name)
 	e.recoverDockHostTerminal(dock, &outcome)
 
@@ -103,6 +104,54 @@ func (e *Engine) DockRecover(name string) (RecoverResult, error) {
 		return result, fmt.Errorf("recovery completed with errors:\n%s", strings.Join(outcome.errs, "\n"))
 	}
 	return result, nil
+}
+
+// recoverDockSurfaces recreates dock-level surfaces (e.g., dock editor).
+func (e *Engine) recoverDockSurfaces(dock *manifest.Dock, outcome *recoverOutcome) {
+	for i := range dock.Surfaces {
+		s := &dock.Surfaces[i]
+		if s.Tmux == nil {
+			continue
+		}
+		// Check if the window still exists.
+		if s.Tmux.WindowID != "" {
+			exists, _ := e.Tmux.WindowExists(s.Tmux.WindowID)
+			if exists {
+				continue // already alive
+			}
+		}
+
+		// Determine CWD — use the repo's worktree dir if available.
+		cwd := "/tmp"
+		if dock.Repo != "" {
+			m, _ := e.LoadManifest()
+			if m != nil {
+				if parentDir, err := e.EditAllParentDir(dock.Name); err == nil {
+					cwd = parentDir
+				}
+			}
+		}
+
+		// Recreate the window.
+		winID, err := e.Tmux.NewWindow(dock.Name, s.Name, cwd)
+		if err != nil {
+			outcome.errs = append(outcome.errs, fmt.Sprintf("dock surface %s: %v", s.Name, err))
+			continue
+		}
+		_ = e.Tmux.SetWindowOption(winID, "@bay-dock-editor", "1")
+		_ = e.Tmux.MoveWindow(winID, 0)
+
+		panes, _ := e.Tmux.ListPanes(winID)
+		if len(panes) > 0 {
+			s.Tmux.PaneID = panes[0].ID
+			if s.Command != nil && *s.Command != "" {
+				_ = e.Tmux.RespawnPane(panes[0].ID, cwd, *s.Command)
+			}
+		}
+		s.Tmux.WindowID = winID
+		outcome.recovered = append(outcome.recovered, fmt.Sprintf("dock surface: %s", s.Name))
+		outcome.changed = true
+	}
 }
 
 // recoverDockWorkspaces handles recovery for all workspaces in a dock.

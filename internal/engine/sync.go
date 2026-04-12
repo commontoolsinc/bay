@@ -92,6 +92,29 @@ func (e *Engine) SyncAll() {
 				changed = true
 			}
 		}
+		// Clean up dead dock-level surfaces.
+		for i := range m.Docks {
+			dock := &m.Docks[i]
+			if len(dock.Surfaces) == 0 {
+				continue
+			}
+			sessionAlive, _ := e.Tmux.HasSession(dock.Name)
+			if !sessionAlive {
+				continue
+			}
+			live := dock.Surfaces[:0]
+			for _, s := range dock.Surfaces {
+				if s.Tmux != nil && s.Tmux.PaneID != "" {
+					exists, _ := e.Tmux.PaneExists(s.Tmux.PaneID)
+					if !exists {
+						changed = true
+						continue
+					}
+				}
+				live = append(live, s)
+			}
+			dock.Surfaces = live
+		}
 		return changed, nil
 	})
 }

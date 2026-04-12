@@ -13,7 +13,7 @@ func newDockCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "dock",
 		Aliases: []string{"dk"},
-		Short: "Manage docks (tmux session groups)",
+		Short:   "Manage docks (tmux session groups)",
 	}
 
 	cmd.AddCommand(

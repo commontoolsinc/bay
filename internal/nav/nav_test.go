@@ -356,29 +356,7 @@ func buildSurfaceWorkspace() *manifest.Workspace {
 			{ID: 1, Name: "agent", Type: manifest.SurfaceTypeAgent, Backend: manifest.SurfaceBackendTmux, Agent: &agent, Tmux: &manifest.TmuxAttrs{PaneID: "%1", WindowID: "@1", LayoutGroup: 1}},
 			{ID: 2, Name: "shell", Type: manifest.SurfaceTypeShell, Backend: manifest.SurfaceBackendTmux, Tmux: &manifest.TmuxAttrs{PaneID: "%2", WindowID: "@1", LayoutGroup: 1}},
 			{ID: 3, Name: "tests", Type: manifest.SurfaceTypeCmd, Backend: manifest.SurfaceBackendTmux, Command: &cmd, Tmux: &manifest.TmuxAttrs{PaneID: "%3", WindowID: "@2", LayoutGroup: 2}},
-			{ID: 4, Name: "editor", Type: manifest.SurfaceTypeEditor, Backend: manifest.SurfaceBackendGUI, GUI: &manifest.GUIAttrs{AppCommand: "cursor", PID: 99999}},
 		},
-	}
-}
-
-func TestCollectSurfaces_IncludesGUI(t *testing.T) {
-	ws := buildSurfaceWorkspace()
-
-	entries := CollectSurfaces(ws, "", nil)
-
-	if len(entries) != 4 {
-		t.Fatalf("expected 4 surface entries (3 tmux + 1 gui), got %d", len(entries))
-	}
-
-	gui := entries[3]
-	if gui.Name != "editor" || gui.Type != "editor" {
-		t.Errorf("gui entry: name=%q type=%q", gui.Name, gui.Type)
-	}
-	if gui.AppCommand != "cursor" {
-		t.Errorf("gui entry: app_command=%q, want cursor", gui.AppCommand)
-	}
-	if gui.PaneID != "" || gui.WindowID != "" {
-		t.Error("gui entry should have no tmux IDs")
 	}
 }
 
@@ -387,8 +365,8 @@ func TestCollectSurfaces(t *testing.T) {
 
 	entries := CollectSurfaces(ws, "%2", nil)
 
-	if len(entries) != 4 {
-		t.Fatalf("expected 4 surface entries, got %d", len(entries))
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 surface entries, got %d", len(entries))
 	}
 	if entries[0].Name != "agent" || entries[0].Type != "agent" {
 		t.Errorf("entry 0: name=%q type=%q", entries[0].Name, entries[0].Type)
@@ -425,11 +403,8 @@ func TestNextSurface(t *testing.T) {
 
 func TestNextSurface_WrapsAround(t *testing.T) {
 	ws := buildSurfaceWorkspace()
-	// Current = editor (index 3, last). Next should wrap to agent (index 0).
-	// Editor is GUI so we mark current by absence — set a non-matching pane
-	// and manually mark the entry.
-	entries := CollectSurfaces(ws, "", nil)
-	entries[3].Current = true
+	// Current = tests (index 2, last). Next should wrap to agent (index 0).
+	entries := CollectSurfaces(ws, "%3", nil)
 
 	next, idx := NextSurface(entries)
 	if next == nil || next.Name != "agent" || idx != 0 {
@@ -452,11 +427,10 @@ func TestPrevSurface_WrapsAround(t *testing.T) {
 	entries := CollectSurfaces(ws, "%1", nil) // current = agent (index 0, first)
 
 	prev, idx := PrevSurface(entries)
-	if prev == nil || prev.Name != "editor" || idx != 3 {
-		t.Errorf("prev before first: got (%v, %d), want (editor, 3)", prev, idx)
+	if prev == nil || prev.Name != "tests" || idx != 2 {
+		t.Errorf("prev before first: got (%v, %d), want (tests, 2)", prev, idx)
 	}
 }
-
 
 func TestNextSurface_NoCurrent(t *testing.T) {
 	ws := buildSurfaceWorkspace()

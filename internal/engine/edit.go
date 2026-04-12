@@ -47,6 +47,64 @@ func (e *Engine) EditAll(dockName string) ([]string, error) {
 	return paths, nil
 }
 
+// DockEditorAdd creates a dock-level editor surface. Creates a tmux window
+// at index 0, tagged with @bay-dock-editor, and runs the editor command.
+// If the editor window already exists, focuses it instead.
+func (e *Engine) DockEditorAdd(dockName, editorCmd, editPath string) error {
+	// Check if dock editor window already exists in tmux.
+	if winID, found := e.Tmux.FindDockEditorWindow(dockName); found {
+		return e.Tmux.SelectWindow(winID)
+	}
+
+	// Create a new tmux window.
+	winID, err := e.Tmux.NewWindow(dockName, "edit", editPath)
+	if err != nil {
+		return fmt.Errorf("creating dock editor window: %w", err)
+	}
+
+	// Tag it and move to index 0.
+	_ = e.Tmux.SetWindowOption(winID, "@bay-dock-editor", "1")
+	_ = e.Tmux.MoveWindow(winID, 0)
+
+	// Get the pane ID.
+	panes, err := e.Tmux.ListPanes(winID)
+	if err != nil || len(panes) == 0 {
+		return fmt.Errorf("listing panes for dock editor: %w", err)
+	}
+	paneID := panes[0].ID
+
+	// Launch the editor.
+	fullCmd := editorCmd + " " + editPath
+	_ = e.Tmux.RespawnPane(paneID, editPath, fullCmd)
+
+	// Record in manifest.
+	return e.withManifest(func(m *manifest.Manifest) error {
+		dock := m.FindDock(dockName)
+		if dock == nil {
+			return fmt.Errorf("unknown dock %q", dockName)
+		}
+		// Remove any stale dock editor surface.
+		for i := range dock.Surfaces {
+			if dock.Surfaces[i].Type == manifest.SurfaceTypeEditor {
+				dock.Surfaces = append(dock.Surfaces[:i], dock.Surfaces[i+1:]...)
+				break
+			}
+		}
+		cmd := fullCmd
+		dock.AddDockSurface(manifest.Surface{
+			Name:    "edit",
+			Type:    manifest.SurfaceTypeEditor,
+			Backend: manifest.SurfaceBackendTmux,
+			Command: &cmd,
+			Tmux: &manifest.TmuxAttrs{
+				PaneID:   paneID,
+				WindowID: winID,
+			},
+		})
+		return nil
+	})
+}
+
 // EditAllParentDir returns the worktree parent directory for a dock's repo.
 func (e *Engine) EditAllParentDir(dockName string) (string, error) {
 	m, err := e.LoadManifest()

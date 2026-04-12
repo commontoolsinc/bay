@@ -63,8 +63,7 @@ bay setup
 ```
 
 This creates your config file, installs tmux keybindings, sets up shell
-completions, configures your editor for `bay edit`, and compiles the
-bay-focus helper (macOS).
+completions, and configures your default agent and editor.
 
 ### Explicit repo and dock
 
@@ -523,8 +522,9 @@ bay edit --pane             # split pane instead of new window
 ```
 
 **GUI editors** (Cursor, VS Code, Zed) launch and return — bay does
-not track the editor window. Manage it yourself with Cmd+Tab or
-your OS window manager.
+not track the editor window. Running `bay edit` again focuses the
+existing window (these editors reuse the window for an already-open
+directory), so `Option+e` works as both "launch" and "switch to."
 
 **Terminal editors** (nvim, vim) run in their own tmux window (or
 pane with `--pane`) as a tracked surface. When you quit the editor,
@@ -720,20 +720,6 @@ bay ws new api-changes --dock feature-work --repo backend
 
 Both workspaces live in the same tmux session. Navigate between them
 with `bay ws go`, see them together in `bay ls`.
-
-## bay-focus helper (macOS)
-
-On macOS, bay can switch between tmux and GUI editors across Spaces
-(virtual desktops). The `bay-focus` Swift helper enables this.
-
-`bay setup` compiles the helper automatically. Requirements:
-- Accessibility permission (System Settings > Privacy & Security)
-- Ctrl+1..9 Space shortcuts enabled in System Settings
-
-Without the helper, everything still works -- you just switch Spaces
-manually with Cmd+Tab. Nothing breaks.
-
-Run `bay doctor` to check helper status and Accessibility permission.
 
 ## Shell completions
 

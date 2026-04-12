@@ -35,7 +35,6 @@ func TestKeybindingsIncludeSurfaceNavigation(t *testing.T) {
 	}
 }
 
-
 func TestCheckManifestConsistency(t *testing.T) {
 	cfg := &config.Config{
 		Agents: map[string]config.AgentConfig{
