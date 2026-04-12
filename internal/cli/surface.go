@@ -71,17 +71,6 @@ type surfaceNewOpts struct {
 	SplitDir string
 }
 
-// surfaceSplitDir resolves the final tmux split direction. --window forces a
-// new window (empty string). Otherwise, an empty splitDir defaults to "v".
-func surfaceSplitDir(splitDir string, window bool) string {
-	if window {
-		return ""
-	}
-	if splitDir == "" {
-		return "v"
-	}
-	return splitDir
-}
 
 // validateSurfaceName rejects names containing a colon. Users who type
 // `bay new shell w1:logs` expecting colon-path semantics would otherwise

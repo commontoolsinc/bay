@@ -7,7 +7,7 @@ import (
 )
 
 func newShellCmd() *cobra.Command {
-	var window bool
+	var window, pane bool
 	var splitDir string
 	var wsFlag, dockFlag string
 
@@ -17,9 +17,10 @@ func newShellCmd() *cobra.Command {
 		Long: `Add a shell surface to a workspace. The positional is the new
 shell's display name; --ws/--dock select the target workspace.
 
-  bay shell                    split a shell into the current workspace
+  bay shell                    shell in a new window (default)
   bay shell logs               new shell named "logs"
-  bay shell --window           new tmux window instead of split
+  bay shell --pane             split into current window
+  bay shell --split h          horizontal split
   bay shell --ws auth-fix      target a different workspace`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -41,12 +42,14 @@ shell's display name; --ws/--dock select the target workspace.
 				return err
 			}
 
+			sd := resolveSplit(splitDir, window, pane)
+
 			return eng.SurfaceAdd(engine.SurfaceAddOptions{
 				DockName: dockName,
 				WsName:   wsName,
 				Type:     manifest.SurfaceTypeShell,
 				Name:     surfaceName,
-				SplitDir: surfaceSplitDir(splitDir, window),
+				SplitDir: sd,
 			})
 		},
 	}
@@ -54,7 +57,8 @@ shell's display name; --ws/--dock select the target workspace.
 	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (defaults to current)")
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (with --ws to disambiguate)")
 	cmd.Flags().StringVar(&splitDir, "split", "", "split direction (h or v)")
-	cmd.Flags().BoolVar(&window, "window", false, "open as a new tmux window instead of a split")
+	cmd.Flags().BoolVar(&pane, "pane", false, "split into current window (shorthand for --split v)")
+	cmd.Flags().BoolVar(&window, "window", false, "open as a new tmux window (default)")
 
 	return cmd
 }

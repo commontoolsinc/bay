@@ -24,10 +24,9 @@ func TestKeybindingsIncludeSurfaceNavigation(t *testing.T) {
 	for _, want := range []string{
 		"M-j", "M-k", // surface next/prev
 		"M-g",        // surface picker
-		"M-a",        // next waiting surface
+		"M-a",        // create agent
 		"M-J", "M-K", // workspace next/prev
 		"M-G", // workspace picker
-		"M-A", // next waiting workspace
 		"M-c", // create workspace
 	} {
 		if !strings.Contains(joined, want) {

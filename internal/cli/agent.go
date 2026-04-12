@@ -6,7 +6,7 @@ import (
 )
 
 func newAgentCmd() *cobra.Command {
-	var window bool
+	var window, pane bool
 	var splitDir string
 	var wsFlag, dockFlag string
 
@@ -19,7 +19,7 @@ omitted, uses the dock's default agent.
   bay agent                    dock's default agent
   bay agent claude             specific agent
   bay agent codex my-codex     specific agent with custom name
-  bay agent --window           new tmux window instead of split
+  bay agent --split v          as a vertical split instead of a window
   bay agent --ws auth-fix      target a different workspace`,
 		Args: cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -30,7 +30,7 @@ omitted, uses the dock's default agent.
 
 			opts := surfaceNewOpts{
 				Type:     manifest.SurfaceTypeAgent,
-				SplitDir: surfaceSplitDir(splitDir, window),
+				SplitDir: resolveSplit(splitDir, window, pane),
 			}
 			if len(args) > 0 {
 				opts.Agent = args[0]
@@ -54,7 +54,8 @@ omitted, uses the dock's default agent.
 	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (defaults to current)")
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (with --ws to disambiguate)")
 	cmd.Flags().StringVar(&splitDir, "split", "", "split direction (h or v)")
-	cmd.Flags().BoolVar(&window, "window", false, "open as a new tmux window instead of a split")
+	cmd.Flags().BoolVar(&pane, "pane", false, "split into current window (shorthand for --split v)")
+	cmd.Flags().BoolVar(&window, "window", false, "open as a new tmux window (default)")
 
 	return cmd
 }

@@ -196,7 +196,7 @@ func (e *Engine) launchSurfaceInTmux(tmuxPaneID, dockName string, surfaceType ma
 		if err != nil {
 			return manifest.Surface{}, err
 		}
-		_ = e.Tmux.SendKeys(tmuxPaneID, agentCmd)
+		_ = e.Tmux.RespawnPane(tmuxPaneID, cwd, agentCmd)
 	case manifest.SurfaceTypeCmd:
 		s.Command = &cmd
 		_ = e.Tmux.RespawnPane(tmuxPaneID, cwd, cmd)
