@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -93,9 +92,16 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 
 		wtDir := repo.EffectiveWorktreeDir()
 		wsPath = filepath.Join(wtDir, displayName)
-		// If the directory already exists (name reused after close), add a timestamp suffix.
+		// If the directory already exists (name reused after close),
+		// find the next available name.
 		if _, err := os.Stat(wsPath); err == nil {
-			wsPath = wsPath + "-" + strconv.FormatInt(time.Now().UnixMilli(), 36)
+			for i := 2; ; i++ {
+				candidate := filepath.Join(wtDir, fmt.Sprintf("%s-%d", displayName, i))
+				if _, err := os.Stat(candidate); os.IsNotExist(err) {
+					wsPath = candidate
+					break
+				}
+			}
 		}
 
 		if err := os.MkdirAll(wtDir, 0o755); err != nil {
