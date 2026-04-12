@@ -2197,7 +2197,7 @@ func TestSyncWorkspaceGitState_BranchCollisionGetsUniqueName(t *testing.T) {
 	}
 }
 
-func TestSyncWorkspaceGitState_EmptyBranchNoOverwrite(t *testing.T) {
+func TestSyncWorkspaceGitState_DetachRenamesBack(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	// No explicit Name → bay auto-names to w1, NameOverridden=false,
@@ -2213,14 +2213,23 @@ func TestSyncWorkspaceGitState_EmptyBranchNoOverwrite(t *testing.T) {
 	mockGit.SetBranch(ws.Path, "feature/existing")
 	eng.SyncAll()
 
+	// Verify workspace was renamed to branch-derived name.
+	ws, _ = eng.WsShow("labs", "existing")
+	if ws == nil {
+		t.Fatal("workspace should be renamed to 'existing'")
+	}
+
 	// Now mock returns empty branch (detached HEAD).
 	mockGit.SetBranch(ws.Path, "")
 	eng.SyncAll()
 
-	// The first sync renamed the workspace to "existing" via abbreviateBranch.
-	ws, _ = eng.WsShow("labs", "existing")
-	if ws.Worktree.Branch != "feature/existing" {
-		t.Errorf("branch = %q, want feature/existing (empty should not overwrite)", ws.Worktree.Branch)
+	// Workspace should be renamed back to sequential name and branch cleared.
+	ws, _ = eng.WsShow("labs", "w1")
+	if ws == nil {
+		t.Fatal("workspace should be renamed back to 'w1' after detach")
+	}
+	if ws.Worktree.Branch != "" {
+		t.Errorf("branch = %q, want empty after detach", ws.Worktree.Branch)
 	}
 }
 
