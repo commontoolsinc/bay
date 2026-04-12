@@ -682,10 +682,7 @@ func wsCycle(eng *engine.Engine, forward bool) error {
 		}
 	}
 
-	if err := eng.Tmux.SelectWindow(dockEntries[next].TmuxWindowID); err != nil {
-		return err
-	}
-	return nil
+	return eng.Tmux.SelectWindow(dockEntries[next].TmuxWindowID)
 }
 
 // pickWorkspace shows the built-in picker for workspace selection.
