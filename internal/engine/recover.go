@@ -94,6 +94,9 @@ func (e *Engine) DockRecover(name string) (RecoverResult, error) {
 		}
 	}
 
+	// Restore focus to the most recently active workspace.
+	e.restoreFocusedWindow(dock)
+
 	result := RecoverResult{
 		Dock:      name,
 		Recovered: outcome.recovered,
@@ -154,6 +157,40 @@ func (e *Engine) recoverDockSurfaces(dock *manifest.Dock, outcome *recoverOutcom
 	}
 }
 
+// restoreFocusedWindow selects the tmux window for the most recently
+// active workspace, so recovery leaves the user where they were.
+func (e *Engine) restoreFocusedWindow(dock *manifest.Dock) {
+	var bestWs *manifest.Workspace
+	for i := range dock.Workspaces {
+		ws := &dock.Workspaces[i]
+		if bestWs == nil || ws.LastActive > bestWs.LastActive {
+			bestWs = ws
+		}
+	}
+	if bestWs == nil {
+		return
+	}
+	// Find the window for the last-focused surface, or the first surface.
+	for _, s := range bestWs.Surfaces {
+		if s.Tmux != nil && s.Tmux.WindowID != "" {
+			if bestWs.LastFocused > 0 && s.ID == bestWs.LastFocused {
+				_ = e.Tmux.SelectWindow(s.Tmux.WindowID)
+				if s.Tmux.PaneID != "" {
+					_ = e.Tmux.SelectPane(s.Tmux.PaneID)
+				}
+				return
+			}
+		}
+	}
+	// Fallback: select the first surface's window.
+	for _, s := range bestWs.Surfaces {
+		if s.Tmux != nil && s.Tmux.WindowID != "" {
+			_ = e.Tmux.SelectWindow(s.Tmux.WindowID)
+			return
+		}
+	}
+}
+
 // recoverDockWorkspaces handles recovery for all workspaces in a dock.
 func (e *Engine) recoverDockWorkspaces(dock *manifest.Dock, agentArgs []string) recoverOutcome {
 	outcome := recoverOutcome{}
@@ -193,9 +230,14 @@ func (e *Engine) recoverDockWorkspaces(dock *manifest.Dock, agentArgs []string) 
 				// Window exists — reconcile panes.
 				outcome.changed = e.reconcileSurfaces(existingWindowID, ws, surfaceIndices, agentArgs, &outcome) || outcome.changed
 			} else {
-				// Window gone — recreate it.
+				// Window gone — recreate it. Primary windows (group 1) get
+				// the workspace name; secondary windows get :surfacename.
 				wsRecovered = true
-				newWindowID, err := e.Tmux.NewWindow(dock.Name, ws.Name, ws.Path)
+				windowName := ws.Name
+				if layoutGroup > 1 && len(surfaceIndices) > 0 {
+					windowName = ":" + ws.Surfaces[surfaceIndices[0]].Name
+				}
+				newWindowID, err := e.Tmux.NewWindow(dock.Name, windowName, ws.Path)
 				if err != nil {
 					outcome.errs = append(outcome.errs, fmt.Sprintf("workspace %s: create window: %v", ws.Name, err))
 					continue
