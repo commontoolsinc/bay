@@ -19,7 +19,8 @@ type Item struct {
 
 // Options configures picker behavior.
 type Options struct {
-	Prompt string // filter prompt text (default: "> ")
+	Prompt   string // filter prompt text (default: "> ")
+	Selected int    // initial cursor position (0-based index into items)
 }
 
 // Interface defines a fuzzy picker. Implementations include the built-in
@@ -67,8 +68,12 @@ func Run(items []Item, opts Options, in *os.File, out *os.File) (int, error) {
 	}
 
 	query := ""
-	cursor := 0
+	cursor := opts.Selected
+	if cursor < 0 || cursor >= len(items) {
+		cursor = 0
+	}
 	reader := newKeyReader(in)
+	prevHeight := 0
 
 	for {
 		filtered := filter(items, query)
@@ -80,7 +85,7 @@ func Run(items []Item, opts Options, in *os.File, out *os.File) (int, error) {
 			cursor = 0
 		}
 
-		render(out, filtered, cursor, prompt, query)
+		prevHeight = renderPicker(out, filtered, cursor, prompt, query, prevHeight)
 
 		key := reader.read()
 
@@ -89,11 +94,11 @@ func Run(items []Item, opts Options, in *os.File, out *os.File) (int, error) {
 			if len(filtered) == 0 {
 				continue
 			}
-			clearDisplay(out, len(filtered)+1)
+			clearDisplay(out, prevHeight)
 			return filtered[cursor].Value, nil
 
 		case keyEscape, keyCtrlC, keyEOF:
-			clearDisplay(out, len(filtered)+1)
+			clearDisplay(out, prevHeight)
 			return -1, nil
 
 		case keyDown:
@@ -210,7 +215,9 @@ func filter(items []Item, query string) []Item {
 }
 
 // render draws the picker state to the output.
-func render(out io.Writer, items []Item, cursor int, prompt, query string) {
+// renderPicker draws the picker and returns the total height (for clearing).
+// prevHeight is the height of the previous render — any extra lines are erased.
+func renderPicker(out io.Writer, items []Item, cursor int, prompt, query string, prevHeight int) int {
 	fmt.Fprintf(out, "\r\x1b[K%s%s\r\n", prompt, query)
 	for i, item := range items {
 		if i == cursor {
@@ -219,9 +226,18 @@ func render(out io.Writer, items []Item, cursor int, prompt, query string) {
 			fmt.Fprintf(out, "%s\x1b[K\r\n", item.Display)
 		}
 	}
-	lines := len(items) + 1
-	fmt.Fprintf(out, "\x1b[%dA", lines)
+	height := len(items) + 1
+	// Clear leftover lines from a previous longer render.
+	for i := height; i < prevHeight; i++ {
+		fmt.Fprint(out, "\x1b[K\r\n")
+	}
+	totalHeight := height
+	if prevHeight > height {
+		totalHeight = prevHeight
+	}
+	fmt.Fprintf(out, "\x1b[%dA", totalHeight)
 	fmt.Fprintf(out, "\r\x1b[%dC", len(prompt)+len(query))
+	return height
 }
 
 // clearDisplay clears the picker display area.

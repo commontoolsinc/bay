@@ -2,7 +2,6 @@
 package nav
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 
@@ -143,22 +142,6 @@ func NextWaiting(entries []Entry, currentWindowID string) (*Entry, int) {
 	return nil, -1
 }
 
-// FormatEntry formats a single entry for picker display.
-func FormatEntry(e Entry) string {
-	pr := ""
-	if e.PR != "" {
-		pr = "#" + e.PR
-	}
-	tags := ""
-	if e.Status == manifest.WorkspaceStatusDone {
-		tags += "  MERGED"
-	}
-	if e.Waiting {
-		tags += "  WAITING"
-	}
-	return fmt.Sprintf("%s  %s  %s  %s  %s%s",
-		e.DockName, e.WsName, e.Branch, pr, string(e.Status), tags)
-}
 
 // --- Surface-level navigation (intra-workspace) ---
 

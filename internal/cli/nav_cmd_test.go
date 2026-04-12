@@ -312,26 +312,24 @@ func TestSurfaceGo_IndexOutOfRange(t *testing.T) {
 	}
 }
 
-// --- formatSurfaceEntry ---
+// --- formatSurfaceItems ---
 
-func TestFormatSurfaceEntry(t *testing.T) {
-	e := nav.SurfaceEntry{Name: "agent", Type: "agent", Current: true, Waiting: true}
-	s := formatSurfaceEntry(e)
-	if s == "" {
-		t.Fatal("expected non-empty format")
+func TestFormatSurfaceItems(t *testing.T) {
+	entries := []nav.SurfaceEntry{
+		{Name: "agent", Type: "agent", Current: true, Waiting: true},
+		{Name: "shell", Type: "shell"},
+	}
+	items := formatSurfaceItems(entries)
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(items))
 	}
 	for _, want := range []string{"agent", "*", "WAITING"} {
-		if !contains(s, want) {
-			t.Errorf("format missing %q in %q", want, s)
+		if !contains(items[0].Display, want) {
+			t.Errorf("format missing %q in %q", want, items[0].Display)
 		}
 	}
-}
-
-func TestFormatSurfaceEntry_Plain(t *testing.T) {
-	e := nav.SurfaceEntry{Name: "shell", Type: "shell"}
-	s := formatSurfaceEntry(e)
-	if contains(s, "*") || contains(s, "WAITING") {
-		t.Errorf("plain entry should have no markers: %q", s)
+	if contains(items[1].Display, "*") || contains(items[1].Display, "WAITING") {
+		t.Errorf("plain entry should have no markers: %q", items[1].Display)
 	}
 }
 

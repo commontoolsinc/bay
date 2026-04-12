@@ -45,6 +45,7 @@ type Interface interface {
 
 	// Client display
 	DisplayMessage(msg string) error
+	DisplayPopup(cmd string) error
 	ClientWidth() (int, error)
 }
 
