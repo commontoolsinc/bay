@@ -32,76 +32,15 @@ func newSetupCmd() *cobra.Command {
 				}
 			}
 
-			// Check if config exists; write default if not (or if user confirms overwrite)
-			writeConfig := true
-			if _, err := os.Stat(configPath); err == nil {
-				// Load existing config to show what would be lost
-				existingCfg, loadErr := config.Load(configPath)
-				hasContent := loadErr == nil && len(existingCfg.Docks) > 0
-
-				// Also check manifest for repos/docks content
-				eng, engErr := newEngine()
-				if engErr == nil {
-					docks, listErr := eng.List()
-					repos, repoErr := eng.RepoList()
-					if listErr == nil && len(docks) > 0 {
-						hasContent = true
-					}
-					if repoErr == nil && len(repos) > 0 {
-						hasContent = true
-					}
-				}
-
-				if hasContent {
-					fmt.Printf("Config exists at %s with:\n", configPath)
-
-					if engErr == nil {
-						docks, listErr := eng.List()
-						if listErr == nil && len(docks) > 0 {
-							fmt.Print(FormatFullTree(docks))
-						} else {
-							repos, _ := eng.RepoList()
-							for _, repo := range repos {
-								fmt.Printf("  repo %s (%s)\n", repo.Name, repo.Path)
-							}
-							for name := range existingCfg.Docks {
-								fmt.Printf("  dock %s\n", name)
-							}
-						}
-					} else {
-						for name := range existingCfg.Docks {
-							fmt.Printf("  dock %s\n", name)
-						}
-					}
-
-					fmt.Println("\nOverwriting will DELETE all of the above and replace with defaults.")
-					fmt.Print("Type 'delete all' to confirm, or anything else to keep your config: ")
-					answer, _ := reader.ReadString('\n')
-					if strings.TrimSpace(answer) != "delete all" {
-						fmt.Println("Keeping existing config.")
-						writeConfig = false
-					}
-				} else {
-					fmt.Printf("Config already exists at %s (no repos or docks configured)\n", configPath)
-					fmt.Print("Overwrite with defaults? (y/N) ")
-					answer, _ := reader.ReadString('\n')
-					if strings.TrimSpace(strings.ToLower(answer)) != "y" {
-						fmt.Println("Keeping existing config.")
-						writeConfig = false
-					}
-				}
-			}
-
-			if writeConfig {
-				cfg := defaultSetupConfig()
-				if err := config.Save(configPath, cfg); err != nil {
+			// Ensure config file exists (empty is fine — defaults are built-in).
+			if _, err := os.Stat(configPath); os.IsNotExist(err) {
+				header := "# Bay config — run 'bay help config' for documentation.\n"
+				if err := os.WriteFile(configPath, []byte(header), 0o644); err != nil {
 					return fmt.Errorf("writing config: %w", err)
 				}
-				// Prepend a header comment pointing to docs.
-				data, _ := os.ReadFile(configPath)
-				header := "# Bay config — run 'bay help config' for documentation.\n\n"
-				_ = os.WriteFile(configPath, append([]byte(header), data...), 0o644)
-				fmt.Printf("Config written to %s\n", configPath)
+				fmt.Printf("Config created at %s\n", configPath)
+			} else {
+				fmt.Printf("Config at %s\n", configPath)
 			}
 
 			// Write default prompts file
@@ -147,20 +86,17 @@ Do you want to proceed
 			compileFocusHelper()
 
 			fmt.Println("\nSetup complete. Next steps:")
-			fmt.Println("  Run bay ws new in any git repo to create your first workspace.")
-			fmt.Println("  Or add repos explicitly:  bay repo add <name> <path>")
+			fmt.Println("  bay ws new             create a workspace in any git repo")
+			fmt.Println("  bay help               see all commands")
+			fmt.Println("  bay help <command>      detailed help for a command")
+			fmt.Println()
+			fmt.Println("Tutorial: https://github.com/commontoolsinc/bay/blob/main/docs/tutorial.md")
 
 			return nil
 		},
 	}
 }
 
-// defaultSetupConfig returns the default config for new installations.
-func defaultSetupConfig() *config.Config {
-	return &config.Config{
-		DefaultAgent: probeAgent(),
-	}
-}
 
 func installCompletions(_ *cobra.Command, _ *bufio.Reader) {
 	fmt.Println()
@@ -192,6 +128,11 @@ end`
 	}
 
 	rcFile := shellRCFile(shellName)
+	data, _ := os.ReadFile(rcFile)
+	if strings.Contains(string(data), "bay completion") {
+		fmt.Printf("Shell completions already configured in %s\n", rcFile)
+		return
+	}
 	fmt.Printf("Add this to %s for tab completions:\n\n", rcFile)
 	fmt.Println("  " + strings.ReplaceAll(snippet, "\n", "\n  "))
 	fmt.Println()
