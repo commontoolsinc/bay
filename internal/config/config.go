@@ -46,6 +46,15 @@ var KnownAgents = map[string]AgentInfo{
 	"gemini": {Command: "gemini"},
 }
 
+// KnownEditorProcesses maps CLI command names to their macOS process
+// names for PID-based liveness tracking. Used by the monitor to detect
+// when a GUI editor quits.
+var KnownEditorProcesses = map[string]string{
+	"cursor": "Cursor",
+	"code":   "Code",
+	"zed":    "Zed",
+}
+
 // ResolveAgent returns the effective AgentInfo for a named agent,
 // checking config overrides first, then built-in defaults.
 func (c *Config) ResolveAgent(name string) (AgentInfo, bool) {

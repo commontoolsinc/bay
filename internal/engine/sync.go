@@ -2,6 +2,9 @@ package engine
 
 import (
 	"os"
+	"os/exec"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -27,6 +30,7 @@ type workspaceSyncUpdate struct {
 	prChanged      bool
 	mergedDone     bool
 	deadSurfaceIDs map[int]bool
+	guiPIDs        map[int]int // surface ID → resolved PID
 }
 
 // SyncAll checks git branches, PR numbers, merge status, and tmux surface state
@@ -148,9 +152,9 @@ func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace)
 	// would report "nothing to recover."
 	sessionAlive, _ := e.Tmux.HasSession(dock.Name)
 	if sessionAlive {
-		update.deadSurfaceIDs = e.deadSurfaceIDs(ws)
+		update.deadSurfaceIDs, update.guiPIDs = e.deadSurfaceIDs(ws)
 	}
-	if !update.branchChanged && !update.prChanged && !update.mergedDone && len(update.deadSurfaceIDs) == 0 {
+	if !update.branchChanged && !update.prChanged && !update.mergedDone && len(update.deadSurfaceIDs) == 0 && len(update.guiPIDs) == 0 {
 		return workspaceSyncUpdate{}, false
 	}
 	return update, true
@@ -225,11 +229,22 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 		}
 	}
 
+	// Store resolved GUI PIDs so the next cycle can check liveness.
+	for id, pid := range update.guiPIDs {
+		for i := range ws.Surfaces {
+			if ws.Surfaces[i].ID == id && ws.Surfaces[i].GUI != nil {
+				ws.Surfaces[i].GUI.PID = pid
+				changed = true
+			}
+		}
+	}
+
 	return changed
 }
 
-func (e *Engine) deadSurfaceIDs(ws *manifest.Workspace) map[int]bool {
+func (e *Engine) deadSurfaceIDs(ws *manifest.Workspace) (map[int]bool, map[int]int) {
 	dead := map[int]bool{}
+	var guiPIDs map[int]int
 	for _, s := range ws.Surfaces {
 		switch {
 		case s.Tmux != nil && s.Tmux.PaneID != "":
@@ -241,12 +256,54 @@ func (e *Engine) deadSurfaceIDs(ws *manifest.Workspace) map[int]bool {
 			if !processAlive(s.GUI.PID) {
 				dead[s.ID] = true
 			}
-		case s.GUI != nil:
-			// GUI surfaces without a PID (e.g., editors whose launcher
-			// forked) are kept alive — the user closes them with bay close.
+		case s.GUI != nil && s.GUI.PID == 0:
+			// Try to resolve the app PID from the command name.
+			if pid := findGUIProcessPID(s.GUI.AppCommand); pid > 0 {
+				if guiPIDs == nil {
+					guiPIDs = map[int]int{}
+				}
+				guiPIDs[s.ID] = pid
+			} else if s.GUI.CreatedAt == 0 || time.Now().Unix()-s.GUI.CreatedAt > 10 {
+				// Couldn't find the app process — either the editor
+				// was closed before we could track it (>10s), or this
+				// is a legacy surface with no timestamp. Clean up.
+				dead[s.ID] = true
+			}
 		}
 	}
-	return dead
+	return dead, guiPIDs
+}
+
+// findGUIProcessPID extracts the editor command from an app_command string
+// and looks up the running process by its known process name. Only returns
+// PIDs parented by PID 1 (launchd) to avoid grabbing the short-lived CLI
+// launcher instead of the real app process.
+func findGUIProcessPID(appCommand string) int {
+	if appCommand == "" {
+		return 0
+	}
+	parts := strings.Fields(appCommand)
+	base := parts[0]
+	if idx := strings.LastIndex(base, "/"); idx >= 0 {
+		base = base[idx+1:]
+	}
+	processName, ok := config.KnownEditorProcesses[base]
+	if !ok {
+		return 0
+	}
+	// Use pgrep -P 1 to only match processes parented by launchd.
+	// This filters out the CLI launcher (parented by shell/tmux)
+	// and only returns the real GUI app process.
+	out, err := exec.Command("pgrep", "-x", "-P", "1", processName).Output()
+	if err != nil {
+		return 0
+	}
+	line := strings.TrimSpace(strings.Split(string(out), "\n")[0])
+	pid, err := strconv.Atoi(line)
+	if err != nil {
+		return 0
+	}
+	return pid
 }
 
 // processAlive checks if a process with the given PID is still running.
