@@ -11,7 +11,8 @@ import (
 
 func newDockCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "dock",
+		Use:     "dock",
+		Aliases: []string{"dk"},
 		Short: "Manage docks (tmux session groups)",
 	}
 
@@ -211,7 +212,7 @@ func newDockTreeCmd() *cobra.Command {
 				Recursive: true,
 			})
 
-			fmt.Print(FormatListView(view, longOutput))
+			fmt.Print(FormatListView(view, longOutput, false))
 			return nil
 		},
 	}

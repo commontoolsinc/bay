@@ -13,7 +13,7 @@ func TestNewRootCmd(t *testing.T) {
 	// Verify all subcommands are registered (including hidden ones).
 	// add-prompt was removed entirely — see TestAddPrompt_RemovedEntirely.
 	expected := map[string]bool{
-		"dock": false, "repo": false, "ws": false, "surface": false,
+		"dock": false, "repo": false, "workspace": false, "surface": false,
 		"go": false, "ls": false, "tree": false, "pwd": false, "recover": false, "doctor": false,
 		"setup": false, "monitor": false, "version": false,
 		"shell": false, "edit": false, "restart": false, "status-line": false,
@@ -148,7 +148,7 @@ func TestTreeCommandExists(t *testing.T) {
 
 func TestWsSubcommands(t *testing.T) {
 	root := NewRootCmd("test")
-	ws, _, err := root.Find([]string{"ws"})
+	ws, _, err := root.Find([]string{"workspace"})
 	if err != nil {
 		t.Fatalf("finding ws: %v", err)
 	}

@@ -91,7 +91,7 @@ func registerCompletions(root *cobra.Command) {
 	// surface new / shell / ws new select their target via
 	// --ws/--dock flags, not a positional, so they're not in this list.
 	for _, path := range []string{
-		"ws close", "ws show", "ws rename",
+		"workspace close", "workspace show", "workspace rename",
 		"edit",
 		"new edit",
 		"rename",
@@ -116,28 +116,30 @@ func registerCompletions(root *cobra.Command) {
 		cmd.ValidArgsFunction = agentArgCompletions
 	}
 
-	// Dock commands: dock close, dock recover, dock tree.
-	for _, path := range []string{"dock close", "dock recover", "dock tree"} {
+	// Dock commands: dock close, dock recover, dock tree, dock show, dock rename.
+	for _, path := range []string{"dock close", "dock recover", "dock tree", "dock show", "dock rename"} {
 		if cmd := findCmd(root, path); cmd != nil {
 			cmd.ValidArgsFunction = dockCompl
 		}
 	}
 
-	// Repo commands: repo remove
-	if cmd := findCmd(root, "repo remove"); cmd != nil {
-		cmd.ValidArgsFunction = repoCompletionsFunc()
+	// Repo commands: repo remove, repo show.
+	for _, path := range []string{"repo remove", "repo show"} {
+		if cmd := findCmd(root, path); cmd != nil {
+			cmd.ValidArgsFunction = repoCompletionsFunc()
+		}
 	}
 
 	// bay go (surface-scoped, no completions needed — surfaces are within workspace)
 	// bay ws go (workspace-scoped fuzzy match)
-	if cmd := findCmd(root, "ws go"); cmd != nil {
+	if cmd := findCmd(root, "workspace go"); cmd != nil {
 		cmd.ValidArgsFunction = goCompl
 	}
 
 	// bay ws new — positional is the new workspace's display name (free
 	// text, no completion). Flags carry completions for the things bay
 	// can suggest: --dock, --agent, --repo.
-	if cmd := findCmd(root, "ws new"); cmd != nil {
+	if cmd := findCmd(root, "workspace new"); cmd != nil {
 		cmd.RegisterFlagCompletionFunc("dock", dockFlagCompl)
 		cmd.RegisterFlagCompletionFunc("agent", agentFlagCompletions)
 		cmd.RegisterFlagCompletionFunc("repo", repoCompletions)
@@ -173,7 +175,7 @@ func registerCompletions(root *cobra.Command) {
 			cmd.RegisterFlagCompletionFunc("split", splitCompletions)
 		}
 	}
-	for _, path := range []string{"ws close", "ws show", "ws rename", "rename"} {
+	for _, path := range []string{"workspace close", "workspace show", "workspace rename", "rename"} {
 		if cmd := findCmd(root, path); cmd != nil {
 			cmd.RegisterFlagCompletionFunc("dock", dockFlagCompl)
 		}

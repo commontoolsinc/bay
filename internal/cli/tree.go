@@ -8,6 +8,7 @@ import (
 
 func newTreeCmd() *cobra.Command {
 	var longOutput bool
+	var shortOutput bool
 
 	cmd := &cobra.Command{
 		Use:   "tree",
@@ -29,12 +30,13 @@ func newTreeCmd() *cobra.Command {
 
 			view.SetCurrentContext(eng)
 
-			fmt.Print(FormatListView(view, longOutput))
+			fmt.Print(FormatListView(view, longOutput, shortOutput))
 			return nil
 		},
 	}
 
 	cmd.Flags().BoolVarP(&longOutput, "long", "l", false, "show extended details such as tmux IDs")
+	cmd.Flags().BoolVarP(&shortOutput, "short", "s", false, "compact output without labels or key names")
 
 	return cmd
 }

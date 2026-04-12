@@ -17,14 +17,14 @@ func TestFindCmd(t *testing.T) {
 		path    string
 		wantNil bool
 	}{
-		{"ws", false},
-		{"ws new", false},
-		{"ws close", false},
+		{"workspace", false},
+		{"workspace new", false},
+		{"workspace close", false},
 		{"dock", false},
 		{"dock new", false},
 		{"go", false},
 		{"nonexistent", true},
-		{"ws nonexistent", true},
+		{"workspace nonexistent", true},
 	}
 	for _, tt := range tests {
 		cmd := findCmd(root, tt.path)
@@ -66,8 +66,8 @@ func TestCompletionsRegistered(t *testing.T) {
 	// create-verbs ws new / surface new / shell) intentionally have
 	// no ValidArgsFunction — see TestCreateVerbs_PositionalsAreFreeText.
 	withCompletions := []string{
-		"ws close", "ws show", "ws rename",
-		"ws go",
+		"workspace close", "workspace show", "workspace rename",
+		"workspace go",
 		"dock close", "dock recover", "dock tree",
 		// surface verbs (sf X form) — close/restart/show/rename target
 		// existing surfaces by name.
@@ -97,7 +97,7 @@ func TestCompletionsRegistered(t *testing.T) {
 // PR exists to fix.
 func TestCreateVerbs_PositionalsAreFreeText(t *testing.T) {
 	root := NewRootCmd("test")
-	for _, path := range []string{"ws new", "surface new", "shell"} {
+	for _, path := range []string{"workspace new", "surface new", "shell"} {
 		cmd := findCmd(root, path)
 		if cmd == nil {
 			t.Errorf("command %q not found", path)
@@ -359,12 +359,12 @@ func TestFlagCompletions_WsAndDockOnSurfaceVerbs(t *testing.T) {
 // flag-completion map, so this test only verifies the flag exists.
 func TestFlagCompletions_DockOnWsNew(t *testing.T) {
 	root := NewRootCmd("test")
-	cmd := findCmd(root, "ws new")
+	cmd := findCmd(root, "workspace new")
 	if cmd == nil {
-		t.Fatal("ws new command not found")
+		t.Fatal("workspace new command not found")
 	}
 	if cmd.Flags().Lookup("dock") == nil {
-		t.Error("ws new missing --dock flag")
+		t.Error("workspace new missing --dock flag")
 	}
 }
 

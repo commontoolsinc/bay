@@ -460,6 +460,8 @@ bay repo remove <name> --force              # remove repo + all its docks
 bay repo init [name]                        # set up bay awareness (idempotent)
 ```
 
+`rp` is an alias for `repo`.
+
 ### Docks
 
 ```
@@ -474,12 +476,15 @@ bay dock close <name> --force               # skip safety checks
 bay dock recover <name>                     # recover a single dock
 ```
 
+`dk` is an alias for `dock`.
+
 ### Listing and context
 
 ```
 bay ls                                      # context-sensitive tree view
 bay ls -R                                   # recurse fully from current focus
 bay ls -l                                   # show tmux IDs and extended detail
+bay ls -s                                   # compact output (no labels or key names)
 bay ls --json                               # machine-readable tree
 bay ls --json --rows                        # denormalized row output
 bay ls --dirty                              # only show dirty workspaces
@@ -647,34 +652,36 @@ repo myproject / dock dev / workspace auth-fix / surface agent
 Inside a workspace, it expands surfaces:
 
 ```
-repo myproject
-  dock dev
-    workspace auth-fix  branch=feature/auth  status=active
-      surface agent  [agent]
-      surface shell  [shell]
-      surface editor [editor]
+rp myproject
+  dk dev
+    ws auth-fix  br=feature/auth
+      sf agent   ty=agent ag=claude
+      sf shell   ty=shell
+      sf editor  ty=editor
 ```
 
 Inside a dock but outside a workspace, it shows that dock's workspaces:
 
 ```
-dock dev
-  auth-fix    feature/auth     #42   active   surfaces=3
-  perf-fix    fix/perf-issue         idle     surfaces=1
+rp myproject
+  dk dev
+    ws auth-fix  br=feature/auth  n=3
+    ws perf-fix  br=fix/perf      n=1
 ```
 
 Outside bay context, it shows everything compactly:
 
 ```
-repo myproject
-  dock dev
-    auth-fix  feature/auth  #42  active  surfaces=3
-    w2        --                  idle   surfaces=1
-  dock staging
-    deploy    release/v2         done   surfaces=1
+rp myproject
+  dk dev
+    ws auth-fix  br=feature/auth  n=3
+    ws w2                         n=1
+  dk staging
+    ws deploy    br=release/v2    st=done  n=1
 ```
 
 Use `bay ls -R` to recurse fully. Use `bay ls -l` for tmux IDs.
+Use `bay ls -s` for compact output without labels or key names.
 
 ## Machine-readable output
 
@@ -845,8 +852,10 @@ opened the editor outside bay, it won't appear in navigation.
 
 | Short | Long |
 |-------|------|
-| `sf` | `surface` |
+| `rp` | `repo` |
+| `dk` | `dock` |
 | `ws` | `workspace` |
+| `sf` | `surface` |
 | `ls` | `list` |
 | `mv` | `rename` |
 | `rm` | `close` |

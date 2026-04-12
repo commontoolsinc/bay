@@ -249,11 +249,46 @@ func ListRows(view ListView) []ListRow {
 }
 
 func dim(s string) string {
-	return "\x1b[2m" + s + "\x1b[0m"
+	return "\x1b[38;5;243m" + s + "\x1b[0m"
 }
 
 func kv(key, value string) string {
 	return dim(key+"=") + value
+}
+
+// metaCol is a single field in a metadata row (e.g., "branch=fix/login").
+// width is the visible column count, excluding ANSI escape codes.
+type metaCol struct {
+	text  string
+	width int
+}
+
+// kvCol builds a metaCol from a key=value pair. Returns a zero metaCol when
+// value is empty.
+func kvCol(key, value string) metaCol {
+	if value == "" {
+		return metaCol{}
+	}
+	return metaCol{
+		text:  kv(key, value),
+		width: utf8.RuneCountInString(key) + 1 + utf8.RuneCountInString(value),
+	}
+}
+
+// bareCol builds a metaCol from a bare value (no key= prefix).
+func bareCol(value string) metaCol {
+	if value == "" {
+		return metaCol{}
+	}
+	return metaCol{text: value, width: utf8.RuneCountInString(value)}
+}
+
+// metaField returns a kvCol or bareCol depending on whether short mode is on.
+func metaField(key, value string, short bool) metaCol {
+	if short {
+		return bareCol(value)
+	}
+	return kvCol(key, value)
 }
 
 func labelValue(label, value string) string {
@@ -268,6 +303,18 @@ func labelValueWithWidth(label, value string) (string, int) {
 	return labelValue(label, value), utf8.RuneCountInString(label) + 1 + utf8.RuneCountInString(value)
 }
 
+// indentedPrefix builds an indented prefix with a dimmed label and name.
+// In short mode, the label is omitted entirely.
+func indentedPrefix(level int, label, name string, short bool) (string, int) {
+	indent := strings.Repeat("  ", level)
+	if short {
+		return indent + name, level*2 + utf8.RuneCountInString(name)
+	}
+	prefix := indent + dim(label) + " " + name
+	width := level*2 + utf8.RuneCountInString(label) + 1 + utf8.RuneCountInString(name)
+	return prefix, width
+}
+
 func dimmedSeparator(sep string) string {
 	return dim(sep)
 }
@@ -279,77 +326,109 @@ func truncateCommand(cmd string) string {
 	return cmd[:29] + "..."
 }
 
-func appendMeta(parts []string, key, value string) []string {
-	if value == "" {
-		return parts
-	}
-	return append(parts, kv(key, value))
-}
-
-func syncSuffix(sync string) []string {
-	if sync == "" || sync == manifest.SyncStatusOK {
-		return nil
-	}
-	return []string{kv("sync", sync)}
-}
-
-func workspaceMeta(ws engine.WorkspaceInfo, showCounts bool) string {
-	var parts []string
-	parts = appendMeta(parts, "branch", ws.Branch)
-	if ws.Status != "" && ws.Status != string(manifest.WorkspaceStatusIdle) {
-		parts = appendMeta(parts, "status", ws.Status)
+// workspaceMetaCols returns fixed-position columns for workspace metadata.
+// Column positions: 0=branch, 1=status, 2=count, 3=sync/waiting.
+func workspaceMetaCols(ws engine.WorkspaceInfo, showCounts, short bool) []metaCol {
+	cols := make([]metaCol, 4)
+	cols[0] = metaField("br", ws.Branch, short)
+	if ws.Status != "" && ws.Status != string(manifest.WorkspaceStatusIdle) && ws.Status != string(manifest.WorkspaceStatusActive) {
+		cols[1] = metaField("st", ws.Status, short)
 	}
 	if showCounts {
-		parts = append(parts, kv("surfaces", fmt.Sprintf("%d", ws.SurfaceCount)))
+		cols[2] = metaField("n", fmt.Sprintf("%d", ws.SurfaceCount), short)
 	}
-	parts = append(parts, syncSuffix(ws.SyncStatus)...)
+	// Sync and waiting indicators share the trailing column.
+	var parts []string
+	var tailWidth int
+	if sync := ws.SyncStatus; sync != "" && sync != manifest.SyncStatusOK {
+		if short {
+			parts = append(parts, sync)
+			tailWidth = utf8.RuneCountInString(sync)
+		} else {
+			parts = append(parts, kv("sy", sync))
+			tailWidth = 3 + utf8.RuneCountInString(sync)
+		}
+	}
 	if ws.Waiting {
 		parts = append(parts, "\u23f3")
+		if tailWidth > 0 {
+			tailWidth += 2 // space + emoji
+		} else {
+			tailWidth = 1
+		}
 	}
-	return strings.Join(parts, " ")
+	if len(parts) > 0 {
+		cols[3] = metaCol{text: strings.Join(parts, " "), width: tailWidth}
+	}
+	return cols
 }
 
-func surfaceMeta(s engine.SurfaceInfo, long bool) string {
-	var parts []string
-	parts = appendMeta(parts, "type", s.Type)
-	if s.Agent != "" {
-		parts = appendMeta(parts, "agent", s.Agent)
+// surfaceMetaCols returns fixed-position columns for surface metadata.
+// Column positions: 0=type, 1=agent, 2=command, 3=sync.
+func surfaceMetaCols(s engine.SurfaceInfo, long, short bool) []metaCol {
+	cols := make([]metaCol, 4)
+	cols[0] = metaField("ty", s.Type, short)
+	cols[1] = metaField("ag", s.Agent, short)
+	cols[2] = metaField("cm", truncateCommand(s.Command), short)
+	if s.Status != "" && s.Status != manifest.SyncStatusOK {
+		cols[3] = metaField("sy", s.Status, short)
 	}
-	if s.Command != "" {
-		parts = appendMeta(parts, "command", truncateCommand(s.Command))
-	}
-	parts = append(parts, syncSuffix(s.Status)...)
-	return strings.Join(parts, " ")
+	return cols
 }
 
-// writeHeaderLine writes an indented label-only line. Used for repo / dock /
-// "(no docks)" / "(no workspaces)" rows that have no metadata column.
-func writeHeaderLine(b *strings.Builder, indent int, prefix string) {
-	b.WriteString(strings.Repeat("  ", indent))
+// writeAlignedLine writes "<prefix><pad><col0><pad><col1>...".
+// prefixAlign controls where the first column starts (max prefixWidth across
+// sibling rows). colWidths controls per-column alignment across sibling rows.
+// Lines with all-empty meta columns omit padding entirely.
+func writeAlignedLine(b *strings.Builder, prefix string, prefixWidth int, metaCols []metaCol, prefixAlign int, colWidths []int) {
 	b.WriteString(prefix)
-	b.WriteString("\n")
-}
 
-// writeAlignedLine writes "<indent><prefix><pad><meta>". When alignTo > 0,
-// pad makes the meta column start at alignTo + 2 (a 2-space minimum gap)
-// — used for sibling rows in a group. When alignTo == 0 the line gets a
-// single-space gap, used for one-off lines with no alignment context.
-// Lines with empty meta omit padding entirely.
-func writeAlignedLine(b *strings.Builder, indent int, prefix string, prefixWidth int, meta string, alignTo int) {
-	b.WriteString(strings.Repeat("  ", indent))
-	b.WriteString(prefix)
-	if meta == "" {
+	// Find last column this row actually populates.
+	lastPopulated := -1
+	for i := len(metaCols) - 1; i >= 0; i-- {
+		if metaCols[i].text != "" {
+			lastPopulated = i
+			break
+		}
+	}
+	if lastPopulated < 0 {
 		b.WriteString("\n")
 		return
 	}
-	if alignTo > 0 {
-		// alignTo was computed as the max prefixWidth across rows with
-		// meta, so prefixWidth <= alignTo always — gap is always >= 2.
-		b.WriteString(strings.Repeat(" ", alignTo-prefixWidth+2))
+
+	// Pad prefix to alignment point.
+	if prefixAlign > 0 {
+		b.WriteString(strings.Repeat(" ", prefixAlign-prefixWidth+2))
 	} else {
 		b.WriteString(" ")
 	}
-	b.WriteString(meta)
+
+	// Write columns with inter-column padding.
+	first := true
+	for i := 0; i <= lastPopulated; i++ {
+		cw := 0
+		if i < len(colWidths) {
+			cw = colWidths[i]
+		}
+		if cw == 0 {
+			continue // column unused across all rows
+		}
+		if !first {
+			b.WriteString(" ")
+		}
+		first = false
+
+		col := metaCol{}
+		if i < len(metaCols) {
+			col = metaCols[i]
+		}
+		b.WriteString(col.text)
+
+		// Pad to column width, except for the last populated column.
+		if i < lastPopulated {
+			b.WriteString(strings.Repeat(" ", cw-col.width))
+		}
+	}
 	b.WriteString("\n")
 }
 
@@ -360,8 +439,17 @@ func writeAlignedLine(b *strings.Builder, indent int, prefix string, prefixWidth
 type alignedRow struct {
 	prefix      string
 	prefixWidth int
-	meta        string
+	metaCols    []metaCol
 	surfaceRows []alignedRow // workspace rows only, in tree mode
+}
+
+func hasMetaCols(cols []metaCol) bool {
+	for _, c := range cols {
+		if c.text != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // alignWidth returns the max prefix width across rows that have non-empty
@@ -370,7 +458,7 @@ type alignedRow struct {
 func alignWidth(rows []alignedRow) int {
 	max := 0
 	for _, r := range rows {
-		if r.meta == "" {
+		if !hasMetaCols(r.metaCols) {
 			continue
 		}
 		if r.prefixWidth > max {
@@ -380,12 +468,31 @@ func alignWidth(rows []alignedRow) int {
 	return max
 }
 
-func FormatListView(view ListView, long bool) string {
+// alignColumnWidths returns the max visible width for each column position
+// across all rows. Columns that no row populates have width 0.
+func alignColumnWidths(rows []alignedRow) []int {
+	var widths []int
+	for _, r := range rows {
+		for i, c := range r.metaCols {
+			if i >= len(widths) {
+				widths = append(widths, 0)
+			}
+			if c.width > widths[i] {
+				widths[i] = c.width
+			}
+		}
+	}
+	return widths
+}
+
+func FormatListView(view ListView, long, short bool) string {
 	var b strings.Builder
 	for _, repo := range view.Repos {
-		writeHeaderLine(&b, 0, labelValue("repo", repo.Name))
+		p, _ := indentedPrefix(0, "rp", repo.Name, short)
+		fmt.Fprintln(&b, p)
 		if len(repo.Docks) == 0 {
-			writeHeaderLine(&b, 1, "(no docks)")
+			p, _ := indentedPrefix(1, "", "(no docks)", short)
+			fmt.Fprintln(&b, p)
 			continue
 		}
 		for _, dock := range repo.Docks {
@@ -393,31 +500,32 @@ func FormatListView(view ListView, long bool) string {
 			if dock.Name == view.CurrentDock {
 				dockMarker = " *"
 			}
-			writeHeaderLine(&b, 1, labelValue("dock", dock.Name+dockMarker))
+			p, _ := indentedPrefix(1, "dk", dock.Name+dockMarker, short)
+			fmt.Fprintln(&b, p)
 			if len(dock.Workspaces) == 0 {
-				writeHeaderLine(&b, 2, "(no workspaces)")
+				p, _ := indentedPrefix(2, "", "(no workspaces)", short)
+				fmt.Fprintln(&b, p)
 				continue
 			}
 			showChildren := view.Recursive || view.Focus.Kind == FocusWorkspace
 
 			// First pass: build all workspace rows AND surface rows
-			// up front. Surface alignment is computed across the WHOLE
-			// dock (not per workspace) so the surface meta column stays
-			// stable as the eye scrolls past workspaces with different
-			// longest-surface-name lengths.
+			// up front. Both prefix alignment and per-column alignment
+			// are computed across the whole dock so columns stay stable
+			// as the eye scans down the output.
 			wsRows := make([]alignedRow, len(dock.Workspaces))
-			sfAlign := 0
+			var allSfRows []alignedRow
 			for i, ws := range dock.Workspaces {
 				isCurrentWs := dock.Name == view.CurrentDock && ws.Name == view.CurrentWs
 				wsName := ws.Name
 				if isCurrentWs {
 					wsName += " *"
 				}
-				prefix, width := labelValueWithWidth("workspace", wsName)
+				p, w := indentedPrefix(2, "ws", wsName, short)
 				wsRows[i] = alignedRow{
-					prefix:      prefix,
-					prefixWidth: width,
-					meta:        workspaceMeta(ws, !showChildren),
+					prefix:      p,
+					prefixWidth: w,
+					metaCols:    workspaceMetaCols(ws, !showChildren, short),
 				}
 				if !showChildren {
 					continue
@@ -428,25 +536,25 @@ func FormatListView(view ListView, long bool) string {
 					if isCurrentWs && s.Name == view.CurrentSurface {
 						sName += " *"
 					}
-					sfPrefix, sfWidth := labelValueWithWidth("surface", sName)
-					sfMeta := surfaceMeta(s, long)
+					sfP, sfW := indentedPrefix(3, "sf", sName, short)
 					sfRows[j] = alignedRow{
-						prefix:      sfPrefix,
-						prefixWidth: sfWidth,
-						meta:        sfMeta,
-					}
-					if sfMeta != "" && sfWidth > sfAlign {
-						sfAlign = sfWidth
+						prefix:      sfP,
+						prefixWidth: sfW,
+						metaCols:    surfaceMetaCols(s, long, short),
 					}
 				}
 				wsRows[i].surfaceRows = sfRows
+				allSfRows = append(allSfRows, sfRows...)
 			}
 			wsAlign := alignWidth(wsRows)
+			wsColWidths := alignColumnWidths(wsRows)
+			sfAlign := alignWidth(allSfRows)
+			sfColWidths := alignColumnWidths(allSfRows)
 
 			for _, wsRow := range wsRows {
-				writeAlignedLine(&b, 2, wsRow.prefix, wsRow.prefixWidth, wsRow.meta, wsAlign)
+				writeAlignedLine(&b, wsRow.prefix, wsRow.prefixWidth, wsRow.metaCols, wsAlign, wsColWidths)
 				for _, sr := range wsRow.surfaceRows {
-					writeAlignedLine(&b, 3, sr.prefix, sr.prefixWidth, sr.meta, sfAlign)
+					writeAlignedLine(&b, sr.prefix, sr.prefixWidth, sr.metaCols, sfAlign, sfColWidths)
 				}
 			}
 		}
@@ -480,19 +588,20 @@ func FormatWorkspaceShow(repoName, dockName string, ws *engine.WorkspaceInfo, lo
 		sfRows[i] = alignedRow{
 			prefix:      prefix,
 			prefixWidth: width,
-			meta:        surfaceMeta(s, long),
+			metaCols:    surfaceMetaCols(s, long, false),
 		}
 	}
 	sfAlign := alignWidth(sfRows)
+	sfColWidths := alignColumnWidths(sfRows)
 	for _, sr := range sfRows {
-		writeAlignedLine(&b, 0, sr.prefix, sr.prefixWidth, sr.meta, sfAlign)
+		writeAlignedLine(&b, sr.prefix, sr.prefixWidth, sr.metaCols, sfAlign, sfColWidths)
 	}
 	return b.String()
 }
 
 // FormatFullTree formats the full repo -> dock -> workspace hierarchy.
 func FormatFullTree(docks []engine.DockInfo) string {
-	return FormatListView(BuildListView(docks, ListViewOptions{}), false)
+	return FormatListView(BuildListView(docks, ListViewOptions{}), false, false)
 }
 
 // FormatDockTree formats dock -> workspace hierarchy for one or more docks.
@@ -501,7 +610,7 @@ func FormatDockTree(docks []engine.DockInfo) string {
 	if len(docks) == 1 {
 		focus = ListFocus{Kind: FocusDock, Repo: docks[0].Repo, Dock: docks[0].Name}
 	}
-	return FormatListView(BuildListView(docks, ListViewOptions{Focus: focus}), false)
+	return FormatListView(BuildListView(docks, ListViewOptions{Focus: focus}), false, false)
 }
 
 // FormatRepoTree formats repos with their docks (from manifest data).
@@ -529,7 +638,7 @@ func FormatSubtreeForRemoval(repoName string, docks []engine.DockInfo) string {
 	view := BuildListView(docks, ListViewOptions{
 		Focus: ListFocus{Kind: FocusRepo, Repo: repoName},
 	})
-	return indentBlock(FormatListView(view, false), 1)
+	return indentBlock(FormatListView(view, false, false), 1)
 }
 
 func indentBlock(s string, depth int) string {

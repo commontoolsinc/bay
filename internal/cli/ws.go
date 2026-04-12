@@ -17,8 +17,8 @@ import (
 
 func newWsCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "ws",
-		Aliases: []string{"workspace"},
+		Use:     "workspace",
+		Aliases: []string{"ws"},
 		Short:   "Manage workspaces",
 	}
 
@@ -422,7 +422,9 @@ func resolveTarget(eng *engine.Engine, target string) (string, string, error) {
 }
 
 func newWsLsCmd() *cobra.Command {
-	return &cobra.Command{
+	var shortOutput bool
+
+	cmd := &cobra.Command{
 		Use:     "ls",
 		Aliases: []string{"list"},
 		Short:   "List workspaces in the current dock",
@@ -448,14 +450,19 @@ func newWsLsCmd() *cobra.Command {
 			})
 			view.SetCurrentContext(eng)
 
-			fmt.Print(FormatListView(view, false))
+			fmt.Print(FormatListView(view, false, shortOutput))
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVarP(&shortOutput, "short", "s", false, "compact output without labels or key names")
+
+	return cmd
 }
 
 func newWsTreeCmd() *cobra.Command {
 	var longOutput bool
+	var shortOutput bool
 
 	cmd := &cobra.Command{
 		Use:   "tree",
@@ -482,12 +489,13 @@ func newWsTreeCmd() *cobra.Command {
 			})
 			view.SetCurrentContext(eng)
 
-			fmt.Print(FormatListView(view, longOutput))
+			fmt.Print(FormatListView(view, longOutput, shortOutput))
 			return nil
 		},
 	}
 
 	cmd.Flags().BoolVarP(&longOutput, "long", "l", false, "show extended details such as tmux IDs")
+	cmd.Flags().BoolVarP(&shortOutput, "short", "s", false, "compact output without labels or key names")
 
 	return cmd
 }

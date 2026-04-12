@@ -36,14 +36,14 @@ func TestPositionalShapes(t *testing.T) {
 		why     string
 	}{
 		// Create-verbs: positional is the new thing's name.
-		{[]string{"ws", "new"}, "new [name]", "ws new positional must be the workspace's display name"},
+		{[]string{"workspace", "new"}, "new [name]", "ws new positional must be the workspace's display name"},
 		{[]string{"surface", "new"}, "new [name]", "surface new positional must be the surface name"},
 		{[]string{"shell"}, "shell [name]", "shell positional must be the surface name"},
 
 		// Show: optional positional, defaults to current.
 		{[]string{"show"}, "show [name]", "top-level show positional must be optional (defaults to current)"},
 		{[]string{"surface", "show"}, "show [name]", "surface show positional must be optional"},
-		{[]string{"ws", "show"}, "show [name]", "ws show positional must be optional"},
+		{[]string{"workspace", "show"}, "show [name]", "ws show positional must be optional"},
 
 		// Tree: optional positional, defaults to current.
 		{[]string{"dock", "tree"}, "tree [name]", "dock tree positional must be optional (defaults to current dock)"},
@@ -51,12 +51,12 @@ func TestPositionalShapes(t *testing.T) {
 		// Close: positional shape, no '|self' marker.
 		{[]string{"close"}, "close <name>", "close positional must be name (no '|self' in usage)"},
 		{[]string{"surface", "close"}, "close <name>", "surface close positional must be name"},
-		{[]string{"ws", "close"}, "close [name]", "ws close has --done so positional is optional"},
+		{[]string{"workspace", "close"}, "close [name]", "ws close has --done so positional is optional"},
 
 		// Rename: first positional optional (defaults to self).
 		{[]string{"rename"}, "rename [name] <new-name>", "top-level rename — workspace form"},
 		{[]string{"surface", "rename"}, "rename [old] <new>", "surface rename"},
-		{[]string{"ws", "rename"}, "rename [name] <new-name>", "ws rename"},
+		{[]string{"workspace", "rename"}, "rename [name] <new-name>", "ws rename"},
 	}
 
 	for _, c := range cases {
@@ -78,7 +78,7 @@ func TestPositionalShapes(t *testing.T) {
 // flag the old dock-targeting workflow would have no replacement.
 func TestWsNew_DockFlagExists(t *testing.T) {
 	root := NewRootCmd("test")
-	cmd, _, err := root.Find([]string{"ws", "new"})
+	cmd, _, err := root.Find([]string{"workspace", "new"})
 	if err != nil {
 		t.Fatalf("could not find ws new: %v", err)
 	}
