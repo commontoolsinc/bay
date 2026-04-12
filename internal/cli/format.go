@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -327,15 +328,23 @@ func truncateCommand(cmd string) string {
 }
 
 // workspaceMetaCols returns fixed-position columns for workspace metadata.
-// Column positions: 0=branch, 1=status, 2=count, 3=sync/waiting.
+// Column positions: 0=branch, 1=dir (only when different from name),
+// 2=status, 3=count, 4=sync/waiting.
 func workspaceMetaCols(ws engine.WorkspaceInfo, showCounts, short bool) []metaCol {
-	cols := make([]metaCol, 4)
+	cols := make([]metaCol, 5)
 	cols[0] = metaField("br", ws.Branch, short)
+	// Show directory basename only when it differs from the workspace name.
+	if ws.Path != "" {
+		dir := filepath.Base(ws.Path)
+		if dir != ws.Name {
+			cols[1] = metaField("dir", dir, short)
+		}
+	}
 	if ws.Status != "" && ws.Status != string(manifest.WorkspaceStatusIdle) && ws.Status != string(manifest.WorkspaceStatusActive) {
-		cols[1] = metaField("st", ws.Status, short)
+		cols[2] = metaField("st", ws.Status, short)
 	}
 	if showCounts {
-		cols[2] = metaField("n", fmt.Sprintf("%d", ws.SurfaceCount), short)
+		cols[3] = metaField("n", fmt.Sprintf("%d", ws.SurfaceCount), short)
 	}
 	// Sync and waiting indicators share the trailing column.
 	var parts []string
@@ -358,7 +367,7 @@ func workspaceMetaCols(ws engine.WorkspaceInfo, showCounts, short bool) []metaCo
 		}
 	}
 	if len(parts) > 0 {
-		cols[3] = metaCol{text: strings.Join(parts, " "), width: tailWidth}
+		cols[4] = metaCol{text: strings.Join(parts, " "), width: tailWidth}
 	}
 	return cols
 }
