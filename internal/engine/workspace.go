@@ -92,16 +92,12 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 
 		wtDir := repo.EffectiveWorktreeDir()
 		wsPath = filepath.Join(wtDir, displayName)
-		// If the directory already exists (name reused after close),
-		// find the next available name.
+		// If the directory already exists (e.g. old worktree renamed to
+		// a branch but directory kept), advance to the next sequential
+		// name for both workspace and directory.
 		if _, err := os.Stat(wsPath); err == nil {
-			for i := 2; ; i++ {
-				candidate := filepath.Join(wtDir, fmt.Sprintf("%s-%d", displayName, i))
-				if _, err := os.Stat(candidate); os.IsNotExist(err) {
-					wsPath = candidate
-					break
-				}
-			}
+			displayName = nextAvailableWorkspaceName(dock, wtDir)
+			wsPath = filepath.Join(wtDir, displayName)
 		}
 
 		if err := os.MkdirAll(wtDir, 0o755); err != nil {
@@ -763,13 +759,30 @@ func copyWorktreeIncludeFiles(repoRoot, worktreePath string) {
 	}
 }
 
-// nextWorkspaceName returns the next available sequential name (w1, w2, ...) in a dock.
+// nextWorkspaceName returns the next available sequential name (w1, w2, ...)
+// that is not already used as a workspace name in the dock.
 func nextWorkspaceName(dock *manifest.Dock) string {
 	for i := 1; ; i++ {
 		name := fmt.Sprintf("w%d", i)
 		if dock.FindWorkspace(name) == nil {
 			return name
 		}
+	}
+}
+
+// nextAvailableWorkspaceName returns the next sequential name (w1, w2, ...)
+// that is not used as a workspace name in the dock AND does not exist as a
+// directory under wtDir.
+func nextAvailableWorkspaceName(dock *manifest.Dock, wtDir string) string {
+	for i := 1; ; i++ {
+		name := fmt.Sprintf("w%d", i)
+		if dock.FindWorkspace(name) != nil {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(wtDir, name)); err == nil {
+			continue
+		}
+		return name
 	}
 }
 
