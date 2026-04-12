@@ -165,7 +165,6 @@ type GUIAttrs struct {
 	AppCommand string `json:"app_command"`         // launch command (e.g. "cursor", "ghostty")
 	BundleID   string `json:"bundle_id,omitempty"` // macOS bundle ID for activation
 	PID        int    `json:"pid,omitempty"`       // ephemeral; for liveness probing; 0 = not tracked
-	CreatedAt  int64  `json:"created_at,omitempty"` // unix timestamp; for PID resolution timeout
 }
 
 // --- Constructor ---

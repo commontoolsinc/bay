@@ -48,7 +48,7 @@ has:
 | `agent` | `tmux-pane` | AI agent (Claude Code, Codex, etc.) |
 | `shell` | `tmux-pane` | Interactive shell |
 | `cmd` | `tmux-pane` | One-off command |
-| `editor` | `gui-app` | GUI editor (Cursor, VS Code, Zed) |
+| `editor` | `tmux-pane` | Terminal editor (nvim, vim) |
 
 ## Self resolution
 
@@ -73,7 +73,7 @@ Commands an agent inside a workspace typically uses:
 Bay is a coordination layer over:
 - git worktree lifecycle
 - tmux session/window/pane lifecycle
-- GUI editor lifecycle (launch, focus, liveness probing)
+- editor launching (terminal editors as surfaces, GUI editors fire-and-forget)
 - workspace metadata (branch, PR, status)
 - recovery after tmux or host restart
 
@@ -447,12 +447,14 @@ bay recover            → reconstruct state after reboot
 
 #### `bay edit [workspace] [--all] [--editor CMD] [--pane|--split h|v]`
 
-Open a workspace in an editor and create a tracked editor surface.
+Open the workspace's root directory in an editor. Use the editor's
+file browser to navigate within the project. To edit individual files,
+open a shell instead.
 
-GUI editors (Cursor, VS Code, Zed) launch detached. Terminal editors
-(nvim, vim) run in their own tmux window by default, or a split pane
-with `--pane`. When the terminal editor exits, the pane and surface
-are cleaned up automatically.
+Terminal editors (nvim, vim) create a tracked surface in their own
+tmux window (or pane with `--pane`). The surface is cleaned up when
+the editor exits. GUI editors (Cursor, VS Code, Zed) launch and
+return — bay does not track them.
 
 Editor resolution: `--editor` flag > `default_editor` in config >
 `$VISUAL` > `$EDITOR` > probe (cursor, code, zed, nvim, vim).
@@ -604,7 +606,8 @@ bay shell --pane
 bay edit
 ```
 
-GUI editors become navigable surfaces visible in `bay go`.
+Terminal editors appear as surfaces in `bay go`. GUI editors launch
+and return — manage them with your OS window manager.
 
 ### Check on all active work
 

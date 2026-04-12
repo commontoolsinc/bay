@@ -3,9 +3,9 @@
 Bay manages concurrent workspaces built on git worktrees and tmux. Each
 workspace gets its own worktree and tmux surfaces -- so you can work on
 multiple branches simultaneously without stash juggling or directory
-cloning. Bay handles session recovery after reboot, tracks editor
-windows alongside terminal panes, detects PR merges automatically, and
-optionally launches AI coding agents.
+cloning. Bay handles session recovery after reboot, launches editors
+and terminal panes, detects PR merges automatically, and optionally
+launches AI coding agents.
 
 ## Prerequisites
 
@@ -191,11 +191,11 @@ Surfaces have a type and a backend:
 | `agent` | An AI coding agent (Claude Code, Codex, etc.) |
 | `shell` | A plain shell in the workspace directory |
 | `cmd` | A specific command (`npm test`, `cargo watch`, etc.) |
-| `editor` | A GUI editor (Cursor, VS Code, Zed) |
+| `editor` | A terminal editor (nvim, vim) in its own tmux pane |
 
-Most surfaces live in tmux (panes within windows). Editor surfaces are
-GUI applications tracked by bay so they appear in navigation and
-pickers.
+All surfaces live in tmux (panes within windows). GUI editors (Cursor,
+VS Code, Zed) are launched via `bay edit` but are not tracked as
+surfaces — they manage their own windows.
 
 Surfaces within a workspace that share a tmux window are in the same
 **layout group**. Splitting a pane creates a surface in the same group;
@@ -510,25 +510,27 @@ conflicts with existing bindings and prompts before overwriting. Run
 
 ## Editor integration
 
-`bay edit` opens your workspace in an editor and creates a tracked
-**editor surface** so the editor appears in `bay go`.
+`bay edit` opens your editor on the workspace's root directory. Use
+the editor's own file browser to navigate within the project. To edit
+individual files, open a shell and launch your editor from there.
 
 ```
 bay edit                    # current workspace
 bay edit auth-fix           # specific workspace
 bay edit --editor vim       # use a specific editor this time
 bay edit --all              # all workspaces in dock (multi-root)
-bay edit --split v          # vertical split instead of new window
+bay edit --pane             # split pane instead of new window
 ```
 
-**GUI editors** (Cursor, VS Code, Zed) launch detached. The surface
-persists until you close it with `bay close editor`.
+**GUI editors** (Cursor, VS Code, Zed) launch and return — bay does
+not track the editor window. Manage it yourself with Cmd+Tab or
+your OS window manager.
 
-**Terminal editors** (nvim, vim) run in their own tmux pane (a new
-window by default, or a split with `--split`). When you quit the
-editor, the pane closes and the surface is cleaned up automatically.
+**Terminal editors** (nvim, vim) run in their own tmux window (or
+pane with `--pane`) as a tracked surface. When you quit the editor,
+the pane closes and the surface is cleaned up automatically.
 
-Editor resolution order: `--editor` flag, `[editor].command` in config,
+Editor resolution order: `--editor` flag, `default_editor` in config,
 `$VISUAL`, `$EDITOR`, then probing for cursor/code/zed/nvim/vim.
 
 Configure with:
@@ -807,8 +809,9 @@ Built-in agents have resume args configured automatically (e.g.,
 For custom agents, set `resume_args` in the `[agents]` config section.
 
 **"How do I see my editor in bay go?"**
-Use `bay edit` to open it. This creates a tracked editor surface. If you
-opened the editor outside bay, it won't appear in navigation.
+Terminal editors (nvim, vim) launched via `bay edit` appear as surfaces
+in `bay go`. GUI editors (Cursor, VS Code, Zed) are fire-and-forget —
+use Cmd+Tab or your OS window manager to switch to them.
 
 ## Appendix: abbreviations
 
