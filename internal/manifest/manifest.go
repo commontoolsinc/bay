@@ -206,7 +206,8 @@ func Load(path string) (*Manifest, error) {
 }
 
 // Save writes the manifest to a file with file locking.
-// Creates a .bak backup of the previous version if one exists.
+// Save writes the manifest to disk. Before overwriting, backs up the
+// current version to the backups/ directory (at most once per minute).
 func Save(path string, m *Manifest) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("creating manifest dir: %w", err)
@@ -219,13 +220,8 @@ func Save(path string, m *Manifest) error {
 	}
 	defer unlock()
 
-	// Backup existing file before overwriting.
-	if _, statErr := os.Stat(path); statErr == nil {
-		backupPath := path + ".bak"
-		if copyErr := copyFile(path, backupPath); copyErr != nil {
-			return fmt.Errorf("creating backup: %w", copyErr)
-		}
-	}
+	// Rolling backup before overwriting.
+	BackupIfNeeded(path)
 
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
@@ -289,12 +285,9 @@ func LockedUpdateMaybe(path string, fn func(m *Manifest) (bool, error)) error {
 		return nil
 	}
 
-	// Backup existing file before overwriting.
+	// Rolling backup before overwriting.
 	if readErr == nil {
-		backupPath := path + ".bak"
-		if copyErr := copyFile(path, backupPath); copyErr != nil {
-			return fmt.Errorf("creating backup: %w", copyErr)
-		}
+		BackupIfNeeded(path)
 	}
 
 	encoded, err := json.MarshalIndent(m, "", "  ")
