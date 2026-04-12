@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/commontoolsinc/bay/internal/engine"
@@ -53,7 +54,14 @@ func formatPWD(ctx *engine.Context) string {
 		parts = append(parts, labelValue("dock", ctx.Dock))
 	}
 	if ctx.Workspace != "" {
-		parts = append(parts, labelValue("workspace", ctx.Workspace))
+		ws := ctx.Workspace
+		if ctx.Path != "" {
+			dir := filepath.Base(ctx.Path)
+			if dir != ctx.Workspace {
+				ws += " " + dim("(") + dim("dir") + " " + dir + dim(")")
+			}
+		}
+		parts = append(parts, labelValue("workspace", ws))
 	}
 	if ctx.Surface != "" {
 		parts = append(parts, labelValue("surface", ctx.Surface))

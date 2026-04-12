@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/commontoolsinc/bay/internal/config"
@@ -18,16 +19,16 @@ func newEditCmd() *cobra.Command {
 	var window, pane bool
 
 	cmd := &cobra.Command{
-		Use:   "edit [workspace]",
+		Use:   "edit [path]",
 		Short: "Open editor on workspace or dock",
-		Long: `Open your editor on the workspace or dock directory. Default scope
-is dock (one editor for all workspaces). Use --ws for per-workspace.
+		Long: `Open your editor. Default is dock-scoped (all workspaces).
 
-  bay edit                    dock editor (default, all workspaces)
+  bay edit                    dock editor (all workspaces)
+  bay edit src/main.go        focus dock editor on a file
+  bay edit .                  focus dock editor on cwd
   bay edit --ws               workspace editor (current workspace only)
   bay edit --ws auth-fix      specific workspace
   bay edit --editor vim       use a specific editor this time
-  bay edit --pane             split pane instead of new window
 
 Editor resolution order:
   1. --editor flag (this invocation only)
@@ -42,8 +43,7 @@ Editor resolution order:
 				return err
 			}
 
-			// Determine scope: --ws or --dock (default: dock).
-			if wsScope || len(args) > 0 {
+			if wsScope {
 				sd := resolveSplit(splitDir, window, pane)
 				target := "self"
 				if len(args) > 0 {
@@ -51,7 +51,12 @@ Editor resolution order:
 				}
 				return runEditCreate(eng, target, editorFlag, sd)
 			}
-			return runEditDock(eng, editorFlag)
+
+			focusPath := ""
+			if len(args) > 0 {
+				focusPath = args[0]
+			}
+			return runEditDock(eng, editorFlag, focusPath)
 		},
 	}
 
@@ -81,7 +86,7 @@ func resolveSplit(splitDir string, window, pane bool) string {
 // runEditDock launches or focuses a dock-level editor that covers all
 // workspaces. For terminal editors, creates a tracked surface in a tmux
 // window at index 0. For GUI editors, launches fire-and-forget.
-func runEditDock(eng *engine.Engine, editorOverride string) error {
+func runEditDock(eng *engine.Engine, editorOverride, focusPath string) error {
 	dockName, err := eng.Tmux.CurrentSession()
 	if err != nil {
 		return fmt.Errorf("not in a tmux session")
@@ -103,13 +108,67 @@ func runEditDock(eng *engine.Engine, editorOverride string) error {
 		editPath = paths[0]
 	}
 
+	// Resolve the focus path to an absolute path.
+	var absFocusPath string
+	if focusPath != "" {
+		if filepath.IsAbs(focusPath) {
+			absFocusPath = focusPath
+		} else {
+			cwd, _ := os.Getwd()
+			absFocusPath = filepath.Join(cwd, focusPath)
+		}
+	}
+
 	if isGUI {
-		// Fire and forget — re-running focuses the existing window.
+		if absFocusPath != "" {
+			relPath, relErr := filepath.Rel(editPath, absFocusPath)
+			if relErr != nil {
+				relPath = absFocusPath
+			}
+			return fmt.Errorf("opening a specific path is not supported for GUI editors — navigate to %s in the editor", relPath)
+		}
 		_, err = launchEditor(editorCmd, isGUI, []string{editPath})
 		return err
 	}
 
-	return eng.DockEditorAdd(dockName, editorCmd, editPath)
+	// Ensure the dock editor surface exists.
+	if err := eng.DockEditorAdd(dockName, editorCmd, editPath); err != nil {
+		return err
+	}
+
+	if absFocusPath != "" {
+		// Send the focus command to the terminal editor pane.
+		return focusTerminalEditor(eng, dockName, absFocusPath)
+	}
+	return nil
+}
+
+// focusTerminalEditor sends an open-file command to the dock editor's
+// tmux pane via send-keys.
+func focusTerminalEditor(eng *engine.Engine, dockName, absPath string) error {
+	winID, found := eng.Tmux.FindDockEditorWindow(dockName)
+	if !found {
+		return fmt.Errorf("dock editor not found")
+	}
+	panes, err := eng.Tmux.ListPanes(winID)
+	if err != nil || len(panes) == 0 {
+		return fmt.Errorf("dock editor pane not found")
+	}
+	paneID := panes[0].ID
+
+	// Determine the command to send based on whether it's a file or dir.
+	info, err := os.Stat(absPath)
+	var keys string
+	if err == nil && info.IsDir() {
+		keys = ":Ex " + absPath
+	} else {
+		keys = ":e " + absPath
+	}
+
+	// Focus the editor window, then send the command.
+	_ = eng.Tmux.SelectWindow(winID)
+	_ = eng.Tmux.SelectPane(paneID)
+	return eng.Tmux.SendKeys(paneID, keys)
 }
 
 // runEditCreate launches the editor on a single workspace.
