@@ -19,20 +19,20 @@ func newEditCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "edit [workspace]",
-		Short: "Open workspace in editor",
-		Long: `Open a workspace directory in your editor.
+		Short: "Open workspace directory in editor",
+		Long: `Open the workspace's root directory in your editor. Use the editor's
+file browser to navigate within the project. To edit individual files,
+open a shell instead.
 
   bay edit                    open current workspace
   bay edit auth-fix           open specific workspace
+  bay edit --editor vim       use a specific editor this time
+  bay edit --pane             split pane instead of new window
   bay edit --all              open all workspaces in current dock
-  bay edit --editor vim       open with a specific editor this time
-  bay edit --split v          open as a vertical split instead of a new window
-
-For editor configuration, see 'bay config editor'.
 
 Editor resolution order:
   1. --editor flag (this invocation only)
-  2. [editor].command in config (set via 'bay config editor <name>')
+  2. default_editor in config (set via 'bay config editor <name>')
   3. $VISUAL
   4. $EDITOR
   5. Probe: cursor, code, zed, nvim, vim`,
@@ -79,9 +79,9 @@ func resolveSplit(splitDir string, window, pane bool) string {
 	return "" // window (default)
 }
 
-// runEditCreate launches the editor on a single workspace as a tracked
-// surface. GUI editors are detached and tracked by PID. Terminal editors
-// get their own tmux pane via SurfaceAdd.
+// runEditCreate launches the editor on a single workspace.
+// GUI editors launch and return (fire-and-forget). Terminal editors
+// create a tracked surface in their own tmux pane via SurfaceAdd.
 // Shared by `bay edit` and `bay new edit`.
 func runEditCreate(eng *engine.Engine, target, editorOverride, splitDir string) error {
 	dockName, wsID, err := resolveTarget(eng, target)
@@ -99,15 +99,10 @@ func runEditCreate(eng *engine.Engine, target, editorOverride, splitDir string) 
 	}
 
 	if isGUI {
+		// Fire and forget — GUI editors manage their own windows.
 		_, err = launchEditor(editorCmd, isGUI, []string{path})
 		if err != nil {
 			return fmt.Errorf("launching editor: %w", err)
-		}
-		// Register with PID=0. The monitor resolves the real app PID
-		// lazily via pgrep and tracks liveness from there.
-		appCmd := editorCmd + " " + path
-		if err := eng.SurfaceAddGUI(dockName, wsID, "editor", appCmd, 0); err != nil {
-			return fmt.Errorf("registering editor surface: %w", err)
 		}
 		return nil
 	}
@@ -145,7 +140,23 @@ func runEditAll(eng *engine.Engine, editorOverride, splitDir string) error {
 		return fmt.Errorf("no editor found; set [editor].command in config, or $VISUAL/$EDITOR")
 	}
 
-	// Resolve the workspace to attach the editor surface to.
+	if isGUI {
+		// Fire and forget — GUI editors manage their own windows.
+		_, err = launchEditor(editorCmd, isGUI, paths)
+		return err
+	}
+
+	// Terminal editor: open on parent dir so all worktrees are visible.
+	openPath := paths[0]
+	if len(paths) > 1 {
+		parentDir, err := eng.EditAllParentDir(dockName)
+		if err != nil {
+			return fmt.Errorf("cannot determine worktree directory: %w", err)
+		}
+		openPath = parentDir
+	}
+
+	// Resolve workspace to attach the terminal editor surface to.
 	wsName := ""
 	if dock, ws, err := eng.ResolveSelf(); err == nil && dock == dockName {
 		wsName = ws
@@ -160,25 +171,6 @@ func runEditAll(eng *engine.Engine, editorOverride, splitDir string) error {
 	}
 	if wsName == "" {
 		return fmt.Errorf("no workspace found in dock %q", dockName)
-	}
-
-	if isGUI {
-		_, err = launchEditor(editorCmd, isGUI, paths)
-		if err != nil {
-			return err
-		}
-		appCmd := editorCmd + " " + strings.Join(paths, " ")
-		return eng.SurfaceAddGUI(dockName, wsName, "editor", appCmd, 0)
-	}
-
-	// Terminal editor: open on parent dir so all worktrees are visible.
-	openPath := paths[0]
-	if len(paths) > 1 {
-		parentDir, err := eng.EditAllParentDir(dockName)
-		if err != nil {
-			return fmt.Errorf("cannot determine worktree directory: %w", err)
-		}
-		openPath = parentDir
 	}
 
 	fullCmd := editorCmd + " " + openPath

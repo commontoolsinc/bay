@@ -142,15 +142,17 @@ bay new cmd "top" monitor
 (`bay new cmd` creates a `cmd` surface; the second argument is its display
 name.)
 
-Open your editor on the workspace:
+Open your editor on the workspace directory:
 
 ```
 bay edit
 ```
 
-Bay auto-detects your editor (Cursor, VS Code, Zed, nvim, vim). For
-GUI editors, it tracks the window so you can jump back to it with the
-same navigation keys as everything else.
+This opens your editor on the workspace's root directory — use the
+editor's file browser to navigate within the project. Terminal editors
+(nvim, vim) run in their own tmux window as a tracked surface. GUI
+editors (Cursor, VS Code, Zed) launch and return — manage them with
+Cmd+Tab.
 
 Run `bay ls` to see the current workspace's surfaces:
 
