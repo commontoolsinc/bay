@@ -195,12 +195,12 @@ bay ws go review    # jump to the review workspace
 ## 5. Add an AI agent
 
 ```
-bay ws new --agent
+bay agent
 ```
 
-This creates a workspace with your default agent (bay auto-detects
-Claude Code, Codex, or Gemini on your PATH). The agent gets its own
-surface. Split a shell alongside it with `bay shell` or `Option+s`.
+This launches your default agent (bay auto-detects Claude Code, Codex,
+or Gemini on your PATH) as a surface in the current workspace. Split
+a shell alongside it with `bay shell` or `Option+s`.
 
 When the agent waits for your input, bay highlights it. `Option+a`
 jumps straight to the next waiting agent — no hunting through tabs.
@@ -211,8 +211,8 @@ If you need to restart the agent:
 bay restart
 ```
 
-Bay uses `--continue` (or whatever `resume_args` you've configured) so
-the conversation picks up where it left off.
+Bay automatically uses `--continue` (for Claude Code) so the
+conversation picks up where it left off.
 
 ## 6. Inspect
 
@@ -288,7 +288,7 @@ another repo. Create workspaces from it with `bay ws new --repo backend`.
 `CLAUDE.md` (or equivalent) so agents know about bay commands.
 
 **Explicit control:** The zero-config flow creates docks automatically.
-For more control: `bay dock new myproject --repo myproject --agent claude`.
+For more control: `bay dock new myproject --repo myproject`.
 
 **Status line:** Add `#(bay status-line full)` to your tmux `status-right`
 to always see your current workspace. Other field names: `name`, `branch`,
