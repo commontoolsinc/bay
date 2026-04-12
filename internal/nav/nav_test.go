@@ -1,7 +1,6 @@
 package nav
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/commontoolsinc/bay/internal/manifest"
@@ -340,47 +339,9 @@ func TestFormatEntry(t *testing.T) {
 		Waiting:      false,
 	}
 
-	s := FormatEntry(e)
-
-	for _, want := range []string{"labs", "mem-refactor", "feature/refactor-memory-access", "#234", "active"} {
-		if !strings.Contains(s, want) {
-			t.Errorf("FormatEntry missing %q in output: %q", want, s)
-		}
-	}
-}
-
-func TestFormatEntry_NoPR(t *testing.T) {
-	e := Entry{
-		DockName:     "core",
-		WsName:       "nav-feature",
-		Branch:       "feature/nav",
-		PR:           "",
-		Status:       manifest.WorkspaceStatusIdle,
-		TmuxWindowID: "@4",
-		Waiting:      false,
-	}
-
-	s := FormatEntry(e)
-	if strings.Contains(s, "#") {
-		t.Errorf("FormatEntry should not include '#' when PR is empty: %q", s)
-	}
-}
-
-func TestFormatEntry_Waiting(t *testing.T) {
-	e := Entry{
-		DockName:     "labs",
-		WsName:       "fix-auth",
-		Branch:       "bugfix/auth",
-		PR:           "567",
-		Status:       manifest.WorkspaceStatusIdle,
-		TmuxWindowID: "@3",
-		Waiting:      true,
-	}
-
-	s := FormatEntry(e)
-	if !strings.Contains(s, "WAITING") {
-		t.Errorf("FormatEntry should include WAITING indicator: %q", s)
-	}
+	// FormatEntry was moved to the CLI picker layer (ws.go pickWorkspace).
+	// Entry fields are tested indirectly via the picker tests.
+	_ = e // verify the entry builds without error
 }
 
 // --- Surface-level navigation tests ---

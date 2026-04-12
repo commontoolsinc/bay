@@ -502,6 +502,11 @@ func (m *Mock) DisplayMessage(msg string) error {
 	return nil
 }
 
+func (m *Mock) DisplayPopup(cmd string) error {
+	m.record("DisplayPopup", cmd)
+	return nil
+}
+
 func (m *Mock) ClientWidth() (int, error) {
 	m.record("ClientWidth")
 	if m.clientWidth <= 0 {

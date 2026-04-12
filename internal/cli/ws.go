@@ -493,7 +493,7 @@ func newWsTreeCmd() *cobra.Command {
 }
 
 func newWsGoCmd() *cobra.Command {
-	var waiting, nextWaiting bool
+	var waiting, nextWaiting, pick bool
 
 	cmd := &cobra.Command{
 		Use:   "go [query]",
@@ -504,12 +504,17 @@ func newWsGoCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if pick {
+				return wsGoPick(eng)
+			}
 			return wsGo(eng, args, waiting, nextWaiting)
 		},
 	}
 
 	cmd.Flags().BoolVar(&waiting, "waiting", false, "filter to waiting workspaces")
 	cmd.Flags().BoolVar(&nextWaiting, "next-waiting", false, "jump to next waiting workspace")
+	cmd.Flags().BoolVar(&pick, "pick", false, "open picker in a popup (used by keybindings)")
+	cmd.Flags().MarkHidden("pick")
 
 	return cmd
 }
@@ -542,6 +547,31 @@ func newWsPrevCmd() *cobra.Command {
 	}
 }
 
+// wsGoPick checks if there are enough workspaces to pick from, then
+// opens a tmux display-popup with "bay ws go". Avoids flashing an
+// empty popup when there's nothing to pick.
+func wsGoPick(eng *engine.Engine) error {
+	currentSession, err := eng.Tmux.CurrentSession()
+	if err != nil {
+		return nil
+	}
+	m, err := eng.LoadManifest()
+	if err != nil {
+		return nil
+	}
+	entries := nav.CollectEntries(m, eng.Tmux)
+	count := 0
+	for _, e := range entries {
+		if e.DockName == currentSession && e.TmuxWindowID != "" {
+			count++
+		}
+	}
+	if count < 2 {
+		return nil
+	}
+	return eng.Tmux.DisplayPopup("bay ws go")
+}
+
 // wsGo implements workspace picker scoped to the current dock.
 func wsGo(eng *engine.Engine, args []string, waiting, nextWaiting bool) error {
 	currentSession, err := eng.Tmux.CurrentSession()
@@ -556,10 +586,10 @@ func wsGo(eng *engine.Engine, args []string, waiting, nextWaiting bool) error {
 
 	entries := nav.CollectEntries(m, eng.Tmux)
 
-	// Filter to current dock.
+	// Filter to current dock, excluding workspaces with no tmux presence.
 	var dockEntries []nav.Entry
 	for _, e := range entries {
-		if e.DockName == currentSession {
+		if e.DockName == currentSession && e.TmuxWindowID != "" {
 			dockEntries = append(dockEntries, e)
 		}
 	}
@@ -569,7 +599,6 @@ func wsGo(eng *engine.Engine, args []string, waiting, nextWaiting bool) error {
 		currentWinID, _ := eng.Tmux.CurrentWindowID()
 		entry, _ := nav.NextWaiting(entries, currentWinID)
 		if entry == nil {
-			fmt.Println("No waiting workspaces in this dock.")
 			return nil
 		}
 		if err := eng.Tmux.SelectWindow(entry.TmuxWindowID); err != nil {
@@ -590,11 +619,15 @@ func wsGo(eng *engine.Engine, args []string, waiting, nextWaiting bool) error {
 		entries = nav.FuzzyMatch(entries, query)
 	}
 
+	currentWinID, _ := eng.Tmux.CurrentWindowID()
+
 	switch len(entries) {
 	case 0:
-		fmt.Println("No matching workspaces.")
 		return nil
 	case 1:
+		if entries[0].TmuxWindowID == currentWinID {
+			return nil // already here
+		}
 		return eng.Tmux.SelectWindow(entries[0].TmuxWindowID)
 	default:
 		return pickWorkspace(eng, entries)
@@ -618,7 +651,7 @@ func wsCycle(eng *engine.Engine, forward bool) error {
 
 	var dockEntries []nav.Entry
 	for _, e := range entries {
-		if e.DockName == currentSession {
+		if e.DockName == currentSession && e.TmuxWindowID != "" {
 			dockEntries = append(dockEntries, e)
 		}
 	}
@@ -655,15 +688,46 @@ func wsCycle(eng *engine.Engine, forward bool) error {
 
 // pickWorkspace shows the built-in picker for workspace selection.
 func pickWorkspace(eng *engine.Engine, entries []nav.Entry) error {
-	items := make([]picker.Item, len(entries))
+	currentWinID, _ := eng.Tmux.CurrentWindowID()
+	currentIdx := 0
+	maxWs, maxBranch, maxPR := 0, 0, 0
 	for i, e := range entries {
-		items[i] = picker.Item{
-			Display: nav.FormatEntry(e),
-			Value:   i,
+		if len(e.WsName) > maxWs {
+			maxWs = len(e.WsName)
+		}
+		if len(e.Branch) > maxBranch {
+			maxBranch = len(e.Branch)
+		}
+		pr := ""
+		if e.PR != "" {
+			pr = "#" + e.PR
+		}
+		if len(pr) > maxPR {
+			maxPR = len(pr)
+		}
+		if e.TmuxWindowID == currentWinID {
+			currentIdx = i
 		}
 	}
+	items := make([]picker.Item, len(entries))
+	for i, e := range entries {
+		pr := ""
+		if e.PR != "" {
+			pr = "#" + e.PR
+		}
+		tags := ""
+		if e.Status == manifest.WorkspaceStatusDone {
+			tags += "  MERGED"
+		}
+		if e.Waiting {
+			tags += "  WAITING"
+		}
+		s := fmt.Sprintf("%-*s  %-*s  %-*s%s",
+			maxWs, e.WsName, maxBranch, e.Branch, maxPR, pr, tags)
+		items[i] = picker.Item{Display: s, Value: i}
+	}
 
-	selected, err := defaultPicker.Pick(items, picker.Options{Prompt: "workspace> "})
+	selected, err := defaultPicker.Pick(items, picker.Options{Prompt: "workspace> ", Selected: currentIdx})
 	if err != nil || selected < 0 {
 		return nil
 	}

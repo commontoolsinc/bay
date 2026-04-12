@@ -473,6 +473,27 @@ func runSurfaceRename(eng *engine.Engine, args []string, wsFlag, dockFlag string
 }
 
 // surfaceGo implements the surface picker / direct jump logic.
+// surfaceGoPick checks if there are enough surfaces to pick from, then
+// opens a tmux display-popup with "bay go". Used by keybindings to avoid
+// flashing an empty popup when there's nothing to pick.
+func surfaceGoPick(eng *engine.Engine) error {
+	dockName, wsName, err := eng.ResolveSelf()
+	if err != nil {
+		return nil
+	}
+	ws, err := eng.WsShow(dockName, wsName)
+	if err != nil {
+		return nil
+	}
+	currentPaneID, _ := eng.Tmux.CurrentPaneID()
+	waitingWindows, _ := eng.Tmux.WaitingWindowIDs(dockName)
+	entries := nav.CollectSurfaces(ws, currentPaneID, waitingWindows)
+	if len(entries) < 2 {
+		return nil
+	}
+	return eng.Tmux.DisplayPopup("bay go")
+}
+
 func surfaceGo(eng *engine.Engine, args []string, index int, nextWaiting bool) error {
 	dockName, wsName, err := eng.ResolveSelf()
 	if err != nil {
@@ -489,14 +510,12 @@ func surfaceGo(eng *engine.Engine, args []string, index int, nextWaiting bool) e
 	entries := nav.CollectSurfaces(ws, currentPaneID, waitingWindows)
 
 	if len(entries) == 0 {
-		fmt.Println("No surfaces in this workspace.")
 		return nil
 	}
 
 	if nextWaiting {
 		target, _ := nav.NextWaitingSurface(entries)
 		if target == nil {
-			fmt.Println("No waiting surfaces in this workspace.")
 			return nil
 		}
 		if err := focusSurface(eng, target, dockName, wsName); err != nil {
@@ -525,9 +544,11 @@ func surfaceGo(eng *engine.Engine, args []string, index int, nextWaiting bool) e
 
 	switch len(entries) {
 	case 0:
-		fmt.Println("No matching surfaces.")
 		return nil
 	case 1:
+		if entries[0].Current {
+			return nil // already here
+		}
 		return focusSurface(eng, &entries[0], dockName, wsName)
 	default:
 		return pickSurface(eng, entries, dockName, wsName)
@@ -605,31 +626,44 @@ func focusGUISurface(entry *nav.SurfaceEntry) error {
 
 // pickSurface shows the built-in picker for surface selection.
 func pickSurface(eng *engine.Engine, entries []nav.SurfaceEntry, dockName, wsName string) error {
-	items := make([]picker.Item, len(entries))
+	items := formatSurfaceItems(entries)
+	currentIdx := 0
 	for i, e := range entries {
-		items[i] = picker.Item{
-			Display: formatSurfaceEntry(e),
-			Value:   i,
+		if e.Current {
+			currentIdx = i
 		}
 	}
 
-	selected, err := defaultPicker.Pick(items, picker.Options{Prompt: "surface> "})
+	selected, err := defaultPicker.Pick(items, picker.Options{Prompt: "surface> ", Selected: currentIdx})
 	if err != nil || selected < 0 {
 		return nil // cancelled
 	}
 	return focusSurface(eng, &entries[selected], dockName, wsName)
 }
 
-// formatSurfaceEntry formats a surface entry for picker display.
-func formatSurfaceEntry(e nav.SurfaceEntry) string {
-	s := fmt.Sprintf("%-10s %s", e.Name, e.Type)
-	if e.Current {
-		s += "  *"
+// formatSurfaceItems formats surface entries with aligned columns.
+func formatSurfaceItems(entries []nav.SurfaceEntry) []picker.Item {
+	maxName, maxType := 0, 0
+	for _, e := range entries {
+		if len(e.Name) > maxName {
+			maxName = len(e.Name)
+		}
+		if len(e.Type) > maxType {
+			maxType = len(e.Type)
+		}
 	}
-	if e.Waiting {
-		s += "  WAITING"
+	items := make([]picker.Item, len(entries))
+	for i, e := range entries {
+		s := fmt.Sprintf("%-*s  %-*s", maxName, e.Name, maxType, e.Type)
+		if e.Current {
+			s += "  *"
+		}
+		if e.Waiting {
+			s += "  WAITING"
+		}
+		items[i] = picker.Item{Display: s, Value: i}
 	}
-	return s
+	return items
 }
 
 // filterSurfaceEntries filters surfaces by name or type substring.

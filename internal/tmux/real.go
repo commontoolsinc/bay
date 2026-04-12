@@ -331,6 +331,11 @@ func (r *Real) DisplayMessage(msg string) error {
 	return runSilent("display-message", msg)
 }
 
+// DisplayPopup opens a tmux popup running the given command.
+func (r *Real) DisplayPopup(cmd string) error {
+	return runSilent("display-popup", "-E", cmd)
+}
+
 // ClientWidth returns the width in cells of the attached tmux client.
 // Returns 100 (a reasonable default) if tmux can't report a width — e.g.
 // no client attached, or the value can't be parsed.
