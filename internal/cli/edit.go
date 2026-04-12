@@ -15,7 +15,7 @@ import (
 func newEditCmd() *cobra.Command {
 	var all bool
 	var editorFlag, splitDir string
-	var window bool
+	var window, pane bool
 
 	cmd := &cobra.Command{
 		Use:   "edit [workspace]",
@@ -43,7 +43,7 @@ Editor resolution order:
 				return err
 			}
 
-			sd := editSplitDir(splitDir, window)
+			sd := resolveSplit(splitDir, window, pane)
 
 			if all {
 				return runEditAll(eng, editorFlag, sd)
@@ -59,20 +59,24 @@ Editor resolution order:
 
 	cmd.Flags().BoolVar(&all, "all", false, "open all active workspaces")
 	cmd.Flags().StringVar(&editorFlag, "editor", "", "editor command (overrides config for this invocation)")
-	cmd.Flags().StringVar(&splitDir, "split", "", "split direction (h or v) instead of a new window")
-	cmd.Flags().BoolVar(&window, "window", false, "open as a new tmux window (default for terminal editors)")
+	cmd.Flags().StringVar(&splitDir, "split", "", "split direction (h or v)")
+	cmd.Flags().BoolVar(&pane, "pane", false, "split into current window (shorthand for --split v)")
+	cmd.Flags().BoolVar(&window, "window", false, "open as a new tmux window (default)")
 
 	return cmd
 }
 
-// editSplitDir resolves the split direction for editor surfaces.
-// Editors default to a new window (empty string) unlike other surfaces
-// which default to a vertical split.
-func editSplitDir(splitDir string, window bool) string {
-	if window || splitDir == "" {
-		return ""
+// resolveSplit resolves the split direction. Default is a new window
+// (empty string). --pane forces a vertical split. --split overrides
+// the direction explicitly.
+func resolveSplit(splitDir string, window, pane bool) string {
+	if splitDir != "" {
+		return splitDir
 	}
-	return splitDir
+	if pane {
+		return "v"
+	}
+	return "" // window (default)
 }
 
 // runEditCreate launches the editor on a single workspace as a tracked

@@ -52,12 +52,12 @@ type topNewCmdSpec struct {
 	short     string
 	long      string
 	args      cobra.PositionalArgs
-	buildOpts func(args []string, splitDir string, window bool) (surfaceNewOpts, error)
+	buildOpts func(args []string, splitDir string, window, pane bool) (surfaceNewOpts, error)
 }
 
 func newTopNewSurfaceCmd(spec topNewCmdSpec) *cobra.Command {
 	var wsFlag, dockFlag, splitDir string
-	var window bool
+	var window, pane bool
 
 	cmd := &cobra.Command{
 		Use:   spec.use,
@@ -65,7 +65,7 @@ func newTopNewSurfaceCmd(spec topNewCmdSpec) *cobra.Command {
 		Long:  spec.long,
 		Args:  spec.args,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts, err := spec.buildOpts(args, splitDir, window)
+			opts, err := spec.buildOpts(args, splitDir, window, pane)
 			if err != nil {
 				return err
 			}
@@ -84,7 +84,8 @@ func newTopNewSurfaceCmd(spec topNewCmdSpec) *cobra.Command {
 	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (defaults to current)")
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (with --ws to disambiguate)")
 	cmd.Flags().StringVar(&splitDir, "split", "", "split direction (h or v)")
-	cmd.Flags().BoolVar(&window, "window", false, "open as a new tmux window instead of a split")
+	cmd.Flags().BoolVar(&pane, "pane", false, "split into current window (shorthand for --split v)")
+	cmd.Flags().BoolVar(&window, "window", false, "open as a new tmux window (default)")
 
 	return cmd
 }
@@ -94,10 +95,10 @@ func newTopNewShellCmd() *cobra.Command {
 		use:   "shell [name]",
 		short: "Create a shell surface",
 		args:  cobra.MaximumNArgs(1),
-		buildOpts: func(args []string, splitDir string, window bool) (surfaceNewOpts, error) {
+		buildOpts: func(args []string, splitDir string, window, pane bool) (surfaceNewOpts, error) {
 			opts := surfaceNewOpts{
 				Type:     manifest.SurfaceTypeShell,
-				SplitDir: surfaceSplitDir(splitDir, window),
+				SplitDir: resolveSplit(splitDir, window, pane),
 			}
 			if len(args) > 0 {
 				if err := validateSurfaceName(args[0]); err != nil {
@@ -120,12 +121,13 @@ uses the dock's default agent.
   bay new agent                        dock's default agent
   bay new agent claude                 specific agent
   bay new agent codex codex-debug      specific agent with custom name
-  bay new agent --ws auth-fix --window in another workspace`,
+  bay new agent --ws auth-fix          in another workspace
+  bay new agent --split v              as a vertical split instead of a window`,
 		args: cobra.MaximumNArgs(2),
-		buildOpts: func(args []string, splitDir string, window bool) (surfaceNewOpts, error) {
+		buildOpts: func(args []string, splitDir string, window, pane bool) (surfaceNewOpts, error) {
 			opts := surfaceNewOpts{
 				Type:     manifest.SurfaceTypeAgent,
-				SplitDir: surfaceSplitDir(splitDir, window),
+				SplitDir: resolveSplit(splitDir, window, pane),
 			}
 			if len(args) > 0 {
 				opts.Agent = args[0]
@@ -151,11 +153,11 @@ func newTopNewCmdCmd() *cobra.Command {
   bay new cmd "npm test" tests
   bay new cmd "tail -f log.txt" --window`,
 		args: cobra.RangeArgs(1, 2),
-		buildOpts: func(args []string, splitDir string, window bool) (surfaceNewOpts, error) {
+		buildOpts: func(args []string, splitDir string, window, pane bool) (surfaceNewOpts, error) {
 			opts := surfaceNewOpts{
 				Type:     manifest.SurfaceTypeCmd,
 				Command:  args[0],
-				SplitDir: surfaceSplitDir(splitDir, window),
+				SplitDir: resolveSplit(splitDir, window, pane),
 			}
 			if len(args) > 1 {
 				if err := validateSurfaceName(args[1]); err != nil {
@@ -170,7 +172,7 @@ func newTopNewCmdCmd() *cobra.Command {
 
 func newTopNewEditCmd() *cobra.Command {
 	var wsFlag, dockFlag, editorFlag, splitDir string
-	var window bool
+	var window, pane bool
 
 	cmd := &cobra.Command{
 		Use:   "edit [workspace]",
@@ -198,15 +200,16 @@ the --all utility flag.`,
 			if err != nil {
 				return err
 			}
-			return runEditCreate(eng, target, editorFlag, editSplitDir(splitDir, window))
+			return runEditCreate(eng, target, editorFlag, resolveSplit(splitDir, window, pane))
 		},
 	}
 
 	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (defaults to current)")
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (with --ws to disambiguate)")
 	cmd.Flags().StringVar(&editorFlag, "editor", "", "editor command (overrides config for this invocation)")
-	cmd.Flags().StringVar(&splitDir, "split", "", "split direction (h or v) instead of a new window")
-	cmd.Flags().BoolVar(&window, "window", false, "open as a new tmux window (default for terminal editors)")
+	cmd.Flags().StringVar(&splitDir, "split", "", "split direction (h or v)")
+	cmd.Flags().BoolVar(&pane, "pane", false, "split into current window (shorthand for --split v)")
+	cmd.Flags().BoolVar(&window, "window", false, "open as a new tmux window (default)")
 
 	return cmd
 }
