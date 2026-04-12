@@ -43,8 +43,8 @@ func TestDefaultSetupConfig(t *testing.T) {
 	}
 	// default_agent is set by probing PATH; may be empty in CI.
 	// Just verify the config is valid.
-	if cfg.Monitor.IntervalSeconds <= 0 {
-		t.Error("expected monitor interval > 0")
+	if cfg.Monitor.EffectiveInterval() != 3 {
+		t.Errorf("expected effective monitor interval 3, got %d", cfg.Monitor.EffectiveInterval())
 	}
 }
 

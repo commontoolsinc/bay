@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 
+	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/engine"
 	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/commontoolsinc/bay/internal/nav"
@@ -368,12 +368,7 @@ func autoBootstrap(eng *engine.Engine) (string, error) {
 
 // probeAgent scans PATH for known AI agent commands.
 func probeAgent() string {
-	for _, name := range []string{"claude", "codex", "gemini"} {
-		if _, err := exec.LookPath(name); err == nil {
-			return name
-		}
-	}
-	return ""
+	return config.ProbeAgent()
 }
 
 // resolveCurrentDock resolves the dock for listing commands. Tries:
