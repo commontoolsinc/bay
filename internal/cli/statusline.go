@@ -59,7 +59,9 @@ Fields: name, branch, pr, status, dock, merged, full`,
 					out = "#" + ws.Worktree.PR
 				}
 			case "status":
-				out = string(ws.Status)
+				if ws.Status != manifest.WorkspaceStatusIdle && ws.Status != manifest.WorkspaceStatusActive {
+					out = string(ws.Status)
+				}
 			case "dock":
 				out = dockName
 			case "merged":
@@ -84,7 +86,7 @@ Fields: name, branch, pr, status, dock, merged, full`,
 					}
 					parts = append(parts, branchPart)
 				}
-				if ws.Status != "" {
+				if ws.Status != "" && ws.Status != manifest.WorkspaceStatusIdle && ws.Status != manifest.WorkspaceStatusActive {
 					parts = append(parts, string(ws.Status))
 				}
 				out = strings.Join(parts, " | ")
