@@ -13,11 +13,17 @@ import (
 
 // Config represents the top-level bay configuration.
 type Config struct {
-	DefaultAgent  string                 `toml:"default_agent,omitempty"`
-	DefaultEditor string                 `toml:"default_editor,omitempty"`
-	Agents        map[string]AgentConfig `toml:"agents,omitempty"`
-	Docks         map[string]DockConfig  `toml:"docks,omitempty"`
-	Monitor       MonitorConfig          `toml:"monitor,omitempty"`
+	DefaultAgent  string                  `toml:"default_agent,omitempty"`
+	DefaultEditor string                  `toml:"default_editor,omitempty"`
+	Agents        map[string]AgentConfig  `toml:"agents,omitempty"`
+	Editors       map[string]EditorConfig `toml:"editors,omitempty"`
+	Docks         map[string]DockConfig   `toml:"docks,omitempty"`
+	Monitor       MonitorConfig           `toml:"monitor,omitempty"`
+}
+
+// EditorConfig allows marking a custom editor as GUI.
+type EditorConfig struct {
+	GUI bool `toml:"gui"`
 }
 
 // AgentConfig allows overriding built-in agent defaults.

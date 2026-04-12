@@ -29,6 +29,17 @@ CUSTOM AGENTS (optional)
   resume_args = "--continue"      # added on restart/recovery
   project_file = ".my-agent.md"   # checked by 'bay repo init'
 
+CUSTOM EDITORS (optional)
+
+  Set default_editor to any command on your PATH. Built-in editors
+  (cursor, code, zed) are detected as GUI (fire-and-forget). All
+  others are treated as terminal editors (tracked tmux pane).
+
+  To mark a custom editor as GUI:
+
+  [editors.sublime]
+  gui = true
+
 PER-DOCK OVERRIDES (optional)
 
   Override defaults for a specific dock:
