@@ -77,15 +77,17 @@ tmux attach -t dev
 bay ws new
 ```
 
-### Create a workspace with an agent
+### Create workspaces and surfaces
 
 From inside a dock:
 ```
 bay ws new                  # shell workspace (default)
-bay ws new --agent          # uses dock's default agent
-bay ws new --agent codex    # specific agent
-bay ws new auth-fix         # with a display name (positional)
+bay ws new auth-fix         # with a display name
 bay ws new --branch fix-it  # create and checkout a branch
+bay agent                   # launch default agent in current workspace
+bay agent claude            # launch a specific agent
+bay shell                   # split a new shell
+bay edit                    # open the editor
 ```
 
 ### Navigate
@@ -227,55 +229,24 @@ and workspaces are tracked in the manifest (`~/.local/share/bay/manifest.json`).
 ### Zero-config behavior
 
 No config file is needed. `bay ws new` auto-bootstraps: it detects the
-CWD git repo, creates a dock, probes for agents on PATH, and starts
-working. A config file is only needed for customization (agent settings,
-editor preference, per-dock overrides).
+CWD git repo, creates a dock, probes for agents and editors on PATH,
+and starts working. A config file is only needed to set preferences.
 
-### Agents
-
-```toml
-[agents.claude]
-command = "claude"
-resume_args = "--continue"
-project_file = "CLAUDE.md"
-
-[agents.codex]
-command = "codex"
-
-[agents.gemini]
-command = "gemini"
-```
-
-Fields:
-- `command` -- what bay runs in the terminal.
-- `resume_args` -- flags added when restarting an agent (e.g.,
-  `--continue` for Claude Code). On first launch: bare command. On
-  restart or recovery: command + resume_args.
-- `project_file` -- the file bay checks for bay awareness (e.g.,
-  `CLAUDE.md`). Used by `bay repo init` to append a pointer to
-  `bay agent-guide`.
-
-### Editor
-
-Bay resolves your editor from these sources, in order: `[editor].command`
-in config, `$VISUAL`, `$EDITOR`, or by probing for
-cursor/code/zed/nvim/vim on `$PATH`.
+### Defaults
 
 ```toml
-[editor]
-command = "cursor"
-gui = true           # detach from terminal (default: auto-detected)
+default_agent = "claude"
+default_editor = "cursor"
 ```
 
-GUI editors (Cursor, VS Code, Zed) are detected automatically. When
-`gui` is true, `bay edit` launches the editor and returns immediately,
-creating a tracked editor surface. Terminal editors run in the
-foreground.
+Set via `bay setup` or `bay config editor <name>`. Built-in agents
+(claude, codex, gemini) and editors (cursor, code, zed, nvim, vim)
+don't need config — bay knows their commands, resume args, and GUI
+detection. Run `bay help config` for the full schema.
 
-### Per-dock overrides
+### Per-dock overrides (optional)
 
-Docks are created by `bay dock new` and tracked in the manifest. To
-customize a dock's defaults, add an optional override section in config:
+Override the default agent or add agent args for a specific dock:
 
 ```toml
 [docks.dev]
@@ -284,21 +255,15 @@ agent_args = ["--add-dir", "~/shared-data"]    # extra agent arguments
 terminal = "ghostty"                           # host terminal app
 ```
 
-These override the dock's manifest defaults. Only set the fields you
-want to change — omitted fields use the defaults from when the dock
-was created.
+### Custom agents (optional)
 
-### Repos
-
-Repos are registered with `bay repo add` and tracked in the manifest.
-There is no `[repos]` section in config — repo paths and worktree
-directories are managed by bay commands.
-
-### Monitor
+Add agents beyond the built-in three:
 
 ```toml
-[monitor]
-interval_seconds = 3
+[agents.my-agent]
+command = "my-agent-cli"
+resume_args = "--resume"
+project_file = ".my-agent.md"
 ```
 
 ## Agent integration
@@ -331,16 +296,15 @@ copies any listed files that exist into the new worktree.
 
 ### Session resumption
 
-Agent config has `resume_args` (e.g., `--continue` for Claude Code).
-On restart or recovery, bay appends these to the agent command. Claude
-Code binds sessions to project directories, so `--continue` in the same
+Built-in agents have resume args (e.g., `--continue` for Claude Code).
+On restart or recovery, bay appends these automatically. Claude Code
+binds sessions to project directories, so `--continue` in the same
 worktree resumes the right conversation.
 
 ### Agent protection
 
 Agent surfaces have valuable conversation context:
-- `bay surface restart` uses `resume_args` to reconnect, not start
-  fresh.
+- `bay restart` uses resume args to reconnect, not start fresh.
 - Closing agent surfaces prompts for confirmation.
 
 ## Command reference
@@ -354,9 +318,6 @@ or, when omitted, inherited from the current tmux session.
 ```
 bay ws new [name]                           # new workspace (shell default)
 bay ws new [name] --dock <d>                # target a specific dock
-bay ws new [name] --agent                   # with dock's default agent
-bay ws new [name] --agent codex             # with specific agent
-bay ws new [name] --shell                   # explicit shell
 bay ws new [name] --branch <b>              # create and checkout branch
 bay ws new [name] --repo <r>                # override dock's repo
 bay ws new [name] --dir <path>              # external workspace
@@ -381,7 +342,7 @@ bay ws prev                                 # prev workspace in dock
 
 ```
 bay surface new shell [name]               # shell split (default)
-bay surface new agent <type> [name]        # agent surface
+bay surface new agent [type] [name]        # agent surface (type defaults to dock default)
 bay surface new cmd "<command>" [name]     # command surface
 bay surface new edit [workspace]           # editor surface
 bay surface new shell [name] --ws <w>      # target a different workspace
@@ -730,8 +691,8 @@ bay recover
 
 This recreates all tmux sessions, windows, and panes from the manifest.
 Worktrees are already on disk. Bay relaunches shells and agents (with
-`resume_args` for agents that support it), recovers terminal host apps,
-starts the monitor, and prints `tmux attach` commands.
+resume args like `--continue` for Claude Code), recovers terminal host
+apps, starts the monitor, and prints `tmux attach` commands.
 
 Recovery is idempotent -- run it multiple times safely. It detects and
 reuses existing tmux state. Panes with live foreground processes are
@@ -850,9 +811,9 @@ is detected via `gh pr view` once a branch exists. Both are cached in
 the manifest.
 
 **"My agent restarted and lost context."**
-If the agent supports session resumption (like Claude Code's
-`--continue`), set `resume_args` in the agent config. Bay uses these on
-restart and recovery.
+Built-in agents have resume args configured automatically (e.g.,
+`--continue` for Claude Code). Bay uses these on restart and recovery.
+For custom agents, set `resume_args` in the `[agents]` config section.
 
 **"How do I see my editor in bay go?"**
 Use `bay edit` to open it. This creates a tracked editor surface. If you

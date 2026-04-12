@@ -287,16 +287,16 @@ operations.
 
 ### Workspace commands
 
-#### `bay ws new [name] [--dock DOCK] [--repo NAME] [--dir PATH] [--branch NAME] [--agent [TYPE]] [--shell]`
+#### `bay ws new [name] [--dock DOCK] [--repo NAME] [--dir PATH] [--branch NAME] [--agent [TYPE]]`
 
 Create a workspace with its first surface. The positional names the
 new workspace; `--dock` selects which dock to create it in. `--dock`
 defaults to the current tmux session if it is a bay dock, or
-auto-bootstraps from CWD (creates a dock and repo config
-automatically).
+auto-bootstraps from CWD (creates a dock and repo automatically).
 
-Default behavior opens a shell. Use `--agent` (bare flag) for the
-dock's default agent, or `--agent TYPE` for a specific one.
+Default behavior opens a shell. Use `--agent` for the dock's default
+agent, or `--agent TYPE` for a specific one. Or create the workspace
+first and add an agent with `bay agent`.
 
 ```
 bay ws new                                  # auto-bootstrap from CWD
@@ -304,9 +304,8 @@ bay ws new auth-fix                         # named workspace in current dock
 bay ws new auth-fix --dock labs             # named workspace in a specific dock
 bay ws new auth-fix --repo ct-server        # using a different repo
 bay ws new auth-fix --dir ~/projects/foo    # external workspace
-bay ws new auth-fix --agent                 # launch dock's default agent
-bay ws new auth-fix --agent codex           # launch specific agent
 bay ws new auth-fix --branch fix-auth       # create and checkout branch
+bay ws new auth-fix --agent                 # with dock's default agent
 ```
 
 #### `bay ws close [name] [--force] [--done]`
@@ -431,8 +430,8 @@ bay sf close agent --force
 #### `bay surface restart [name] [--ws WS] [--dock DOCK]`
 
 Respawn a surface's process. Defaults to the current pane's surface.
-For agent surfaces, uses `resume_args` from agent config (e.g.,
-`--continue` for Claude Code) to reconnect to the existing session.
+For agent surfaces, uses built-in resume args (e.g., `--continue`
+for Claude Code) to reconnect to the existing session.
 The worktree and git state are preserved.
 
 ```
@@ -453,6 +452,7 @@ Rename a surface. With one arg, renames the current surface.
 ```
 bay go [query]         → bay surface go [query]
 bay shell [name]       → bay surface new shell [name]
+bay agent [type]       → launch agent (defaults to dock/global default)
 bay edit [workspace]   → open workspace in configured editor
 bay ls                 → list everything
 bay pwd                → show current bay context
@@ -537,7 +537,7 @@ bay pwd --json
 
 Reconstruct all docks, workspaces, and surfaces after a reboot.
 Recreates tmux sessions and windows, relaunches agents with
-`resume_args`, starts the monitor. Idempotent.
+resume args (e.g., `--continue`), starts the monitor. Idempotent.
 
 #### `bay doctor`
 
@@ -687,8 +687,8 @@ work on independent branches.
 bay recover
 ```
 
-Reconstructs all tmux sessions, surfaces, and agent sessions (using
-`resume_args`). Prints attach commands.
+Reconstructs all tmux sessions, surfaces, and agent sessions (with
+resume args). Prints attach commands.
 
 ### Zero-config quickstart
 
