@@ -22,6 +22,7 @@ type workspaceSyncUpdate struct {
 	path           string
 	branch         string
 	branchChanged  bool
+	branchDetached bool
 	pr             string
 	prBranch       string
 	prChanged      bool
@@ -135,6 +136,8 @@ func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace)
 			if err == nil && branch != "" && branch != ws.Worktree.Branch {
 				update.branch = branch
 				update.branchChanged = true
+			} else if err == nil && branch == "" && ws.Worktree.Branch != "" {
+				update.branchDetached = true
 			}
 
 			branchForChecks := ws.Worktree.Branch
@@ -175,7 +178,7 @@ func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace)
 	if sessionAlive {
 		update.deadSurfaceIDs = e.deadSurfaceIDs(ws)
 	}
-	if !update.branchChanged && !update.prChanged && !update.mergedDone && len(update.deadSurfaceIDs) == 0 {
+	if !update.branchChanged && !update.branchDetached && !update.prChanged && !update.mergedDone && len(update.deadSurfaceIDs) == 0 {
 		return workspaceSyncUpdate{}, false
 	}
 	return update, true
@@ -217,6 +220,20 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 				ws.Name = newName
 				e.updateWindowNames(ws, ws.Name)
 				changed = true
+			}
+		}
+	}
+
+	if update.branchDetached && ws.Worktree != nil && ws.Worktree.Branch != "" {
+		ws.Worktree.Branch = ""
+		ws.Worktree.PR = ""
+		ws.Worktree.PRCheckedAt = 0
+		changed = true
+		if !ws.NameOverridden {
+			newName := uniqueWorkspaceName(dock, ws, nextWorkspaceName(dock))
+			if newName != ws.Name {
+				ws.Name = newName
+				e.updateWindowNames(ws, ws.Name)
 			}
 		}
 	}

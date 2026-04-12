@@ -19,6 +19,8 @@ func seedWorktreeWorkspace(t *testing.T, eng *Engine, dockName, wsName, branch s
 	if err := os.MkdirAll(wsPath, 0o755); err != nil {
 		t.Fatalf("mkdir ws path: %v", err)
 	}
+	// Set the mock branch so sync doesn't see a phantom detach.
+	eng.Git.(*git.Mock).SetBranch(wsPath, branch)
 	err := eng.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)
 		dock.Workspaces = append(dock.Workspaces, manifest.Workspace{
