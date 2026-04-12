@@ -288,19 +288,24 @@ func TestSave_AtomicWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// No backup on first save
-	backup := path + ".bak"
-	if _, err := os.Stat(backup); !os.IsNotExist(err) {
-		t.Error("backup should not exist on first save")
+	// No backup on first save (no previous file to back up).
+	backupDir := filepath.Join(dir, "backups")
+	backups, _ := ListBackups(path)
+	if len(backups) != 0 {
+		t.Error("no backups should exist on first save")
 	}
 
-	// Save again — should create backup
+	// Save again — should create a backup of the first version.
 	m.Docks[0].Name = "second"
 	if err := Save(path, m); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := os.Stat(backup); err != nil {
+	if _, err := os.Stat(backupDir); err != nil {
+		t.Error("backup directory should exist after second save")
+	}
+	backups, _ = ListBackups(path)
+	if len(backups) == 0 {
 		t.Error("backup should exist after second save")
 	}
 }
@@ -724,9 +729,9 @@ func TestLockedUpdate_AtomicWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	backup := path + ".bak"
-	if _, err := os.Stat(backup); !os.IsNotExist(err) {
-		t.Error("backup should not exist after first LockedUpdate")
+	backups, _ := ListBackups(path)
+	if len(backups) != 0 {
+		t.Error("no backups should exist after first LockedUpdate")
 	}
 
 	// Second update — backup should be created
@@ -738,7 +743,8 @@ func TestLockedUpdate_AtomicWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := os.Stat(backup); err != nil {
+	backups, _ = ListBackups(path)
+	if len(backups) == 0 {
 		t.Error("backup should exist after second LockedUpdate")
 	}
 
