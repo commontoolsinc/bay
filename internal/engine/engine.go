@@ -182,7 +182,7 @@ func abbreviateBranch(branch string) string {
 // launchSurfaceInTmux launches the appropriate command in a tmux pane
 // based on the surface type and returns a populated Surface.
 // Used by workspace creation and surface add operations.
-func (e *Engine) launchSurfaceInTmux(tmuxPaneID, dockName string, surfaceType manifest.SurfaceType, agent, cmd string, agentArgs []string) (manifest.Surface, error) {
+func (e *Engine) launchSurfaceInTmux(tmuxPaneID, dockName string, surfaceType manifest.SurfaceType, agent, cmd, cwd string, agentArgs []string) (manifest.Surface, error) {
 	s := manifest.Surface{
 		Type:    surfaceType,
 		Backend: manifest.SurfaceBackendTmux,
@@ -199,11 +199,16 @@ func (e *Engine) launchSurfaceInTmux(tmuxPaneID, dockName string, surfaceType ma
 		_ = e.Tmux.SendKeys(tmuxPaneID, agentCmd)
 	case manifest.SurfaceTypeCmd:
 		s.Command = &cmd
-		_ = e.Tmux.SendKeys(tmuxPaneID, cmd)
+		_ = e.Tmux.RespawnPane(tmuxPaneID, cwd, cmd)
 	case manifest.SurfaceTypeShell:
 		// Shell — no command to send.
 	case manifest.SurfaceTypeEditor:
-		// Editor tmux surface — no command to send (editor launched separately).
+		if cmd != "" {
+			s.Command = &cmd
+			// Use RespawnPane so the pane dies when the editor exits,
+			// rather than falling back to a shell.
+			_ = e.Tmux.RespawnPane(tmuxPaneID, cwd, cmd)
+		}
 	}
 
 	return s, nil

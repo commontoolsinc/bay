@@ -37,7 +37,6 @@ func TestPositionalShapes(t *testing.T) {
 	}{
 		// Create-verbs: positional is the new thing's name.
 		{[]string{"workspace", "new"}, "new [name]", "ws new positional must be the workspace's display name"},
-		{[]string{"surface", "new"}, "new [name]", "surface new positional must be the surface name"},
 		{[]string{"shell"}, "shell [name]", "shell positional must be the surface name"},
 
 		// Show: optional positional, defaults to current.
@@ -91,22 +90,21 @@ func TestWsNew_DockFlagExists(t *testing.T) {
 	}
 }
 
-// TestSurfaceNew_WsAndDockFlagsExist pins that surface new accepts --ws
-// now that the positional has been repurposed for the surface name.
-func TestSurfaceNew_WsAndDockFlagsExist(t *testing.T) {
+// TestSurfaceNew_SubcommandsHaveWsAndDockFlags pins that surface new's
+// subcommands (shell, agent, cmd) accept --ws and --dock.
+func TestSurfaceNew_SubcommandsHaveWsAndDockFlags(t *testing.T) {
 	root := NewRootCmd("test")
-	cmd, _, err := root.Find([]string{"surface", "new"})
-	if err != nil {
-		t.Fatalf("could not find surface new: %v", err)
-	}
-	if cmd.Flags().Lookup("ws") == nil {
-		t.Error("surface new is missing --ws flag (the replacement for the old positional)")
-	}
-	if cmd.Flags().Lookup("dock") == nil {
-		t.Error("surface new is missing --dock flag")
-	}
-	if cmd.Flags().Lookup("name") != nil {
-		t.Error("surface new still has --name flag; positional replaces it")
+	for _, kind := range []string{"shell", "agent", "cmd"} {
+		cmd, _, err := root.Find([]string{"surface", "new", kind})
+		if err != nil {
+			t.Fatalf("could not find surface new %s: %v", kind, err)
+		}
+		if cmd.Flags().Lookup("ws") == nil {
+			t.Errorf("surface new %s is missing --ws flag", kind)
+		}
+		if cmd.Flags().Lookup("dock") == nil {
+			t.Errorf("surface new %s is missing --dock flag", kind)
+		}
 	}
 }
 

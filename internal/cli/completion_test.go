@@ -90,14 +90,12 @@ func TestCompletionsRegistered(t *testing.T) {
 }
 
 // TestCreateVerbs_PositionalsAreFreeText pins the contract that
-// ws new / surface new / shell have NO positional completion. Their
-// positional names a brand-new thing the user is about to create —
-// completing it from existing names would be misleading and would
-// invite the same kind of dock-name-vs-workspace-name confusion this
-// PR exists to fix.
+// ws new / shell have NO positional completion. Their positional
+// names a brand-new thing the user is about to create — completing
+// it from existing names would be misleading.
 func TestCreateVerbs_PositionalsAreFreeText(t *testing.T) {
 	root := NewRootCmd("test")
-	for _, path := range []string{"workspace new", "surface new", "shell"} {
+	for _, path := range []string{"workspace new", "shell"} {
 		cmd := findCmd(root, path)
 		if cmd == nil {
 			t.Errorf("command %q not found", path)
@@ -329,7 +327,6 @@ func TestFlagCompletions_WsAndDockOnSurfaceVerbs(t *testing.T) {
 	// workspace target moved to --ws (PR #112).
 	root := NewRootCmd("test")
 	for _, path := range []string{
-		"surface new",
 		"surface close", "surface restart", "surface show", "surface rename",
 		"close", "show", "restart",
 		"shell",

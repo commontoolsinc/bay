@@ -242,7 +242,8 @@ func (e *Engine) deadSurfaceIDs(ws *manifest.Workspace) map[int]bool {
 				dead[s.ID] = true
 			}
 		case s.GUI != nil:
-			dead[s.ID] = true
+			// GUI surfaces without a PID (e.g., editors whose launcher
+			// forked) are kept alive — the user closes them with bay close.
 		}
 	}
 	return dead

@@ -37,65 +37,25 @@ func newSurfaceCmd() *cobra.Command {
 }
 
 func newSurfaceNewCmd() *cobra.Command {
-	var opts surfaceNewOpts
-	var shell, window bool
-	var wsFlag, dockFlag string
-
 	cmd := &cobra.Command{
-		Use:   "new [name]",
+		Use:   "new <kind>",
 		Short: "Add a surface to a workspace",
-		Long: `Add a surface to a workspace. The positional is the new surface's
-display name; --ws/--dock select the target workspace.
+		Long: `Add a surface to a workspace.
 
-  bay surface new                          split a shell into the current workspace
-  bay surface new logs                     new surface named "logs"
-  bay surface new --window                 new tmux window instead of split
-  bay surface new --ws auth-fix            target a different workspace
-  bay sf new --agent codex                 add an agent surface`,
-		Args: cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			eng, err := newEngine()
-			if err != nil {
-				return err
-			}
-
-			if len(args) > 0 {
-				if err := validateSurfaceName(args[0]); err != nil {
-					return err
-				}
-				opts.Name = args[0]
-			}
-
-			dockName, wsName, err := resolveSurfaceWorkspace(eng, wsFlag, dockFlag)
-			if err != nil {
-				return err
-			}
-
-			// Derive surface type from the flags. Default to shell.
-			switch {
-			case shell:
-				opts.Type = manifest.SurfaceTypeShell
-			case opts.Command != "":
-				opts.Type = manifest.SurfaceTypeCmd
-			case opts.Agent != "":
-				opts.Type = manifest.SurfaceTypeAgent
-			default:
-				opts.Type = manifest.SurfaceTypeShell
-			}
-
-			opts.SplitDir = surfaceSplitDir(opts.SplitDir, window)
-
-			return runSurfaceNew(eng, dockName, wsName, opts)
-		},
+  bay sf new shell                       split a shell
+  bay sf new shell logs --window         new tmux window named "logs"
+  bay sf new agent claude                start an agent surface
+  bay sf new agent codex --ws auth-fix   agent in another workspace
+  bay sf new cmd "npm test" tests        run a command
+  bay sf new edit                        open the editor`,
 	}
 
-	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (defaults to current)")
-	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (with --ws to disambiguate)")
-	cmd.Flags().StringVar(&opts.Agent, "agent", "", "agent type")
-	cmd.Flags().BoolVar(&shell, "shell", false, "open a shell")
-	cmd.Flags().StringVar(&opts.Command, "cmd", "", "command to run")
-	cmd.Flags().StringVar(&opts.SplitDir, "split", "", "split direction (h or v)")
-	cmd.Flags().BoolVar(&window, "window", false, "open as new tmux window instead of split")
+	cmd.AddCommand(
+		newTopNewShellCmd(),
+		newTopNewAgentCmd(),
+		newTopNewCmdCmd(),
+		newTopNewEditCmd(),
+	)
 
 	return cmd
 }

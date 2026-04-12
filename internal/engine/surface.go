@@ -148,7 +148,7 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 	agentArgs := e.resolvedDockAgentArgs(dockName, m2)
 
 	// Launch the surface process.
-	surface, err := e.launchSurfaceInTmux(tmuxPaneID, dockName, surfaceType, agent, cmd, agentArgs)
+	surface, err := e.launchSurfaceInTmux(tmuxPaneID, dockName, surfaceType, agent, cmd, ws.Path, agentArgs)
 	if err != nil {
 		rollbackSurface()
 		return err
