@@ -41,7 +41,7 @@ type AgentInfo struct {
 // have a built-in GUI detection list. These are used when no config
 // override exists for the agent.
 var KnownAgents = map[string]AgentInfo{
-	"claude": {Command: "claude", ResumeArgs: "--continue", ProjectFile: "CLAUDE.md"},
+	"claude": {Command: "claude", ResumeArgs: "--continue", ProjectFile: "CLAUDE.local.md"},
 	"codex":  {Command: "codex"},
 	"gemini": {Command: "gemini"},
 }

@@ -439,13 +439,13 @@ Rename a surface. With one arg, renames the current surface.
 bay go [query]         → bay surface go [query]
 bay shell [name]       → shell in new window (--pane for split)
 bay agent [type]       → agent in new window (--pane for split)
-bay edit [workspace]   → editor in new window (--pane for split)
+bay edit [path]        → dock editor (--ws for workspace scope)
 bay ls                 → list everything
 bay pwd                → show current bay context
 bay recover            → reconstruct state after reboot
 ```
 
-#### `bay edit [workspace] [--all] [--editor CMD] [--pane|--split h|v]`
+#### `bay edit [path] [--dock|--ws] [--editor CMD] [--pane|--split h|v]`
 
 Open the workspace's root directory in an editor. Use the editor's
 file browser to navigate within the project. To edit individual files,
@@ -463,7 +463,7 @@ Editor resolution: `--editor` flag > `default_editor` in config >
 bay edit                    # open current workspace
 bay edit auth-fix           # open specific workspace
 bay edit --editor vim       # use a specific editor this time
-bay edit --all              # open all workspaces in dock
+bay edit --dock             # dock editor (default, all workspaces)
 bay edit --pane             # split into current window
 ```
 
