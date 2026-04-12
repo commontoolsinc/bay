@@ -90,6 +90,24 @@ func TestWsNew_DockFlagExists(t *testing.T) {
 	}
 }
 
+// TestWsNew_BareAgentFlag pins that --agent can be used without a value
+// to get the dock's default agent. NoOptDefVal must be set so cobra
+// doesn't require an argument.
+func TestWsNew_BareAgentFlag(t *testing.T) {
+	root := NewRootCmd("test")
+	cmd, _, err := root.Find([]string{"workspace", "new"})
+	if err != nil {
+		t.Fatalf("could not find ws new: %v", err)
+	}
+	f := cmd.Flags().Lookup("agent")
+	if f == nil {
+		t.Fatal("ws new is missing --agent flag")
+	}
+	if f.NoOptDefVal == "" {
+		t.Error("--agent flag must have NoOptDefVal set so bare --agent works")
+	}
+}
+
 // TestSurfaceNew_SubcommandsHaveWsAndDockFlags pins that surface new's
 // subcommands (shell, agent, cmd) accept --ws and --dock.
 func TestSurfaceNew_SubcommandsHaveWsAndDockFlags(t *testing.T) {

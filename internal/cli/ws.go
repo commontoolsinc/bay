@@ -89,10 +89,12 @@ func newWsNewCmd() *cobra.Command {
 				opts.Shell = shell
 			}
 
-			// Bare --agent (no value): use dock's default agent.
+			// Bare --agent: use dock's default agent.
 			// --agent <name>: use that specific agent.
-			// Both cases: opts.Agent is already set by the flag binding.
 			opts.RequireAgent = cmd.Flags().Changed("agent")
+			if opts.Agent == "default" {
+				opts.Agent = "" // resolve to dock/global default
+			}
 
 			ws, err := eng.WsNew(opts)
 			if err != nil {
@@ -122,7 +124,7 @@ func newWsNewCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Agent, "agent", "", "agent type (bare --agent uses dock default)")
 	cmd.Flags().BoolVar(&shell, "shell", false, "open shell instead of agent")
 	cmd.Flags().StringVar(&opts.Branch, "branch", "", "create and checkout a git branch in the worktree")
-	cmd.Flags().Lookup("agent").NoOptDefVal = ""
+	cmd.Flags().Lookup("agent").NoOptDefVal = "default"
 
 	return cmd
 }

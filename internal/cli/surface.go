@@ -355,23 +355,25 @@ func runSurfaceShow(eng *engine.Engine, args []string, wsFlag, dockFlag string) 
 		return fmt.Errorf("surface %q not found in workspace %q", sName, wsName)
 	}
 
-	fmt.Printf("Surface: %s\n", s.Name)
-	fmt.Printf("  type:    %s\n", s.Type)
-	fmt.Printf("  backend: %s\n", s.Backend)
+	rows := []showRow{
+		{"surface", s.Name},
+		{"type", string(s.Type)},
+	}
 	if s.Tmux != nil {
 		if s.Tmux.WindowID != "" {
-			fmt.Printf("  window:  %s\n", s.Tmux.WindowID)
+			rows = append(rows, showRow{"window", s.Tmux.WindowID})
 		}
 		if s.Tmux.PaneID != "" {
-			fmt.Printf("  pane:    %s\n", s.Tmux.PaneID)
+			rows = append(rows, showRow{"pane", s.Tmux.PaneID})
 		}
 	}
 	if s.Agent != nil && *s.Agent != "" {
-		fmt.Printf("  agent:   %s\n", *s.Agent)
+		rows = append(rows, showRow{"agent", *s.Agent})
 	}
 	if s.Command != nil && *s.Command != "" {
-		fmt.Printf("  command: %s\n", *s.Command)
+		rows = append(rows, showRow{"command", *s.Command})
 	}
+	printAlignedRows(rows)
 	return nil
 }
 

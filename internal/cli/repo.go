@@ -105,52 +105,66 @@ func newRepoLsCmd() *cobra.Command {
 
 func newRepoShowCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "show <name>",
+		Use:     "show [name]",
 		Aliases: []string{"cat"},
-		Short:   "Show repo details",
-		Args:    cobra.ExactArgs(1),
+		Short:   "Show repo details (defaults to current repo)",
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
 				return err
 			}
 
-			name := args[0]
 			m, mErr := eng.LoadManifest()
 			if mErr != nil {
 				return mErr
 			}
+
+			var name string
+			if len(args) > 0 {
+				name = args[0]
+			} else {
+				// Infer from current dock's repo.
+				session, err := eng.Tmux.CurrentSession()
+				if err == nil {
+					if dock := m.FindDock(session); dock != nil && dock.Repo != "" {
+						name = dock.Repo
+					}
+				}
+				if name == "" {
+					return fmt.Errorf("not in a dock — pass a repo name")
+				}
+			}
+
 			repo := m.FindRepo(name)
 			if repo == nil {
 				return fmt.Errorf("repo %q not found", name)
 			}
 
-			fmt.Printf("Repo: %s\n", name)
-			fmt.Printf("  path:         %s\n", repo.Path)
-			fmt.Printf("  worktree_dir: %s\n", repo.EffectiveWorktreeDir())
-
-			// Docks using this repo
 			var dockNames []string
 			for i := range m.Docks {
 				if m.Docks[i].Repo == name {
 					dockNames = append(dockNames, m.Docks[i].Name)
 				}
 			}
-			if len(dockNames) > 0 {
-				fmt.Printf("  docks: %s\n", strings.Join(dockNames, ", "))
-			} else {
-				fmt.Println("  docks: (none)")
-			}
-
-			// Active worktree count
 			wsCount := 0
-			for _, dockName := range dockNames {
-				if dock := m.FindDock(dockName); dock != nil {
+			for _, dn := range dockNames {
+				if dock := m.FindDock(dn); dock != nil {
 					wsCount += len(dock.Workspaces)
 				}
 			}
-			fmt.Printf("  active worktrees: %d\n", wsCount)
 
+			rows := []showRow{
+				{"repo", name},
+				{"path", repo.Path},
+				{"worktree dir", repo.EffectiveWorktreeDir()},
+			}
+			if len(dockNames) > 0 {
+				rows = append(rows, showRow{"docks", strings.Join(dockNames, ", ")})
+			}
+			rows = append(rows, showRow{"workspaces", fmt.Sprintf("%d", wsCount)})
+
+			printAlignedRows(rows)
 			return nil
 		},
 	}

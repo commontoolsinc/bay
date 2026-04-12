@@ -91,17 +91,26 @@ func newDockLsCmd() *cobra.Command {
 
 func newDockShowCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "show <name>",
+		Use:     "show [name]",
 		Aliases: []string{"cat"},
-		Short:   "Show dock details",
-		Args:    cobra.ExactArgs(1),
+		Short:   "Show dock details (defaults to current dock)",
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
 				return err
 			}
 
-			name := args[0]
+			var name string
+			if len(args) > 0 {
+				name = args[0]
+			} else {
+				session, err := eng.Tmux.CurrentSession()
+				if err != nil {
+					return fmt.Errorf("not in a tmux session — pass a dock name")
+				}
+				name = session
+			}
 
 			m, _ := eng.LoadManifest()
 			if m == nil {
@@ -112,57 +121,44 @@ func newDockShowCmd() *cobra.Command {
 				return fmt.Errorf("dock %q not found", name)
 			}
 
-			fmt.Printf("Dock: %s\n", name)
+			var rows []showRow
+			rows = append(rows, showRow{"dock", name})
 			if mDock.Repo != "" {
-				fmt.Printf("  repo:     %s\n", mDock.Repo)
+				rows = append(rows, showRow{"repo", mDock.Repo})
 			}
 			if agent := eng.Config.ResolvedDockAgent(name, mDock.Agent); agent != "" {
-				fmt.Printf("  agent:    %s\n", agent)
+				rows = append(rows, showRow{"agent", agent})
 			}
 			if agentArgs := eng.Config.ResolvedDockAgentArgs(name, mDock.AgentArgs); len(agentArgs) > 0 {
-				fmt.Printf("  agent_args: %s\n", strings.Join(agentArgs, " "))
+				rows = append(rows, showRow{"agent args", strings.Join(agentArgs, " ")})
 			}
 			if terminal := eng.Config.ResolvedDockTerminal(name); terminal != "" {
-				fmt.Printf("  terminal: %s\n", terminal)
+				rows = append(rows, showRow{"terminal", terminal})
 			}
-
-			// Session status
 			exists, _ := eng.Tmux.HasSession(name)
 			if exists {
-				fmt.Println("  session:  running")
+				rows = append(rows, showRow{"session", "running"})
 			} else {
-				fmt.Println("  session:  not running")
+				rows = append(rows, showRow{"session", "not running"})
 			}
 
 			// Workspace summary
-			idle, active, done := 0, 0, 0
-			for _, ws := range mDock.Workspaces {
-				switch ws.Status {
-				case manifest.WorkspaceStatusIdle:
-					idle++
-				case manifest.WorkspaceStatusActive:
-					active++
-				case manifest.WorkspaceStatusDone:
-					done++
-				}
-			}
 			total := len(mDock.Workspaces)
-			fmt.Printf("  workspaces: %d", total)
+			wsSummary := fmt.Sprintf("%d", total)
 			if total > 0 {
-				var parts []string
-				if active > 0 {
-					parts = append(parts, fmt.Sprintf("%d active", active))
-				}
-				if idle > 0 {
-					parts = append(parts, fmt.Sprintf("%d idle", idle))
+				done := 0
+				for _, ws := range mDock.Workspaces {
+					if ws.Status == manifest.WorkspaceStatusDone {
+						done++
+					}
 				}
 				if done > 0 {
-					parts = append(parts, fmt.Sprintf("%d done", done))
+					wsSummary += fmt.Sprintf(" (%d done)", done)
 				}
-				fmt.Printf(" (%s)", strings.Join(parts, ", "))
 			}
-			fmt.Println()
+			rows = append(rows, showRow{"workspaces", wsSummary})
 
+			printAlignedRows(rows)
 			return nil
 		},
 	}

@@ -220,17 +220,28 @@ var knownEditors = map[string]bool{
 	"vim":    false,
 }
 
+// isGUIEditor checks config overrides first, then built-in knowledge.
+func isGUIEditor(cfg *config.Config, cmd string) bool {
+	base := baseCommand(cmd)
+	if cfg.Editors != nil {
+		if ec, ok := cfg.Editors[base]; ok {
+			return ec.GUI
+		}
+	}
+	return knownEditors[base]
+}
+
 // resolveEditor determines the editor command and whether it's GUI.
 func resolveEditorWithOverride(cfg *config.Config, override string) (string, bool) {
 	if override != "" {
-		return override, knownEditors[baseCommand(override)]
+		return override, isGUIEditor(cfg, override)
 	}
 	return resolveEditor(cfg)
 }
 
 func resolveEditor(cfg *config.Config) (command string, isGUI bool) {
 	lookup := func(cmd string) (string, bool) {
-		return cmd, knownEditors[baseCommand(cmd)]
+		return cmd, isGUIEditor(cfg, cmd)
 	}
 
 	if cfg.DefaultEditor != "" {

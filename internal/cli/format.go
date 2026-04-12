@@ -592,29 +592,82 @@ func FormatListView(view ListView, long, short bool) string {
 	return b.String()
 }
 
+// showRow is a label/value pair for detail views (ws show, dock show, etc.).
+type showRow struct{ label, value string }
+
+// maxShowRowLabel returns the max label width across rows.
+func maxShowRowLabel(rows []showRow) int {
+	max := 0
+	for _, r := range rows {
+		if len(r.label) > max {
+			max = len(r.label)
+		}
+	}
+	return max
+}
+
+// printAlignedRows prints rows with right-aligned labels.
+func printAlignedRows(rows []showRow) {
+	maxLabel := maxShowRowLabel(rows)
+	for _, r := range rows {
+		pad := strings.Repeat(" ", maxLabel-len(r.label))
+		fmt.Printf("%s%s %s\n", pad, dim(r.label), r.value)
+	}
+}
+
+// writeAlignedRows writes rows with right-aligned labels to a builder.
+func writeAlignedRows(b *strings.Builder, rows []showRow, minWidth int) {
+	maxLabel := maxShowRowLabel(rows)
+	if minWidth > maxLabel {
+		maxLabel = minWidth
+	}
+	for _, r := range rows {
+		pad := strings.Repeat(" ", maxLabel-len(r.label))
+		fmt.Fprintf(b, "%s%s %s\n", pad, dim(r.label), r.value)
+	}
+}
+
 func FormatWorkspaceShow(repoName, dockName string, ws *engine.WorkspaceInfo, long bool) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n", labelValue("workspace", ws.Name))
-	fmt.Fprintf(&b, "%s\n", labelValue("repo", repoName))
-	fmt.Fprintf(&b, "%s\n", labelValue("dock", dockName))
-	fmt.Fprintf(&b, "%s\n", labelValue("type", ws.Type))
-	fmt.Fprintf(&b, "%s\n", labelValue("path", ws.Path))
+
+	var rows []showRow
+	rows = append(rows, showRow{"workspace", ws.Name})
+	rows = append(rows, showRow{"repo", repoName})
+	rows = append(rows, showRow{"dock", dockName})
+	if ws.Type != "" && ws.Type != "worktree" {
+		rows = append(rows, showRow{"type", ws.Type})
+	}
+	rows = append(rows, showRow{"path", ws.Path})
 	if ws.Branch != "" {
-		fmt.Fprintf(&b, "%s\n", labelValue("branch", ws.Branch))
+		rows = append(rows, showRow{"branch", ws.Branch})
 	}
 	if ws.PR != "" {
-		fmt.Fprintf(&b, "%s\n", labelValue("pr", ws.PR))
+		rows = append(rows, showRow{"pr", ws.PR})
 	}
-	fmt.Fprintf(&b, "%s\n", labelValue("status", ws.Status))
+	if ws.Status != "" && ws.Status != "idle" && ws.Status != "active" {
+		rows = append(rows, showRow{"status", ws.Status})
+	}
 	if ws.DefaultAgent != "" {
-		fmt.Fprintf(&b, "%s\n", labelValue("default agent", ws.DefaultAgent))
+		rows = append(rows, showRow{"default agent", ws.DefaultAgent})
 	}
 	if ws.SyncStatus != "" && ws.SyncStatus != manifest.SyncStatusOK {
-		fmt.Fprintf(&b, "%s\n", labelValue("sync", ws.SyncStatus))
+		rows = append(rows, showRow{"sync", ws.SyncStatus})
 	}
+
+	// Write rows, ensuring "surface" label fits in the alignment.
+	sfLabel := "surface"
+	writeAlignedRows(&b, rows, len(sfLabel))
+	maxLabel := maxShowRowLabel(rows)
+	if len(sfLabel) > maxLabel {
+		maxLabel = len(sfLabel)
+	}
+
+	// Surface rows: right-align "surface" label to same column.
+	sfPad := strings.Repeat(" ", maxLabel-len(sfLabel))
 	sfRows := make([]alignedRow, len(ws.Surfaces))
 	for i, s := range ws.Surfaces {
-		prefix, width := labelValueWithWidth("surface", s.Name)
+		prefix := sfPad + dim(sfLabel) + " " + s.Name
+		width := maxLabel + 1 + utf8.RuneCountInString(s.Name)
 		sfRows[i] = alignedRow{
 			prefix:      prefix,
 			prefixWidth: width,
