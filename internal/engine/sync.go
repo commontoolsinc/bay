@@ -85,6 +85,14 @@ func (e *Engine) SyncAll() {
 		return
 	}
 
+	// Collect workspaces that became empty so we can clean up their
+	// worktrees after releasing the manifest lock.
+	type emptyWs struct {
+		dock, name, path, branch string
+		isWorktree               bool
+	}
+	var empties []emptyWs
+
 	_ = e.withManifestMaybe(func(m *manifest.Manifest) (bool, error) {
 		changed := false
 		for _, update := range updates {
@@ -92,6 +100,35 @@ func (e *Engine) SyncAll() {
 				changed = true
 			}
 		}
+
+		// Remove workspaces whose last surface just died.
+		for _, update := range updates {
+			if len(update.deadSurfaceIDs) == 0 {
+				continue
+			}
+			dock := m.FindDock(update.dockName)
+			if dock == nil {
+				continue
+			}
+			ws := dock.FindWorkspace(update.originalName)
+			if ws == nil || len(ws.Surfaces) > 0 {
+				continue
+			}
+			branch := ""
+			if ws.Worktree != nil {
+				branch = ws.Worktree.Branch
+			}
+			empties = append(empties, emptyWs{
+				dock:       update.dockName,
+				name:       ws.Name,
+				path:       ws.Path,
+				branch:     branch,
+				isWorktree: ws.Type == manifest.WorkspaceTypeWorktree,
+			})
+			dock.RemoveWorkspace(ws.Name)
+			changed = true
+		}
+
 		// Clean up dead dock-level surfaces.
 		for i := range m.Docks {
 			dock := &m.Docks[i]
@@ -117,6 +154,33 @@ func (e *Engine) SyncAll() {
 		}
 		return changed, nil
 	})
+
+	// Clean up worktrees for workspaces that lost all surfaces.
+	// This runs outside the manifest lock so it's safe to do git ops.
+	for _, ws := range empties {
+		if !ws.isWorktree || ws.path == "" {
+			continue
+		}
+		// Only clean up if the worktree is clean (no uncommitted changes).
+		dirty, err := e.Git.IsDirty(ws.path)
+		if err != nil || dirty {
+			continue
+		}
+		repoRoot, err := e.Git.RepoRoot(ws.path)
+		if err != nil {
+			continue
+		}
+		// Check before removing — path won't exist after.
+		branchSafe := false
+		if ws.branch != "" {
+			unpushed, err := e.Git.HasUnpushedCommits(ws.path)
+			branchSafe = err == nil && !unpushed
+		}
+		_ = e.Git.RemoveWorktree(repoRoot, ws.path, false)
+		if branchSafe {
+			_ = e.Git.DeleteBranch(repoRoot, ws.branch)
+		}
+	}
 }
 
 func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace) (workspaceSyncUpdate, bool) {

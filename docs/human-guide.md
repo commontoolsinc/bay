@@ -83,6 +83,8 @@ From inside a dock:
 bay ws new                  # shell workspace (default)
 bay ws new auth-fix         # with a display name
 bay ws new --branch fix-it  # create and checkout a branch
+bay ws new --agent          # agent workspace (dock default, no shell)
+bay ws new --agent codex    # agent workspace with specific agent
 bay agent                   # launch default agent (own window)
 bay agent claude            # launch a specific agent
 bay shell                   # open a shell (own window)
@@ -315,6 +317,8 @@ or, when omitted, inherited from the current tmux session.
 
 ```
 bay ws new [name]                           # new workspace (shell default)
+bay ws new [name] --agent                   # first surface is agent, not shell
+bay ws new [name] --agent codex             # specific agent type
 bay ws new [name] --dock <d>                # target a specific dock
 bay ws new [name] --branch <b>              # create and checkout branch
 bay ws new [name] --repo <r>                # override dock's repo
