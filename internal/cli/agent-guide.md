@@ -26,7 +26,7 @@ has:
 - A **name** — unique within its workspace (e.g., `agent`, `shell`,
   `editor`).
 - A **type** — semantic role: `agent`, `editor`, `shell`, or `cmd`.
-- A **backend** — interaction model: `tmux-pane` or `gui-app`.
+- A **backend** — interaction model: `tmux-pane`.
 
 ### Workspace types
 
@@ -84,7 +84,7 @@ Important invariants:
   view` once and cached. Status transitions to `done` automatically
   when the branch is merged into the default branch.
 - Bay does not generate config files into worktrees. Project
-  instructions go in the repo's `CLAUDE.md` (or equivalent).
+  instructions go in the repo's `CLAUDE.local.md` (or equivalent).
   Per-workspace context is discoverable via `bay pwd --json`.
 
 ## Parsing and output
@@ -247,7 +247,7 @@ of focus scope.
 
 Surface fields:
 - `type` — `agent`, `editor`, `shell`, or `cmd`.
-- `backend` — `tmux-pane` or `gui-app`.
+- `backend` — `tmux-pane`.
 - `agent` — agent config key (present when type is `agent`).
 - `command` — shell command (present when type is `cmd`).
 - `status` — `ok` or `stale`.
@@ -358,13 +358,11 @@ intra-workspace navigation.
 - No args: opens a picker showing all surfaces in the workspace.
 - With query: fuzzy-matches surface name or type. One match jumps
   directly; multiple opens the picker pre-filtered.
-- `--index N`: jump to surface by 1-based index.
 - `--next-waiting`: jump to next waiting surface in the workspace.
 
 ```
 bay go                      # pick from surfaces
 bay go shell                # jump to the shell surface
-bay go --index 2            # jump to surface #2
 bay go --next-waiting       # jump to next waiting surface
 ```
 
@@ -565,7 +563,7 @@ bay repo init [name]
 ```
 
 `bay repo init` sets up bay awareness: appends a one-liner to each
-agent's project file (e.g., `CLAUDE.md`) pointing to `bay agent-guide`,
+agent's project file (e.g., `CLAUDE.local.md`) pointing to `bay agent-guide`,
 and creates `.worktreeinclude` if missing.
 
 ## Typical workflows

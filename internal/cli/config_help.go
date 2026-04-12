@@ -26,7 +26,7 @@ CUSTOM AGENTS (optional)
 
   [agents.my-agent]
   command = "my-agent-cli"
-  resume_args = "--continue"      # added on restart/recovery
+  resume_args = "--continue"      # added on recovery
   project_file = ".my-agent.md"   # checked by 'bay repo init'
 
 CUSTOM EDITORS (optional)
