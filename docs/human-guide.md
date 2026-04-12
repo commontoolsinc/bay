@@ -279,10 +279,11 @@ bay repo init myproject     # by name
 bay repo init               # infer from CWD
 ```
 
-This does three things:
-1. For each agent with a `project_file` (e.g., `CLAUDE.md`), appends a
-   one-line pointer: *"This project uses bay. Run `bay agent-guide` for
-   commands."*
+This does two things:
+1. For each built-in agent with a project file (e.g., `CLAUDE.local.md`
+   for Claude Code), appends a one-line pointer: *"This project uses
+   bay. Run `bay agent-guide` for commands."* Uses the local file so
+   bay awareness doesn't pollute the shared project config.
 2. Creates `.worktreeinclude` if missing, so gitignored files (`.env`,
    etc.) get copied to new worktrees.
 
@@ -383,7 +384,7 @@ bay agent --pane                # agent as split pane
 bay edit [workspace]            # open workspace in editor
 bay edit --editor vim           # use a specific editor this time
 bay edit --pane                 # editor as split pane
-bay edit --all                  # open all workspaces in current dock
+bay edit --dock                 # dock editor (default, all workspaces)
 bay close <name>                # alias for bay surface close (prompts on agents)
 bay show [name]                 # alias for bay surface show (defaults to current)
 bay rename [name] <new-name>    # rename workspace (defaults to current)
@@ -490,7 +491,7 @@ prefix required — just press the key combo directly.
 |-----|--------|
 | `Option+s` / `Option+S` | Shell window / shell pane |
 | `Option+a` / `Option+A` | Agent window / agent pane |
-| `Option+e` / `Option+E` | Editor window / editor pane |
+| `Option+e` / `Option+E` | Dock editor / workspace editor |
 | `Option+c` | Create workspace in current dock |
 
 ### Utility
@@ -521,7 +522,7 @@ individual files, open a shell and launch your editor from there.
 bay edit                    # current workspace
 bay edit auth-fix           # specific workspace
 bay edit --editor vim       # use a specific editor this time
-bay edit --all              # all workspaces in dock (multi-root)
+bay edit --dock             # dock editor (default, all workspaces)
 bay edit --pane             # split pane instead of new window
 ```
 
@@ -687,9 +688,10 @@ bay recover
 ```
 
 This recreates all tmux sessions, windows, and panes from the manifest.
-Worktrees are already on disk. Bay relaunches shells and agents (with
-resume args like `--continue` for Claude Code), recovers terminal host
-apps, starts the monitor, and prints `tmux attach` commands.
+Worktrees are already on disk. Bay relaunches shells, agents (with
+`--continue` for Claude Code), and terminal editor surfaces. GUI
+editors are not recovered — reopen them with `bay edit`. Starts the
+monitor and prints `tmux attach` commands.
 
 Recovery is idempotent -- run it multiple times safely. It detects and
 reuses existing tmux state. Panes with live foreground processes are

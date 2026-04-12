@@ -267,7 +267,8 @@ bay recover
 ```
 
 Recreates all tmux sessions and surfaces. Agents restart with
-`--continue`. Editors and terminal apps relaunch.
+`--continue`. Terminal editor surfaces relaunch. GUI editors are
+not tracked — reopen them with `bay edit`.
 
 ---
 
@@ -281,7 +282,7 @@ without it, but the keybindings make navigation instant.
 another repo. Create workspaces from it with `bay ws new --repo backend`.
 
 **Agent awareness:** `bay repo init` adds a one-liner to your project's
-`CLAUDE.md` (or equivalent) so agents know about bay commands.
+`CLAUDE.local.md` (or equivalent) so agents know about bay commands.
 
 **Explicit control:** The zero-config flow creates docks automatically.
 For more control: `bay dock new myproject --repo myproject`.
