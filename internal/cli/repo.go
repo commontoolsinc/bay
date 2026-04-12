@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/commontoolsinc/bay/internal/config"
@@ -23,6 +24,7 @@ func newRepoCmd() *cobra.Command {
 		newRepoShowCmd(),
 		newRepoRemoveCmd(),
 		newRepoInitCmd(),
+		newRepoSyncCmd(),
 	)
 
 	return cmd
@@ -234,33 +236,9 @@ line if not already present. Creates .worktreeinclude if missing.
 				return err
 			}
 
-			var repoName string
-			if len(args) > 0 {
-				repoName = args[0]
-			} else {
-				// Infer from CWD.
-				cwd, cwdErr := os.Getwd()
-				if cwdErr != nil {
-					return fmt.Errorf("cannot determine working directory")
-				}
-				root, rootErr := eng.Git.RepoRoot(cwd)
-				if rootErr != nil {
-					return fmt.Errorf("not in a git repository")
-				}
-				// Find repo by path. Canonicalize both sides so a stored
-				// repo.Path that contains a symlink (e.g. /tmp on macOS)
-				// still matches what git reports as the repo root.
-				rootCanonical := config.CanonicalPath(root)
-				repos, _ := eng.RepoList()
-				for _, repo := range repos {
-					if config.CanonicalPath(repo.Path) == rootCanonical {
-						repoName = repo.Name
-						break
-					}
-				}
-				if repoName == "" {
-					return fmt.Errorf("current repo not in bay config; use bay repo add first")
-				}
+			repoName, err := inferRepoName(eng, args)
+			if err != nil {
+				return err
 			}
 
 			if err := eng.RepoInit(repoName); err != nil {
@@ -270,4 +248,64 @@ line if not already present. Creates .worktreeinclude if missing.
 			return nil
 		},
 	}
+}
+
+func newRepoSyncCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "sync [name]",
+		Short: "Copy .worktreeinclude files into all worktrees",
+		Long: `Copy files listed in .worktreeinclude from the repo root
+into every existing worktree for the repo.
+
+  bay repo sync labs    sync by repo name
+  bay repo sync         infer repo from CWD`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine()
+			if err != nil {
+				return err
+			}
+
+			repoName, err := inferRepoName(eng, args)
+			if err != nil {
+				return err
+			}
+
+			count, err := eng.RepoSync(repoName)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Synced .worktreeinclude into %d worktree(s).\n", count)
+			return nil
+		},
+	}
+}
+
+// inferRepoName returns args[0] if provided, otherwise resolves the repo
+// from the current working directory (checking both repo paths and worktree dirs).
+func inferRepoName(eng *engine.Engine, args []string) (string, error) {
+	if len(args) > 0 {
+		return args[0], nil
+	}
+
+	cwd, cwdErr := os.Getwd()
+	if cwdErr != nil {
+		return "", fmt.Errorf("cannot determine working directory")
+	}
+	root, rootErr := eng.Git.RepoRoot(cwd)
+	if rootErr != nil {
+		return "", fmt.Errorf("not in a git repository")
+	}
+	rootCanonical := config.CanonicalPath(root)
+	repos, _ := eng.RepoList()
+	for _, repo := range repos {
+		if config.CanonicalPath(repo.Path) == rootCanonical {
+			return repo.Name, nil
+		}
+		wtDir := config.CanonicalPath(repo.EffectiveWorktreeDir())
+		if strings.HasPrefix(rootCanonical, wtDir+string(filepath.Separator)) {
+			return repo.Name, nil
+		}
+	}
+	return "", fmt.Errorf("current repo not in bay config; use bay repo add first")
 }
