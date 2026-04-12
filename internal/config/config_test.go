@@ -11,6 +11,7 @@ func TestParse_FullConfig(t *testing.T) {
 	data := `
 [agents.claude]
 command = "claude"
+args = ["--dangerously-skip-permissions"]
 resume_args = "--continue"
 project_file = "CLAUDE.md"
 
@@ -19,8 +20,10 @@ command = "codex"
 
 [docks.labs]
 agent = "claude"
-agent_args = ["--add-dir", "~/crew/projects/assistant"]
 terminal = "ghostty"
+
+[docks.labs.agent_args]
+claude = ["--add-dir", "~/crew/projects/assistant"]
 
 [docks.research]
 agent = "claude"
@@ -46,13 +49,16 @@ interval_seconds = 3
 	if cfg.Agents["claude"].ProjectFile != "CLAUDE.md" {
 		t.Errorf("claude project_file = %q, want CLAUDE.md", cfg.Agents["claude"].ProjectFile)
 	}
+	if len(cfg.Agents["claude"].Args) != 1 || cfg.Agents["claude"].Args[0] != "--dangerously-skip-permissions" {
+		t.Errorf("claude args = %v, want [--dangerously-skip-permissions]", cfg.Agents["claude"].Args)
+	}
 
 	// Docks
 	if len(cfg.Docks) != 2 {
 		t.Errorf("expected 2 docks, got %d", len(cfg.Docks))
 	}
-	if len(cfg.Docks["labs"].AgentArgs) != 2 {
-		t.Errorf("labs dock agent_args len = %d", len(cfg.Docks["labs"].AgentArgs))
+	if len(cfg.Docks["labs"].AgentArgs["claude"]) != 2 {
+		t.Errorf("labs dock agent_args[claude] len = %d", len(cfg.Docks["labs"].AgentArgs["claude"]))
 	}
 	if cfg.Docks["labs"].Terminal != "ghostty" {
 		t.Errorf("labs dock terminal = %q, want ghostty", cfg.Docks["labs"].Terminal)
@@ -366,4 +372,39 @@ func TestResolvedDockAgent(t *testing.T) {
 	// No config override, no manifest default — falls through to PATH probe.
 	// Result is environment-dependent; just verify it doesn't error.
 	cfg.ResolvedDockAgent("other", "")
+}
+
+func TestResolvedAgentArgs(t *testing.T) {
+	cfg := &Config{
+		Agents: map[string]AgentConfig{
+			"claude": {Command: "claude", Args: []string{"--global-flag"}},
+			"codex":  {Command: "codex"},
+		},
+		Docks: map[string]DockConfig{
+			"labs": {AgentArgs: map[string][]string{
+				"claude": {"--dock-flag"},
+			}},
+		},
+	}
+
+	// Per-dock override wins
+	if got := cfg.ResolvedAgentArgs("labs", "claude", nil); len(got) != 1 || got[0] != "--dock-flag" {
+		t.Errorf("expected dock override [--dock-flag], got %v", got)
+	}
+
+	// Falls through to manifest default
+	manifest := map[string][]string{"claude": {"--manifest-flag"}}
+	if got := cfg.ResolvedAgentArgs("other", "claude", manifest); len(got) != 1 || got[0] != "--manifest-flag" {
+		t.Errorf("expected manifest default [--manifest-flag], got %v", got)
+	}
+
+	// Falls through to agent-level args
+	if got := cfg.ResolvedAgentArgs("other", "claude", nil); len(got) != 1 || got[0] != "--global-flag" {
+		t.Errorf("expected agent args [--global-flag], got %v", got)
+	}
+
+	// No args at any level
+	if got := cfg.ResolvedAgentArgs("other", "codex", nil); len(got) != 0 {
+		t.Errorf("expected no args, got %v", got)
+	}
 }

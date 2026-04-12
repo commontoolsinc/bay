@@ -99,14 +99,14 @@ func (e *Engine) resolvedDockAgent(dockName string, m *manifest.Manifest) string
 	return e.Config.ResolvedDockAgent(dockName, manifestDefault)
 }
 
-// resolvedDockAgentArgs returns the effective agent args for a dock.
-func (e *Engine) resolvedDockAgentArgs(dockName string, m *manifest.Manifest) []string {
+// resolvedAgentArgs returns the effective args for a specific agent in a dock.
+func (e *Engine) resolvedAgentArgs(dockName, agentName string, m *manifest.Manifest) []string {
 	dock := m.FindDock(dockName)
-	var manifestDefault []string
+	var manifestDefault map[string][]string
 	if dock != nil {
 		manifestDefault = dock.AgentArgs
 	}
-	return e.Config.ResolvedDockAgentArgs(dockName, manifestDefault)
+	return e.Config.ResolvedAgentArgs(dockName, agentName, manifestDefault)
 }
 
 var validNameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)

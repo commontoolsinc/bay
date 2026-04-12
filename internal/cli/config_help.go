@@ -26,6 +26,7 @@ CUSTOM AGENTS (optional)
 
   [agents.my-agent]
   command = "my-agent-cli"
+  args = ["--flag", "value"]      # default args for this agent
   resume_args = "--continue"      # added on recovery
   project_file = ".my-agent.md"   # checked by 'bay repo init'
 
@@ -46,8 +47,11 @@ PER-DOCK OVERRIDES (optional)
 
   [docks.myproject]
   agent = "codex"                 # override default agent
-  agent_args = ["--model", "o3"]  # override agent arguments
   terminal = "ghostty"            # host terminal app
+
+  [docks.myproject.agent_args]
+  claude = ["--model", "sonnet"]  # per-agent args override
+  codex = ["--model", "o3"]
 
 MONITOR (optional)
 

@@ -128,9 +128,9 @@ func newDockShowCmd() *cobra.Command {
 			}
 			if agent := eng.Config.ResolvedDockAgent(name, mDock.Agent); agent != "" {
 				rows = append(rows, showRow{"agent", agent})
-			}
-			if agentArgs := eng.Config.ResolvedDockAgentArgs(name, mDock.AgentArgs); len(agentArgs) > 0 {
-				rows = append(rows, showRow{"agent args", strings.Join(agentArgs, " ")})
+				if agentArgs := eng.Config.ResolvedAgentArgs(name, agent, mDock.AgentArgs); len(agentArgs) > 0 {
+					rows = append(rows, showRow{"agent args", strings.Join(agentArgs, " ")})
+				}
 			}
 			if terminal := eng.Config.ResolvedDockTerminal(name); terminal != "" {
 				rows = append(rows, showRow{"terminal", terminal})

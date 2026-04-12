@@ -245,26 +245,32 @@ Set via `bay setup` or `bay config editor <name>`. Built-in agents
 don't need config — bay knows their commands, resume args, and GUI
 detection. Run `bay help config` for the full schema.
 
+### Custom agents (optional)
+
+Add agents beyond the built-in three, or add default args to a built-in:
+
+```toml
+[agents.claude]
+args = ["--dangerously-skip-permissions"]      # default args for claude
+
+[agents.my-agent]
+command = "my-agent-cli"
+args = ["--flag"]                              # default args
+resume_args = "--resume"
+project_file = ".my-agent.md"
+```
+
 ### Per-dock overrides (optional)
 
-Override the default agent or add agent args for a specific dock:
+Override the default agent or agent args for a specific dock:
 
 ```toml
 [docks.dev]
 agent = "codex"                                # override default agent
-agent_args = ["--add-dir", "~/shared-data"]    # extra agent arguments
 terminal = "ghostty"                           # host terminal app
-```
 
-### Custom agents (optional)
-
-Add agents beyond the built-in three:
-
-```toml
-[agents.my-agent]
-command = "my-agent-cli"
-resume_args = "--resume"
-project_file = ".my-agent.md"
+[docks.dev.agent_args]
+codex = ["--model", "o3"]                      # per-dock agent args override
 ```
 
 ## Agent integration

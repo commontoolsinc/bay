@@ -31,14 +31,16 @@ type EditorConfig struct {
 // codex, and gemini. Use this for custom agents or to override
 // resume_args / project_file for a known agent.
 type AgentConfig struct {
-	Command     string `toml:"command"`
-	ResumeArgs  string `toml:"resume_args,omitempty"`
-	ProjectFile string `toml:"project_file,omitempty"`
+	Command     string   `toml:"command"`
+	Args        []string `toml:"args,omitempty"`
+	ResumeArgs  string   `toml:"resume_args,omitempty"`
+	ProjectFile string   `toml:"project_file,omitempty"`
 }
 
 // AgentInfo describes a known or configured agent.
 type AgentInfo struct {
 	Command     string
+	Args        []string
 	ResumeArgs  string
 	ProjectFile string
 }
@@ -58,6 +60,7 @@ func (c *Config) ResolveAgent(name string) (AgentInfo, bool) {
 	if ac, ok := c.Agents[name]; ok {
 		info := AgentInfo{
 			Command:     ac.Command,
+			Args:        ac.Args,
 			ResumeArgs:  ac.ResumeArgs,
 			ProjectFile: ac.ProjectFile,
 		}
@@ -65,6 +68,9 @@ func (c *Config) ResolveAgent(name string) (AgentInfo, bool) {
 		if builtin, ok := KnownAgents[name]; ok {
 			if info.Command == "" {
 				info.Command = builtin.Command
+			}
+			if len(info.Args) == 0 {
+				info.Args = builtin.Args
 			}
 			if info.ResumeArgs == "" {
 				info.ResumeArgs = builtin.ResumeArgs
@@ -84,8 +90,8 @@ func (c *Config) ResolveAgent(name string) (AgentInfo, bool) {
 // DockConfig holds optional per-dock overrides.
 // Fields are only set when the user explicitly overrides manifest defaults.
 type DockConfig struct {
-	Agent     string   `toml:"agent"`
-	AgentArgs []string `toml:"agent_args"`
+	Agent     string              `toml:"agent"`
+	AgentArgs map[string][]string `toml:"agent_args"`
 	Terminal  string   `toml:"terminal,omitempty"`
 }
 
@@ -214,13 +220,20 @@ func ProbeAgent() string {
 	return ""
 }
 
-// ResolvedDockAgentArgs returns the effective agent args for a dock,
-// checking config overrides first, then the manifest default.
-func (c *Config) ResolvedDockAgentArgs(dockName string, manifestDefault []string) []string {
-	if dc, ok := c.Docks[dockName]; ok && len(dc.AgentArgs) > 0 {
-		return dc.AgentArgs
+// ResolvedAgentArgs returns the effective args for an agent in a dock.
+// Resolution order: per-dock agent_args[agent] → manifest dock agent_args[agent]
+// → global agent args → nothing.
+func (c *Config) ResolvedAgentArgs(dockName, agentName string, manifestDefault map[string][]string) []string {
+	if dc, ok := c.Docks[dockName]; ok {
+		if args, ok := dc.AgentArgs[agentName]; ok && len(args) > 0 {
+			return args
+		}
 	}
-	return manifestDefault
+	if args, ok := manifestDefault[agentName]; ok && len(args) > 0 {
+		return args
+	}
+	info, _ := c.ResolveAgent(agentName)
+	return info.Args
 }
 
 // ResolvedDockTerminal returns the effective terminal for a dock.

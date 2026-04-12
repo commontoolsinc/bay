@@ -899,7 +899,7 @@ func TestDockRepoAndAgentRoundTrip(t *testing.T) {
 				Name:       "dev",
 				Repo:       "labs",
 				Agent:      "claude",
-				AgentArgs:  []string{"--add-dir", "/extra"},
+				AgentArgs:  map[string][]string{"claude": {"--add-dir", "/extra"}},
 				Workspaces: []Workspace{},
 			},
 		},
@@ -929,8 +929,8 @@ func TestDockRepoAndAgentRoundTrip(t *testing.T) {
 	if dock.Agent != "claude" {
 		t.Errorf("dock.Agent = %q, want claude", dock.Agent)
 	}
-	if len(dock.AgentArgs) != 2 || dock.AgentArgs[0] != "--add-dir" {
-		t.Errorf("dock.AgentArgs = %v, want [--add-dir /extra]", dock.AgentArgs)
+	if len(dock.AgentArgs["claude"]) != 2 || dock.AgentArgs["claude"][0] != "--add-dir" {
+		t.Errorf("dock.AgentArgs[claude] = %v, want [--add-dir /extra]", dock.AgentArgs["claude"])
 	}
 }
 
