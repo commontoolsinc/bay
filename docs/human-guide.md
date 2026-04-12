@@ -356,7 +356,6 @@ bay surface close <name> --force           # skip the agent confirmation prompt
 bay surface show [name]                    # show details (defaults to current)
 bay surface rename [old] <new>             # rename (defaults to current surface)
 bay surface go [query]                     # surface picker (intra-workspace)
-bay surface go --index <n>                 # jump to surface by index
 bay surface go --next-waiting              # next waiting surface
 bay surface next                           # next surface in workspace
 bay surface prev                           # prev surface in workspace
@@ -795,9 +794,9 @@ Branch is detected via `git rev-parse` on every sync cycle. PR number
 is detected via `gh pr view` once a branch exists. Both are cached in
 the manifest.
 
-**"My agent restarted and lost context."**
+**"My agent lost context after recovery."**
 Built-in agents have resume args configured automatically (e.g.,
-`--continue` for Claude Code). Bay uses these on restart and recovery.
+`--continue` for Claude Code). Bay uses these on recovery.
 For custom agents, set `resume_args` in the `[agents]` config section.
 
 **"How do I see my editor in bay go?"**

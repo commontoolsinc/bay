@@ -266,7 +266,7 @@ Reboot? Tmux sessions are gone, but bay remembers everything:
 bay recover
 ```
 
-Recreates all tmux sessions and surfaces. Agents restart with
+Recreates all tmux sessions and surfaces. Agents resume with
 `--continue`. Terminal editor surfaces relaunch. GUI editors are
 not tracked — reopen them with `bay edit`.
 
@@ -274,9 +274,9 @@ not tracked — reopen them with `bay edit`.
 
 ## Going further
 
-**Full setup:** `bay setup` installs keybindings, shell completions,
-It's optional — everything works
-without it, but the keybindings make navigation instant.
+**Full setup:** `bay setup` installs keybindings and shell completions.
+It's optional — everything works without it, but the keybindings make
+navigation instant.
 
 **Multiple repos:** `bay repo add backend ~/projects/backend` registers
 another repo. Create workspaces from it with `bay ws new --repo backend`.
