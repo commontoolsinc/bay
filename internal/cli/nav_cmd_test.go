@@ -253,7 +253,7 @@ func TestSurfaceGo_QueryFilter(t *testing.T) {
 
 	mockTmux.Calls = nil
 	// Query "agent" should match the agent surface and jump to it.
-	if err := surfaceGo(eng, []string{"agent"}, 0, false); err != nil {
+	if err := surfaceGo(eng, []string{"agent"}, false); err != nil {
 		t.Fatalf("surfaceGo: %v", err)
 	}
 
@@ -265,50 +265,6 @@ func TestSurfaceGo_QueryFilter(t *testing.T) {
 	}
 	if !foundSelect {
 		t.Error("expected SelectPane for agent surface")
-	}
-}
-
-func TestSurfaceGo_IndexJump(t *testing.T) {
-	eng, mockTmux, _, _ := testNavEngine(t)
-
-	ws, _ := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
-	os.MkdirAll(ws.Path, 0o755)
-	eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"})
-	ws, _ = eng.WsShow("labs", "w1")
-
-	mockTmux.SetCurrentWindowID(ws.Surfaces[0].Tmux.WindowID)
-	mockTmux.SetCurrentPaneID(ws.Surfaces[0].Tmux.PaneID)
-
-	mockTmux.Calls = nil
-	// Index 2 = second surface (agent).
-	if err := surfaceGo(eng, nil, 2, false); err != nil {
-		t.Fatalf("surfaceGo: %v", err)
-	}
-
-	foundSelect := false
-	for _, call := range mockTmux.Calls {
-		if call.Method == "SelectPane" && call.Args[0] == ws.Surfaces[1].Tmux.PaneID {
-			foundSelect = true
-		}
-	}
-	if !foundSelect {
-		t.Error("expected SelectPane for surface at index 2")
-	}
-}
-
-func TestSurfaceGo_IndexOutOfRange(t *testing.T) {
-	eng, mockTmux, _, _ := testNavEngine(t)
-
-	ws, _ := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
-	os.MkdirAll(ws.Path, 0o755)
-	ws, _ = eng.WsShow("labs", "w1")
-
-	mockTmux.SetCurrentWindowID(ws.Surfaces[0].Tmux.WindowID)
-	mockTmux.SetCurrentPaneID(ws.Surfaces[0].Tmux.PaneID)
-
-	err := surfaceGo(eng, nil, 99, false)
-	if err == nil {
-		t.Error("expected error for out-of-range index")
 	}
 }
 

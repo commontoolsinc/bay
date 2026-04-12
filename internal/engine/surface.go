@@ -289,60 +289,6 @@ func (e *Engine) SurfaceClose(dockName, wsName, surfaceName string, force bool) 
 	return nil
 }
 
-// SurfaceRestart respawns a surface's process.
-func (e *Engine) SurfaceRestart(dockName, wsName, surfaceName string) error {
-	// First, gather what we need from the manifest and bump LastActive.
-	// We do this BEFORE the tmux respawn so that a save failure doesn't
-	// mask a successful respawn (the user would see an error message
-	// while the surface had actually restarted).
-	var paneID, wsPath, respawnCmd string
-	err := e.withManifest(func(m *manifest.Manifest) error {
-		dock := m.FindDock(dockName)
-		if dock == nil {
-			return fmt.Errorf("unknown dock %q", dockName)
-		}
-		ws := dock.FindWorkspace(wsName)
-		if ws == nil {
-			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
-		}
-		s := ws.FindSurface(surfaceName)
-		if s == nil {
-			return fmt.Errorf("surface %q not found in workspace %q", surfaceName, wsName)
-		}
-		if s.Tmux == nil || s.Tmux.PaneID == "" {
-			return fmt.Errorf("surface %q has no tmux pane to restart", surfaceName)
-		}
-
-		agentArgs := e.resolvedDockAgentArgs(dockName, m)
-		switch s.Type {
-		case manifest.SurfaceTypeAgent:
-			if s.Agent != nil && *s.Agent != "" {
-				cmd, err := e.buildAgentResumeCommand(*s.Agent, agentArgs)
-				if err != nil {
-					return err
-				}
-				respawnCmd = cmd
-			}
-		case manifest.SurfaceTypeCmd:
-			if s.Command != nil {
-				respawnCmd = *s.Command
-			}
-		case manifest.SurfaceTypeShell:
-			// Empty command = default shell.
-		}
-
-		paneID = s.Tmux.PaneID
-		wsPath = ws.Path
-		ws.LastActive = time.Now().Unix()
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-
-	_ = e.Tmux.RespawnPane(paneID, wsPath, respawnCmd)
-	return nil
-}
 
 // SurfaceRename renames a surface within a workspace.
 func (e *Engine) SurfaceRename(dockName, wsName, oldName, newName string) error {

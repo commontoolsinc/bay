@@ -199,20 +199,11 @@ bay agent
 ```
 
 This launches your default agent (bay auto-detects Claude Code, Codex,
-or Gemini on your PATH) as a surface in the current workspace. Split
-a shell alongside it with `bay shell` or `Option+s`.
+or Gemini on your PATH) in its own window. Add a shell alongside it
+with `Option+s` (or `bay shell`).
 
-When the agent waits for your input, bay highlights it. `Option+a`
-jumps straight to the next waiting agent — no hunting through tabs.
-
-If you need to restart the agent:
-
-```
-bay restart
-```
-
-Bay automatically uses `--continue` (for Claude Code) so the
-conversation picks up where it left off.
+When the agent waits for your input, bay highlights it. Use `Option+j`
+/ `Option+k` to cycle between surfaces, or `Option+g` to pick one.
 
 ## 6. Inspect
 

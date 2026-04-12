@@ -59,8 +59,8 @@ paths. If CWD is inside a workspace directory, that workspace is
 resolved.
 
 **Surface resolution**: For surface-scoped commands (`bay surface
-close`, `bay surface restart`), `self` additionally matches the
-current tmux pane ID to identify which surface within the workspace.
+close`), `self` additionally matches the current tmux pane ID to
+identify which surface within the workspace.
 
 Commands an agent inside a workspace typically uses:
 - `bay pwd` — confirm bay context (repo, dock, workspace, surface)
@@ -270,7 +270,6 @@ flags or, when omitted, inherited from the current tmux session.
 | `bay pwd` | current bay context |
 | `bay surface new <kind> [name]` | current workspace |
 | `bay surface close <name>` | required (use `self` for current pane) |
-| `bay surface restart [name]` | current pane's surface |
 | `bay surface show [name]` | current pane's surface |
 | `bay surface tree` (none) | n/a — surfaces are leaves; use `bay surface show` |
 | `bay dock tree [name]` | current dock from tmux session |
@@ -397,22 +396,21 @@ Cycle to the next or previous workspace within the current dock.
 
 ### Surface commands
 
-#### `bay surface new <kind> [args] [--ws WS] [--dock DOCK] [--window|--split h|v]`
+#### `bay surface new <kind> [args] [--ws WS] [--dock DOCK] [--pane|--split h|v]`
 
 Add a surface to a workspace. `<kind>` is one of `shell`, `agent`,
 `cmd`, or `edit`. `--ws` selects which workspace (default: current).
-Defaults to a vertical split in the current tmux window. Use
-`--window` for a new tmux window.
+Defaults to a new tmux window. Use `--pane` for a split pane.
 
 Alias: `bay sf new`. Same subcommands as `bay new`.
 
 ```
-bay surface new shell                       # shell in current ws
+bay surface new shell                       # shell in new window
 bay surface new shell tests                 # surface named "tests"
-bay surface new agent codex --window        # agent in new window
+bay surface new agent codex                 # agent in new window
 bay surface new cmd "npm test" tests        # named cmd surface
+bay surface new shell --pane                # split into current window
 bay surface new shell --ws auth-fix         # in a different workspace
-bay sf new shell --split h                  # horizontal split
 bay sf new edit                             # editor surface
 ```
 
@@ -427,18 +425,6 @@ bay sf close self
 bay sf close agent --force
 ```
 
-#### `bay surface restart [name] [--ws WS] [--dock DOCK]`
-
-Respawn a surface's process. Defaults to the current pane's surface.
-For agent surfaces, uses built-in resume args (e.g., `--continue`
-for Claude Code) to reconnect to the existing session.
-The worktree and git state are preserved.
-
-```
-bay surface restart                         # current pane
-bay sf restart agent                        # named surface
-```
-
 #### `bay surface show [name] [--ws WS] [--dock DOCK]`
 
 Print details for a surface. Defaults to the current pane's surface.
@@ -451,24 +437,24 @@ Rename a surface. With one arg, renames the current surface.
 
 ```
 bay go [query]         → bay surface go [query]
-bay shell [name]       → bay surface new shell [name]
-bay agent [type]       → launch agent (defaults to dock/global default)
-bay edit [workspace]   → open workspace in configured editor
+bay shell [name]       → shell in new window (--pane for split)
+bay agent [type]       → agent in new window (--pane for split)
+bay edit [workspace]   → editor in new window (--pane for split)
 bay ls                 → list everything
 bay pwd                → show current bay context
 bay recover            → reconstruct state after reboot
 ```
 
-#### `bay edit [workspace] [--all] [--editor CMD] [--split h|v] [--window]`
+#### `bay edit [workspace] [--all] [--editor CMD] [--pane|--split h|v]`
 
 Open a workspace in an editor and create a tracked editor surface.
 
 GUI editors (Cursor, VS Code, Zed) launch detached. Terminal editors
-(nvim, vim) run in their own tmux pane — a new window by default, or
-a split with `--split`. When the terminal editor exits, the pane and
-surface are cleaned up automatically.
+(nvim, vim) run in their own tmux window by default, or a split pane
+with `--pane`. When the terminal editor exits, the pane and surface
+are cleaned up automatically.
 
-Editor resolution: `--editor` flag > config `[editor].command` >
+Editor resolution: `--editor` flag > `default_editor` in config >
 `$VISUAL` > `$EDITOR` > probe (cursor, code, zed, nvim, vim).
 
 ```
@@ -476,7 +462,7 @@ bay edit                    # open current workspace
 bay edit auth-fix           # open specific workspace
 bay edit --editor vim       # use a specific editor this time
 bay edit --all              # open all workspaces in dock
-bay edit --split v          # vertical split instead of new window
+bay edit --pane             # split into current window
 ```
 
 For editor configuration, see `bay config editor` below.
@@ -497,15 +483,15 @@ bay config editor cursor        # set the default editor
 The `editor` subcommand replaces the old `bay edit --set` and
 `bay edit --show` flags.
 
-#### `bay shell [name] [--ws WS] [--dock DOCK] [--window] [--split h|v]`
+#### `bay shell [name] [--ws WS] [--dock DOCK] [--pane|--split h|v]`
 
-Open a shell surface in a workspace. The positional names the new
-shell; `--ws` selects which workspace it goes in (default: current).
+Open a shell surface in a workspace. Defaults to a new tmux window.
+Use `--pane` for a split pane.
 
 ```
-bay shell                   # auto-named shell in current workspace
+bay shell                   # shell in new window
 bay shell logs              # named "logs"
-bay shell --window          # new tmux window instead of split
+bay shell --pane            # split into current window
 bay shell logs --ws auth-fix # in a different workspace
 ```
 
@@ -602,16 +588,14 @@ all of it.
 
 ### Open a shell alongside your agent
 
-Split within the agent's surface group:
-
 ```
 bay shell
 ```
 
-Or as a new tmux window:
+Opens in its own window. For a split pane alongside the agent:
 
 ```
-bay shell --window
+bay shell --pane
 ```
 
 ### Open an editor for the workspace

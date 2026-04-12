@@ -224,13 +224,6 @@ func currentSurfaceIndex(entries []SurfaceEntry) int {
 	return -1
 }
 
-// SurfaceByIndex returns the surface at the given 1-based index, or nil if out of range.
-func SurfaceByIndex(entries []SurfaceEntry, index int) *SurfaceEntry {
-	if index < 1 || index > len(entries) {
-		return nil
-	}
-	return &entries[index-1]
-}
 
 // NextWaitingSurface returns the next surface marked Waiting after the
 // current one (and its index), wrapping around. If no surface is current,

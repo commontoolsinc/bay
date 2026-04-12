@@ -75,22 +75,6 @@ func TestSurfaceClose_BumpsLastActive(t *testing.T) {
 	}
 }
 
-func TestSurfaceRestart_BumpsLastActive(t *testing.T) {
-	eng, _ := testEngine(t)
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
-		t.Fatalf("WsNew: %v", err)
-	}
-	staleWorkspace(t, eng, "labs", "w1")
-	before := time.Now().Unix()
-
-	if err := eng.SurfaceRestart("labs", "w1", "shell"); err != nil {
-		t.Fatalf("SurfaceRestart: %v", err)
-	}
-
-	if got := lastActive(t, eng, "labs", "w1"); got < before {
-		t.Errorf("LastActive = %d, want >= %d (SurfaceRestart should bump)", got, before)
-	}
-}
 
 func TestSurfaceRename_BumpsLastActive(t *testing.T) {
 	eng, _ := testEngine(t)

@@ -253,15 +253,6 @@ func TestRunSurfaceClose_NoArgsErrors(t *testing.T) {
 	}
 }
 
-func TestRunSurfaceRestart_FlagsRequireName(t *testing.T) {
-	eng, _, _, _ := testNavEngine(t)
-	// Same flag-without-name rule for restart.
-	err := runSurfaceRestart(eng, nil, "w1", "")
-	if err == nil || !strings.Contains(err.Error(), "--ws/--dock require") {
-		t.Errorf("expected '--ws/--dock require' error, got %v", err)
-	}
-}
-
 func TestRunSurfaceClose_CrossWorkspace(t *testing.T) {
 	eng := surfaceArgFixture(t)
 
@@ -324,66 +315,6 @@ func TestRunSurfaceClose_LiteralSelfWins(t *testing.T) {
 	}
 	if !hasSecond {
 		t.Error("'second' (the current pane) should NOT have been closed when literal 'self' exists")
-	}
-}
-
-func TestRunSurfaceRestart_NoArgsStillWorks(t *testing.T) {
-	eng := selfFixture(t)
-	// Bare bay restart should work — restart is non-destructive. Verify it
-	// targets the current pane via RespawnPane.
-	mockTmux := mockTmuxFromEngine(t, eng)
-	ws, _ := eng.WsShow("labs", "w1")
-	wantPaneID := ws.Surfaces[1].Tmux.PaneID
-
-	mockTmux.Calls = nil
-	if err := runSurfaceRestart(eng, nil, "", ""); err != nil {
-		t.Fatalf("runSurfaceRestart with no args: %v", err)
-	}
-	if !mockHasRespawn(mockTmux, wantPaneID) {
-		t.Errorf("expected RespawnPane on %q (the current pane), got calls: %v", wantPaneID, mockTmux.Calls)
-	}
-}
-
-func TestRunSurfaceRestart_Self(t *testing.T) {
-	eng := selfFixture(t)
-	mockTmux := mockTmuxFromEngine(t, eng)
-	ws, _ := eng.WsShow("labs", "w1")
-	wantPaneID := ws.Surfaces[1].Tmux.PaneID
-
-	mockTmux.Calls = nil
-	if err := runSurfaceRestart(eng, []string{"self"}, "", ""); err != nil {
-		t.Fatalf("runSurfaceRestart self: %v", err)
-	}
-	if !mockHasRespawn(mockTmux, wantPaneID) {
-		t.Errorf("expected RespawnPane on %q, got calls: %v", wantPaneID, mockTmux.Calls)
-	}
-}
-
-func TestRunSurfaceRestart_LiteralSelfWins(t *testing.T) {
-	eng := selfFixture(t)
-	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "self", SplitDir: "v"}); err != nil {
-		t.Fatalf("SurfaceAdd self: %v", err)
-	}
-	mockTmux := mockTmuxFromEngine(t, eng)
-	ws, _ := eng.WsShow("labs", "w1")
-	// Find the literal "self" surface and grab its pane ID — that's what
-	// should be restarted.
-	var literalPaneID string
-	for _, s := range ws.Surfaces {
-		if s.Name == "self" {
-			literalPaneID = s.Tmux.PaneID
-		}
-	}
-	if literalPaneID == "" {
-		t.Fatal("literal 'self' surface has no pane ID")
-	}
-
-	mockTmux.Calls = nil
-	if err := runSurfaceRestart(eng, []string{"self"}, "", ""); err != nil {
-		t.Fatalf("runSurfaceRestart self: %v", err)
-	}
-	if !mockHasRespawn(mockTmux, literalPaneID) {
-		t.Errorf("expected RespawnPane on literal self %q, got calls: %v", literalPaneID, mockTmux.Calls)
 	}
 }
 
@@ -631,7 +562,7 @@ func TestRoot_BayNewSubcommands(t *testing.T) {
 func TestRoot_SurfaceFlavoredCommandsInSurfaceGroup(t *testing.T) {
 	root := NewRootCmd("test")
 
-	want := []string{"surface", "shell", "edit", "restart"}
+	want := []string{"surface", "shell", "edit"}
 	for _, name := range want {
 		c, _, err := root.Find([]string{name})
 		if err != nil {

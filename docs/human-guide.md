@@ -84,9 +84,9 @@ From inside a dock:
 bay ws new                  # shell workspace (default)
 bay ws new auth-fix         # with a display name
 bay ws new --branch fix-it  # create and checkout a branch
-bay agent                   # launch default agent in current workspace
+bay agent                   # launch default agent (own window)
 bay agent claude            # launch a specific agent
-bay shell                   # split a new shell
+bay shell                   # open a shell (own window)
 bay edit                    # open the editor
 ```
 
@@ -297,15 +297,14 @@ copies any listed files that exist into the new worktree.
 ### Session resumption
 
 Built-in agents have resume args (e.g., `--continue` for Claude Code).
-On restart or recovery, bay appends these automatically. Claude Code
-binds sessions to project directories, so `--continue` in the same
-worktree resumes the right conversation.
+On recovery (`bay recover`), bay appends these automatically. Claude
+Code binds sessions to project directories, so `--continue` in the
+same worktree resumes the right conversation.
 
 ### Agent protection
 
-Agent surfaces have valuable conversation context:
-- `bay restart` uses resume args to reconnect, not start fresh.
-- Closing agent surfaces prompts for confirmation.
+Closing agent surfaces prompts for confirmation, since agents carry
+valuable conversation context.
 
 ## Command reference
 
@@ -341,20 +340,19 @@ bay ws prev                                 # prev workspace in dock
 `bay surface new` (or `bay sf new`) has subcommands for each surface type:
 
 ```
-bay surface new shell [name]               # shell split (default)
-bay surface new agent [type] [name]        # agent surface (type defaults to dock default)
-bay surface new cmd "<command>" [name]     # command surface
+bay surface new shell [name]               # shell in new window (default)
+bay surface new agent [type] [name]        # agent in new window
+bay surface new cmd "<command>" [name]     # command in new window
 bay surface new edit [workspace]           # editor surface
+bay surface new shell [name] --pane        # split into current window
+bay surface new shell [name] --split h     # horizontal split
 bay surface new shell [name] --ws <w>      # target a different workspace
-bay surface new shell [name] --window      # new tmux window instead of split
-bay surface new shell [name] --split h     # horizontal split (default: v)
 bay surface close <name>                   # close a surface (prompts on agents)
 bay surface close <name> --force           # skip the agent confirmation prompt
-bay surface restart [name]                 # restart a surface (defaults to current)
 bay surface show [name]                    # show details (defaults to current)
 bay surface rename [old] <new>             # rename (defaults to current surface)
 bay surface go [query]                     # surface picker (intra-workspace)
-bay surface go --index <n>                 # jump to surface by index (no keybinding)
+bay surface go --index <n>                 # jump to surface by index
 bay surface go --next-waiting              # next waiting surface
 bay surface next                           # next surface in workspace
 bay surface prev                           # prev surface in workspace
@@ -364,7 +362,6 @@ bay surface prev                           # prev surface in workspace
 ```
 bay sf new shell
 bay sf close shell-2
-bay sf restart agent
 ```
 
 ### Top-level shortcuts
@@ -372,23 +369,23 @@ bay sf restart agent
 `bay new` mirrors `bay surface new`:
 
 ```
-bay new shell [name]            # split a shell
-bay new agent <type> [name]     # start an agent
-bay new cmd "<command>" [name]  # run a command
+bay new shell [name]            # shell in new window
+bay new agent [type] [name]     # agent in new window
+bay new cmd "<command>" [name]  # command in new window
 bay new edit [workspace]        # open the editor
+bay shell [name]                # shell in new window (default)
+bay shell [name] --pane         # shell as split pane
+bay agent [type]                # agent in new window
+bay agent --pane                # agent as split pane
+bay edit [workspace]            # open workspace in editor
+bay edit --editor vim           # use a specific editor this time
+bay edit --pane                 # editor as split pane
+bay edit --all                  # open all workspaces in current dock
 bay close <name>                # alias for bay surface close (prompts on agents)
 bay show [name]                 # alias for bay surface show (defaults to current)
 bay rename [name] <new-name>    # rename workspace (defaults to current)
 bay go [query]                  # alias for bay surface go (intra-workspace)
-bay go --index <n>              # jump to surface by index (no keybinding)
 bay go --next-waiting           # next waiting surface
-bay shell [name]                # shortcut for bay new shell
-bay shell [name] --window       # shell in new tmux window
-bay shell [name] --ws <w>       # target a different workspace
-bay edit [workspace]            # open workspace in editor
-bay edit --editor vim           # use a specific editor this time
-bay edit --all                  # open all workspaces in current dock
-bay restart [name]              # alias for bay surface restart
 ```
 
 ### Config
@@ -472,33 +469,26 @@ bay version                                 # show version + commit
 
 ## Keybindings
 
-Bay installs 11 tmux keybindings, all using the Option (Meta) key. No
-tmux prefix required -- just press the key combo directly.
+Bay installs tmux keybindings using the Option (Meta) key. No tmux
+prefix required — just press the key combo directly.
 
-### Surface navigation (intra-workspace)
-
-| Key | Action |
-|-----|--------|
-| `Option+j` | Next surface in workspace |
-| `Option+k` | Previous surface in workspace |
-| `Option+g` | Surface picker (interactive popup) |
-| `Option+a` | Next waiting surface |
-
-### Workspace navigation (intra-dock)
+### Navigation
 
 | Key | Action |
 |-----|--------|
-| `Option+Shift+j` | Next workspace in dock |
-| `Option+Shift+k` | Previous workspace in dock |
-| `Option+Shift+g` | Workspace picker (interactive popup) |
-| `Option+Shift+a` | Next waiting workspace |
+| `Option+j` / `Option+k` | Next / previous surface in workspace |
+| `Option+g` | Surface picker (popup) |
+| `Option+Shift+j` / `Option+Shift+k` | Next / previous workspace in dock |
+| `Option+Shift+g` | Workspace picker (popup) |
 
-### Creation
+### Creation (lowercase = window, Shift = split pane)
 
 | Key | Action |
 |-----|--------|
+| `Option+s` / `Option+S` | Shell window / shell pane |
+| `Option+a` / `Option+A` | Agent window / agent pane |
+| `Option+e` / `Option+E` | Editor window / editor pane |
 | `Option+c` | Create workspace in current dock |
-| `Option+s` | Split a shell pane |
 
 ### Utility
 
@@ -508,8 +498,9 @@ tmux prefix required -- just press the key combo directly.
 
 ### Pattern
 
-Without Shift = intra-workspace. With Shift = intra-dock. The pickers
-(`Option+g`, `Option+Shift+g`) open in a tmux popup with fuzzy filtering.
+Without Shift = intra-workspace. With Shift = intra-dock. For creation
+keys, lowercase opens a new window, Shift opens a split pane. The
+pickers (`Option+g`, `Option+Shift+g`) open in a tmux popup.
 
 ### Installing and updating
 

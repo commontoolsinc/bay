@@ -69,11 +69,11 @@ func TestCompletionsRegistered(t *testing.T) {
 		"workspace close", "workspace show", "workspace rename",
 		"workspace go",
 		"dock close", "dock recover", "dock tree",
-		// surface verbs (sf X form) — close/restart/show/rename target
+		// surface verbs (sf X form) — close/show/rename target
 		// existing surfaces by name.
-		"surface close", "surface restart", "surface show", "surface rename",
-		// top-level verbs (close/show/restart target surfaces, rename targets workspaces)
-		"close", "show", "rename", "restart",
+		"surface close", "surface show", "surface rename",
+		// top-level verbs
+		"close", "show", "rename",
 		// bay new subcommands with positional completions
 		"new agent", "new edit",
 	}
@@ -108,7 +108,7 @@ func TestCreateVerbs_PositionalsAreFreeText(t *testing.T) {
 }
 
 func TestSurfaceCommands_UseSurfaceCompletions(t *testing.T) {
-	// surface close/restart/show/rename and the top-level close/show/rename/restart
+	// surface close/show/rename and the top-level close/show/rename/restart
 	// must use sfCompl, not wsCompl. Set up a manifest with one workspace and
 	// one surface, and verify the completer returns the surface name.
 	dir := t.TempDir()
@@ -138,8 +138,8 @@ func TestSurfaceCommands_UseSurfaceCompletions(t *testing.T) {
 	root := NewRootCmd("test")
 
 	for _, path := range []string{
-		"surface close", "surface restart", "surface show", "surface rename",
-		"close", "show", "restart",
+		"surface close", "surface show", "surface rename",
+		"close", "show",
 	} {
 		cmd := findCmd(root, path)
 		if cmd == nil || cmd.ValidArgsFunction == nil {
@@ -327,8 +327,8 @@ func TestFlagCompletions_WsAndDockOnSurfaceVerbs(t *testing.T) {
 	// workspace target moved to --ws (PR #112).
 	root := NewRootCmd("test")
 	for _, path := range []string{
-		"surface close", "surface restart", "surface show", "surface rename",
-		"close", "show", "restart",
+		"surface close", "surface show", "surface rename",
+		"close", "show",
 		"shell",
 		"new shell", "new agent", "new cmd",
 	} {

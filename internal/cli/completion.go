@@ -103,8 +103,8 @@ func registerCompletions(root *cobra.Command) {
 
 	// Surface-name positional: sf verbs and the top-level surface verbs.
 	for _, path := range []string{
-		"surface close", "surface restart", "surface show", "surface rename",
-		"close", "show", "restart",
+		"surface close", "surface show", "surface rename",
+		"close", "show",
 	} {
 		if cmd := findCmd(root, path); cmd != nil {
 			cmd.ValidArgsFunction = sfCompl
@@ -158,8 +158,8 @@ func registerCompletions(root *cobra.Command) {
 	// supports them. Workspace commands get --dock too. The bay new
 	// <kind> commands also get --split for symmetry with sf new.
 	for _, path := range []string{
-		"surface close", "surface restart", "surface show", "surface rename",
-		"close", "show", "restart",
+		"surface close", "surface show", "surface rename",
+		"close", "show",
 		"shell", "agent",
 		"new shell", "new agent", "new cmd",
 	} {

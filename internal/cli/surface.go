@@ -24,7 +24,6 @@ func newSurfaceCmd() *cobra.Command {
 	cmd.AddCommand(
 		newSurfaceNewCmd(),
 		newSurfaceCloseCmd(),
-		newSurfaceRestartCmd(),
 		newSurfaceLsCmd(),
 		newSurfaceShowCmd(),
 		newSurfaceRenameCmd(),
@@ -208,55 +207,8 @@ func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string,
 	return eng.SurfaceClose(dockName, wsName, sName, force)
 }
 
-func newSurfaceRestartCmd() *cobra.Command {
-	var wsFlag, dockFlag string
-
-	cmd := &cobra.Command{
-		Use:   "restart [name]",
-		Short: "Restart a surface's process",
-		Long: `Restart a surface by name, or the current surface if no name given.
-
-  bay sf restart agent              restart "agent" in the current workspace
-  bay sf restart w1:agent           restart "agent" in workspace w1
-  bay sf restart agent --ws w1      same as w1:agent
-  bay sf restart                    restart current surface`,
-		Args: cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			eng, err := newEngine()
-			if err != nil {
-				return err
-			}
-			return runSurfaceRestart(eng, args, wsFlag, dockFlag)
-		},
-	}
-
-	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (disambiguates with --dock)")
-	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (only valid with --ws or a workspace prefix)")
-
-	return cmd
-}
-
-// runSurfaceRestart restarts a named surface, or the current pane's surface
-// if no name was given. Shared by `bay sf restart`, `bay restart`, and the
-// top-level surface verbs. Restart is non-destructive, so the bare no-arg
-// form is preserved (unlike `close`).
-func runSurfaceRestart(eng *engine.Engine, args []string, wsFlag, dockFlag string) error {
-	if len(args) == 0 {
-		if wsFlag != "" || dockFlag != "" {
-			return fmt.Errorf("--ws/--dock require a surface name")
-		}
-		// Bare invocation: restart the current pane via the self keyword.
-		args = []string{"self"}
-	}
-	dockName, wsName, sName, err := resolveSurfaceArgOrSelf(eng, args[0], wsFlag, dockFlag)
-	if err != nil {
-		return err
-	}
-	return eng.SurfaceRestart(dockName, wsName, sName)
-}
 
 func newSurfaceGoCmd() *cobra.Command {
-	var index int
 	var nextWaiting bool
 
 	cmd := &cobra.Command{
@@ -268,11 +220,10 @@ func newSurfaceGoCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return surfaceGo(eng, args, index, nextWaiting)
+			return surfaceGo(eng, args, nextWaiting)
 		},
 	}
 
-	cmd.Flags().IntVar(&index, "index", 0, "jump to surface by 1-based index")
 	cmd.Flags().BoolVar(&nextWaiting, "next-waiting", false, "jump to next waiting surface")
 
 	return cmd
@@ -483,7 +434,7 @@ func surfaceGoPick(eng *engine.Engine) error {
 	return eng.Tmux.DisplayPopup("bay go")
 }
 
-func surfaceGo(eng *engine.Engine, args []string, index int, nextWaiting bool) error {
+func surfaceGo(eng *engine.Engine, args []string, nextWaiting bool) error {
 	dockName, wsName, err := eng.ResolveSelf()
 	if err != nil {
 		return fmt.Errorf("not in a bay workspace")
@@ -506,18 +457,6 @@ func surfaceGo(eng *engine.Engine, args []string, index int, nextWaiting bool) e
 		target, _ := nav.NextWaitingSurface(entries)
 		if target == nil {
 			return nil
-		}
-		if err := focusSurface(eng, target, dockName, wsName); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	// Direct jump by index.
-	if index > 0 {
-		target := nav.SurfaceByIndex(entries, index)
-		if target == nil {
-			return fmt.Errorf("no surface at index %d (workspace has %d surfaces)", index, len(entries))
 		}
 		return focusSurface(eng, target, dockName, wsName)
 	}

@@ -457,31 +457,6 @@ func TestPrevSurface_WrapsAround(t *testing.T) {
 	}
 }
 
-func TestSurfaceByIndex(t *testing.T) {
-	ws := buildSurfaceWorkspace()
-	entries := CollectSurfaces(ws, "", nil)
-
-	s := SurfaceByIndex(entries, 1)
-	if s == nil || s.Name != "agent" {
-		t.Errorf("index 1 should be agent, got %v", s)
-	}
-	s = SurfaceByIndex(entries, 3)
-	if s == nil || s.Name != "tests" {
-		t.Errorf("index 3 should be tests, got %v", s)
-	}
-	s = SurfaceByIndex(entries, 0)
-	if s != nil {
-		t.Error("index 0 should be nil (1-based)")
-	}
-	s = SurfaceByIndex(entries, 4)
-	if s == nil || s.Name != "editor" {
-		t.Errorf("index 4 should be editor, got %v", s)
-	}
-	s = SurfaceByIndex(entries, 5)
-	if s != nil {
-		t.Error("index 5 should be nil (out of range)")
-	}
-}
 
 func TestNextSurface_NoCurrent(t *testing.T) {
 	ws := buildSurfaceWorkspace()
