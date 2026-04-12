@@ -21,6 +21,7 @@ type DockInfo struct {
 	Name       string          `json:"name"`
 	Agent      string          `json:"agent,omitempty"`
 	Repo       string          `json:"repo,omitempty"`
+	Surfaces   []SurfaceInfo   `json:"surfaces,omitempty"` // dock-level surfaces
 	Workspaces []WorkspaceInfo `json:"workspaces"`
 }
 
@@ -252,6 +253,19 @@ func (e *Engine) List() ([]DockInfo, error) {
 			Repo:  dock.Repo,
 		}
 
+		for _, s := range dock.Surfaces {
+			sInfo := SurfaceInfo{
+				ID:      s.ID,
+				Name:    s.Name,
+				Type:    string(s.Type),
+				Backend: string(s.Backend),
+				Status:  manifest.SyncStatusOK,
+			}
+			if s.Command != nil {
+				sInfo.Command = *s.Command
+			}
+			info.Surfaces = append(info.Surfaces, sInfo)
+		}
 		for j := range dock.Workspaces {
 			ws := &dock.Workspaces[j]
 			info.Workspaces = append(info.Workspaces, e.buildWorkspaceInfo(ws, agent))

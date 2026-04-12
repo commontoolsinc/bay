@@ -150,9 +150,9 @@ bay edit
 
 This opens your editor on the workspace's root directory — use the
 editor's file browser to navigate within the project. Terminal editors
-(nvim, vim) run in their own tmux window as a tracked surface. GUI
-editors (Cursor, VS Code, Zed) launch and return — manage them with
-Cmd+Tab.
+(nvim, vim) run as tracked surfaces in tmux. GUI editors (Cursor,
+VS Code, Zed) launch and return — run `bay edit` (or `Option+e`)
+again to switch back to the editor window.
 
 Run `bay ls` to see the current workspace's surfaces:
 
@@ -271,7 +271,7 @@ Recreates all tmux sessions and surfaces. Agents restart with
 ## Going further
 
 **Full setup:** `bay setup` installs keybindings, shell completions,
-and the macOS Space-switching helper. It's optional — everything works
+It's optional — everything works
 without it, but the keybindings make navigation instant.
 
 **Multiple repos:** `bay repo add backend ~/projects/backend` registers

@@ -284,6 +284,15 @@ func surfaceCandidates(m *manifest.Manifest, tc tmuxpkg.Interface, includeSelf b
 		}
 	}
 
+	// Dock-level surfaces (e.g., dock editor).
+	for _, dock := range m.Docks {
+		for _, s := range dock.Surfaces {
+			desc := string(s.Type) + " in dock " + dock.Name
+			addCandidate(&completions, seen, "dock:"+s.Name, desc)
+		}
+	}
+
+	// Workspace surfaces.
 	for _, ref := range manifest.AllWorkspaces(m) {
 		ws := ref.Workspace
 		for _, s := range ws.Surfaces {

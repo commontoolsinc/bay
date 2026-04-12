@@ -192,6 +192,36 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 	return nil
 }
 
+// DockSurfaceClose removes a dock-level surface and kills its tmux pane/window.
+func (e *Engine) DockSurfaceClose(dockName, surfaceName string) error {
+	var windowIDToKill, paneIDToKill string
+
+	err := e.withManifest(func(m *manifest.Manifest) error {
+		dock := m.FindDock(dockName)
+		if dock == nil {
+			return fmt.Errorf("unknown dock %q", dockName)
+		}
+		s := dock.FindDockSurface(surfaceName)
+		if s == nil {
+			return fmt.Errorf("dock surface %q not found in dock %q", surfaceName, dockName)
+		}
+		if s.Tmux != nil {
+			windowIDToKill = s.Tmux.WindowID
+			paneIDToKill = s.Tmux.PaneID
+		}
+		return dock.RemoveDockSurface(surfaceName)
+	})
+	if err != nil {
+		return err
+	}
+
+	if windowIDToKill != "" {
+		_ = e.Tmux.KillWindow(windowIDToKill)
+	} else if paneIDToKill != "" {
+		_ = e.Tmux.KillPane(paneIDToKill)
+	}
+	return nil
+}
 
 // SurfaceClose removes a surface from a workspace.
 //
@@ -258,7 +288,6 @@ func (e *Engine) SurfaceClose(dockName, wsName, surfaceName string, force bool) 
 	}
 	return nil
 }
-
 
 // SurfaceRename renames a surface within a workspace.
 func (e *Engine) SurfaceRename(dockName, wsName, oldName, newName string) error {

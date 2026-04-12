@@ -104,13 +104,36 @@ func resolveSurfaceArgOrSelf(eng *engine.Engine, posArg, wsFlag, dockFlag string
 			return dockName, wsName, s.Name, nil
 		}
 	}
+	// Check dock-level surfaces (e.g., dock editor).
+	m, loadErr := eng.LoadManifest()
+	if loadErr == nil {
+		if dock := m.FindDock(dockName); dock != nil {
+			for _, s := range dock.Surfaces {
+				if s.Tmux != nil && s.Tmux.PaneID == paneID {
+					// Return a special marker so callers know this is a dock surface.
+					return dockName, "", s.Name, nil
+				}
+			}
+		}
+	}
 	return "", "", "", fmt.Errorf("current pane is not a tracked surface")
+}
+
+// isDockSurface returns true if the positional is "dock:surfacename",
+// meaning a dock-level surface in the current dock.
+func isDockSurface(posArg string) (string, bool) {
+	parts := strings.SplitN(posArg, ":", 2)
+	if len(parts) == 2 && parts[0] == "dock" {
+		return parts[1], true
+	}
+	return "", false
 }
 
 // resolveSurfaceArg resolves a surface positional + --ws/--dock flags into
 // (dockName, wsName, surfaceName). The positional may be "name", "ws:name",
-// or "dock:ws:name". Flags may not conflict with corresponding parts in the
-// positional. If neither positional nor flags name a workspace, the current
+// "dock:ws:name", or the special form "dock:name" for dock-level surfaces.
+// Flags may not conflict with corresponding parts in the positional.
+// If neither positional nor flags name a workspace, the current
 // workspace (ResolveSelf) is used.
 func resolveSurfaceArg(eng *engine.Engine, posArg, wsFlag, dockFlag string) (string, string, string, error) {
 	dock, ws, surface, err := parseSurfaceArg(posArg)

@@ -4,13 +4,10 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/commontoolsinc/bay/internal/config"
-	"github.com/commontoolsinc/bay/internal/focus"
 	"github.com/spf13/cobra"
 )
 
@@ -82,9 +79,6 @@ Do you want to proceed
 			configureAgent(reader, configPath)
 			configureEditor(reader, configPath)
 
-			// Compile bay-focus helper (macOS only)
-			compileFocusHelper()
-
 			fmt.Println("\nSetup complete. Next steps:")
 			fmt.Println("  bay ws new             create a workspace in any git repo")
 			fmt.Println("  bay help               see all commands")
@@ -96,7 +90,6 @@ Do you want to proceed
 		},
 	}
 }
-
 
 func installCompletions(_ *cobra.Command, _ *bufio.Reader) {
 	fmt.Println()
@@ -456,36 +449,6 @@ description: Bay workspace management — git worktrees and tmux windows. Use wh
 
 !` + "`bay agent-guide`" + `
 `
-
-func compileFocusHelper() {
-	if runtime.GOOS != "darwin" {
-		return
-	}
-
-	fmt.Println()
-	helperPath := focus.HelperPath()
-	sourcePath := focus.SourcePath()
-
-	if _, err := os.Stat(sourcePath); err != nil {
-		fmt.Println("bay-focus helper source not found — skipping compilation.")
-		return
-	}
-
-	fmt.Printf("Compiling bay-focus helper → %s\n", helperPath)
-	if err := focus.Compile(sourcePath, helperPath); err != nil {
-		fmt.Printf("Warning: failed to compile bay-focus: %v\n", err)
-		fmt.Println("Space switching will require manual Cmd+Tab. Run bay doctor for details.")
-		return
-	}
-	fmt.Println("bay-focus helper compiled.")
-
-	// Check Accessibility.
-	cmd := exec.Command(helperPath, "--check")
-	if err := cmd.Run(); err != nil {
-		fmt.Println("Note: Accessibility permission not yet granted.")
-		fmt.Println("Enable in: System Settings → Privacy & Security → Accessibility")
-	}
-}
 
 func installBaySkill() {
 	home, err := os.UserHomeDir()

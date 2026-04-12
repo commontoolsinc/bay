@@ -54,7 +54,6 @@ func TestNewRootCmd_OldCommandsRemoved(t *testing.T) {
 	}
 }
 
-
 func TestSurfaceSubcommands(t *testing.T) {
 	root := NewRootCmd("test")
 	sf, _, err := root.Find([]string{"surface"})

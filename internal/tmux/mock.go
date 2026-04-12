@@ -502,6 +502,16 @@ func (m *Mock) DisplayMessage(msg string) error {
 	return nil
 }
 
+func (m *Mock) FindDockEditorWindow(session string) (string, bool) {
+	m.record("FindDockEditorWindow", session)
+	return "", false
+}
+
+func (m *Mock) MoveWindow(windowID string, targetIndex int) error {
+	m.record("MoveWindow", windowID, fmt.Sprintf("%d", targetIndex))
+	return nil
+}
+
 func (m *Mock) DisplayPopup(cmd string) error {
 	m.record("DisplayPopup", cmd)
 	return nil

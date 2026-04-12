@@ -87,6 +87,7 @@ type Dock struct {
 	Agent      string      `json:"agent,omitempty"`      // default agent
 	AgentArgs  []string    `json:"agent_args,omitempty"` // agent args
 	Host       *GUIAttrs   `json:"host,omitempty"`       // terminal window hosting this dock's tmux session; nil if unmanaged
+	Surfaces   []Surface   `json:"surfaces,omitempty"`   // dock-level surfaces (e.g., dock-scoped editor)
 	Workspaces []Workspace `json:"workspaces"`
 }
 
@@ -449,6 +450,43 @@ func (d *Dock) RemoveWorkspace(name string) error {
 		}
 	}
 	return fmt.Errorf("workspace %q not found in dock %q", name, d.Name)
+}
+
+// FindDockSurface returns a pointer to a dock-level surface by name.
+func (d *Dock) FindDockSurface(name string) *Surface {
+	for i := range d.Surfaces {
+		if d.Surfaces[i].Name == name {
+			return &d.Surfaces[i]
+		}
+	}
+	return nil
+}
+
+// AddDockSurface adds a dock-level surface with an auto-assigned ID.
+func (d *Dock) AddDockSurface(s Surface) (int, error) {
+	if d.FindDockSurface(s.Name) != nil {
+		return 0, fmt.Errorf("dock surface %q already exists in dock %q", s.Name, d.Name)
+	}
+	max := 0
+	for _, s := range d.Surfaces {
+		if s.ID > max {
+			max = s.ID
+		}
+	}
+	s.ID = max + 1
+	d.Surfaces = append(d.Surfaces, s)
+	return s.ID, nil
+}
+
+// RemoveDockSurface removes a dock-level surface by name.
+func (d *Dock) RemoveDockSurface(name string) error {
+	for i := range d.Surfaces {
+		if d.Surfaces[i].Name == name {
+			d.Surfaces = append(d.Surfaces[:i], d.Surfaces[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("dock surface %q not found in dock %q", name, d.Name)
 }
 
 // --- Surface operations ---

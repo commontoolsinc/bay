@@ -13,22 +13,21 @@ import (
 )
 
 func newEditCmd() *cobra.Command {
-	var all bool
+	var dockScope, wsScope bool
 	var editorFlag, splitDir string
 	var window, pane bool
 
 	cmd := &cobra.Command{
 		Use:   "edit [workspace]",
-		Short: "Open workspace directory in editor",
-		Long: `Open the workspace's root directory in your editor. Use the editor's
-file browser to navigate within the project. To edit individual files,
-open a shell instead.
+		Short: "Open editor on workspace or dock",
+		Long: `Open your editor on the workspace or dock directory. Default scope
+is dock (one editor for all workspaces). Use --ws for per-workspace.
 
-  bay edit                    open current workspace
-  bay edit auth-fix           open specific workspace
+  bay edit                    dock editor (default, all workspaces)
+  bay edit --ws               workspace editor (current workspace only)
+  bay edit --ws auth-fix      specific workspace
   bay edit --editor vim       use a specific editor this time
   bay edit --pane             split pane instead of new window
-  bay edit --all              open all workspaces in current dock
 
 Editor resolution order:
   1. --editor flag (this invocation only)
@@ -43,25 +42,25 @@ Editor resolution order:
 				return err
 			}
 
-			sd := resolveSplit(splitDir, window, pane)
-
-			if all {
-				return runEditAll(eng, editorFlag, sd)
+			// Determine scope: --ws or --dock (default: dock).
+			if wsScope || len(args) > 0 {
+				sd := resolveSplit(splitDir, window, pane)
+				target := "self"
+				if len(args) > 0 {
+					target = args[0]
+				}
+				return runEditCreate(eng, target, editorFlag, sd)
 			}
-
-			target := "self"
-			if len(args) > 0 {
-				target = args[0]
-			}
-			return runEditCreate(eng, target, editorFlag, sd)
+			return runEditDock(eng, editorFlag)
 		},
 	}
 
-	cmd.Flags().BoolVar(&all, "all", false, "open all active workspaces")
+	cmd.Flags().BoolVar(&dockScope, "dock", false, "dock-scoped editor (default)")
+	cmd.Flags().BoolVar(&wsScope, "ws", false, "workspace-scoped editor")
 	cmd.Flags().StringVar(&editorFlag, "editor", "", "editor command (overrides config for this invocation)")
 	cmd.Flags().StringVar(&splitDir, "split", "", "split direction (h or v)")
 	cmd.Flags().BoolVar(&pane, "pane", false, "split into current window (shorthand for --split v)")
-	cmd.Flags().BoolVar(&window, "window", false, "open as a new tmux window (default)")
+	cmd.Flags().BoolVar(&window, "window", false, "open as a new tmux window")
 
 	return cmd
 }
@@ -77,6 +76,40 @@ func resolveSplit(splitDir string, window, pane bool) string {
 		return "v"
 	}
 	return "" // window (default)
+}
+
+// runEditDock launches or focuses a dock-level editor that covers all
+// workspaces. For terminal editors, creates a tracked surface in a tmux
+// window at index 0. For GUI editors, launches fire-and-forget.
+func runEditDock(eng *engine.Engine, editorOverride string) error {
+	dockName, err := eng.Tmux.CurrentSession()
+	if err != nil {
+		return fmt.Errorf("not in a tmux session")
+	}
+
+	editorCmd, isGUI := resolveEditorWithOverride(eng.Config, editorOverride)
+	if editorCmd == "" {
+		return fmt.Errorf("no editor found; set [editor].command in config, or $VISUAL/$EDITOR")
+	}
+
+	// Determine the edit path — worktree parent dir so all workspaces are visible.
+	editPath, err := eng.EditAllParentDir(dockName)
+	if err != nil {
+		// Fallback: use the first workspace path.
+		paths, pathErr := eng.EditAll(dockName)
+		if pathErr != nil || len(paths) == 0 {
+			return fmt.Errorf("no workspaces to edit in dock %q", dockName)
+		}
+		editPath = paths[0]
+	}
+
+	if isGUI {
+		// Fire and forget — re-running focuses the existing window.
+		_, err = launchEditor(editorCmd, isGUI, []string{editPath})
+		return err
+	}
+
+	return eng.DockEditorAdd(dockName, editorCmd, editPath)
 }
 
 // runEditCreate launches the editor on a single workspace.
@@ -112,71 +145,6 @@ func runEditCreate(eng *engine.Engine, target, editorOverride, splitDir string) 
 	return eng.SurfaceAdd(engine.SurfaceAddOptions{
 		DockName: dockName,
 		WsName:   wsID,
-		Type:     manifest.SurfaceTypeEditor,
-		Name:     "editor",
-		Command:  fullCmd,
-		SplitDir: splitDir,
-	})
-}
-
-// runEditAll launches the editor on every active workspace in the current
-// dock. For terminal editors with multiple workspaces, the worktree parent
-// directory is opened so the file tree shows all worktrees as subdirectories.
-func runEditAll(eng *engine.Engine, editorOverride, splitDir string) error {
-	dockName, sessionErr := eng.Tmux.CurrentSession()
-	if sessionErr != nil {
-		return fmt.Errorf("--all requires being inside a dock (tmux session)")
-	}
-	paths, err := eng.EditAll(dockName)
-	if err != nil {
-		return err
-	}
-	if len(paths) == 0 {
-		return fmt.Errorf("no active workspaces in dock %q", dockName)
-	}
-
-	editorCmd, isGUI := resolveEditorWithOverride(eng.Config, editorOverride)
-	if editorCmd == "" {
-		return fmt.Errorf("no editor found; set [editor].command in config, or $VISUAL/$EDITOR")
-	}
-
-	if isGUI {
-		// Fire and forget — GUI editors manage their own windows.
-		_, err = launchEditor(editorCmd, isGUI, paths)
-		return err
-	}
-
-	// Terminal editor: open on parent dir so all worktrees are visible.
-	openPath := paths[0]
-	if len(paths) > 1 {
-		parentDir, err := eng.EditAllParentDir(dockName)
-		if err != nil {
-			return fmt.Errorf("cannot determine worktree directory: %w", err)
-		}
-		openPath = parentDir
-	}
-
-	// Resolve workspace to attach the terminal editor surface to.
-	wsName := ""
-	if dock, ws, err := eng.ResolveSelf(); err == nil && dock == dockName {
-		wsName = ws
-	}
-	if wsName == "" {
-		m, err := eng.LoadManifest()
-		if err == nil {
-			if dock := m.FindDock(dockName); dock != nil && len(dock.Workspaces) > 0 {
-				wsName = dock.Workspaces[0].Name
-			}
-		}
-	}
-	if wsName == "" {
-		return fmt.Errorf("no workspace found in dock %q", dockName)
-	}
-
-	fullCmd := editorCmd + " " + openPath
-	return eng.SurfaceAdd(engine.SurfaceAddOptions{
-		DockName: dockName,
-		WsName:   wsName,
 		Type:     manifest.SurfaceTypeEditor,
 		Name:     "editor",
 		Command:  fullCmd,

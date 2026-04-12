@@ -1122,7 +1122,6 @@ func TestSurfaceAdd_Split(t *testing.T) {
 
 // --- GUI surface tests ---
 
-
 func TestDockClose(t *testing.T) {
 	eng, _ := testEngine(t)
 
@@ -1597,7 +1596,6 @@ func TestRecover_UsesRecordedSplitParentAsSplitTarget(t *testing.T) {
 		t.Fatalf("second split target = %q, want %q", splitTargets[1], middle.Tmux.PaneID)
 	}
 }
-
 
 func TestWsNew_DuplicateDisplayName(t *testing.T) {
 	eng, _ := testEngine(t)

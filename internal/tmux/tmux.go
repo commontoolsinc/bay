@@ -43,6 +43,9 @@ type Interface interface {
 	// Batch queries
 	WaitingWindowIDs(session string) (map[string]bool, error) // windows with @bay-waiting=1
 
+	MoveWindow(windowID string, targetIndex int) error
+	FindDockEditorWindow(session string) (string, bool) // returns window ID if @bay-dock-editor=1 exists
+
 	// Client display
 	DisplayMessage(msg string) error
 	DisplayPopup(cmd string) error

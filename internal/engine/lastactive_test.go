@@ -75,7 +75,6 @@ func TestSurfaceClose_BumpsLastActive(t *testing.T) {
 	}
 }
 
-
 func TestSurfaceRename_BumpsLastActive(t *testing.T) {
 	eng, _ := testEngine(t)
 	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
@@ -92,8 +91,6 @@ func TestSurfaceRename_BumpsLastActive(t *testing.T) {
 		t.Errorf("LastActive = %d, want >= %d (SurfaceRename should bump)", got, before)
 	}
 }
-
-
 
 func TestEdit_BumpsLastActive(t *testing.T) {
 	eng, _ := testEngine(t)

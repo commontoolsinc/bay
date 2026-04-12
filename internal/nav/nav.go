@@ -142,19 +142,17 @@ func NextWaiting(entries []Entry, currentWindowID string) (*Entry, int) {
 	return nil, -1
 }
 
-
 // --- Surface-level navigation (intra-workspace) ---
 
 // SurfaceEntry represents a navigable surface within a workspace.
 type SurfaceEntry struct {
-	ID         int
-	Name       string
-	Type       string // "agent", "editor", "shell", "cmd"
-	PaneID     string // tmux pane ID (empty for GUI surfaces)
-	WindowID   string // tmux window ID
-	AppCommand string // GUI app launch command (empty for tmux surfaces)
-	Waiting    bool
-	Current    bool // true if this is the currently focused surface
+	ID       int
+	Name     string
+	Type     string // "agent", "editor", "shell", "cmd"
+	PaneID   string // tmux pane ID
+	WindowID string // tmux window ID
+	Waiting  bool
+	Current  bool // true if this is the currently focused surface
 }
 
 // CollectSurfaces builds a list of surface entries for a workspace.
@@ -177,9 +175,6 @@ func CollectSurfaces(ws *manifest.Workspace, currentPaneID string, waitingWindow
 			if waitingWindows[e.WindowID] {
 				e.Waiting = true
 			}
-		}
-		if s.GUI != nil {
-			e.AppCommand = s.GUI.AppCommand
 		}
 		entries = append(entries, e)
 	}
@@ -223,7 +218,6 @@ func currentSurfaceIndex(entries []SurfaceEntry) int {
 	}
 	return -1
 }
-
 
 // NextWaitingSurface returns the next surface marked Waiting after the
 // current one (and its index), wrapping around. If no surface is current,

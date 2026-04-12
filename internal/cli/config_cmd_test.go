@@ -32,15 +32,17 @@ func TestBayEdit_NoLongerHasShowFlag(t *testing.T) {
 	}
 }
 
-func TestBayEdit_StillHasAllFlag(t *testing.T) {
-	// Sanity: --all is the one bay edit flag we're NOT removing.
+func TestBayEdit_HasScopeFlags(t *testing.T) {
 	root := NewRootCmd("test")
 	cmd, _, err := root.Find([]string{"edit"})
 	if err != nil {
 		t.Fatalf("could not find edit: %v", err)
 	}
-	if cmd.Flags().Lookup("all") == nil {
-		t.Error("bay edit lost --all flag; this PR was not supposed to touch it")
+	if cmd.Flags().Lookup("dock") == nil {
+		t.Error("bay edit missing --dock flag")
+	}
+	if cmd.Flags().Lookup("ws") == nil {
+		t.Error("bay edit missing --ws flag")
 	}
 }
 

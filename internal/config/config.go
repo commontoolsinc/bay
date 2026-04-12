@@ -13,8 +13,8 @@ import (
 
 // Config represents the top-level bay configuration.
 type Config struct {
-	DefaultAgent  string                `toml:"default_agent,omitempty"`
-	DefaultEditor string                `toml:"default_editor,omitempty"`
+	DefaultAgent  string                 `toml:"default_agent,omitempty"`
+	DefaultEditor string                 `toml:"default_editor,omitempty"`
 	Agents        map[string]AgentConfig `toml:"agents,omitempty"`
 	Docks         map[string]DockConfig  `toml:"docks,omitempty"`
 	Monitor       MonitorConfig          `toml:"monitor,omitempty"`
@@ -45,7 +45,6 @@ var KnownAgents = map[string]AgentInfo{
 	"codex":  {Command: "codex"},
 	"gemini": {Command: "gemini"},
 }
-
 
 // ResolveAgent returns the effective AgentInfo for a named agent,
 // checking config overrides first, then built-in defaults.

@@ -331,6 +331,27 @@ func (r *Real) DisplayMessage(msg string) error {
 	return runSilent("display-message", msg)
 }
 
+// FindDockEditorWindow returns the window ID of the dock-level editor
+// window (tagged with @bay-dock-editor=1), or ("", false) if none exists.
+func (r *Real) FindDockEditorWindow(session string) (string, bool) {
+	out, err := run("list-windows", "-t", session, "-F", "#{window_id}\t#{@bay-dock-editor}")
+	if err != nil {
+		return "", false
+	}
+	for _, line := range strings.Split(out, "\n") {
+		parts := strings.SplitN(strings.TrimSpace(line), "\t", 2)
+		if len(parts) == 2 && parts[1] == "1" {
+			return parts[0], true
+		}
+	}
+	return "", false
+}
+
+// MoveWindow moves a window to a specific index.
+func (r *Real) MoveWindow(windowID string, targetIndex int) error {
+	return runSilent("move-window", "-s", windowID, "-t", fmt.Sprintf("%d", targetIndex))
+}
+
 // DisplayPopup opens a tmux popup running the given command.
 func (r *Real) DisplayPopup(cmd string) error {
 	return runSilent("display-popup", "-E", cmd)
