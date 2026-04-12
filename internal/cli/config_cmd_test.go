@@ -187,12 +187,9 @@ func TestPrepareConfigFileForEdit_SeedsDefaultsWhenMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config.Load on seeded file: %v", err)
 	}
-	// Verify it's the default — initialized maps + monitor interval.
-	if loaded.Agents == nil {
-		t.Error("expected DefaultConfig agents map to be initialized")
-	}
-	if loaded.Monitor.IntervalSeconds != 3 {
-		t.Errorf("seeded interval = %d, want 3 (DefaultConfig)", loaded.Monitor.IntervalSeconds)
+	// Verify it loaded — effective interval should be the default.
+	if loaded.Monitor.EffectiveInterval() != 3 {
+		t.Errorf("effective interval = %d, want 3", loaded.Monitor.EffectiveInterval())
 	}
 }
 

@@ -5,59 +5,46 @@ package cli
 // file so the parent command code stays focused.
 const configHelpText = `Bay Configuration — ~/.config/bay/config.toml
 
-Bay's config file holds user preferences and optional overrides.
-Repos, docks, and workspaces are tracked automatically in the manifest
-(~/.local/share/bay/manifest.json). A config file is only needed for
-customization — bay works without one.
+Bay's config file holds user preferences. Repos, docks, and workspaces
+are tracked automatically in the manifest (~/.local/share/bay/manifest.json).
+A config file is only needed for customization — bay works without one.
 
-AGENTS
+DEFAULTS
 
-  Define AI agents bay can launch in workspaces.
+  default_agent = "claude"        # agent for 'bay agent' (probed on setup)
+  default_editor = "cursor"       # editor for 'bay edit' (probed on setup)
 
-  [agents.claude]
-  command = "claude"
+  Set via CLI: 'bay config editor cursor' or 'bay setup'.
+
+  Built-in agents: claude, codex, gemini. Built-in editors: cursor,
+  code, zed, nvim, vim. These don't need config entries — bay knows
+  their commands, resume args, and GUI detection.
+
+CUSTOM AGENTS (optional)
+
+  Override a built-in or add a new agent:
+
+  [agents.my-agent]
+  command = "my-agent-cli"
   resume_args = "--continue"      # added on restart/recovery
-  project_file = "CLAUDE.md"      # checked by 'bay repo init'
+  project_file = ".my-agent.md"   # checked by 'bay repo init'
 
-  [agents.codex]
-  command = "codex"
+PER-DOCK OVERRIDES (optional)
 
-  Fields:
-    command       what bay runs in the terminal
-    resume_args   flags added when restarting (not on first launch)
-    project_file  file bay checks for bay awareness (bay repo init)
-
-EDITOR
-
-  Bay auto-detects your editor (cursor, code, zed, nvim, vim).
-  Set a preference to skip detection:
-
-  [editor]
-  command = "cursor"
-  gui = true                      # optional; auto-detected from command
-
-  Or via the CLI: 'bay config editor cursor'.
-
-PER-DOCK OVERRIDES
-
-  Override defaults for a specific dock. Only set fields you want
-  to change — omitted fields use the dock's creation-time defaults.
+  Override defaults for a specific dock:
 
   [docks.myproject]
   agent = "codex"                 # override default agent
   agent_args = ["--model", "o3"]  # override agent arguments
   terminal = "ghostty"            # host terminal app
 
-MONITOR
+MONITOR (optional)
 
   [monitor]
-  interval_seconds = 3            # how often to check for waiting agents
+  interval_seconds = 5            # default: 3 seconds
 
 EXAMPLE MINIMAL CONFIG
 
-  [agents.claude]
-  command = "claude"
-  project_file = "CLAUDE.md"
-
-That's enough. Everything else is optional or auto-detected.
+  An empty file works — bay auto-detects agents and editors.
+  Run 'bay setup' to set preferences interactively.
 `

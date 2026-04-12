@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -15,8 +16,8 @@ type Config struct {
 	DefaultAgent  string                `toml:"default_agent,omitempty"`
 	DefaultEditor string                `toml:"default_editor,omitempty"`
 	Agents        map[string]AgentConfig `toml:"agents,omitempty"`
-	Docks         map[string]DockConfig  `toml:"docks"`
-	Monitor       MonitorConfig          `toml:"monitor"`
+	Docks         map[string]DockConfig  `toml:"docks,omitempty"`
+	Monitor       MonitorConfig          `toml:"monitor,omitempty"`
 }
 
 // AgentConfig allows overriding built-in agent defaults.
@@ -97,19 +98,7 @@ func (m MonitorConfig) EffectiveInterval() int {
 
 // DefaultConfig returns an empty config with initialized maps.
 func DefaultConfig() *Config {
-	return &Config{
-		Agents: make(map[string]AgentConfig),
-		Docks:  make(map[string]DockConfig),
-		Monitor: MonitorConfig{
-			// Match the runtime default in EffectiveInterval so
-			// `bay config show` on a fresh install displays the
-			// interval bay actually uses (3s), not the Go zero
-			// value. EffectiveInterval still substitutes 0→3 at
-			// read time so users who hand-edit the file to 0 get
-			// the default behavior.
-			IntervalSeconds: 3,
-		},
-	}
+	return &Config{}
 }
 
 // DefaultConfigDir returns the default config directory.
@@ -193,7 +182,7 @@ func (c *Config) Validate() []string {
 
 // ResolvedDockAgent returns the effective agent for a dock.
 // Resolution order: per-dock config override → manifest dock default →
-// global default_agent in config.
+// global default_agent in config → probe PATH.
 func (c *Config) ResolvedDockAgent(dockName, manifestDefault string) string {
 	if dc, ok := c.Docks[dockName]; ok && dc.Agent != "" {
 		return dc.Agent
@@ -201,7 +190,22 @@ func (c *Config) ResolvedDockAgent(dockName, manifestDefault string) string {
 	if manifestDefault != "" {
 		return manifestDefault
 	}
-	return c.DefaultAgent
+	if c.DefaultAgent != "" {
+		return c.DefaultAgent
+	}
+	return ProbeAgent()
+}
+
+// ProbeAgent checks PATH for known agents and returns the first found.
+func ProbeAgent() string {
+	for name, info := range KnownAgents {
+		if info.Command != "" {
+			if _, err := exec.LookPath(info.Command); err == nil {
+				return name
+			}
+		}
+	}
+	return ""
 }
 
 // ResolvedDockAgentArgs returns the effective agent args for a dock,

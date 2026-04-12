@@ -159,9 +159,6 @@ Do you want to proceed
 func defaultSetupConfig() *config.Config {
 	return &config.Config{
 		DefaultAgent: probeAgent(),
-		Monitor: config.MonitorConfig{
-			IntervalSeconds: 3,
-		},
 	}
 }
 
