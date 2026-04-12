@@ -353,7 +353,7 @@ func autoBootstrap(eng *engine.Engine) (string, error) {
 	// Create dock if not already present in manifest.
 	m, _ = eng.LoadManifest()
 	if m == nil || m.FindDock(dockName) == nil {
-		if err := eng.DockNew(dockName, repoName, agentName, ""); err != nil {
+		if err := eng.DockNew(dockName, repoName, "", ""); err != nil {
 			return "", err
 		}
 	}
