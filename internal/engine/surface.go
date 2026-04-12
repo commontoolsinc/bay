@@ -212,6 +212,7 @@ func (e *Engine) SurfaceAddGUI(dockName, wsName, name, appCommand string, pid in
 			GUI: &manifest.GUIAttrs{
 				AppCommand: appCommand,
 				PID:        pid,
+				CreatedAt:  time.Now().Unix(),
 			},
 		}
 

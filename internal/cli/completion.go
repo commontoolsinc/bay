@@ -8,6 +8,7 @@ import (
 
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/manifest"
+	tmuxpkg "github.com/commontoolsinc/bay/internal/tmux"
 	"github.com/spf13/cobra"
 )
 
@@ -254,16 +255,43 @@ func workspaceCandidates(m *manifest.Manifest) []string {
 // includeSelf controls whether the "self" keyword is appended; callers should
 // pass false when the user has already typed a colon (qualified `self` is
 // always literal, not a keyword).
-func surfaceCandidates(m *manifest.Manifest, includeSelf bool) []string {
+func surfaceCandidates(m *manifest.Manifest, tc tmuxpkg.Interface, includeSelf bool) []string {
 	seen := make(map[string]bool)
 	var completions []string
 	if includeSelf {
 		addCandidate(&completions, seen, "self", "current surface")
 	}
+
+	// Determine current workspace for bare-name completions.
+	var currentDock, currentWs string
+	if session, err := tc.CurrentSession(); err == nil {
+		currentDock = session
+		if winID, err := tc.CurrentWindowID(); err == nil {
+			for _, ref := range manifest.AllWorkspaces(m) {
+				if ref.Dock != session {
+					continue
+				}
+				for _, s := range ref.Workspace.Surfaces {
+					if s.Tmux != nil && s.Tmux.WindowID == winID {
+						currentWs = ref.Workspace.Name
+						break
+					}
+				}
+				if currentWs != "" {
+					break
+				}
+			}
+		}
+	}
+
 	for _, ref := range manifest.AllWorkspaces(m) {
 		ws := ref.Workspace
 		for _, s := range ws.Surfaces {
 			desc := string(s.Type) + " in " + ref.Dock + ":" + ws.Name
+			// Bare name for surfaces in the current workspace.
+			if ref.Dock == currentDock && ws.Name == currentWs {
+				addCandidate(&completions, seen, s.Name, desc)
+			}
 			addCandidate(&completions, seen, ws.Name+":"+s.Name, desc)
 			addCandidate(&completions, seen, ref.Dock+":"+ws.Name+":"+s.Name, desc)
 		}
@@ -331,7 +359,8 @@ func surfaceCompletions() func(cmd *cobra.Command, args []string, toComplete str
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
 		includeSelf := !strings.Contains(toComplete, ":")
-		return surfaceCandidates(m, includeSelf), cobra.ShellCompDirectiveNoFileComp
+		tc := tmuxpkg.NewReal()
+		return surfaceCandidates(m, tc, includeSelf), cobra.ShellCompDirectiveNoFileComp
 	}
 }
 

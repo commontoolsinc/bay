@@ -103,10 +103,8 @@ func runEditCreate(eng *engine.Engine, target, editorOverride, splitDir string) 
 		if err != nil {
 			return fmt.Errorf("launching editor: %w", err)
 		}
-		// Register the surface without a PID. GUI editor launchers
-		// (code, cursor) typically fork and exit, so the launcher PID
-		// is useless for liveness tracking. The surface stays until
-		// the user closes it with bay close.
+		// Register with PID=0. The monitor resolves the real app PID
+		// lazily via pgrep and tracks liveness from there.
 		appCmd := editorCmd + " " + path
 		if err := eng.SurfaceAddGUI(dockName, wsID, "editor", appCmd, 0); err != nil {
 			return fmt.Errorf("registering editor surface: %w", err)
@@ -194,51 +192,42 @@ func runEditAll(eng *engine.Engine, editorOverride, splitDir string) error {
 	})
 }
 
-// guiEditors are editor commands known to be GUI applications.
-var guiEditors = map[string]bool{
+// knownEditors maps CLI command names to whether they're GUI apps.
+var knownEditors = map[string]bool{
 	"cursor": true,
 	"code":   true,
 	"zed":    true,
+	"nvim":   false,
+	"vim":    false,
 }
 
 // resolveEditor determines the editor command and whether it's GUI.
 func resolveEditorWithOverride(cfg *config.Config, override string) (string, bool) {
 	if override != "" {
-		base := baseCommand(override)
-		return override, guiEditors[base]
+		return override, knownEditors[baseCommand(override)]
 	}
 	return resolveEditor(cfg)
 }
 
 func resolveEditor(cfg *config.Config) (command string, isGUI bool) {
-	// 1. Config
+	lookup := func(cmd string) (string, bool) {
+		return cmd, knownEditors[baseCommand(cmd)]
+	}
+
 	if cfg.DefaultEditor != "" {
-		cmd := cfg.DefaultEditor
-		gui := guiEditors[baseCommand(cmd)]
-		return cmd, gui
+		return lookup(cfg.DefaultEditor)
 	}
-
-	// 2. $VISUAL
 	if v := os.Getenv("VISUAL"); v != "" {
-		base := baseCommand(v)
-		gui := guiEditors[base]
-		return v, gui
+		return lookup(v)
 	}
-
-	// 3. $EDITOR
 	if v := os.Getenv("EDITOR"); v != "" {
-		base := baseCommand(v)
-		gui := guiEditors[base]
-		return v, gui
+		return lookup(v)
 	}
-
-	// 4. Probe
 	for _, name := range []string{"cursor", "code", "zed", "nvim", "vim"} {
 		if _, err := exec.LookPath(name); err == nil {
-			return name, guiEditors[name]
+			return lookup(name)
 		}
 	}
-
 	return "", false
 }
 
