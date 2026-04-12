@@ -143,9 +143,9 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 		}
 	}
 
-	// Resolve agent args for the dock.
+	// Resolve agent args.
 	m2, _ := e.LoadManifest()
-	agentArgs := e.resolvedDockAgentArgs(dockName, m2)
+	agentArgs := e.resolvedAgentArgs(dockName, agent, m2)
 
 	// Launch the surface process.
 	surface, err := e.launchSurfaceInTmux(tmuxPaneID, dockName, surfaceType, agent, cmd, ws.Path, agentArgs)

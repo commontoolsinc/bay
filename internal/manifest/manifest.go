@@ -85,7 +85,7 @@ type Dock struct {
 	Name       string      `json:"name"`                 // unique; matches config key and tmux session name
 	Repo       string      `json:"repo,omitempty"`       // default repo for workspaces
 	Agent      string      `json:"agent,omitempty"`      // default agent
-	AgentArgs  []string    `json:"agent_args,omitempty"` // agent args
+	AgentArgs  map[string][]string `json:"agent_args,omitempty"` // per-agent args
 	Host       *GUIAttrs   `json:"host,omitempty"`       // terminal window hosting this dock's tmux session; nil if unmanaged
 	Surfaces   []Surface   `json:"surfaces,omitempty"`   // dock-level surfaces (e.g., dock-scoped editor)
 	Workspaces []Workspace `json:"workspaces"`

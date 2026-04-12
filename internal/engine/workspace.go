@@ -112,7 +112,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	}
 
 	// Resolve agent args.
-	agentArgs := e.resolvedDockAgentArgs(dockName, m)
+	agentArgs := e.resolvedAgentArgs(dockName, agentName, m)
 
 	// rollbackWorktree cleans up a worktree on failure.
 	rollbackWorktree := func() {
