@@ -61,7 +61,7 @@ const bayHelpTemplate = `Bay — workspace management for tmux and git worktrees
 Quick start:
   bay ws new              create a workspace
   bay new shell           create a shell surface
-  bay new agent claude    create an agent surface
+  bay agent               launch dock's default agent
   bay go [query]          jump to a surface
   bay ls                  see everything
   bay close [name]        close a surface (or current pane)
@@ -102,6 +102,8 @@ func NewRootCmd(version string) *cobra.Command {
 	surfaceCmd.GroupID = "surface"
 	shellCmd := newShellCmd()
 	shellCmd.GroupID = "surface"
+	agentCmd := newAgentCmd()
+	agentCmd.GroupID = "surface"
 	editCmd := newEditCmd()
 	editCmd.GroupID = "surface"
 	restartCmd := newRestartCmd()
@@ -152,6 +154,7 @@ func NewRootCmd(version string) *cobra.Command {
 		wsCmd,
 		surfaceCmd,
 		shellCmd,
+		agentCmd,
 		editCmd,
 		restartCmd,
 		topNewCmd,

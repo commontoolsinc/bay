@@ -1570,7 +1570,9 @@ func TestRecoverCmdSurface(t *testing.T) {
 func TestRecover_ReportsSurfaceLaunchErrors(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Agent: "codex"})
+	// Create a workspace with a custom agent, then break it.
+	eng.Config.Agents["broken"] = config.AgentConfig{Command: "broken-cmd"}
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Agent: "broken"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -1578,13 +1580,14 @@ func TestRecover_ReportsSurfaceLaunchErrors(t *testing.T) {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
 
-	eng.Config.Agents["codex"] = config.AgentConfig{}
+	// Clear the command so recovery fails.
+	eng.Config.Agents["broken"] = config.AgentConfig{}
 
 	mockTmux := eng.Tmux.(*tmux.Mock)
 	mockTmux.Reset()
 
-	if _, err := eng.Recover(); err == nil || !strings.Contains(err.Error(), `agent "codex" has no command configured`) {
-		t.Fatalf("Recover error = %v, want invalid agent command", err)
+	if _, err := eng.Recover(); err == nil || !strings.Contains(err.Error(), `unknown agent "broken"`) {
+		t.Fatalf("Recover error = %v, want unknown agent error", err)
 	}
 }
 

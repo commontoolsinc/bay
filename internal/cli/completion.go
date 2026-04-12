@@ -111,9 +111,11 @@ func registerCompletions(root *cobra.Command) {
 		}
 	}
 
-	// bay new agent <agent> — first positional is the agent type.
-	if cmd := findCmd(root, "new agent"); cmd != nil {
-		cmd.ValidArgsFunction = agentArgCompletions
+	// bay new agent / bay agent — first positional is the agent type.
+	for _, path := range []string{"new agent", "agent"} {
+		if cmd := findCmd(root, path); cmd != nil {
+			cmd.ValidArgsFunction = agentArgCompletions
+		}
 	}
 
 	// Dock commands: dock close, dock recover, dock tree, dock show, dock rename.
@@ -158,7 +160,7 @@ func registerCompletions(root *cobra.Command) {
 	for _, path := range []string{
 		"surface close", "surface restart", "surface show", "surface rename",
 		"close", "show", "restart",
-		"shell",
+		"shell", "agent",
 		"new shell", "new agent", "new cmd",
 	} {
 		if cmd := findCmd(root, path); cmd != nil {

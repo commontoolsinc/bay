@@ -112,6 +112,14 @@ func runSurfaceNew(eng *engine.Engine, dockName, wsName string, opts surfaceNewO
 		return err
 	}
 
+	agent := opts.Agent
+	if opts.Type == manifest.SurfaceTypeAgent && agent == "" {
+		agent = eng.DefaultAgent(dockName)
+		if agent == "" {
+			return fmt.Errorf("no agent specified and dock %q has no default agent", dockName)
+		}
+	}
+
 	name := opts.Name
 	if name == "" {
 		switch opts.Type {
@@ -128,7 +136,7 @@ func runSurfaceNew(eng *engine.Engine, dockName, wsName string, opts surfaceNewO
 		WsName:   wsName,
 		Type:     opts.Type,
 		Name:     name,
-		Agent:    opts.Agent,
+		Agent:    agent,
 		Command:  opts.Command,
 		SplitDir: opts.SplitDir,
 	})

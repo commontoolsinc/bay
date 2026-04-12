@@ -139,7 +139,7 @@ func runConfigEditorSet(configPath, name string) error {
 			return fmt.Errorf("loading config: %w", err)
 		}
 	}
-	cfg.Editor.Command = name
+	cfg.DefaultEditor = name
 	if err := ensureConfigFileDir(configPath); err != nil {
 		return err
 	}
