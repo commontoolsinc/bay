@@ -161,6 +161,12 @@ type bayKeybinding struct {
 }
 
 // bayKeybindings defines all bay tmux keybindings.
+//
+// canonicalLine() appends "|| true" to every binding so that keybindings
+// are silent in non-bay tmux sessions. Without it, tmux run-shell displays
+// 'bay ... returned 1' in the status line when bay exits with an error
+// (e.g., "not in a bay workspace"). Stderr is already invisible in
+// run-shell, so only the exit code needs masking.
 var bayKeybindings = []bayKeybinding{
 	// Surface navigation (intra-workspace)
 	{"M-j", "bay surface next", "Option+j: next surface in workspace", "run-shell"},
@@ -186,7 +192,9 @@ const bayKeybindingsMarker = "# Bay keybindings"
 
 // canonicalLine returns the literal line bay would write for this binding.
 func (kb bayKeybinding) canonicalLine() string {
-	return fmt.Sprintf("bind-key -n %s %s '%s'", kb.key, kb.tmuxVerb, kb.cmd)
+	// Ensure exit 0 so keybindings are silent in non-bay sessions.
+	// tmux run-shell displays "returned N" for non-zero exits.
+	return fmt.Sprintf("bind-key -n %s %s '%s || true'", kb.key, kb.tmuxVerb, kb.cmd)
 }
 
 // extractBayBlock returns the bay keybindings block (everything from the
@@ -276,14 +284,22 @@ func conflictingKeys(content string, kbs []bayKeybinding) []string {
 }
 
 // missingCanonicalLines returns the canonical bind-key lines for any
-// command in kbs that is not bound in the block. Diff is by command,
-// not by key, so a user who rebound a bay command to a different key
-// is not flagged as missing it.
+// command in kbs that is not bound in the block. Diff is by the bay
+// command prefix (ignoring shell suffixes like 2>/dev/null), not by
+// key, so a user who rebound a bay command to a different key is not
+// flagged as missing it.
 func missingCanonicalLines(block string, kbs []bayKeybinding) []string {
 	have := commandsInBlock(block)
 	var missing []string
 	for _, kb := range kbs {
-		if !have[kb.cmd] {
+		found := false
+		for cmd := range have {
+			if cmd == kb.cmd || strings.HasPrefix(cmd, kb.cmd+" ") {
+				found = true
+				break
+			}
+		}
+		if !found {
 			missing = append(missing, kb.canonicalLine())
 		}
 	}

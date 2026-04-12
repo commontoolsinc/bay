@@ -249,7 +249,7 @@ bind-key -n M-j run-shell 'bay surface next'
 bind-key -n M-k run-shell 'bay surface prev'
 `
 		got := missingCanonicalLines(block, kbs)
-		want := []string{"bind-key -n M-g display-popup -E 'bay go'"}
+		want := []string{"bind-key -n M-g display-popup -E 'bay go || true'"}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("missingCanonicalLines() = %v, want %v", got, want)
 		}
@@ -262,7 +262,7 @@ bind-key -n M-j run-shell 'bay surface next'
 bind-key -n M-g display-popup -E 'bay go'
 `
 		got := missingCanonicalLines(block, kbs)
-		want := []string{"bind-key -n M-k run-shell 'bay surface prev'"}
+		want := []string{"bind-key -n M-k run-shell 'bay surface prev || true'"}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("missingCanonicalLines() = %v, want %v", got, want)
 		}
