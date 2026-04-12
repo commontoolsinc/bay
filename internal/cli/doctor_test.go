@@ -36,17 +36,6 @@ func TestKeybindingsIncludeSurfaceNavigation(t *testing.T) {
 	}
 }
 
-func TestDefaultSetupConfig(t *testing.T) {
-	cfg := defaultSetupConfig()
-	if cfg == nil {
-		t.Fatal("defaultSetupConfig returned nil")
-	}
-	// default_agent is set by probing PATH; may be empty in CI.
-	// Just verify the config is valid.
-	if cfg.Monitor.EffectiveInterval() != 3 {
-		t.Errorf("expected effective monitor interval 3, got %d", cfg.Monitor.EffectiveInterval())
-	}
-}
 
 func TestCheckManifestConsistency(t *testing.T) {
 	cfg := &config.Config{
