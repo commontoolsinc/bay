@@ -201,7 +201,10 @@ bay agent
 ```
 
 This launches your default agent (bay auto-detects Claude Code, Codex,
-or Gemini on your PATH) in its own window. Add a shell alongside it
+or Gemini on your PATH) in its own window. You can also create a
+workspace with an agent as the first surface: `bay ws new --agent`.
+
+Add a shell alongside it
 with `Option+s` (or `bay shell`).
 
 When the agent waits for your input, bay highlights it. Use `Option+j`

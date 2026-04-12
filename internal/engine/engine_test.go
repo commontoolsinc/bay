@@ -2356,9 +2356,9 @@ func TestSyncAll_RemovesStaleSurfaces(t *testing.T) {
 	}
 }
 
-func TestList_MarksStaleWorkspace(t *testing.T) {
+func TestList_RemovesEmptyWorkspace(t *testing.T) {
 	// After a tmux window is killed and List is called, the workspace
-	// should show as stale (its surfaces are removed by SyncAll).
+	// should be removed (its last surface died, freeing the name).
 	eng, _ := testEngine(t)
 
 	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
@@ -2374,14 +2374,8 @@ func TestList_MarksStaleWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
-	if len(docks) != 1 || len(docks[0].Workspaces) != 1 {
-		t.Fatalf("unexpected dock/workspace count: %#v", docks)
-	}
-
-	// The workspace should be present but surfaces removed
-	wsInfo := docks[0].Workspaces[0]
-	if wsInfo.SurfaceCount != 0 {
-		t.Errorf("expected 0 surfaces after sync, got %d", wsInfo.SurfaceCount)
+	if len(docks) != 1 || len(docks[0].Workspaces) != 0 {
+		t.Fatalf("expected 0 workspaces after all surfaces died: %#v", docks)
 	}
 }
 
