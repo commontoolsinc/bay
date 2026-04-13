@@ -43,7 +43,8 @@ type WorkspaceInfo struct {
 	Path         string        `json:"path,omitempty"`
 	Branch       string        `json:"branch,omitempty"`
 	PR           string        `json:"pr,omitempty"`
-	Status       string        `json:"status"`
+	Dirty        bool          `json:"dirty"`
+	Merged       bool          `json:"merged"`
 	Waiting      bool          `json:"waiting,omitempty"`
 	Missing      bool          `json:"missing,omitempty"`
 	Stale        bool          `json:"stale,omitempty"`
@@ -294,7 +295,7 @@ func (e *Engine) buildWorkspaceInfo(ws *manifest.Workspace, agent string) Worksp
 		Path:         ws.Path,
 		Branch:       branch,
 		PR:           pr,
-		Status:       string(ws.Status),
+		Merged:       ws.IsMerged(),
 		Missing:      ws.Path != "" && statErr != nil,
 		DefaultAgent: agent,
 		SyncStatus:   manifest.SyncStatusOK,
@@ -303,6 +304,13 @@ func (e *Engine) buildWorkspaceInfo(ws *manifest.Workspace, agent string) Worksp
 
 	if wsInfo.Missing {
 		wsInfo.SyncStatus = manifest.SyncStatusMissing
+	}
+
+	// Compute dirty state from git.
+	if ws.Path != "" && statErr == nil {
+		if dirty, err := e.Git.IsDirty(wsPath); err == nil {
+			wsInfo.Dirty = dirty
+		}
 	}
 
 	for _, s := range ws.Surfaces {

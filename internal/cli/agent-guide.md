@@ -8,7 +8,7 @@ orchestrating session or from within a workspace.
 ## Key concepts
 
 A **workspace** is a managed working directory with metadata (branch,
-PR, status). Each workspace has:
+PR, dirty/merged flags). Each workspace has:
 - A **name** — the primary identifier. Defaults to auto-abbreviated
   branch name (stripping prefixes like `feature/`, `fix/`). Can be
   overridden with `bay rename` (or `bay ws rename`), which sticks permanently.
@@ -35,11 +35,10 @@ has:
 | **Worktree** | git worktree | yes — creates and deletes it, safety checks on close |
 | **External** | any user path | no — bay remembers it for recovery |
 
-### Statuses
+### Dirty and merged
 
-- `idle` — created, no work assigned yet
-- `active` — has a branch, work in progress
-- `done` — work complete (detected automatically on PR merge, or set manually)
+- `dirty` — computed from git (uncommitted changes); shown in `bay ls`, `bay tree`, statusline
+- `merged` — persisted; auto-detected when branch is merged into default
 
 ### Surface types and backends
 
@@ -74,15 +73,15 @@ Bay is a coordination layer over:
 - git worktree lifecycle
 - tmux session/window/pane lifecycle
 - editor launching (terminal editors as surfaces, GUI editors fire-and-forget)
-- workspace metadata (branch, PR, status)
+- workspace metadata (branch, PR, dirty/merged flags)
 - recovery after tmux or host restart
 
 Important invariants:
 - A **workspace** is the durable unit. Surfaces are views onto it.
-- Branch, PR number, and status are all auto-detected. Branch comes
-  from the filesystem on every display. PR is looked up via `gh pr
-  view` once and cached. Status transitions to `done` automatically
-  when the branch is merged into the default branch.
+- Branch, PR number, dirty, and merged are all auto-detected. Branch
+  comes from the filesystem on every display. PR is looked up via `gh pr
+  view` once and cached. Merged is set to true automatically when bay
+  detects a merge.
 - Bay does not generate config files into worktrees. Project
   instructions go in the repo's `CLAUDE.local.md` (or equivalent).
   Per-workspace context is discoverable via `bay pwd --json`.
@@ -150,7 +149,8 @@ Returns a tree:
               "type": "worktree",
               "path": "~/projects/labs-worktrees/auth-fix",
               "branch": "feature/auth-fix",
-              "status": "active",
+              "dirty": false,
+              "merged": false,
               "sync_status": "ok",
               "surface_count": 2,
               "surfaces": [
@@ -197,7 +197,8 @@ Use `bay ls --json --rows` for denormalized rows (easier to filter):
     "dock": "labs",
     "workspace_name": "auth-fix",
     "workspace_branch": "feature/auth-fix",
-    "workspace_status": "active",
+    "workspace_dirty": false,
+    "workspace_merged": false,
     "workspace_sync_status": "ok",
     "surface_id": 1,
     "surface_name": "agent",
@@ -222,7 +223,8 @@ of focus scope.
   "path": "/Users/dev/projects/labs-worktrees/auth-fix",
   "branch": "feature/auth-fix",
   "pr": "347",
-  "status": "active",
+  "dirty": false,
+  "merged": false,
   "sync_status": "ok",
   "default_agent": "claude",
   "surfaces": [
@@ -265,8 +267,8 @@ flags or, when omitted, inherited from the current tmux session.
 |---------|-----------------------------|
 | `bay ws new [name]` | current dock from tmux session, or auto-bootstrap from CWD |
 | `bay ws show [name]` | current workspace |
-| `bay ws close [name]` | required (no default; use `--done` for batch) |
-| `bay ws close --done` | all done workspaces in current dock |
+| `bay ws close [name]` | required (no default; use `--clean` for batch) |
+| `bay ws close --clean` | all non-dirty workspaces in current dock |
 | `bay pwd` | current bay context |
 | `bay surface new <kind> [name]` | current workspace |
 | `bay surface close <name>` | required (use `self` for current pane) |
@@ -307,7 +309,7 @@ bay ws new auth-fix --branch fix-auth       # create and checkout branch
 bay ws new auth-fix --agent                 # with dock's default agent
 ```
 
-#### `bay ws close [name] [--force] [--done]`
+#### `bay ws close [name] [--force] [--clean]`
 
 Close a workspace and all its surfaces. For worktree workspaces,
 checks for uncommitted changes and unpushed commits. Refuses if dirty
@@ -315,20 +317,20 @@ unless `--force` is used. If the branch has been pushed, bay deletes
 the local branch on close — no stale branches left behind. Pass
 `self` to close the current workspace.
 
-Use `--done` (without a name) to batch-close all workspaces with
-status `done` in the current dock.
+Use `--clean` (without a name) to batch-close all non-dirty
+workspaces in the current dock.
 
 ```
 bay ws close auth-fix
 bay ws close self
 bay ws close self --force
-bay ws close --done
-bay ws close --done --force
+bay ws close --clean
+bay ws close --clean --force
 ```
 
 #### `bay ws show [name] [--json]`
 
-Show workspace details: path, branch, PR, status, surfaces. Defaults
+Show workspace details: path, branch, PR, dirty/merged, surfaces. Defaults
 to the current workspace; pass `self` explicitly for the same effect.
 
 ```
@@ -580,11 +582,11 @@ the current dock from your tmux session.
 
 ### Track progress from inside
 
-Branch, PR number, and status are all tracked automatically. Branch
-comes from the worktree on every display. PR is looked up via `gh pr
-view` and cached. Status flips to `done` when the branch is merged
-into the default branch. Just commit, push, and open a PR — bay sees
-all of it.
+Branch, PR number, dirty, and merged are all tracked automatically.
+Branch comes from the worktree on every display. PR is looked up via
+`gh pr view` and cached. Merged is set to true automatically when bay
+detects a merge. Just commit, push, and open a PR — bay sees all of
+it.
 
 ### Open a shell alongside your agent
 
@@ -613,7 +615,7 @@ and return — manage them with your OS window manager.
 bay ls
 ```
 
-Shows every workspace, status, branch, PR, and waiting indicators.
+Shows every workspace, dirty/merged flags, branch, PR, and waiting indicators.
 
 ### Navigate to a waiting agent
 
@@ -641,17 +643,16 @@ untouched.
 
 ### Close a workspace after a PR merges
 
-Status transitions to `done` automatically when bay detects a merge.
-Then:
+Merged is set to true automatically when bay detects a merge. Then:
 
 ```
 bay ws close auth-fix
 ```
 
-Or batch-close all finished work:
+Or batch-close all non-dirty workspaces:
 
 ```
-bay ws close --done
+bay ws close --clean
 ```
 
 ### Manage multiple concurrent PRs

@@ -123,8 +123,9 @@ func TestParse_FullManifest(t *testing.T) {
 	if ws.Type != WorkspaceTypeWorktree {
 		t.Errorf("workspace type = %q, want %q", ws.Type, WorkspaceTypeWorktree)
 	}
-	if ws.Status != WorkspaceStatusActive {
-		t.Errorf("workspace status = %q, want %q", ws.Status, WorkspaceStatusActive)
+	// v2 manifest with status=active should not set Merged
+	if ws.Worktree != nil && ws.Worktree.Merged {
+		t.Error("workspace should not be merged")
 	}
 	if ws.LastFocused != 1 {
 		t.Errorf("last_focused = %d, want 1", ws.LastFocused)
@@ -186,10 +187,9 @@ func TestRoundTrip(t *testing.T) {
 				Name: "labs",
 				Workspaces: []Workspace{
 					{
-						Name:   "auth-fix",
-						Type:   WorkspaceTypeWorktree,
-						Path:   "/tmp/ws1",
-						Status: WorkspaceStatusActive,
+						Name: "auth-fix",
+						Type: WorkspaceTypeWorktree,
+						Path: "/tmp/ws1",
 						Worktree: &WorktreeAttrs{
 							Repo:   "labs",
 							Branch: "fix-auth",
@@ -244,7 +244,7 @@ func TestSaveAndLoad(t *testing.T) {
 	original.Docks = append(original.Docks, Dock{
 		Name: "test",
 		Workspaces: []Workspace{
-			{Name: "ws1", Type: WorkspaceTypeWorktree, Status: WorkspaceStatusIdle},
+			{Name: "ws1", Type: WorkspaceTypeWorktree},
 		},
 	})
 
@@ -443,7 +443,7 @@ func TestFindWorkspace(t *testing.T) {
 func TestAddWorkspace(t *testing.T) {
 	d := &Dock{Name: "labs"}
 
-	if err := d.AddWorkspace(Workspace{Name: "auth-fix", Status: WorkspaceStatusIdle}); err != nil {
+	if err := d.AddWorkspace(Workspace{Name: "auth-fix"}); err != nil {
 		t.Fatal(err)
 	}
 	if len(d.Workspaces) != 1 || d.Workspaces[0].Name != "auth-fix" {
@@ -702,14 +702,14 @@ func TestAllWorkspaces(t *testing.T) {
 func TestAllWorkspaces_ReturnsMutablePointers(t *testing.T) {
 	m := &Manifest{
 		Docks: []Dock{
-			{Name: "labs", Workspaces: []Workspace{{Name: "ws1", Status: WorkspaceStatusIdle}}},
+			{Name: "labs", Workspaces: []Workspace{{Name: "ws1"}}},
 		},
 	}
 
 	refs := AllWorkspaces(m)
-	refs[0].Workspace.Status = WorkspaceStatusActive
+	refs[0].Workspace.Name = "ws1-renamed"
 
-	if m.Docks[0].Workspaces[0].Status != WorkspaceStatusActive {
+	if m.Docks[0].Workspaces[0].Name != "ws1-renamed" {
 		t.Error("mutation through AllWorkspaces pointer did not affect manifest")
 	}
 }
@@ -931,6 +931,68 @@ func TestDockRepoAndAgentRoundTrip(t *testing.T) {
 	}
 	if len(dock.AgentArgs["claude"]) != 2 || dock.AgentArgs["claude"][0] != "--add-dir" {
 		t.Errorf("dock.AgentArgs[claude] = %v, want [--add-dir /extra]", dock.AgentArgs["claude"])
+	}
+}
+
+func TestParse_MigratesV2StatusDoneToMerged(t *testing.T) {
+	data := []byte(`{
+		"version": 2,
+		"repos": [],
+		"docks": [
+			{
+				"name": "labs",
+				"workspaces": [
+					{
+						"name": "ws-done",
+						"type": "worktree",
+						"path": "/tmp/ws1",
+						"status": "done",
+						"worktree": {"repo": "labs", "branch": "feat-x"},
+						"surfaces": []
+					},
+					{
+						"name": "ws-active",
+						"type": "worktree",
+						"path": "/tmp/ws2",
+						"status": "active",
+						"worktree": {"repo": "labs", "branch": "feat-y"},
+						"surfaces": []
+					},
+					{
+						"name": "ws-no-worktree",
+						"type": "external",
+						"path": "/tmp/ws3",
+						"status": "done",
+						"surfaces": []
+					}
+				]
+			}
+		]
+	}`)
+
+	m, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ws0 := &m.Docks[0].Workspaces[0]
+	if ws0.Worktree == nil || !ws0.Worktree.Merged {
+		t.Errorf("ws-done: expected Merged=true, got Merged=%v", ws0.Worktree != nil && ws0.Worktree.Merged)
+	}
+
+	ws1 := &m.Docks[0].Workspaces[1]
+	if ws1.Worktree == nil || ws1.Worktree.Merged {
+		t.Errorf("ws-active: expected Merged=false, got Merged=%v", ws1.Worktree != nil && ws1.Worktree.Merged)
+	}
+
+	// External workspace with status=done but no worktree — Merged should not be set
+	ws2 := &m.Docks[0].Workspaces[2]
+	if ws2.Worktree != nil {
+		t.Errorf("ws-no-worktree: expected no worktree attrs")
+	}
+
+	if m.Version != CurrentVersion {
+		t.Errorf("version = %d, want %d", m.Version, CurrentVersion)
 	}
 }
 

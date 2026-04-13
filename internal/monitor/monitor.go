@@ -236,7 +236,7 @@ func (m *Monitor) detectMerges(mf *manifest.Manifest) bool {
 			if ws.Worktree == nil || ws.Worktree.Branch == "" || ws.Path == "" {
 				continue
 			}
-			if ws.Status == manifest.WorkspaceStatusDone {
+			if ws.Worktree.Merged {
 				continue
 			}
 			// Activity gate: skip workspaces not active recently.
@@ -255,7 +255,7 @@ func (m *Monitor) detectMerges(mf *manifest.Manifest) bool {
 				continue
 			}
 
-			ws.Status = manifest.WorkspaceStatusDone
+			ws.Worktree.Merged = true
 			changed = true
 		}
 	}

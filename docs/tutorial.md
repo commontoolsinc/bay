@@ -251,11 +251,11 @@ Closing an *individual* agent surface (`bay close agent`) prompts for
 confirmation, since agents carry valuable conversation context. Use
 `--force` (or `-f`) to skip the prompt.
 
-When a PR is merged, bay detects it in the background and marks the
-workspace "done." Clean up all merged workspaces at once:
+When a PR is merged, bay detects it in the background and sets the
+workspace's `merged` flag. Clean up all merged workspaces at once:
 
 ```
-bay ws close --done
+bay ws close --clean
 ```
 
 ## 8. Recovery
@@ -289,7 +289,7 @@ For more control: `bay dock new myproject --repo myproject`.
 
 **Status line:** Add `#(bay status-line full)` to your tmux `status-right`
 to always see your current workspace. Other field names: `name`, `branch`,
-`pr`, `status`, `dock`, `merged`.
+`pr`, `dirty`, `dock`, `merged`.
 
 ---
 

@@ -26,7 +26,7 @@ func testDocks() []engine.DockInfo {
 					Type:         "worktree",
 					Path:         "~/projects/bay-wt/auth-fix",
 					Branch:       "fix/login",
-					Status:       "active",
+					Dirty:        true,
 					Waiting:      true,
 					SurfaceCount: 3,
 					Surfaces: []engine.SurfaceInfo{
@@ -41,7 +41,6 @@ func testDocks() []engine.DockInfo {
 					Type:         "worktree",
 					Path:         "~/projects/bay-wt/cleanup",
 					Branch:       "cleanup",
-					Status:       "idle",
 					SurfaceCount: 1,
 					SyncStatus:   "stale",
 					Surfaces: []engine.SurfaceInfo{
@@ -59,7 +58,6 @@ func testDocks() []engine.DockInfo {
 					Type:         "worktree",
 					Path:         "~/projects/bay-wt-web/landing",
 					Branch:       "feature/landing",
-					Status:       "active",
 					SurfaceCount: 1,
 					SyncStatus:   "ok",
 				},
@@ -74,7 +72,7 @@ func testDocks() []engine.DockInfo {
 					Type:         "external",
 					Path:         "~/projects/other/deploy",
 					Branch:       "main",
-					Status:       "done",
+					Merged:       true,
 					SurfaceCount: 0,
 					SyncStatus:   "missing",
 				},
@@ -135,8 +133,8 @@ func TestFormatListView_AlignsMetaColumnsAcrossRows(t *testing.T) {
 			Repo: "bay",
 			Workspaces: []engine.WorkspaceInfo{
 				{Name: "w1", SurfaceCount: 1, SyncStatus: "ok"},
-				{Name: "login-bug", Branch: "fix/login-bug", Status: "active", SurfaceCount: 1, SyncStatus: "ok"},
-				{Name: "auth-refactor", Branch: "fix/auth-refactor", Status: "active", SurfaceCount: 2, SyncStatus: "ok"},
+				{Name: "login-bug", Branch: "fix/login-bug", Dirty: true, SurfaceCount: 1, SyncStatus: "ok"},
+				{Name: "auth-refactor", Branch: "fix/auth-refactor", Dirty: true, SurfaceCount: 2, SyncStatus: "ok"},
 			},
 		},
 	}
@@ -326,7 +324,7 @@ func TestFormatWorkspaceShow_IncludesDefaultAgentAndSurfaces(t *testing.T) {
 		Type:         "worktree",
 		Path:         "~/projects/bay-wt/auth-fix",
 		Branch:       "fix/login",
-		Status:       "active",
+		Dirty:        true,
 		DefaultAgent: "codex",
 		SyncStatus:   "ok",
 		Surfaces: []engine.SurfaceInfo{
@@ -445,7 +443,7 @@ func TestFormatDockTree_IncludesNoRepoDocks(t *testing.T) {
 		{
 			Name: "tools",
 			Workspaces: []engine.WorkspaceInfo{
-				{Name: "scratch", Branch: "notes", Status: "active", SurfaceCount: 1, SyncStatus: "ok"},
+				{Name: "scratch", Branch: "notes", SurfaceCount: 1, SyncStatus: "ok"},
 			},
 		},
 	}

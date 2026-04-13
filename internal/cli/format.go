@@ -67,7 +67,8 @@ type ListRow struct {
 	Dock                string `json:"dock,omitempty"`
 	WorkspaceName       string `json:"workspace_name,omitempty"`
 	WorkspaceBranch     string `json:"workspace_branch,omitempty"`
-	WorkspaceStatus     string `json:"workspace_status,omitempty"`
+	WorkspaceDirty      bool   `json:"workspace_dirty,omitempty"`
+	WorkspaceMerged     bool   `json:"workspace_merged,omitempty"`
 	WorkspaceSyncStatus string `json:"workspace_sync_status,omitempty"`
 	WorkspaceWaiting    bool   `json:"workspace_waiting,omitempty"`
 	SurfaceID           int    `json:"surface_id,omitempty"`
@@ -220,7 +221,8 @@ func ListRows(view ListView) []ListRow {
 						Dock:                dock.Name,
 						WorkspaceName:       ws.Name,
 						WorkspaceBranch:     ws.Branch,
-						WorkspaceStatus:     ws.Status,
+						WorkspaceDirty:      ws.Dirty,
+						WorkspaceMerged:     ws.Merged,
 						WorkspaceSyncStatus: ws.SyncStatus,
 						WorkspaceWaiting:    ws.Waiting,
 					})
@@ -232,7 +234,8 @@ func ListRows(view ListView) []ListRow {
 						Dock:                dock.Name,
 						WorkspaceName:       ws.Name,
 						WorkspaceBranch:     ws.Branch,
-						WorkspaceStatus:     ws.Status,
+						WorkspaceDirty:      ws.Dirty,
+						WorkspaceMerged:     ws.Merged,
 						WorkspaceSyncStatus: ws.SyncStatus,
 						WorkspaceWaiting:    ws.Waiting,
 						SurfaceID:           s.ID,
@@ -333,8 +336,10 @@ func workspaceMetaCols(ws engine.WorkspaceInfo, showCounts, short bool) []metaCo
 			cols[1] = metaField("dir", dir, short)
 		}
 	}
-	if ws.Status != "" && ws.Status != string(manifest.WorkspaceStatusIdle) && ws.Status != string(manifest.WorkspaceStatusActive) {
-		cols[2] = metaField("st", ws.Status, short)
+	if ws.Dirty {
+		cols[2] = metaField("st", "dirty", short)
+	} else if ws.Merged {
+		cols[2] = metaField("st", "merged", short)
 	}
 	if showCounts {
 		cols[3] = metaField("n", fmt.Sprintf("%d", ws.SurfaceCount), short)
@@ -637,8 +642,11 @@ func FormatWorkspaceShow(repoName, dockName string, ws *engine.WorkspaceInfo, lo
 	if ws.PR != "" {
 		rows = append(rows, showRow{"pr", ws.PR})
 	}
-	if ws.Status != "" && ws.Status != "idle" && ws.Status != "active" {
-		rows = append(rows, showRow{"status", ws.Status})
+	if ws.Dirty {
+		rows = append(rows, showRow{"dirty", "yes"})
+	}
+	if ws.Merged {
+		rows = append(rows, showRow{"merged", "yes"})
 	}
 	if ws.DefaultAgent != "" {
 		rows = append(rows, showRow{"default agent", ws.DefaultAgent})

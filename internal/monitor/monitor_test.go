@@ -236,9 +236,8 @@ func createTestManifest(t *testing.T, dir string, tmuxWindowID string) string {
 			Name: "dev",
 			Workspaces: []manifest.Workspace{
 				{
-					Name:   "test-ws",
-					Type:   manifest.WorkspaceTypeWorktree,
-					Status: manifest.WorkspaceStatusActive,
+					Name: "test-ws",
+					Type: manifest.WorkspaceTypeWorktree,
 					Surfaces: []manifest.Surface{
 						{
 							ID: 1, Name: "agent", Type: manifest.SurfaceTypeAgent,
@@ -271,9 +270,8 @@ func createShellOnlyManifest(t *testing.T, dir string, tmuxWindowID string) stri
 			Name: "dev",
 			Workspaces: []manifest.Workspace{
 				{
-					Name:   "shell-ws",
-					Type:   manifest.WorkspaceTypeWorktree,
-					Status: manifest.WorkspaceStatusActive,
+					Name: "shell-ws",
+					Type: manifest.WorkspaceTypeWorktree,
 					Surfaces: []manifest.Surface{
 						{
 							ID: 1, Name: "shell", Type: manifest.SurfaceTypeShell,
@@ -554,7 +552,6 @@ func TestCheckOnce_RenamesWindowOnBranchChange(t *testing.T) {
 					Name:     "w1",
 					Type:     manifest.WorkspaceTypeWorktree,
 					Path:     wtPath,
-					Status:   manifest.WorkspaceStatusActive,
 					Worktree: &manifest.WorktreeAttrs{Repo: "dev", Branch: ""},
 					Surfaces: []manifest.Surface{
 						{
@@ -658,7 +655,6 @@ func TestCheckOnce_DetectsPR(t *testing.T) {
 					Name:     "test-ws",
 					Type:     manifest.WorkspaceTypeWorktree,
 					Path:     "/tmp",
-					Status:   manifest.WorkspaceStatusActive,
 					Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "feature/login"},
 					Surfaces: []manifest.Surface{
 						{
@@ -714,7 +710,6 @@ func TestCheckOnce_PRCheckedAtPreventsRecheckWithinTTL(t *testing.T) {
 					Name:     "test-ws",
 					Type:     manifest.WorkspaceTypeWorktree,
 					Path:     "/tmp",
-					Status:   manifest.WorkspaceStatusActive,
 					Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "feature/no-pr"},
 				},
 			},
@@ -761,7 +756,6 @@ func TestCheckOnce_SkipsPRDetectionForWorkspaceWithNoPath(t *testing.T) {
 			Workspaces: []manifest.Workspace{
 				{
 					Name:     "test-ws",
-					Status:   manifest.WorkspaceStatusActive,
 					Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "feature/no-pr"},
 					// No Path — detectPRs skips workspaces without a path.
 				},
@@ -806,7 +800,6 @@ func TestCheckOnce_DetectsMergedBranch(t *testing.T) {
 				{
 					Name:       "feature-ws",
 					Path:       "/tmp",
-					Status:     manifest.WorkspaceStatusActive,
 					LastActive: time.Now().Unix(), // recently active
 					Worktree:   &manifest.WorktreeAttrs{Repo: "labs", Branch: "feature/done"},
 				},
@@ -830,12 +823,12 @@ func TestCheckOnce_DetectsMergedBranch(t *testing.T) {
 		mon.CheckOnce()
 	}
 
-	// Workspace status should be updated to done.
+	// Workspace should be marked as merged.
 	updated, _ := manifest.Load(manifestPath)
 	dock := updated.FindDock("dev")
 	ws := dock.FindWorkspace("feature-ws")
-	if ws.Status != manifest.WorkspaceStatusDone {
-		t.Errorf("status = %q, want done", ws.Status)
+	if !ws.Worktree.Merged {
+		t.Error("Merged = false, want true")
 	}
 }
 
@@ -853,7 +846,6 @@ func TestCheckOnce_SkipsMergeCheckForInactiveWorkspace(t *testing.T) {
 				{
 					Name:     "old-ws",
 					Path:     "/tmp",
-					Status:   manifest.WorkspaceStatusActive,
 					Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "feature/old"},
 				},
 			},
@@ -874,11 +866,11 @@ func TestCheckOnce_SkipsMergeCheckForInactiveWorkspace(t *testing.T) {
 		mon.CheckOnce()
 	}
 
-	// Should NOT be marked done — workspace is inactive.
+	// Should NOT be marked merged — workspace is inactive.
 	updated, _ := manifest.Load(manifestPath)
 	ws := updated.FindDock("dev").FindWorkspace("old-ws")
-	if ws.Status != manifest.WorkspaceStatusActive {
-		t.Errorf("status = %q, want active (inactive workspace should be skipped)", ws.Status)
+	if ws.Worktree.Merged {
+		t.Error("Merged = true, want false (inactive workspace should be skipped)")
 	}
 }
 

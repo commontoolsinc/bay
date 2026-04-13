@@ -111,20 +111,6 @@ func (e *Engine) resolvedAgentArgs(dockName, agentName string, m *manifest.Manif
 
 var validNameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
-var validStatuses = map[manifest.WorkspaceStatus]bool{
-	manifest.WorkspaceStatusIdle:   true,
-	manifest.WorkspaceStatusActive: true,
-	manifest.WorkspaceStatusDone:   true,
-}
-
-// ValidateStatus checks that a status string is one of idle/active/done.
-func ValidateStatus(s string) error {
-	if !validStatuses[manifest.WorkspaceStatus(s)] {
-		return fmt.Errorf("invalid status %q: must be idle, active, or done", s)
-	}
-	return nil
-}
-
 // ValidateName checks that a name matches the naming constraints.
 func ValidateName(name string) error {
 	if !validNameRe.MatchString(name) {

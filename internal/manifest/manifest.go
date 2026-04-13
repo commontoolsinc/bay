@@ -15,19 +15,12 @@ import (
 )
 
 // CurrentVersion is the manifest schema version.
-const CurrentVersion = 2
+const CurrentVersion = 3
 
 // WorkspaceType constants.
 const (
 	WorkspaceTypeWorktree WorkspaceType = "worktree"
 	WorkspaceTypeExternal WorkspaceType = "external"
-)
-
-// WorkspaceStatus constants.
-const (
-	WorkspaceStatusIdle   WorkspaceStatus = "idle"
-	WorkspaceStatusActive WorkspaceStatus = "active"
-	WorkspaceStatusDone   WorkspaceStatus = "done"
 )
 
 // SurfaceType constants — the semantic role of a surface.
@@ -54,7 +47,6 @@ const (
 )
 
 type WorkspaceType string
-type WorkspaceStatus string
 type SurfaceType string
 type SurfaceBackend string
 
@@ -93,15 +85,18 @@ type Dock struct {
 
 // Workspace represents a unit of work — typically one branch/PR.
 type Workspace struct {
-	Name           string          `json:"name"`                      // unique within dock; user-facing, renameable
-	Type           WorkspaceType   `json:"type"`                      // "worktree" or "external"
-	Path           string          `json:"path,omitempty"`            // absolute path to the working directory
-	Status         WorkspaceStatus `json:"status"`                    // "idle", "active", or "done"
-	NameOverridden bool            `json:"name_overridden,omitempty"` // true if user explicitly renamed
-	LastFocused    int             `json:"last_focused,omitempty"`    // surface ID; 0 = none yet
-	LastActive     int64           `json:"last_active,omitempty"`     // unix timestamp; updated by bay commands
-	Surfaces       []Surface       `json:"surfaces"`
-	Worktree       *WorktreeAttrs  `json:"worktree,omitempty"` // type=worktree only
+	Name           string         `json:"name"`                      // unique within dock; user-facing, renameable
+	Type           WorkspaceType  `json:"type"`                      // "worktree" or "external"
+	Path           string         `json:"path,omitempty"`            // absolute path to the working directory
+	NameOverridden bool           `json:"name_overridden,omitempty"` // true if user explicitly renamed
+	LastFocused    int            `json:"last_focused,omitempty"`    // surface ID; 0 = none yet
+	LastActive     int64          `json:"last_active,omitempty"`     // unix timestamp; updated by bay commands
+	Surfaces       []Surface      `json:"surfaces"`
+	Worktree       *WorktreeAttrs `json:"worktree,omitempty"` // type=worktree only
+
+	// DeprecatedStatus exists only for v2→v3 manifest migration. Cleared after
+	// migration. The "status" JSON tag is reserved by this field.
+	DeprecatedStatus string `json:"status,omitempty"`
 }
 
 // WorktreeAttrs holds git worktree metadata. Only present for worktree workspaces.
@@ -110,6 +105,12 @@ type WorktreeAttrs struct {
 	Branch      string `json:"branch"`
 	PR          string `json:"pr,omitempty"`            // PR number (display-only)
 	PRCheckedAt int64  `json:"pr_checked_at,omitempty"` // unix seconds of last gh pr view; 0 = never
+	Merged      bool   `json:"merged,omitempty"`        // true when branch has been merged into default
+}
+
+// IsMerged reports whether this workspace's branch has been merged into the default branch.
+func (ws *Workspace) IsMerged() bool {
+	return ws.Worktree != nil && ws.Worktree.Merged
 }
 
 // PRCheckTTL is how long a "no PR found" answer stays valid before we re-query
@@ -193,6 +194,21 @@ func Parse(data []byte) (*Manifest, error) {
 	if m.Docks == nil {
 		m.Docks = []Dock{}
 	}
+
+	// Migrate v2 → v3: convert status=done to Worktree.Merged=true.
+	if m.Version < 3 {
+		for i := range m.Docks {
+			for j := range m.Docks[i].Workspaces {
+				ws := &m.Docks[i].Workspaces[j]
+				if ws.DeprecatedStatus == "done" && ws.Worktree != nil {
+					ws.Worktree.Merged = true
+				}
+				ws.DeprecatedStatus = ""
+			}
+		}
+		m.Version = CurrentVersion
+	}
+
 	return &m, nil
 }
 

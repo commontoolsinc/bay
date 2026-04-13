@@ -261,9 +261,6 @@ func TestWsNew_Worktree(t *testing.T) {
 	if ws.Type != manifest.WorkspaceTypeWorktree {
 		t.Errorf("type = %q, want worktree", ws.Type)
 	}
-	if ws.Status != manifest.WorkspaceStatusIdle {
-		t.Errorf("status = %q, want idle", ws.Status)
-	}
 	if ws.Name != "w1" {
 		t.Errorf("name = %q, want w1", ws.Name)
 	}
@@ -1042,21 +1039,14 @@ func TestRepoRemove_PersistsManifestBeforeKill(t *testing.T) {
 	}
 }
 
-func TestWsCloseByStatus_PersistsAllManifestsBeforeAnyKill(t *testing.T) {
+func TestWsCloseClean_PersistsAllManifestsBeforeAnyKill(t *testing.T) {
 	eng, _ := testEngine(t)
-	// Two workspaces both marked done.
+	// Two clean workspaces (new, no changes).
 	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"}); err != nil {
 		t.Fatalf("WsNew: %v", err)
-	}
-	doneStatus := "done"
-	if err := eng.WsUpdate("labs", "w1", nil, nil, &doneStatus); err != nil {
-		t.Fatalf("WsUpdate w1: %v", err)
-	}
-	if err := eng.WsUpdate("labs", "w2", nil, nil, &doneStatus); err != nil {
-		t.Fatalf("WsUpdate w2: %v", err)
 	}
 
 	mockTmux := eng.Tmux.(*tmux.Mock)
@@ -1082,9 +1072,9 @@ func TestWsCloseByStatus_PersistsAllManifestsBeforeAnyKill(t *testing.T) {
 		}
 	}
 
-	closed, _, err := eng.WsCloseByStatus("labs", "done", true)
+	closed, _, err := eng.WsCloseClean("labs", true)
 	if err != nil {
-		t.Fatalf("WsCloseByStatus: %v", err)
+		t.Fatalf("WsCloseClean: %v", err)
 	}
 	if len(closed) != 2 {
 		t.Errorf("closed = %v, want 2 workspaces", closed)
@@ -2123,10 +2113,6 @@ func TestSyncWorkspaceGitState_BranchChangeUpdatesNameAndStatus(t *testing.T) {
 	}
 	os.MkdirAll(ws.Path, 0o755)
 
-	if ws.Status != manifest.WorkspaceStatusIdle {
-		t.Fatalf("initial status = %q, want idle", ws.Status)
-	}
-
 	mockGit := eng.Git.(*git.Mock)
 	mockGit.SetBranch(ws.Path, "feature/my-feature")
 
@@ -2135,9 +2121,6 @@ func TestSyncWorkspaceGitState_BranchChangeUpdatesNameAndStatus(t *testing.T) {
 	ws, _ = eng.WsShow("labs", "my-feature")
 	if ws.Name != "my-feature" {
 		t.Errorf("name = %q, want my-feature", ws.Name)
-	}
-	if ws.Status != manifest.WorkspaceStatusActive {
-		t.Errorf("status = %q, want active", ws.Status)
 	}
 }
 
@@ -2154,7 +2137,7 @@ func TestWsUpdate_BranchCollisionGetsUniqueName(t *testing.T) {
 	}
 
 	branch := "feature/existing"
-	if err := eng.WsUpdate("labs", "w1", &branch, nil, nil); err != nil {
+	if err := eng.WsUpdate("labs", "w1", &branch, nil); err != nil {
 		t.Fatalf("WsUpdate: %v", err)
 	}
 
@@ -2571,73 +2554,71 @@ func TestResolveByWindowID_NotFound(t *testing.T) {
 	}
 }
 
-// --- WsCloseByStatus tests ---
+// --- WsCloseClean tests ---
 
-func TestWsCloseByStatus_ClosesDone(t *testing.T) {
+func TestWsCloseClean_ClosesCleanWorkspaces(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"})
 
-	// Mark w1 as done by mutating the manifest directly.
-	_ = eng.withManifest(func(m *manifest.Manifest) error {
-		m.FindDock("labs").FindWorkspace("w1").Status = manifest.WorkspaceStatusDone
-		return nil
-	})
-
-	closed, skipped, err := eng.WsCloseByStatus("labs", "done", true)
+	// Both workspaces are clean (new, no changes) — both should close.
+	closed, skipped, err := eng.WsCloseClean("labs", true)
 	if err != nil {
-		t.Fatalf("WsCloseByStatus failed: %v", err)
+		t.Fatalf("WsCloseClean failed: %v", err)
 	}
 
-	if len(closed) != 1 {
-		t.Errorf("expected 1 closed, got %d: %v", len(closed), closed)
+	if len(closed) != 2 {
+		t.Errorf("expected 2 closed, got %d: %v", len(closed), closed)
 	}
 	if len(skipped) != 0 {
 		t.Errorf("expected 0 skipped, got %d: %v", len(skipped), skipped)
 	}
 
-	// w1 should be gone, w2 should remain
 	m, _ := eng.LoadManifest()
 	dock := m.FindDock("labs")
 	if dock.FindWorkspace("w1") != nil {
 		t.Error("w1 should be closed")
 	}
-	if dock.FindWorkspace("w2") == nil {
-		t.Error("w2 should still exist")
+	if dock.FindWorkspace("w2") != nil {
+		t.Error("w2 should be closed")
 	}
 }
 
-func TestWsCloseByStatus_SkipsNonDone(t *testing.T) {
+func TestWsCloseClean_SkipsDirtyWorkspaces(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"})
 
-	// Mark w1 as active (not done).
-	_ = eng.withManifest(func(m *manifest.Manifest) error {
-		m.FindDock("labs").FindWorkspace("w1").Status = manifest.WorkspaceStatusActive
-		return nil
-	})
-
-	// w2 is already idle by default
-
-	_, _, err := eng.WsCloseByStatus("labs", "done", true)
-	if err == nil {
-		t.Error("expected error when no workspaces match status")
-	}
-	if !strings.Contains(err.Error(), "no workspaces with status") {
-		t.Errorf("error = %q, want 'no workspaces with status' message", err)
-	}
-
-	// Both workspaces should still exist
+	// Make w1 dirty via mock. The directory must exist on disk for
+	// closeWorkspaceState to run the dirty check at all.
 	m, _ := eng.LoadManifest()
+	w1Path := m.FindDock("labs").FindWorkspace("w1").Path
+	os.MkdirAll(w1Path, 0o755)
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetDirty(w1Path, true)
+
+	closed, skipped, err := eng.WsCloseClean("labs", false)
+	if err != nil {
+		t.Fatalf("WsCloseClean failed: %v", err)
+	}
+
+	// w2 is clean → closed; w1 is dirty → skipped
+	if len(closed) != 1 {
+		t.Errorf("expected 1 closed, got %d: %v", len(closed), closed)
+	}
+	if len(skipped) != 1 {
+		t.Errorf("expected 1 skipped, got %d: %v", len(skipped), skipped)
+	}
+
+	m, _ = eng.LoadManifest()
 	dock := m.FindDock("labs")
 	if dock.FindWorkspace("w1") == nil {
-		t.Error("w1 should still exist")
+		t.Error("w1 (dirty) should still exist")
 	}
-	if dock.FindWorkspace("w2") == nil {
-		t.Error("w2 should still exist")
+	if dock.FindWorkspace("w2") != nil {
+		t.Error("w2 (clean) should be closed")
 	}
 }
 

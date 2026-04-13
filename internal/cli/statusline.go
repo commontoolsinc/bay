@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	gitpkg "github.com/commontoolsinc/bay/internal/git"
 	"github.com/commontoolsinc/bay/internal/manifest"
 	tmuxpkg "github.com/commontoolsinc/bay/internal/tmux"
 	"github.com/spf13/cobra"
@@ -29,6 +30,7 @@ Fields: name, branch, pr, status, dock, merged, full`,
 			// ID) and the manifest (for workspace data). No config
 			// parse, no git interface, no engine construction.
 			t := tmuxpkg.NewReal()
+			g := gitpkg.NewReal()
 
 			winID, err := t.CurrentWindowID()
 			if err != nil {
@@ -59,8 +61,13 @@ Fields: name, branch, pr, status, dock, merged, full`,
 					out = "#" + ws.Worktree.PR
 				}
 			case "status":
-				if ws.Status != manifest.WorkspaceStatusIdle && ws.Status != manifest.WorkspaceStatusActive {
-					out = string(ws.Status)
+				if ws.Path != "" {
+					if dirty, err := g.IsDirty(ws.Path); err == nil && dirty {
+						out = "dirty"
+					}
+				}
+				if out == "" && ws.IsMerged() {
+					out = "merged"
 				}
 			case "dock":
 				out = dockName
@@ -69,7 +76,7 @@ Fields: name, branch, pr, status, dock, merged, full`,
 				if dock != nil {
 					count := 0
 					for _, w := range dock.Workspaces {
-						if w.Status == manifest.WorkspaceStatusDone {
+						if w.IsMerged() {
 							count++
 						}
 					}
@@ -86,8 +93,14 @@ Fields: name, branch, pr, status, dock, merged, full`,
 					}
 					parts = append(parts, branchPart)
 				}
-				if ws.Status != "" && ws.Status != manifest.WorkspaceStatusIdle && ws.Status != manifest.WorkspaceStatusActive {
-					parts = append(parts, string(ws.Status))
+				if ws.Path != "" {
+					if dirty, err := g.IsDirty(ws.Path); err == nil && dirty {
+						parts = append(parts, "dirty")
+					} else if ws.IsMerged() {
+						parts = append(parts, "merged")
+					}
+				} else if ws.Worktree != nil && ws.Worktree.Merged {
+					parts = append(parts, "merged")
 				}
 				out = strings.Join(parts, " | ")
 			default:
