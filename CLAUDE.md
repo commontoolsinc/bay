@@ -18,7 +18,7 @@ git checkout main && go install ./cmd/bay
 
 ## After implementation
 
-Review your own changes before moving on. Read the diff, check for code reuse (search for existing helpers before writing new ones), redundant state, copy-paste, and unnecessary work on hot paths.
+After the initial implementation, review your changes: read the diff and check for code reuse (search for existing helpers before writing new ones), redundant state, copy-paste, and unnecessary work on hot paths. Fix any issues found.
 
 ## Before pushing
 
