@@ -415,7 +415,7 @@ func goCompletions() func(cmd *cobra.Command, args []string, toComplete string) 
 
 		for _, ref := range manifest.AllWorkspaces(m) {
 			ws := ref.Workspace
-			add(ws.Name, ref.Dock+" "+string(ws.Status))
+			add(ws.Name, ref.Dock)
 			add(ref.Dock, "dock")
 			if ws.Worktree != nil {
 				if ws.Worktree.Branch != "" {

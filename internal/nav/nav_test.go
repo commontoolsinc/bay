@@ -16,7 +16,6 @@ func buildTestManifest() *manifest.Manifest {
 			Workspaces: []manifest.Workspace{
 				{
 					Name:     "mem-refactor",
-					Status:   manifest.WorkspaceStatusActive,
 					Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "feature/refactor-memory-access", PR: "234"},
 					Surfaces: []manifest.Surface{
 						{ID: 1, Name: "agent", Type: manifest.SurfaceTypeAgent, Backend: manifest.SurfaceBackendTmux, Tmux: &manifest.TmuxAttrs{WindowID: "@1", PaneID: "%1", LayoutGroup: 1}},
@@ -25,7 +24,6 @@ func buildTestManifest() *manifest.Manifest {
 				},
 				{
 					Name:     "fix-auth",
-					Status:   manifest.WorkspaceStatusIdle,
 					Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "bugfix/auth-timeout", PR: "567"},
 					Surfaces: []manifest.Surface{
 						{ID: 1, Name: "agent", Type: manifest.SurfaceTypeAgent, Backend: manifest.SurfaceBackendTmux, Tmux: &manifest.TmuxAttrs{WindowID: "@3", PaneID: "%5", LayoutGroup: 1}},
@@ -38,7 +36,6 @@ func buildTestManifest() *manifest.Manifest {
 			Workspaces: []manifest.Workspace{
 				{
 					Name:     "nav-feature",
-					Status:   manifest.WorkspaceStatusActive,
 					Worktree: &manifest.WorktreeAttrs{Repo: "core", Branch: "feature/nav-support"},
 					Surfaces: []manifest.Surface{
 						{ID: 1, Name: "agent", Type: manifest.SurfaceTypeAgent, Backend: manifest.SurfaceBackendTmux, Tmux: &manifest.TmuxAttrs{WindowID: "@5", PaneID: "%7", LayoutGroup: 1}},
@@ -99,8 +96,8 @@ func TestCollectEntries(t *testing.T) {
 	if e1.PR != "234" {
 		t.Errorf("mem-refactor PR: got %q, want %q", e1.PR, "234")
 	}
-	if e1.Status != manifest.WorkspaceStatusActive {
-		t.Errorf("mem-refactor Status: got %q, want %q", e1.Status, manifest.WorkspaceStatusActive)
+	if e1.Merged {
+		t.Error("mem-refactor Merged: got true, want false")
 	}
 	if e1.SurfaceCount != 2 {
 		t.Errorf("mem-refactor SurfaceCount: got %d, want 2", e1.SurfaceCount)
@@ -334,7 +331,6 @@ func TestFormatEntry(t *testing.T) {
 		WsName:       "mem-refactor",
 		Branch:       "feature/refactor-memory-access",
 		PR:           "234",
-		Status:       manifest.WorkspaceStatusActive,
 		TmuxWindowID: "@1",
 		Waiting:      false,
 	}

@@ -26,7 +26,7 @@ type workspaceSyncUpdate struct {
 	pr             string
 	prBranch       string
 	prChanged      bool
-	mergedDone     bool
+	merged         bool
 	deadSurfaceIDs map[int]bool
 }
 
@@ -160,10 +160,10 @@ func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace)
 					update.prChanged = true
 				}
 			}
-			if branchForChecks != "" && ws.Status != manifest.WorkspaceStatusDone {
+			if branchForChecks != "" && !ws.IsMerged() {
 				merged, err := e.Git.IsMergedIntoDefault(wsPath, branchForChecks)
 				if err == nil && merged {
-					update.mergedDone = true
+					update.merged = true
 				}
 			}
 		}
@@ -178,7 +178,7 @@ func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace)
 	if sessionAlive {
 		update.deadSurfaceIDs = e.deadSurfaceIDs(ws)
 	}
-	if !update.branchChanged && !update.branchDetached && !update.prChanged && !update.mergedDone && len(update.deadSurfaceIDs) == 0 {
+	if !update.branchChanged && !update.branchDetached && !update.prChanged && !update.merged && len(update.deadSurfaceIDs) == 0 {
 		return workspaceSyncUpdate{}, false
 	}
 	return update, true
@@ -210,10 +210,6 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 		ws.Worktree.PR = ""
 		ws.Worktree.PRCheckedAt = 0
 		changed = true
-		if ws.Status == manifest.WorkspaceStatusIdle {
-			ws.Status = manifest.WorkspaceStatusActive
-			changed = true
-		}
 		if !ws.NameOverridden {
 			newName := uniqueWorkspaceName(dock, ws, abbreviateBranch(update.branch))
 			if newName != ws.Name {
@@ -246,8 +242,8 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 		changed = true
 	}
 
-	if update.mergedDone && ws.Status != manifest.WorkspaceStatusDone {
-		ws.Status = manifest.WorkspaceStatusDone
+	if update.merged && ws.Worktree != nil && !ws.IsMerged() {
+		ws.Worktree.Merged = true
 		changed = true
 	}
 

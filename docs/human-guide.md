@@ -112,7 +112,7 @@ bay pwd                     # current bay location
 
 ```
 bay ws close auth-fix       # safety checks for uncommitted work
-bay ws close --done         # close all merged/done workspaces
+bay ws close --clean        # close all clean merged workspaces
 ```
 
 For a full interactive walkthrough, see the [Tutorial](tutorial.md).
@@ -202,16 +202,20 @@ Surfaces within a workspace that share a tmux window are in the same
 **layout group**. Splitting a pane creates a surface in the same group;
 `--window` creates a surface in a new group.
 
-### Statuses
+### Dirty and merged flags
 
-- **idle** -- workspace created, no branch yet
-- **active** -- branch detected, work in progress
-- **done** -- branch has been merged into the default branch
+Workspaces have two flags instead of a status enum:
 
-Status transitions are automatic: bay detects branches via `git
-rev-parse` on every display, and detects merges via the monitor
-daemon's background `git fetch` plus a fast `merge-base --is-ancestor`
-check on each `bay ls`.
+- **dirty** (computed) -- the worktree has uncommitted changes or
+  untracked files. Computed from git state on every display.
+- **merged** (persisted) -- the workspace's branch has been merged
+  into the default branch. Set by the background monitor and persisted
+  in the manifest.
+
+A workspace with no branch and no uncommitted changes is simply clean.
+A workspace whose branch was merged and has no uncommitted changes is
+safe to close (`bay ws close --clean` closes all such workspaces at
+once).
 
 ### Naming and references
 
@@ -332,8 +336,8 @@ bay ws new [name] --repo <r>                # override dock's repo
 bay ws new [name] --dir <path>              # external workspace
 bay ws close [name]                         # close + delete pushed branch ('self' for current)
 bay ws close [name] --force                 # skip safety checks (keeps unpushed branches)
-bay ws close --done                         # close all done workspaces
-bay ws close --done --force                 # force close all done
+bay ws close --clean                        # close all clean merged workspaces
+bay ws close --clean --force                # force close all clean merged
 bay ws show [name]                          # detailed view (default: current)
 bay ws show [name] --json                   # machine-readable
 bay ws rename [name] <new-name>             # rename (defaults to current workspace)
@@ -586,7 +590,7 @@ workspace activity (within the last couple of hours). After fetching, it
 checks if workspace branches have been merged into main. When a merge is
 detected:
 
-- Workspace status transitions to `done` automatically.
+- The workspace's `merged` flag is set automatically.
 - Status line shows a count of merged workspaces.
 - `bay ls` and pickers highlight merged workspaces.
 - Navigating to a merged workspace shows a suggestion to close it.
@@ -651,7 +655,7 @@ rp myproject
     ws auth-fix  br=feature/auth  n=3
     ws w2                         n=1
   dk staging
-    ws deploy    br=release/v2    st=done  n=1
+    ws deploy    br=release/v2    merged  n=1
 ```
 
 Use `bay ls -R` to recurse fully. Use `bay ls -l` for tmux IDs.
@@ -663,7 +667,7 @@ Use `bay ls -s` for compact output without labels or key names.
 
 ```
 bay pwd --json | jq '.workspace'
-bay ls --json | jq '.repos[].docks[].workspaces[] | select(.status == "done")'
+bay ls --json | jq '.repos[].docks[].workspaces[] | select(.merged)'
 bay ls --json --rows | jq '.[] | select(.workspace_waiting)'
 bay ws show auth-fix --json | jq '.branch'
 ```
@@ -676,11 +680,10 @@ Use `bay status-line` in your tmux config to show workspace info:
 set -g status-right '#(bay status-line full)'
 ```
 
-Fields: `name`, `branch`, `pr`, `status`, `dock`, `merged`, `full`.
+Fields: `name`, `branch`, `pr`, `dirty`, `dock`, `merged`, `full`.
 
-The `merged` field shows a count of done/merged workspaces in the
-current dock (e.g. "2 merged"). Useful for a status bar reminder to
-clean up.
+The `merged` field shows a count of merged workspaces in the current
+dock (e.g. "2 merged"). Useful for a status bar reminder to clean up.
 
 ## Recovery
 
@@ -735,8 +738,8 @@ with `bay ws go`, see them together in `bay ls`.
 ## Shell completions
 
 `bay setup` prints a snippet for your shell rc file. Tab completion
-covers workspace names, dock names, repo names, agent types, status
-values, and surface names.
+covers workspace names, dock names, repo names, agent types, and
+surface names.
 
 Add to your `.zshrc` or `.bashrc`:
 
@@ -762,8 +765,8 @@ and recreates tmux state on demand. Your worktrees and code are on disk.
 
 **"bay ws close refuses and I just want it gone."**
 Safety checks prevent losing work. If you're sure (e.g., the PR was
-merged), use `--force`. Or use `bay ws close --done` to batch-close all
-merged workspaces.
+merged), use `--force`. Or use `bay ws close --clean` to batch-close all
+clean merged workspaces.
 
 **"The waiting indicator isn't working."**
 Check `bay monitor status`. If running, the prompt text probably doesn't

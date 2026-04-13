@@ -54,8 +54,8 @@ echo "PASS: sf new command exists"
 # 5. Update workspace metadata
 echo ""
 echo "--- 5. Update workspace ---"
-$BAY ws update bay-smoke-repo:smoke-ws --status active
-echo "PASS: ws update works"
+$BAY ws show bay-smoke-repo:smoke-ws
+echo "PASS: ws show works"
 
 # 6. Rename workspace
 echo ""

@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/commontoolsinc/bay/internal/engine"
-	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/spf13/cobra"
 )
 
@@ -146,14 +145,14 @@ func newDockShowCmd() *cobra.Command {
 			total := len(mDock.Workspaces)
 			wsSummary := fmt.Sprintf("%d", total)
 			if total > 0 {
-				done := 0
+				merged := 0
 				for _, ws := range mDock.Workspaces {
-					if ws.Status == manifest.WorkspaceStatusDone {
-						done++
+					if ws.IsMerged() {
+						merged++
 					}
 				}
-				if done > 0 {
-					wsSummary += fmt.Sprintf(" (%d done)", done)
+				if merged > 0 {
+					wsSummary += fmt.Sprintf(" (%d merged)", merged)
 				}
 			}
 			rows = append(rows, showRow{"workspaces", wsSummary})

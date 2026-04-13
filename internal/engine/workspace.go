@@ -183,7 +183,6 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		NameOverridden: nameExplicit,
 		Type:           wsType,
 		Path:           wsPath,
-		Status:         manifest.WorkspaceStatusIdle,
 		LastActive:     time.Now().Unix(),
 		Worktree:       worktreeAttrs,
 		Surfaces:       []manifest.Surface{},
@@ -261,7 +260,6 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 					e.updateWindowNames(ws, ws.Name)
 				}
 			}
-			ws.Status = manifest.WorkspaceStatusActive
 			return nil
 		}); err != nil {
 			return addedWs, fmt.Errorf("workspace created but metadata update failed: %w", err)
@@ -437,16 +435,12 @@ func (e *Engine) WsClose(dockName, wsName string, force bool) error {
 	return nil
 }
 
-// WsCloseByStatus closes all workspaces with the given status.
+// WsCloseClean closes all clean (non-dirty, no unpushed commits) workspaces.
 //
 // Manifest updates for ALL targets are persisted before any tmux kill,
 // so that bay invoked from inside one of the affected panes doesn't
 // leave the rest of the targets half-closed when its host pane dies.
-func (e *Engine) WsCloseByStatus(dockName, status string, force bool) (closed []string, skipped []string, err error) {
-	if err := ValidateStatus(status); err != nil {
-		return nil, nil, err
-	}
-
+func (e *Engine) WsCloseClean(dockName string, force bool) (closed []string, skipped []string, err error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return nil, nil, err
@@ -465,17 +459,17 @@ func (e *Engine) WsCloseByStatus(dockName, status string, force bool) (closed []
 		}
 		for j := range d.Workspaces {
 			ws := &d.Workspaces[j]
-			if string(ws.Status) == status {
-				targets = append(targets, target{dock: d.Name, name: ws.Name})
-			}
+			targets = append(targets, target{dock: d.Name, name: ws.Name})
 		}
 	}
 
 	if len(targets) == 0 {
-		return nil, nil, fmt.Errorf("no workspaces with status %q found", status)
+		return nil, nil, fmt.Errorf("no workspaces found")
 	}
 
 	// First pass: do all manifest mutations, collecting window IDs to kill.
+	// closeWorkspaceState performs the dirty/unpushed safety checks, so
+	// dirty workspaces are naturally skipped (added to skipped list).
 	type pendingKill struct {
 		dock      string
 		windowIDs []string
@@ -492,6 +486,10 @@ func (e *Engine) WsCloseByStatus(dockName, status string, force bool) (closed []
 		pending = append(pending, pendingKill{dock: t.dock, windowIDs: ids})
 	}
 
+	if len(closed) == 0 {
+		return nil, skipped, fmt.Errorf("no clean workspaces found")
+	}
+
 	// Second pass: kill tmux windows. Safe to die at any point — every
 	// closed-workspace's manifest entry is already persisted.
 	for _, p := range pending {
@@ -503,8 +501,8 @@ func (e *Engine) WsCloseByStatus(dockName, status string, force bool) (closed []
 	return closed, skipped, nil
 }
 
-// WsUpdate updates workspace metadata (branch, PR, status).
-func (e *Engine) WsUpdate(dockName, wsName string, branch, pr, status *string) error {
+// WsUpdate updates workspace metadata (branch, PR).
+func (e *Engine) WsUpdate(dockName, wsName string, branch, pr *string) error {
 	return e.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)
 		if dock == nil {
@@ -524,18 +522,9 @@ func (e *Engine) WsUpdate(dockName, wsName string, branch, pr, status *string) e
 				ws.Name = uniqueWorkspaceName(dock, ws, abbreviateBranch(*branch))
 				nameChanged = true
 			}
-			if ws.Status == manifest.WorkspaceStatusIdle {
-				ws.Status = manifest.WorkspaceStatusActive
-			}
 		}
 		if pr != nil && ws.Worktree != nil {
 			ws.Worktree.PR = *pr
-		}
-		if status != nil {
-			if err := ValidateStatus(*status); err != nil {
-				return err
-			}
-			ws.Status = manifest.WorkspaceStatus(*status)
 		}
 
 		if nameChanged {

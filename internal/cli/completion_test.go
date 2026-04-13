@@ -377,12 +377,10 @@ func TestWorkspaceCompletions(t *testing.T) {
 			Workspaces: []manifest.Workspace{
 				{
 					Name:     "mem-refactor",
-					Status:   manifest.WorkspaceStatusActive,
 					Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "feature/refactor-memory", PR: "234"},
 				},
 				{
-					Name:   "w2",
-					Status: manifest.WorkspaceStatusIdle,
+					Name: "w2",
 				},
 			},
 		},

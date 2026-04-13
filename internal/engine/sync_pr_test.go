@@ -271,15 +271,9 @@ func TestSyncAll_ParallelChecksMultipleWorkspaces(t *testing.T) {
 
 // --- syncWorkspaceMergeStatus ---
 
-func TestSyncAll_MarksMergedWorkspaceDone(t *testing.T) {
+func TestSyncAll_SetsMergedOnMergedBranch(t *testing.T) {
 	eng, _ := testEngine(t)
 	wsPath := seedWorktreeWorkspace(t, eng, "labs", "w1", "feature/login")
-	// Make sure the workspace is active (not idle).
-	_ = eng.withManifest(func(m *manifest.Manifest) error {
-		ws := m.FindDock("labs").FindWorkspace("w1")
-		ws.Status = manifest.WorkspaceStatusActive
-		return nil
-	})
 
 	mockGit := eng.Git.(*git.Mock)
 	mockGit.SetDefaultBranch(wsPath, "main")
@@ -289,19 +283,14 @@ func TestSyncAll_MarksMergedWorkspaceDone(t *testing.T) {
 
 	m, _ := eng.LoadManifest()
 	ws := m.FindDock("labs").FindWorkspace("w1")
-	if ws.Status != manifest.WorkspaceStatusDone {
-		t.Errorf("Status = %q, want done", ws.Status)
+	if ws.Worktree == nil || !ws.Worktree.Merged {
+		t.Errorf("Merged = %v, want true", ws.Worktree != nil && ws.Worktree.Merged)
 	}
 }
 
-func TestSyncAll_DoesNotChangeStatusForUnmergedBranch(t *testing.T) {
+func TestSyncAll_DoesNotSetMergedForUnmergedBranch(t *testing.T) {
 	eng, _ := testEngine(t)
 	wsPath := seedWorktreeWorkspace(t, eng, "labs", "w1", "feature/login")
-	_ = eng.withManifest(func(m *manifest.Manifest) error {
-		ws := m.FindDock("labs").FindWorkspace("w1")
-		ws.Status = manifest.WorkspaceStatusActive
-		return nil
-	})
 
 	mockGit := eng.Git.(*git.Mock)
 	mockGit.SetDefaultBranch(wsPath, "main")
@@ -311,17 +300,17 @@ func TestSyncAll_DoesNotChangeStatusForUnmergedBranch(t *testing.T) {
 
 	m, _ := eng.LoadManifest()
 	ws := m.FindDock("labs").FindWorkspace("w1")
-	if ws.Status != manifest.WorkspaceStatusActive {
-		t.Errorf("Status = %q, want active", ws.Status)
+	if ws.Worktree != nil && ws.Worktree.Merged {
+		t.Errorf("Merged = true, want false")
 	}
 }
 
-func TestSyncAll_SkipsMergedCheckForAlreadyDone(t *testing.T) {
+func TestSyncAll_SkipsMergeCheckForAlreadyMerged(t *testing.T) {
 	eng, _ := testEngine(t)
 	wsPath := seedWorktreeWorkspace(t, eng, "labs", "w1", "feature/login")
 	_ = eng.withManifest(func(m *manifest.Manifest) error {
 		ws := m.FindDock("labs").FindWorkspace("w1")
-		ws.Status = manifest.WorkspaceStatusDone
+		ws.Worktree.Merged = true
 		return nil
 	})
 
@@ -332,7 +321,7 @@ func TestSyncAll_SkipsMergedCheckForAlreadyDone(t *testing.T) {
 	eng.SyncAll()
 
 	if after := len(mockGit.Calls("IsMergedIntoDefault")); after != before {
-		t.Errorf("SyncAll should skip merge check for done workspace: before=%d, after=%d", before, after)
+		t.Errorf("SyncAll should skip merge check for already-merged workspace: before=%d, after=%d", before, after)
 	}
 }
 
