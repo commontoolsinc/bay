@@ -244,6 +244,16 @@ func (m *Mock) SetWindowOption(windowID string, option string, value string) err
 	return nil
 }
 
+func (m *Mock) UnsetWindowOption(windowID string, option string) error {
+	m.record("UnsetWindowOption", windowID, option)
+	w, ok := m.windows[windowID]
+	if !ok {
+		return fmt.Errorf("window %q not found", windowID)
+	}
+	delete(w.options, option)
+	return nil
+}
+
 func (m *Mock) GetWindowOption(windowID string, option string) (string, error) {
 	m.record("GetWindowOption", windowID, option)
 	w, ok := m.windows[windowID]
@@ -509,6 +519,11 @@ func (m *Mock) FindDockEditorWindow(session string) (string, bool) {
 
 func (m *Mock) MoveWindow(windowID string, targetIndex int) error {
 	m.record("MoveWindow", windowID, fmt.Sprintf("%d", targetIndex))
+	return nil
+}
+
+func (m *Mock) MoveWindowAfter(windowID string, afterWindowID string) error {
+	m.record("MoveWindowAfter", windowID, afterWindowID)
 	return nil
 }
 

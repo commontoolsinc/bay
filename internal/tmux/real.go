@@ -100,6 +100,10 @@ func (r *Real) SetWindowOption(windowID string, option string, value string) err
 	return runSilent("set-option", "-w", "-t", windowID, option, value)
 }
 
+func (r *Real) UnsetWindowOption(windowID string, option string) error {
+	return runSilent("set-option", "-w", "-u", "-t", windowID, option)
+}
+
 func (r *Real) GetWindowOption(windowID string, option string) (string, error) {
 	out, err := run("show-options", "-w", "-t", windowID, "-v", option)
 	if err != nil {
@@ -350,6 +354,10 @@ func (r *Real) FindDockEditorWindow(session string) (string, bool) {
 // MoveWindow moves a window to a specific index.
 func (r *Real) MoveWindow(windowID string, targetIndex int) error {
 	return runSilent("move-window", "-s", windowID, "-t", fmt.Sprintf("%d", targetIndex))
+}
+
+func (r *Real) MoveWindowAfter(windowID string, afterWindowID string) error {
+	return runSilent("move-window", "-a", "-s", windowID, "-t", afterWindowID)
 }
 
 // DisplayPopup opens a tmux popup running the given command.

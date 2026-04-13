@@ -29,10 +29,7 @@ const (
 	waitingOption = "@bay-waiting"
 
 	// highlightStyle is the tmux window-status-style applied to waiting windows.
-	highlightStyle = "fg=red,bold"
-
-	// defaultHighlightStyle is reset to default when the window is no longer waiting.
-	defaultStyle = "default"
+	highlightStyle = "fg=red,bg=colour238,bold"
 
 	// captureLinesCount is how many lines to capture from each pane.
 	captureLinesCount = 20
@@ -317,7 +314,7 @@ func (m *Monitor) clearHighlight(windowID string) error {
 	if err := m.tmux.SetWindowOption(windowID, waitingOption, "0"); err != nil {
 		return err
 	}
-	if err := m.tmux.SetWindowOption(windowID, "window-status-style", defaultStyle); err != nil {
+	if err := m.tmux.UnsetWindowOption(windowID, "window-status-style"); err != nil {
 		return err
 	}
 	delete(m.tracked, windowID)

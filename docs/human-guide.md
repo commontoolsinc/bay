@@ -564,7 +564,7 @@ confirmation dialogs). When detected, the tmux window is highlighted.
 
 It captures the last few lines of each agent pane, strips ANSI codes,
 and matches against regex patterns in
-`~/.config/bay/bay-prompts.txt`:
+`~/.config/bay/waiting-patterns.txt`:
 
 ```
 # Claude Code
@@ -579,7 +579,7 @@ Do you want to proceed
 ```
 
 When you see a prompt the monitor does not catch, edit
-`~/.config/bay/bay-prompts.txt` and add a regex on its own line.
+`~/.config/bay/waiting-patterns.txt` and add a regex on its own line.
 The monitor reloads patterns on every cycle (default 3s), so no
 restart is needed.
 
@@ -770,7 +770,7 @@ clean merged workspaces.
 
 **"The waiting indicator isn't working."**
 Check `bay monitor status`. If running, the prompt text probably doesn't
-match any pattern. Add a regex for it to `~/.config/bay/bay-prompts.txt`
+match any pattern. Add a regex for it to `~/.config/bay/waiting-patterns.txt`
 (one regex per line) — the monitor reloads patterns on every cycle.
 
 **"I want to use bay with an agent that isn't Claude or Codex."**

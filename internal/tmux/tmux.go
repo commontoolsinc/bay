@@ -15,6 +15,7 @@ type Interface interface {
 	KillWindow(windowID string) error
 	RenameWindow(windowID string, name string) error
 	SetWindowOption(windowID string, option string, value string) error
+	UnsetWindowOption(windowID string, option string) error
 	GetWindowOption(windowID string, option string) (string, error)
 	ListWindows(session string) ([]Window, error)
 	WindowExists(windowID string) (bool, error)
@@ -44,6 +45,7 @@ type Interface interface {
 	WaitingWindowIDs(session string) (map[string]bool, error) // windows with @bay-waiting=1
 
 	MoveWindow(windowID string, targetIndex int) error
+	MoveWindowAfter(windowID string, afterWindowID string) error
 	FindDockEditorWindow(session string) (string, bool) // returns window ID if @bay-dock-editor=1 exists
 
 	// Client display

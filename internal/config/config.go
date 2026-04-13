@@ -58,12 +58,7 @@ var KnownAgents = map[string]AgentInfo{
 // checking config overrides first, then built-in defaults.
 func (c *Config) ResolveAgent(name string) (AgentInfo, bool) {
 	if ac, ok := c.Agents[name]; ok {
-		info := AgentInfo{
-			Command:     ac.Command,
-			Args:        ac.Args,
-			ResumeArgs:  ac.ResumeArgs,
-			ProjectFile: ac.ProjectFile,
-		}
+		info := AgentInfo(ac)
 		// Fill in gaps from built-in if the config only partially overrides.
 		if builtin, ok := KnownAgents[name]; ok {
 			if info.Command == "" {
@@ -92,7 +87,7 @@ func (c *Config) ResolveAgent(name string) (AgentInfo, bool) {
 type DockConfig struct {
 	Agent     string              `toml:"agent"`
 	AgentArgs map[string][]string `toml:"agent_args"`
-	Terminal  string   `toml:"terminal,omitempty"`
+	Terminal  string              `toml:"terminal,omitempty"`
 }
 
 // MonitorConfig configures the pane monitor.

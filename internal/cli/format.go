@@ -300,13 +300,6 @@ func labelValue(label, value string) string {
 }
 
 // labelValueWithWidth returns the labelValue prefix and its visible column
-// count. The width is computed directly from the inputs because labelValue's
-// structure (dimmed label + space + value) is fixed and the dim() escape
-// codes are zero-width — no ANSI stripping needed.
-func labelValueWithWidth(label, value string) (string, int) {
-	return labelValue(label, value), utf8.RuneCountInString(label) + 1 + utf8.RuneCountInString(value)
-}
-
 // indentedPrefix builds an indented prefix with a dimmed label and name.
 // In short mode, the label is omitted entirely.
 func indentedPrefix(level int, label, name string, short bool) (string, int) {

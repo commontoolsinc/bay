@@ -540,7 +540,7 @@ for input and highlights those tmux windows. Also handles
 activity-gated merge detection.
 
 To add a new waiting-detection pattern, edit
-`~/.config/bay/bay-prompts.txt` directly — one regex per line. The
+`~/.config/bay/waiting-patterns.txt` directly — one regex per line. The
 monitor reloads patterns on every cycle (default 3s), so no restart
 is needed.
 

@@ -40,14 +40,24 @@ func newSetupCmd() *cobra.Command {
 				fmt.Printf("Config at %s\n", configPath)
 			}
 
-			// Write default prompts file
-			promptsPath := filepath.Join(configDir, "bay-prompts.txt")
+			// Write default waiting-patterns file.
+			// Migrate old name if present.
+			promptsPath := filepath.Join(configDir, "waiting-patterns.txt")
+			if oldPath := filepath.Join(configDir, "bay-prompts.txt"); promptsPath != oldPath {
+				if _, err := os.Stat(oldPath); err == nil {
+					if _, err := os.Stat(promptsPath); os.IsNotExist(err) {
+						_ = os.Rename(oldPath, promptsPath)
+					}
+				}
+			}
 			if _, err := os.Stat(promptsPath); os.IsNotExist(err) {
 				defaultPrompts := `# Bay agent-waiting detection patterns
 # One regex per line. Comments start with #.
 
 # Claude Code
 Allow.*Deny
+Enter to select.*Esc to cancel
+shift\+tab to approve
 
 # Codex
 \[Y/n\]
