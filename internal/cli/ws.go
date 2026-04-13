@@ -61,19 +61,10 @@ func newWsNewCmd() *cobra.Command {
 				opts.Name = args[0]
 			}
 
-			// Resolve dock: explicit --dock > current tmux pane's session > auto-bootstrap.
-			// Only trust CurrentSession() when TMUX_PANE is set — $TMUX alone
-			// is inherited by child shells outside tmux and would cause bay to
-			// silently add workspaces to the wrong dock.
+			// Resolve dock: explicit --dock > current tmux session (if CWD matches) > auto-bootstrap.
 			opts.Dock = dockFlag
-			if opts.Dock == "" && os.Getenv("TMUX_PANE") != "" {
-				dock, tmuxErr := eng.Tmux.CurrentSession()
-				if tmuxErr == nil {
-					m, _ := eng.LoadManifest()
-					if m != nil && m.FindDock(dock) != nil {
-						opts.Dock = dock
-					}
-				}
+			if opts.Dock == "" {
+				opts.Dock = dockFromTmuxIfCWDMatches(eng)
 			}
 			if opts.Dock == "" {
 				dockName, bootstrapErr := autoBootstrap(eng)
@@ -105,9 +96,6 @@ func newWsNewCmd() *cobra.Command {
 			// Print feedback when the user can't see the new tmux window
 			// directly (outside tmux or in a different session). Inside
 			// the dock's session the new tab appearing is feedback enough.
-			// Note: don't gate on TMUX_PANE here — tmux run-shell (used
-			// by keybindings) doesn't set it, but the user can still see
-			// the new tab.
 			currentSession, tmuxErr := eng.Tmux.CurrentSession()
 			inDock := tmuxErr == nil && currentSession == opts.Dock
 			if !inDock {
@@ -400,18 +388,50 @@ func probeAgent() string {
 	return config.ProbeAgent()
 }
 
+// dockFromTmuxIfCWDMatches returns the current tmux session name if it
+// is a bay dock AND CWD is inside that dock's repo or worktree directory.
+// This prevents inherited $TMUX from routing workspaces to the wrong
+// dock when bay is run outside tmux.
+func dockFromTmuxIfCWDMatches(eng *engine.Engine) string {
+	sess, err := eng.Tmux.CurrentSession()
+	if err != nil {
+		return ""
+	}
+	m, _ := eng.LoadManifest()
+	if m == nil {
+		return ""
+	}
+	dock := m.FindDock(sess)
+	if dock == nil || dock.Repo == "" {
+		return ""
+	}
+	repo := m.FindRepo(dock.Repo)
+	if repo == nil {
+		return ""
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	repoPath := config.ExpandPath(repo.Path)
+	wtDir := repo.EffectiveWorktreeDir()
+	if config.IsPathUnder(cwd, repoPath) || config.IsPathUnder(cwd, wtDir) {
+		return sess
+	}
+	return ""
+}
+
 // resolveCurrentDock resolves the dock for listing commands. Tries:
-// 1. Current tmux session (if it's a bay dock)
+// 1. Current tmux session (if CWD is in the dock's repo)
 // 2. CWD → git repo → matching dock in the manifest
 // Returns the dock name and repo name, or an error if neither works.
 func resolveCurrentDock(eng *engine.Engine) (dockName, repoName string, err error) {
 	m, _ := eng.LoadManifest()
 
-	// Try: current tmux pane's session (only when actually inside tmux).
-	if os.Getenv("TMUX_PANE") != "" {
-		if sess, tmuxErr := eng.Tmux.CurrentSession(); tmuxErr == nil && m != nil && m.FindDock(sess) != nil {
-			dock := m.FindDock(sess)
-			return sess, dock.Repo, nil
+	// Try: current tmux session, if CWD is inside the dock's repo.
+	if dockName := dockFromTmuxIfCWDMatches(eng); dockName != "" {
+		if dock := m.FindDock(dockName); dock != nil {
+			return dockName, dock.Repo, nil
 		}
 	}
 

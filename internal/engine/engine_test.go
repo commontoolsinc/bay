@@ -2973,13 +2973,13 @@ func TestWsNew_ExistingBranchWithExplicitName(t *testing.T) {
 	}
 }
 
-// TestWsNew_FetchesBeforeWorktreeCreation verifies that bay fetches
-// remote refs before creating a worktree, even without --branch.
-func TestWsNew_FetchesBeforeWorktreeCreation(t *testing.T) {
+// TestWsNew_FetchesForBranch verifies that bay fetches remote refs
+// before creating a worktree when --branch is specified.
+func TestWsNew_FetchesForBranch(t *testing.T) {
 	eng, dir := testEngine(t)
 	mockGit := eng.Git.(*git.Mock)
 
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Branch: "feature/test"})
 	if err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
@@ -2991,6 +2991,22 @@ func TestWsNew_FetchesBeforeWorktreeCreation(t *testing.T) {
 	}
 	if fetchCalls[0].Args[0] != repoPath {
 		t.Errorf("Fetch path = %q, want %q", fetchCalls[0].Args[0], repoPath)
+	}
+}
+
+// TestWsNew_SkipsFetchWithoutBranch verifies that bay does NOT fetch
+// when --branch is not specified (keeps keybindings fast).
+func TestWsNew_SkipsFetchWithoutBranch(t *testing.T) {
+	eng, _ := testEngine(t)
+	mockGit := eng.Git.(*git.Mock)
+
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+
+	if len(mockGit.Calls("Fetch")) != 0 {
+		t.Error("expected no Fetch call without --branch")
 	}
 }
 

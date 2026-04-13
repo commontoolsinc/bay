@@ -6,14 +6,19 @@ import (
 )
 
 // TestResolveCurrentDock_TmuxSession verifies the primary path: if
-// the user is in a tmux pane whose session matches a bay dock, that
-// dock is returned.
+// the tmux session is a bay dock AND CWD is inside the dock's repo,
+// that dock is returned.
 func TestResolveCurrentDock_TmuxSession(t *testing.T) {
-	eng, mockTmux, _, _ := testNavEngine(t)
+	eng, mockTmux, _, dir := testNavEngine(t)
 	mockTmux.SetCurrentSession("labs")
 
-	// Simulate being inside a tmux pane.
-	t.Setenv("TMUX_PANE", "%0")
+	// CWD must be inside the dock's repo for the tmux path to match.
+	repoDir := dir + "/repos/labs"
+	oldWd, _ := os.Getwd()
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer os.Chdir(oldWd)
 
 	dock, repo, err := resolveCurrentDock(eng)
 	if err != nil {
@@ -27,19 +32,18 @@ func TestResolveCurrentDock_TmuxSession(t *testing.T) {
 	}
 }
 
-// TestResolveCurrentDock_IgnoresTmuxOutsidePane verifies that
-// CurrentSession is NOT used when TMUX_PANE is unset (e.g. a shell
-// that inherited $TMUX but is not inside a tmux pane).
-func TestResolveCurrentDock_IgnoresTmuxOutsidePane(t *testing.T) {
+// TestResolveCurrentDock_IgnoresTmuxWhenCWDMismatches verifies that
+// the tmux session is NOT used when CWD is outside the dock's repo
+// (e.g. inherited $TMUX from a different project).
+func TestResolveCurrentDock_IgnoresTmuxWhenCWDMismatches(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 	mockTmux.SetCurrentSession("labs")
 
-	// TMUX_PANE is NOT set — simulates being outside tmux.
-	t.Setenv("TMUX_PANE", "")
+	// CWD is NOT inside the dock's repo (default test CWD).
 
 	_, _, err := resolveCurrentDock(eng)
 	if err == nil {
-		t.Error("expected error: should not resolve via tmux session when TMUX_PANE is unset")
+		t.Error("expected error: should not resolve via tmux session when CWD is outside dock's repo")
 	}
 }
 
