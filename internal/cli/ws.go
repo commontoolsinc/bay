@@ -102,14 +102,18 @@ func newWsNewCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Created %s:%s\n", opts.Dock, ws.Name)
-
-			// Suggest how to get into the workspace if not already there.
+			// Print feedback when the user can't see the new tmux window
+			// directly (outside tmux or in a different session). Inside
+			// the dock's session the new tab appearing is feedback enough.
 			currentSession, tmuxErr := eng.Tmux.CurrentSession()
-			if tmuxErr != nil || os.Getenv("TMUX_PANE") == "" {
-				fmt.Printf("\nAttach with:\n  tmux attach -t %s\n", opts.Dock)
-			} else if currentSession != opts.Dock {
-				fmt.Printf("\nSwitch with:\n  tmux switch-client -t %s\n", opts.Dock)
+			inDock := tmuxErr == nil && os.Getenv("TMUX_PANE") != "" && currentSession == opts.Dock
+			if !inDock {
+				fmt.Printf("Created %s:%s\n", opts.Dock, ws.Name)
+				if tmuxErr != nil || os.Getenv("TMUX_PANE") == "" {
+					fmt.Printf("\nAttach with:\n  tmux attach -t %s\n", opts.Dock)
+				} else {
+					fmt.Printf("\nSwitch with:\n  tmux switch-client -t %s\n", opts.Dock)
+				}
 			}
 
 			return nil
