@@ -18,17 +18,19 @@ import (
 const syncProbeConcurrency = 10
 
 type workspaceSyncUpdate struct {
-	dockName       string
-	originalName   string
-	path           string
-	branch         string
-	branchChanged  bool
-	branchDetached bool
-	pr             string
-	prBranch       string
-	prChanged      bool
-	merged         bool
-	deadSurfaceIDs map[int]bool
+	dockName           string
+	originalName       string
+	path               string
+	branch             string
+	branchChanged      bool
+	branchDetached     bool
+	detachedBranch     string // previous branch name when branchDetached is true
+	branchSafeToDelete bool   // detached branch was pushed; safe to delete locally
+	pr                 string
+	prBranch           string
+	prChanged          bool
+	merged             bool
+	deadSurfaceIDs     map[int]bool
 }
 
 // SyncAll checks git branches, PR numbers, merge status, and tmux surface state
@@ -139,6 +141,12 @@ func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace)
 				update.branchChanged = true
 			} else if err == nil && branch == "" && ws.Worktree.Branch != "" {
 				update.branchDetached = true
+				update.detachedBranch = ws.Worktree.Branch
+				// Check now (in the probe) so the apply phase doesn't
+				// hold the manifest lock during a shell-out.
+				if unpushed, upErr := e.Git.HasUnpushedCommits(wsPath); upErr == nil && !unpushed {
+					update.branchSafeToDelete = true
+				}
 			}
 
 			branchForChecks := ws.Worktree.Branch
@@ -222,6 +230,15 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 	}
 
 	if update.branchDetached && ws.Worktree != nil && ws.Worktree.Branch != "" {
+		// Delete the local branch if the probe determined it was pushed.
+		// Without this, the branch name is lost once metadata is cleared,
+		// and closeWorkspaceState can never clean it up.
+		if update.branchSafeToDelete && ws.Worktree.Repo != "" {
+			if repo := m.FindRepo(ws.Worktree.Repo); repo != nil {
+				repoPath := config.ExpandPath(repo.Path)
+				_ = e.Git.DeleteBranch(repoPath, update.detachedBranch)
+			}
+		}
 		ws.Worktree.Branch = ""
 		ws.Worktree.PR = ""
 		ws.Worktree.PRCheckedAt = 0

@@ -510,20 +510,13 @@ func splitCompletions(cmd *cobra.Command, args []string, toComplete string) ([]s
 	}, cobra.ShellCompDirectiveNoFileComp
 }
 
-// branchCompletions returns remote branch names for the --branch flag,
-// filtering out the default branch and branches already checked out in
-// a bay workspace.
+// branchCompletions returns local and remote branch names for the
+// --branch flag, filtering out the default branch and branches already
+// checked out in a bay workspace.
 func branchCompletions(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	m := loadManifestForCompletions()
 	repoPath := repoPathForCompletion(cmd, m)
 	if repoPath == "" {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
-
-	// List remote branches.
-	gitCmd := exec.Command("git", "-C", repoPath, "branch", "-r", "--format=%(refname:short)")
-	out, err := gitCmd.Output()
-	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
@@ -546,17 +539,30 @@ func branchCompletions(cmd *cobra.Command, args []string, toComplete string) ([]
 		}
 	}
 
+	seen := map[string]bool{}
 	var completions []string
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		branch := strings.TrimPrefix(line, "origin/")
-		if branch == "" || branch == "HEAD" || branch == defaultBranch {
-			continue
+	add := func(branch string) {
+		if branch == "" || branch == "HEAD" || branch == defaultBranch || seen[branch] || inUse[branch] {
+			return
 		}
-		if inUse[branch] {
-			continue
-		}
+		seen[branch] = true
 		completions = append(completions, branch)
 	}
+
+	// Local branches (includes branches bay failed to clean up).
+	if out, err := exec.Command("git", "-C", repoPath, "branch", "--format=%(refname:short)").Output(); err == nil {
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			add(line)
+		}
+	}
+
+	// Remote branches (stripped of origin/ prefix).
+	if out, err := exec.Command("git", "-C", repoPath, "branch", "-r", "--format=%(refname:short)").Output(); err == nil {
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			add(strings.TrimPrefix(line, "origin/"))
+		}
+	}
+
 	return completions, cobra.ShellCompDirectiveNoFileComp
 }
 
