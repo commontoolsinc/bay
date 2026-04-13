@@ -68,7 +68,7 @@ type ListRow struct {
 	WorkspaceName       string `json:"workspace_name,omitempty"`
 	WorkspaceBranch     string `json:"workspace_branch,omitempty"`
 	WorkspaceDirty      bool   `json:"workspace_dirty,omitempty"`
-	WorkspaceMerged     bool   `json:"workspace_merged,omitempty"`
+	WorkspacePending    bool   `json:"workspace_pending,omitempty"`
 	WorkspaceSyncStatus string `json:"workspace_sync_status,omitempty"`
 	WorkspaceWaiting    bool   `json:"workspace_waiting,omitempty"`
 	SurfaceID           int    `json:"surface_id,omitempty"`
@@ -222,7 +222,7 @@ func ListRows(view ListView) []ListRow {
 						WorkspaceName:       ws.Name,
 						WorkspaceBranch:     ws.Branch,
 						WorkspaceDirty:      ws.Dirty,
-						WorkspaceMerged:     ws.Merged,
+						WorkspacePending:    ws.Pending,
 						WorkspaceSyncStatus: ws.SyncStatus,
 						WorkspaceWaiting:    ws.Waiting,
 					})
@@ -235,7 +235,7 @@ func ListRows(view ListView) []ListRow {
 						WorkspaceName:       ws.Name,
 						WorkspaceBranch:     ws.Branch,
 						WorkspaceDirty:      ws.Dirty,
-						WorkspaceMerged:     ws.Merged,
+						WorkspacePending:    ws.Pending,
 						WorkspaceSyncStatus: ws.SyncStatus,
 						WorkspaceWaiting:    ws.Waiting,
 						SurfaceID:           s.ID,
@@ -338,8 +338,8 @@ func workspaceMetaCols(ws engine.WorkspaceInfo, showCounts, short bool) []metaCo
 	}
 	if ws.Dirty {
 		cols[2] = metaField("st", "dirty", short)
-	} else if ws.Merged {
-		cols[2] = metaField("st", "merged", short)
+	} else if ws.Pending {
+		cols[2] = metaField("st", "pending", short)
 	}
 	if showCounts {
 		cols[3] = metaField("n", fmt.Sprintf("%d", ws.SurfaceCount), short)
@@ -645,8 +645,8 @@ func FormatWorkspaceShow(repoName, dockName string, ws *engine.WorkspaceInfo, lo
 	if ws.Dirty {
 		rows = append(rows, showRow{"dirty", "yes"})
 	}
-	if ws.Merged {
-		rows = append(rows, showRow{"merged", "yes"})
+	if ws.Pending {
+		rows = append(rows, showRow{"pending", "yes"})
 	}
 	if ws.DefaultAgent != "" {
 		rows = append(rows, showRow{"default agent", ws.DefaultAgent})

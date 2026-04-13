@@ -15,7 +15,7 @@ type Entry struct {
 	WsName   string
 	Branch   string
 	PR       string
-	Merged   bool
+	Pending  bool
 	Waiting  bool
 	// TmuxWindowID of any surface in this workspace (for focusing).
 	TmuxWindowID string
@@ -75,7 +75,7 @@ func CollectEntries(m *manifest.Manifest, tc tmux.Interface) []Entry {
 				WsName:       ws.Name,
 				Branch:       branch,
 				PR:           pr,
-				Merged:       ws.IsMerged(),
+				Pending:      ws.Worktree != nil && ws.Worktree.Branch != "" && !ws.IsMerged(),
 				TmuxWindowID: tmuxWindowID,
 				Waiting:      waiting,
 				SurfaceCount: len(ws.Surfaces),

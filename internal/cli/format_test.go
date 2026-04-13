@@ -72,7 +72,7 @@ func testDocks() []engine.DockInfo {
 					Type:         "external",
 					Path:         "~/projects/other/deploy",
 					Branch:       "main",
-					Merged:       true,
+					Pending:      true,
 					SurfaceCount: 0,
 					SyncStatus:   "missing",
 				},

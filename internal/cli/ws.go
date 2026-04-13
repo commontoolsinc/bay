@@ -129,7 +129,7 @@ func newWsNewCmd() *cobra.Command {
 }
 
 func newWsCloseCmd() *cobra.Command {
-	var force, clean bool
+	var force, clean, done bool
 	var dockFlag string
 
 	cmd := &cobra.Command{
@@ -137,13 +137,14 @@ func newWsCloseCmd() *cobra.Command {
 		Aliases: []string{"rm"},
 		Short:   "Close a workspace and all its surfaces",
 		Long: `Close a workspace and all its windows. Pass "self" to close the current
-workspace, or omit the name and use --clean to close all clean workspaces.
+workspace, or use --done/--clean to batch-close workspaces.
 
   bay ws close w1               close a specific workspace
   bay ws close labs:w1          dock-qualified
   bay ws close w1 --dock labs   same, with flag
   bay ws close self             close the current workspace
-  bay ws close --clean          close all clean (non-dirty) workspaces`,
+  bay ws close --done           close workspaces that are not dirty or pending
+  bay ws close --clean          close all non-dirty workspaces`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -151,8 +152,7 @@ workspace, or omit the name and use --clean to close all clean workspaces.
 				return err
 			}
 
-			if clean {
-				// Batch close all clean workspaces
+			if clean || done {
 				dockName := dockFlag
 				if dockName == "" {
 					sess, tmuxErr := eng.Tmux.CurrentSession()
@@ -164,13 +164,20 @@ workspace, or omit the name and use --clean to close all clean workspaces.
 					}
 				}
 
-				// Exclude the current workspace so --clean doesn't kill
+				// Exclude the current workspace so batch close doesn't kill
 				// the session the user is running from.
 				var exclude []string
 				if ctx, ctxErr := eng.CurrentContext(); ctxErr == nil && ctx.Workspace != "" {
 					exclude = append(exclude, ctx.Workspace)
 				}
-				closed, skipped, closeErr := eng.WsCloseClean(dockName, force, exclude...)
+
+				var closed, skipped []string
+				var closeErr error
+				if done {
+					closed, skipped, closeErr = eng.WsCloseDone(dockName, force, exclude...)
+				} else {
+					closed, skipped, closeErr = eng.WsCloseClean(dockName, force, exclude...)
+				}
 				for _, c := range closed {
 					fmt.Printf("Closed %s\n", c)
 				}
@@ -184,7 +191,7 @@ workspace, or omit the name and use --clean to close all clean workspaces.
 			}
 
 			if len(args) == 0 {
-				return fmt.Errorf("specify a workspace to close (bay ws close <name>) or use --clean to close all clean workspaces")
+				return fmt.Errorf("specify a workspace to close (bay ws close <name>), or use --done / --clean")
 			}
 
 			dockName, wsID, err := resolveWsArg(eng, args[0], dockFlag)
@@ -197,7 +204,8 @@ workspace, or omit the name and use --clean to close all clean workspaces.
 	}
 
 	cmd.Flags().BoolVar(&force, "force", false, "force close even if dirty")
-	cmd.Flags().BoolVar(&clean, "clean", false, "close all clean (non-dirty) workspaces")
+	cmd.Flags().BoolVar(&done, "done", false, "close workspaces that are not dirty or pending")
+	cmd.Flags().BoolVar(&clean, "clean", false, "close all non-dirty workspaces")
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare workspace name)")
 
 	return cmd
@@ -261,7 +269,7 @@ func newWsShowCmd() *cobra.Command {
 					"branch":        wsInfo.Branch,
 					"pr":            wsInfo.PR,
 					"dirty":         wsInfo.Dirty,
-					"merged":        wsInfo.Merged,
+					"pending":       wsInfo.Pending,
 					"sync_status":   wsInfo.SyncStatus,
 					"default_agent": wsInfo.DefaultAgent,
 					"surfaces":      wsInfo.Surfaces,
@@ -721,8 +729,8 @@ func pickWorkspace(eng *engine.Engine, entries []nav.Entry) error {
 			pr = "#" + e.PR
 		}
 		tags := ""
-		if e.Merged {
-			tags += "  MERGED"
+		if e.Pending {
+			tags += "  PENDING"
 		}
 		if e.Waiting {
 			tags += "  WAITING"
