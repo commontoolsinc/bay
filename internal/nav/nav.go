@@ -63,6 +63,9 @@ func CollectEntries(m *manifest.Manifest, tc tmux.Interface) []Entry {
 					}
 					if waitingWindows[s.Tmux.WindowID] {
 						waiting = true
+						// Prefer the waiting window so next-waiting
+						// jumps directly to it, not a sibling.
+						tmuxWindowID = s.Tmux.WindowID
 					}
 				}
 			}

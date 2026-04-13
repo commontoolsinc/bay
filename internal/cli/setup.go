@@ -180,6 +180,9 @@ var bayKeybindings = []bayKeybinding{
 	{"M-e", "bay edit --dock", "Option+e: dock editor", "run-shell"},
 	{"M-E", "bay edit --ws", "Option+E: workspace editor", "run-shell"},
 
+	// Navigation (dock-wide)
+	{"M-r", "bay ws go --next-waiting", "Option+r: jump to next waiting workspace", "run-shell"},
+
 	// Utility
 	{"M-w", "bay sf close self", "Option+w: close current surface (or pane)", "run-shell"},
 }
