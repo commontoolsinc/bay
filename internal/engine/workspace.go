@@ -442,10 +442,15 @@ func (e *Engine) WsClose(dockName, wsName string, force bool) error {
 // Manifest updates for ALL targets are persisted before any tmux kill,
 // so that bay invoked from inside one of the affected panes doesn't
 // leave the rest of the targets half-closed when its host pane dies.
-func (e *Engine) WsCloseClean(dockName string, force bool) (closed []string, skipped []string, err error) {
+func (e *Engine) WsCloseClean(dockName string, force bool, exclude ...string) (closed []string, skipped []string, err error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return nil, nil, err
+	}
+
+	excludeSet := map[string]bool{}
+	for _, name := range exclude {
+		excludeSet[name] = true
 	}
 
 	type target struct {
@@ -461,6 +466,9 @@ func (e *Engine) WsCloseClean(dockName string, force bool) (closed []string, ski
 		}
 		for j := range d.Workspaces {
 			ws := &d.Workspaces[j]
+			if excludeSet[ws.Name] {
+				continue
+			}
 			targets = append(targets, target{dock: d.Name, name: ws.Name})
 		}
 	}
