@@ -164,7 +164,13 @@ workspace, or omit the name and use --clean to close all clean workspaces.
 					}
 				}
 
-				closed, skipped, closeErr := eng.WsCloseClean(dockName, force)
+				// Exclude the current workspace so --clean doesn't kill
+				// the session the user is running from.
+				var selfName string
+				if ctx, ctxErr := eng.CurrentContext(); ctxErr == nil && ctx.Workspace != "" {
+					selfName = ctx.Workspace
+				}
+				closed, skipped, closeErr := eng.WsCloseClean(dockName, force, selfName)
 				for _, c := range closed {
 					fmt.Printf("Closed %s\n", c)
 				}

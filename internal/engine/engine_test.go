@@ -2622,6 +2622,36 @@ func TestWsCloseClean_SkipsDirtyWorkspaces(t *testing.T) {
 	}
 }
 
+func TestWsCloseClean_SkipsExcludedWorkspace(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"})
+	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w3"})
+
+	// All clean, but exclude w2 (simulating "self").
+	closed, _, err := eng.WsCloseClean("labs", true, "w2")
+	if err != nil {
+		t.Fatalf("WsCloseClean failed: %v", err)
+	}
+
+	if len(closed) != 2 {
+		t.Errorf("expected 2 closed, got %d: %v", len(closed), closed)
+	}
+
+	m, _ := eng.LoadManifest()
+	dock := m.FindDock("labs")
+	if dock.FindWorkspace("w1") != nil {
+		t.Error("w1 should be closed")
+	}
+	if dock.FindWorkspace("w2") == nil {
+		t.Error("w2 (excluded) should still exist")
+	}
+	if dock.FindWorkspace("w3") != nil {
+		t.Error("w3 should be closed")
+	}
+}
+
 // --- WsNew with --branch ---
 
 func TestWsNew_WithBranch(t *testing.T) {
