@@ -442,15 +442,15 @@ func (e *Engine) WsClose(dockName, wsName string, force bool) error {
 type wsSkipFunc func(ws *manifest.Workspace, dockName string) string
 
 // WsCloseClean closes all clean (non-dirty, no unpushed commits) workspaces.
-func (e *Engine) WsCloseClean(dockName string, force bool, exclude ...string) ([]string, []string, error) {
-	return e.wsCloseBatch(dockName, force, nil, exclude...)
+func (e *Engine) WsCloseClean(dockName string, force, dryRun bool, exclude ...string) ([]string, []string, error) {
+	return e.wsCloseBatch(dockName, force, dryRun, nil, exclude...)
 }
 
 // WsCloseDone closes workspaces that are not dirty AND not pending (have an
 // unmerged branch). Only removes workspaces whose work has landed or that
 // have no branch at all.
-func (e *Engine) WsCloseDone(dockName string, force bool, exclude ...string) ([]string, []string, error) {
-	return e.wsCloseBatch(dockName, force, func(ws *manifest.Workspace, dn string) string {
+func (e *Engine) WsCloseDone(dockName string, force, dryRun bool, exclude ...string) ([]string, []string, error) {
+	return e.wsCloseBatch(dockName, force, dryRun, func(ws *manifest.Workspace, dn string) string {
 		if ws.Worktree != nil && ws.Worktree.Branch != "" && !ws.IsMerged() {
 			return "pending"
 		}
@@ -465,7 +465,7 @@ func (e *Engine) WsCloseDone(dockName string, force bool, exclude ...string) ([]
 // Manifest updates for ALL targets are persisted before any tmux kill,
 // so that bay invoked from inside one of the affected panes doesn't
 // leave the rest of the targets half-closed when its host pane dies.
-func (e *Engine) wsCloseBatch(dockName string, force bool, skip wsSkipFunc, exclude ...string) (closed []string, skipped []string, err error) {
+func (e *Engine) wsCloseBatch(dockName string, force, dryRun bool, skip wsSkipFunc, exclude ...string) (closed []string, skipped []string, err error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return nil, nil, err
@@ -507,6 +507,26 @@ func (e *Engine) wsCloseBatch(dockName string, force bool, skip wsSkipFunc, excl
 			return nil, skipped, nil
 		}
 		return nil, nil, fmt.Errorf("no workspaces found")
+	}
+
+	if dryRun {
+		// Dry-run: check dirty/unpushed status but don't mutate anything.
+		for _, t := range targets {
+			label := t.dock + ":" + t.name
+			ws := m.FindDock(t.dock).FindWorkspace(t.name)
+			if ws != nil && ws.Path != "" && !force {
+				if dirty, err := e.Git.IsDirty(ws.Path); err == nil && dirty {
+					skipped = append(skipped, label+" (dirty)")
+					continue
+				}
+				if unpushed, err := e.Git.HasUnpushedCommits(ws.Path); err == nil && unpushed {
+					skipped = append(skipped, label+" (unpushed)")
+					continue
+				}
+			}
+			closed = append(closed, label)
+		}
+		return closed, skipped, nil
 	}
 
 	// First pass: do all manifest mutations, collecting window IDs to kill.

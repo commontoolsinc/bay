@@ -1072,7 +1072,7 @@ func TestWsCloseClean_PersistsAllManifestsBeforeAnyKill(t *testing.T) {
 		}
 	}
 
-	closed, _, err := eng.WsCloseClean("labs", true)
+	closed, _, err := eng.WsCloseClean("labs", true, false)
 	if err != nil {
 		t.Fatalf("WsCloseClean: %v", err)
 	}
@@ -2563,7 +2563,7 @@ func TestWsCloseClean_ClosesCleanWorkspaces(t *testing.T) {
 	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"})
 
 	// Both workspaces are clean (new, no changes) — both should close.
-	closed, skipped, err := eng.WsCloseClean("labs", true)
+	closed, skipped, err := eng.WsCloseClean("labs", true, false)
 	if err != nil {
 		t.Fatalf("WsCloseClean failed: %v", err)
 	}
@@ -2599,7 +2599,7 @@ func TestWsCloseClean_SkipsDirtyWorkspaces(t *testing.T) {
 	mockGit := eng.Git.(*git.Mock)
 	mockGit.SetDirty(w1Path, true)
 
-	closed, skipped, err := eng.WsCloseClean("labs", false)
+	closed, skipped, err := eng.WsCloseClean("labs", false, false)
 	if err != nil {
 		t.Fatalf("WsCloseClean failed: %v", err)
 	}
@@ -2630,7 +2630,7 @@ func TestWsCloseClean_SkipsExcludedWorkspace(t *testing.T) {
 	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w3"})
 
 	// All clean, but exclude w2 (simulating "self").
-	closed, _, err := eng.WsCloseClean("labs", true, "w2")
+	closed, _, err := eng.WsCloseClean("labs", true, false, "w2")
 	if err != nil {
 		t.Fatalf("WsCloseClean failed: %v", err)
 	}
