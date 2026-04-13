@@ -352,6 +352,10 @@ func (r *Real) MoveWindow(windowID string, targetIndex int) error {
 	return runSilent("move-window", "-s", windowID, "-t", fmt.Sprintf("%d", targetIndex))
 }
 
+func (r *Real) MoveWindowAfter(windowID string, afterWindowID string) error {
+	return runSilent("move-window", "-a", "-s", windowID, "-t", afterWindowID)
+}
+
 // DisplayPopup opens a tmux popup running the given command.
 func (r *Real) DisplayPopup(cmd string) error {
 	return runSilent("display-popup", "-E", cmd)

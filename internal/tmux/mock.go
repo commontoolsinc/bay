@@ -512,6 +512,11 @@ func (m *Mock) MoveWindow(windowID string, targetIndex int) error {
 	return nil
 }
 
+func (m *Mock) MoveWindowAfter(windowID string, afterWindowID string) error {
+	m.record("MoveWindowAfter", windowID, afterWindowID)
+	return nil
+}
+
 func (m *Mock) DisplayPopup(cmd string) error {
 	m.record("DisplayPopup", cmd)
 	return nil
