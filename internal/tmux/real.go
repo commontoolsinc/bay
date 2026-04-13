@@ -31,8 +31,15 @@ func runSilent(args ...string) error {
 
 // --- Sessions ---
 
+// exactSession returns a tmux target that matches the session name
+// exactly. Without the "=" prefix, tmux prefix-matches: "-t loom"
+// would match a session named "loom-old".
+func exactSession(name string) string {
+	return "=" + name
+}
+
 func (r *Real) HasSession(name string) (bool, error) {
-	cmd := exec.Command("tmux", "has-session", "-t", name)
+	cmd := exec.Command("tmux", "has-session", "-t", exactSession(name))
 	err := cmd.Run()
 	if err != nil {
 		// tmux returns exit code 1 if the session does not exist; that is not an error for us.
@@ -49,11 +56,11 @@ func (r *Real) NewSession(name string) error {
 }
 
 func (r *Real) KillSession(name string) error {
-	return runSilent("kill-session", "-t", name)
+	return runSilent("kill-session", "-t", exactSession(name))
 }
 
 func (r *Real) RenameSession(oldName string, newName string) error {
-	return runSilent("rename-session", "-t", oldName, newName)
+	return runSilent("rename-session", "-t", exactSession(oldName), newName)
 }
 
 func (r *Real) ListSessions() ([]Session, error) {
@@ -81,7 +88,7 @@ func (r *Real) ListSessions() ([]Session, error) {
 // --- Windows ---
 
 func (r *Real) NewWindow(session string, name string, cwd string) (string, error) {
-	out, err := run("new-window", "-a", "-t", session, "-n", name, "-c", cwd, "-P", "-F", "#{window_id}")
+	out, err := run("new-window", "-a", "-t", exactSession(session), "-n", name, "-c", cwd, "-P", "-F", "#{window_id}")
 	if err != nil {
 		return "", err
 	}
@@ -113,7 +120,7 @@ func (r *Real) GetWindowOption(windowID string, option string) (string, error) {
 }
 
 func (r *Real) WaitingWindowIDs(session string) (map[string]bool, error) {
-	out, err := run("list-windows", "-t", session, "-F", "#{window_id}\t#{@bay-waiting}")
+	out, err := run("list-windows", "-t", exactSession(session), "-F", "#{window_id}\t#{@bay-waiting}")
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +139,7 @@ func (r *Real) WaitingWindowIDs(session string) (map[string]bool, error) {
 }
 
 func (r *Real) ListWindows(session string) ([]Window, error) {
-	out, err := run("list-windows", "-t", session, "-F", "#{window_id}\t#{window_name}\t#{window_index}")
+	out, err := run("list-windows", "-t", exactSession(session), "-F", "#{window_id}\t#{window_name}\t#{window_index}")
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +345,7 @@ func (r *Real) DisplayMessage(msg string) error {
 // FindDockEditorWindow returns the window ID of the dock-level editor
 // window (tagged with @bay-dock-editor=1), or ("", false) if none exists.
 func (r *Real) FindDockEditorWindow(session string) (string, bool) {
-	out, err := run("list-windows", "-t", session, "-F", "#{window_id}\t#{@bay-dock-editor}")
+	out, err := run("list-windows", "-t", exactSession(session), "-F", "#{window_id}\t#{@bay-dock-editor}")
 	if err != nil {
 		return "", false
 	}
