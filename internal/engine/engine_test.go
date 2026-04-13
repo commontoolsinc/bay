@@ -2972,3 +2972,64 @@ func TestWsNew_ExistingBranchWithExplicitName(t *testing.T) {
 		t.Errorf("branch = %v, want fix/old-pr", ws.Worktree)
 	}
 }
+
+// TestSyncDetach_DeletesPushedBranch verifies that when sync detects a
+// detached HEAD, it deletes the local branch if it's been pushed.
+func TestSyncDetach_DeletesPushedBranch(t *testing.T) {
+	eng, dir := testEngine(t)
+	mockGit := eng.Git.(*git.Mock)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Branch: "fix/cleanup-me"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	// Sync picks up the branch.
+	mockGit.SetBranch(ws.Path, "fix/cleanup-me")
+	eng.SyncAll()
+
+	// Now detach — simulate user running git checkout --detach.
+	// Branch is pushed (HasUnpushedCommits returns false, the default).
+	mockGit.SetBranch(ws.Path, "")
+	eng.SyncAll()
+
+	// Branch should have been deleted.
+	repoPath := filepath.Join(dir, "repos", "labs")
+	deleted := mockGit.DeletedBranches()
+	found := false
+	for _, c := range deleted {
+		if c.Args[0] == repoPath && c.Args[1] == "fix/cleanup-me" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected DeleteBranch(repo, fix/cleanup-me) after detach; got %v", deleted)
+	}
+}
+
+// TestSyncDetach_KeepsBranchWhenUnpushed verifies that detach does NOT
+// delete the branch if it has unpushed commits.
+func TestSyncDetach_KeepsBranchWhenUnpushed(t *testing.T) {
+	eng, _ := testEngine(t)
+	mockGit := eng.Git.(*git.Mock)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Branch: "fix/wip-branch"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	mockGit.SetBranch(ws.Path, "fix/wip-branch")
+	eng.SyncAll()
+
+	// Branch has unpushed commits.
+	mockGit.SetUnpushed(ws.Path, true)
+	mockGit.SetBranch(ws.Path, "")
+	eng.SyncAll()
+
+	// Branch should NOT have been deleted.
+	if len(mockGit.DeletedBranches()) != 0 {
+		t.Errorf("branch should not be deleted when unpushed; got %v", mockGit.DeletedBranches())
+	}
+}
