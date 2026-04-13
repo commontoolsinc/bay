@@ -105,8 +105,11 @@ func newWsNewCmd() *cobra.Command {
 			// Print feedback when the user can't see the new tmux window
 			// directly (outside tmux or in a different session). Inside
 			// the dock's session the new tab appearing is feedback enough.
+			// Note: don't gate on TMUX_PANE here — tmux run-shell (used
+			// by keybindings) doesn't set it, but the user can still see
+			// the new tab.
 			currentSession, tmuxErr := eng.Tmux.CurrentSession()
-			inDock := tmuxErr == nil && os.Getenv("TMUX_PANE") != "" && currentSession == opts.Dock
+			inDock := tmuxErr == nil && currentSession == opts.Dock
 			if !inDock {
 				fmt.Printf("Created %s:%s\n", opts.Dock, ws.Name)
 				if tmuxErr != nil || os.Getenv("TMUX_PANE") == "" {
