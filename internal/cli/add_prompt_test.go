@@ -12,7 +12,7 @@ import (
 // pattern), but the captured line always needed manual editing to
 // be useful as a regex — so the workflow really was: run the
 // command, then open the patterns file anyway. Cutting the command
-// in favor of "edit ~/.config/bay/bay-prompts.txt directly" removes
+// in favor of "edit ~/.config/bay/waiting-patterns.txt directly" removes
 // ~80 lines of code, the structural force-autostart annotation, and
 // one rarely-discovered surface.
 //

@@ -100,6 +100,10 @@ func (r *Real) SetWindowOption(windowID string, option string, value string) err
 	return runSilent("set-option", "-w", "-t", windowID, option, value)
 }
 
+func (r *Real) UnsetWindowOption(windowID string, option string) error {
+	return runSilent("set-option", "-w", "-u", "-t", windowID, option)
+}
+
 func (r *Real) GetWindowOption(windowID string, option string) (string, error) {
 	out, err := run("show-options", "-w", "-t", windowID, "-v", option)
 	if err != nil {

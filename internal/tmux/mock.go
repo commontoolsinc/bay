@@ -244,6 +244,16 @@ func (m *Mock) SetWindowOption(windowID string, option string, value string) err
 	return nil
 }
 
+func (m *Mock) UnsetWindowOption(windowID string, option string) error {
+	m.record("UnsetWindowOption", windowID, option)
+	w, ok := m.windows[windowID]
+	if !ok {
+		return fmt.Errorf("window %q not found", windowID)
+	}
+	delete(w.options, option)
+	return nil
+}
+
 func (m *Mock) GetWindowOption(windowID string, option string) (string, error) {
 	m.record("GetWindowOption", windowID, option)
 	w, ok := m.windows[windowID]

@@ -73,7 +73,7 @@ func TestStripANSI(t *testing.T) {
 
 func TestLoadPatterns(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "bay-prompts.txt")
+	path := filepath.Join(dir, "waiting-patterns.txt")
 
 	content := `# This is a comment
 (?i)waiting for input
@@ -305,7 +305,7 @@ func TestCheckLoop_SetsHighlightOnMatch(t *testing.T) {
 
 	manifestPath := createTestManifest(t, dir, winID)
 
-	patternsPath := filepath.Join(dir, "bay-prompts.txt")
+	patternsPath := filepath.Join(dir, "waiting-patterns.txt")
 	if err := os.WriteFile(patternsPath, []byte("(?i)waiting for input\n"), 0o644); err != nil {
 		t.Fatalf("writing patterns: %v", err)
 	}
@@ -346,7 +346,7 @@ func TestCheckLoop_ClearsHighlightWhenNoMatch(t *testing.T) {
 	mock.SetCaptureContent(paneID, "Waiting for input")
 
 	manifestPath := createTestManifest(t, dir, winID)
-	patternsPath := filepath.Join(dir, "bay-prompts.txt")
+	patternsPath := filepath.Join(dir, "waiting-patterns.txt")
 	if err := os.WriteFile(patternsPath, []byte("(?i)waiting for input\n"), 0o644); err != nil {
 		t.Fatalf("writing patterns: %v", err)
 	}
@@ -388,7 +388,7 @@ func TestCheckLoop_SkipsShellOnlyWindows(t *testing.T) {
 	mock.SetCaptureContent(paneID, "Waiting for input")
 
 	manifestPath := createShellOnlyManifest(t, dir, winID)
-	patternsPath := filepath.Join(dir, "bay-prompts.txt")
+	patternsPath := filepath.Join(dir, "waiting-patterns.txt")
 	if err := os.WriteFile(patternsPath, []byte("(?i)waiting for input\n"), 0o644); err != nil {
 		t.Fatalf("writing patterns: %v", err)
 	}
@@ -418,7 +418,7 @@ func TestCheckLoop_HandlesANSIInPaneContent(t *testing.T) {
 	mock.SetCaptureContent(paneID, "\033[1;31mWaiting for input\033[0m")
 
 	manifestPath := createTestManifest(t, dir, winID)
-	patternsPath := filepath.Join(dir, "bay-prompts.txt")
+	patternsPath := filepath.Join(dir, "waiting-patterns.txt")
 	if err := os.WriteFile(patternsPath, []byte("(?i)waiting for input\n"), 0o644); err != nil {
 		t.Fatalf("writing patterns: %v", err)
 	}
@@ -451,7 +451,7 @@ func TestCheckLoop_ReloadsPatterns(t *testing.T) {
 	mock.SetCaptureContent(paneID, "custom prompt here")
 
 	manifestPath := createTestManifest(t, dir, winID)
-	patternsPath := filepath.Join(dir, "bay-prompts.txt")
+	patternsPath := filepath.Join(dir, "waiting-patterns.txt")
 
 	if err := os.WriteFile(patternsPath, []byte("# empty\n"), 0o644); err != nil {
 		t.Fatalf("writing patterns: %v", err)
@@ -494,7 +494,7 @@ func TestRun_CancelsOnContext(t *testing.T) {
 	m := manifest.New()
 	manifest.Save(manifestPath, m)
 
-	patternsPath := filepath.Join(dir, "bay-prompts.txt")
+	patternsPath := filepath.Join(dir, "waiting-patterns.txt")
 	os.WriteFile(patternsPath, []byte(""), 0o644)
 
 	pidPath := filepath.Join(dir, "monitor.pid")
@@ -576,7 +576,7 @@ func TestCheckOnce_RenamesWindowOnBranchChange(t *testing.T) {
 	// workspace. The git mock now reports the new branch.
 	mockGit.SetBranch(wtPath, "fix/login-bug")
 
-	patternsPath := filepath.Join(dir, "bay-prompts.txt")
+	patternsPath := filepath.Join(dir, "waiting-patterns.txt")
 	_ = os.WriteFile(patternsPath, []byte(""), 0o644)
 	pidPath := filepath.Join(dir, "monitor.pid")
 
@@ -626,7 +626,7 @@ func TestCheckOnce_NoEngine_DoesNotPanic(t *testing.T) {
 	winID, _ := mock.NewWindow("dev", "test-ws", "/tmp")
 
 	manifestPath := createTestManifest(t, dir, winID)
-	patternsPath := filepath.Join(dir, "bay-prompts.txt")
+	patternsPath := filepath.Join(dir, "waiting-patterns.txt")
 	_ = os.WriteFile(patternsPath, []byte(""), 0o644)
 	pidPath := filepath.Join(dir, "monitor.pid")
 
@@ -677,7 +677,7 @@ func TestCheckOnce_DetectsPR(t *testing.T) {
 	// Configure mock: PR exists for this branch.
 	mockGit.SetPR("/tmp", "feature/login", "99")
 
-	patternsPath := filepath.Join(dir, "bay-prompts.txt")
+	patternsPath := filepath.Join(dir, "waiting-patterns.txt")
 	os.WriteFile(patternsPath, []byte(""), 0o644)
 	pidPath := filepath.Join(dir, "monitor.pid")
 
@@ -723,7 +723,7 @@ func TestCheckOnce_PRCheckedAtPreventsRecheckWithinTTL(t *testing.T) {
 	manifestPath := filepath.Join(dir, "manifest.json")
 	manifest.Save(manifestPath, m)
 
-	patternsPath := filepath.Join(dir, "bay-prompts.txt")
+	patternsPath := filepath.Join(dir, "waiting-patterns.txt")
 	os.WriteFile(patternsPath, []byte(""), 0o644)
 	pidPath := filepath.Join(dir, "monitor.pid")
 
@@ -771,7 +771,7 @@ func TestCheckOnce_SkipsPRDetectionForWorkspaceWithNoPath(t *testing.T) {
 	manifestPath := filepath.Join(dir, "manifest.json")
 	manifest.Save(manifestPath, m)
 
-	patternsPath := filepath.Join(dir, "bay-prompts.txt")
+	patternsPath := filepath.Join(dir, "waiting-patterns.txt")
 	os.WriteFile(patternsPath, []byte(""), 0o644)
 	pidPath := filepath.Join(dir, "monitor.pid")
 
@@ -819,7 +819,7 @@ func TestCheckOnce_DetectsMergedBranch(t *testing.T) {
 	// Configure: branch is merged into default.
 	mockGit.SetMerged("/tmp", "feature/done", true)
 
-	patternsPath := filepath.Join(dir, "bay-prompts.txt")
+	patternsPath := filepath.Join(dir, "waiting-patterns.txt")
 	os.WriteFile(patternsPath, []byte(""), 0o644)
 	pidPath := filepath.Join(dir, "monitor.pid")
 
@@ -864,7 +864,7 @@ func TestCheckOnce_SkipsMergeCheckForInactiveWorkspace(t *testing.T) {
 
 	mockGit.SetMerged("/tmp", "feature/old", true)
 
-	patternsPath := filepath.Join(dir, "bay-prompts.txt")
+	patternsPath := filepath.Join(dir, "waiting-patterns.txt")
 	os.WriteFile(patternsPath, []byte(""), 0o644)
 	pidPath := filepath.Join(dir, "monitor.pid")
 

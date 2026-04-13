@@ -15,6 +15,7 @@ type Interface interface {
 	KillWindow(windowID string) error
 	RenameWindow(windowID string, name string) error
 	SetWindowOption(windowID string, option string, value string) error
+	UnsetWindowOption(windowID string, option string) error
 	GetWindowOption(windowID string, option string) (string, error)
 	ListWindows(session string) ([]Window, error)
 	WindowExists(windowID string) (bool, error)
