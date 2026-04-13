@@ -251,11 +251,12 @@ Closing an *individual* agent surface (`bay close agent`) prompts for
 confirmation, since agents carry valuable conversation context. Use
 `--force` (or `-f`) to skip the prompt.
 
-When a PR is merged, bay detects it in the background and sets the
-workspace's `merged` flag. Clean up all merged workspaces at once:
+When a PR is merged, bay detects it in the background. Workspaces with
+unmerged branches show `st=pending`. Clean up all finished workspaces:
 
 ```
-bay ws close --clean
+bay ws close --done             # close workspaces not dirty or pending
+bay ws close --done --dry-run   # preview first
 ```
 
 ## 8. Recovery

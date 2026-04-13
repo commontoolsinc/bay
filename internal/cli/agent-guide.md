@@ -267,7 +267,8 @@ flags or, when omitted, inherited from the current tmux session.
 |---------|-----------------------------|
 | `bay ws new [name]` | current dock from tmux session, or auto-bootstrap from CWD |
 | `bay ws show [name]` | current workspace |
-| `bay ws close [name]` | required (no default; use `--clean` for batch) |
+| `bay ws close [name]` | required (no default; use `--done`/`--clean` for batch) |
+| `bay ws close --done` | workspaces not dirty or pending in current dock |
 | `bay ws close --clean` | all non-dirty workspaces in current dock |
 | `bay pwd` | current bay context |
 | `bay surface new <kind> [name]` | current workspace |
@@ -309,7 +310,7 @@ bay ws new auth-fix --branch fix-auth       # create and checkout branch
 bay ws new auth-fix --agent                 # with dock's default agent
 ```
 
-#### `bay ws close [name] [--force] [--clean]`
+#### `bay ws close [name] [--force] [--done] [--clean] [--dry-run]`
 
 Close a workspace and all its surfaces. For worktree workspaces,
 checks for uncommitted changes and unpushed commits. Refuses if dirty
@@ -317,15 +318,19 @@ unless `--force` is used. If the branch has been pushed, bay deletes
 the local branch on close — no stale branches left behind. Pass
 `self` to close the current workspace.
 
-Use `--clean` (without a name) to batch-close all non-dirty
-workspaces in the current dock.
+Batch flags (without a name):
+- `--done`: close workspaces that are not dirty and not pending (have
+  no unmerged branch). The conservative default for cleanup.
+- `--clean`: close all non-dirty workspaces regardless of merge status.
+- `--dry-run`: preview what would be closed without closing anything.
 
 ```
 bay ws close auth-fix
 bay ws close self
 bay ws close self --force
+bay ws close --done
+bay ws close --done --dry-run
 bay ws close --clean
-bay ws close --clean --force
 ```
 
 #### `bay ws show [name] [--json]`
@@ -649,10 +654,10 @@ Merged is set to true automatically when bay detects a merge. Then:
 bay ws close auth-fix
 ```
 
-Or batch-close all non-dirty workspaces:
+Or batch-close finished workspaces (not dirty, not pending):
 
 ```
-bay ws close --clean
+bay ws close --done
 ```
 
 ### Manage multiple concurrent PRs

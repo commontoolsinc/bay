@@ -112,7 +112,8 @@ bay pwd                     # current bay location
 
 ```
 bay ws close auth-fix       # safety checks for uncommitted work
-bay ws close --clean        # close all clean merged workspaces
+bay ws close --done         # close workspaces that are not dirty or pending
+bay ws close --clean        # close all non-dirty workspaces
 ```
 
 For a full interactive walkthrough, see the [Tutorial](tutorial.md).
@@ -212,10 +213,11 @@ Workspaces have two flags instead of a status enum:
   into the default branch. Set by the background monitor and persisted
   in the manifest.
 
-A workspace with no branch and no uncommitted changes is simply clean.
-A workspace whose branch was merged and has no uncommitted changes is
-safe to close (`bay ws close --clean` closes all such workspaces at
-once).
+Workspaces show `st=pending` when they have an unmerged branch (work is
+out for review). `bay ws close --done` closes workspaces that are not
+dirty and not pending — the truly finished ones. `bay ws close --clean`
+is broader, closing anything not dirty. Use `--dry-run` with either to
+preview what would be closed.
 
 ### Naming and references
 
@@ -336,8 +338,9 @@ bay ws new [name] --repo <r>                # override dock's repo
 bay ws new [name] --dir <path>              # external workspace
 bay ws close [name]                         # close + delete pushed branch ('self' for current)
 bay ws close [name] --force                 # skip safety checks (keeps unpushed branches)
-bay ws close --clean                        # close all clean merged workspaces
-bay ws close --clean --force                # force close all clean merged
+bay ws close --done                         # close workspaces not dirty or pending
+bay ws close --clean                        # close all non-dirty workspaces
+bay ws close --done --dry-run               # preview what --done would close
 bay ws show [name]                          # detailed view (default: current)
 bay ws show [name] --json                   # machine-readable
 bay ws rename [name] <new-name>             # rename (defaults to current workspace)
@@ -765,8 +768,9 @@ and recreates tmux state on demand. Your worktrees and code are on disk.
 
 **"bay ws close refuses and I just want it gone."**
 Safety checks prevent losing work. If you're sure (e.g., the PR was
-merged), use `--force`. Or use `bay ws close --clean` to batch-close all
-clean merged workspaces.
+merged), use `--force`. Or use `bay ws close --done` to batch-close all
+finished workspaces, or `--clean` for anything non-dirty. Add `--dry-run`
+to preview first.
 
 **"The waiting indicator isn't working."**
 Check `bay monitor status`. If running, the prompt text probably doesn't

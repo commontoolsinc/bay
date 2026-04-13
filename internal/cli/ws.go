@@ -129,7 +129,7 @@ func newWsNewCmd() *cobra.Command {
 }
 
 func newWsCloseCmd() *cobra.Command {
-	var force, clean, done bool
+	var force, clean, done, dryRun bool
 	var dockFlag string
 
 	cmd := &cobra.Command{
@@ -144,7 +144,8 @@ workspace, or use --done/--clean to batch-close workspaces.
   bay ws close w1 --dock labs   same, with flag
   bay ws close self             close the current workspace
   bay ws close --done           close workspaces that are not dirty or pending
-  bay ws close --clean          close all non-dirty workspaces`,
+  bay ws close --clean          close all non-dirty workspaces
+  bay ws close --done --dry-run preview what --done would close`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -174,17 +175,22 @@ workspace, or use --done/--clean to batch-close workspaces.
 				var closed, skipped []string
 				var closeErr error
 				if done {
-					closed, skipped, closeErr = eng.WsCloseDone(dockName, force, exclude...)
+					closed, skipped, closeErr = eng.WsCloseDone(dockName, force, dryRun, exclude...)
 				} else {
-					closed, skipped, closeErr = eng.WsCloseClean(dockName, force, exclude...)
+					closed, skipped, closeErr = eng.WsCloseClean(dockName, force, dryRun, exclude...)
+				}
+
+				verb := "Closed"
+				if dryRun {
+					verb = "Would close"
 				}
 				for _, c := range closed {
-					fmt.Printf("Closed %s\n", c)
+					fmt.Printf("%s %s\n", verb, c)
 				}
 				for _, s := range skipped {
 					fmt.Printf("Skipped %s\n", s)
 				}
-				if len(skipped) > 0 && !force {
+				if len(skipped) > 0 && !force && !dryRun {
 					fmt.Println("\nUse --force to close dirty workspaces.")
 				}
 				return closeErr
@@ -206,6 +212,7 @@ workspace, or use --done/--clean to batch-close workspaces.
 	cmd.Flags().BoolVar(&force, "force", false, "force close even if dirty")
 	cmd.Flags().BoolVar(&done, "done", false, "close workspaces that are not dirty or pending")
 	cmd.Flags().BoolVar(&clean, "clean", false, "close all non-dirty workspaces")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "preview what --done/--clean would close")
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare workspace name)")
 
 	return cmd
