@@ -21,6 +21,7 @@ type repoState struct {
 	worktrees     map[string]bool
 	prs           map[string]string // branch → PR number
 	merged        map[string]bool   // branch → merged
+	branchExists  map[string]bool   // branch → exists (local or remote)
 	repoRoot      string
 }
 
@@ -56,10 +57,11 @@ func (m *Mock) repo(path string) *repoState {
 	r, ok := m.repos[path]
 	if !ok {
 		r = &repoState{
-			ignored:   make(map[string]bool),
-			worktrees: make(map[string]bool),
-			prs:       make(map[string]string),
-			merged:    make(map[string]bool),
+			ignored:      make(map[string]bool),
+			worktrees:    make(map[string]bool),
+			prs:          make(map[string]string),
+			merged:       make(map[string]bool),
+			branchExists: make(map[string]bool),
 		}
 		m.repos[path] = r
 	}
@@ -168,13 +170,17 @@ func (m *Mock) SetRepoRoot(path, root string) {
 	m.repo(path).repoRoot = root
 }
 
-func (m *Mock) CreateWorktree(repoPath, worktreePath string) error {
-	m.record("CreateWorktree", repoPath, worktreePath)
+func (m *Mock) CreateWorktree(repoPath, worktreePath, branch string) error {
+	m.record("CreateWorktree", repoPath, worktreePath, branch)
 	r := m.repo(repoPath)
 	if r.worktrees[worktreePath] {
 		return fmt.Errorf("worktree %q already exists", worktreePath)
 	}
 	r.worktrees[worktreePath] = true
+	// When an existing branch is specified, simulate checking it out.
+	if branch != "" {
+		m.repo(worktreePath).branch = branch
+	}
 	return nil
 }
 
@@ -218,6 +224,16 @@ func (m *Mock) AddToGitignore(repoPath, filename string) error {
 	m.record("AddToGitignore", repoPath, filename)
 	m.repo(repoPath).ignored[filename] = true
 	return nil
+}
+
+func (m *Mock) BranchExists(repoPath, branchName string) (bool, error) {
+	m.record("BranchExists", repoPath, branchName)
+	return m.repo(repoPath).branchExists[branchName], nil
+}
+
+// SetBranchExists configures whether a branch exists in a repo.
+func (m *Mock) SetBranchExists(repoPath, branchName string, exists bool) {
+	m.repo(repoPath).branchExists[branchName] = exists
 }
 
 func (m *Mock) CreateBranch(path, branchName string) error {

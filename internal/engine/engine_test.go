@@ -2874,3 +2874,101 @@ func TestRecover_FindWindowByNameRefreshesSurfaceIDs(t *testing.T) {
 	_ = foundWindowID
 	_ = foundPaneID
 }
+
+// TestWsNew_ExistingBranch verifies that --branch checks out an existing
+// remote branch directly via CreateWorktree instead of creating a new one.
+func TestWsNew_ExistingBranch(t *testing.T) {
+	eng, dir := testEngine(t)
+	mockGit := eng.Git.(*git.Mock)
+
+	repoPath := filepath.Join(dir, "repos", "labs")
+	mockGit.SetBranchExists(repoPath, "fix/existing", true)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Branch: "fix/existing"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+
+	// CreateBranch should NOT have been called — branch already exists.
+	if calls := mockGit.Calls("CreateBranch"); len(calls) != 0 {
+		t.Errorf("expected 0 CreateBranch calls for existing branch, got %d", len(calls))
+	}
+
+	// CreateWorktree should have been called with the branch name.
+	wtCalls := mockGit.Calls("CreateWorktree")
+	if len(wtCalls) != 1 {
+		t.Fatalf("expected 1 CreateWorktree call, got %d", len(wtCalls))
+	}
+	if wtCalls[0].Args[2] != "fix/existing" {
+		t.Errorf("CreateWorktree branch arg = %q, want fix/existing", wtCalls[0].Args[2])
+	}
+
+	// Fetch should have been called to refresh remote refs.
+	if calls := mockGit.Calls("Fetch"); len(calls) != 1 {
+		t.Errorf("expected 1 Fetch call, got %d", len(calls))
+	}
+
+	// Workspace metadata should be correct.
+	if ws.Worktree == nil || ws.Worktree.Branch != "fix/existing" {
+		t.Errorf("branch = %v, want fix/existing", ws.Worktree)
+	}
+	if ws.Name != "existing" {
+		t.Errorf("name = %q, want existing (abbreviated)", ws.Name)
+	}
+}
+
+// TestWsNew_NewBranch_NotExisting verifies that --branch with a
+// non-existing branch still creates it (the current behavior).
+func TestWsNew_NewBranch_NotExisting(t *testing.T) {
+	eng, _ := testEngine(t)
+	mockGit := eng.Git.(*git.Mock)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Branch: "feature/brand-new"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+
+	// CreateBranch SHOULD have been called — branch is new.
+	if calls := mockGit.Calls("CreateBranch"); len(calls) != 1 {
+		t.Fatalf("expected 1 CreateBranch call for new branch, got %d", len(calls))
+	}
+
+	// CreateWorktree should have been called with empty branch (detached).
+	wtCalls := mockGit.Calls("CreateWorktree")
+	if len(wtCalls) != 1 {
+		t.Fatalf("expected 1 CreateWorktree call, got %d", len(wtCalls))
+	}
+	if wtCalls[0].Args[2] != "" {
+		t.Errorf("CreateWorktree branch arg = %q, want empty (detached)", wtCalls[0].Args[2])
+	}
+
+	if ws.Worktree == nil || ws.Worktree.Branch != "feature/brand-new" {
+		t.Errorf("branch = %v, want feature/brand-new", ws.Worktree)
+	}
+}
+
+// TestWsNew_ExistingBranchWithExplicitName verifies that an explicit name
+// is preserved even when checking out an existing branch.
+func TestWsNew_ExistingBranchWithExplicitName(t *testing.T) {
+	eng, dir := testEngine(t)
+	mockGit := eng.Git.(*git.Mock)
+
+	repoPath := filepath.Join(dir, "repos", "labs")
+	mockGit.SetBranchExists(repoPath, "fix/old-pr", true)
+
+	ws, err := eng.WsNew(WsNewOptions{
+		Dock:   "labs",
+		Name:   "my-review",
+		Branch: "fix/old-pr",
+	})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+
+	if ws.Name != "my-review" {
+		t.Errorf("name = %q, want my-review (explicit name should be preserved)", ws.Name)
+	}
+	if ws.Worktree == nil || ws.Worktree.Branch != "fix/old-pr" {
+		t.Errorf("branch = %v, want fix/old-pr", ws.Worktree)
+	}
+}

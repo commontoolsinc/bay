@@ -306,7 +306,7 @@ bay ws new auth-fix                         # named workspace in current dock
 bay ws new auth-fix --dock labs             # named workspace in a specific dock
 bay ws new auth-fix --repo ct-server        # using a different repo
 bay ws new auth-fix --dir ~/projects/foo    # external workspace
-bay ws new auth-fix --branch fix-auth       # create and checkout branch
+bay ws new auth-fix --branch fix-auth       # checkout or create branch
 bay ws new auth-fix --agent                 # with dock's default agent
 ```
 

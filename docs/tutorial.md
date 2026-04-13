@@ -75,7 +75,8 @@ start working on a branch, use `--branch` when creating a workspace:
 bay ws new --branch fix/login-bug
 ```
 
-That creates a second workspace on a new `fix/login-bug` branch.
+That creates a second workspace on the `fix/login-bug` branch (or
+checks it out if it already exists on the remote).
 Within a few seconds the tmux tab name updates to `login-bug` — bay
 watches your branch in the background and keeps the name in sync.
 

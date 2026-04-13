@@ -41,12 +41,22 @@ func (r *Real) RepoRoot(path string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-func (r *Real) CreateWorktree(repoPath, worktreePath string) error {
-	branch, err := r.DefaultBranch(repoPath)
+func (r *Real) CreateWorktree(repoPath, worktreePath, branch string) error {
+	if branch != "" {
+		// Checkout an existing branch. --guess-remote lets git create a
+		// local tracking branch from origin/<branch> when no local branch
+		// exists (common after bay ws close deletes the local copy).
+		cmd := exec.Command("git", "-C", repoPath, "worktree", "add", "--guess-remote", worktreePath, branch)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("git worktree add: %s: %w", strings.TrimSpace(string(out)), err)
+		}
+		return nil
+	}
+	defaultBranch, err := r.DefaultBranch(repoPath)
 	if err != nil {
 		return fmt.Errorf("finding default branch: %w", err)
 	}
-	cmd := exec.Command("git", "-C", repoPath, "worktree", "add", "--detach", worktreePath, branch)
+	cmd := exec.Command("git", "-C", repoPath, "worktree", "add", "--detach", worktreePath, defaultBranch)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git worktree add: %s: %w", strings.TrimSpace(string(out)), err)
 	}
@@ -137,6 +147,20 @@ func (r *Real) AddToGitignore(repoPath, filename string) error {
 		return fmt.Errorf("writing to .gitignore: %w", err)
 	}
 	return nil
+}
+
+func (r *Real) BranchExists(repoPath, branchName string) (bool, error) {
+	// Check local branch.
+	local := exec.Command("git", "-C", repoPath, "rev-parse", "--verify", "refs/heads/"+branchName)
+	if local.Run() == nil {
+		return true, nil
+	}
+	// Check remote tracking branch.
+	remote := exec.Command("git", "-C", repoPath, "rev-parse", "--verify", "refs/remotes/origin/"+branchName)
+	if remote.Run() == nil {
+		return true, nil
+	}
+	return false, nil
 }
 
 func (r *Real) CreateBranch(path, branchName string) error {

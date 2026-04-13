@@ -35,7 +35,7 @@ func TestMock_CreateAndRemoveWorktree(t *testing.T) {
 	m.SetDefaultBranch("/repo", "main")
 
 	// Create a worktree.
-	err := m.CreateWorktree("/repo", "/repo-wt/task1")
+	err := m.CreateWorktree("/repo", "/repo-wt/task1", "")
 	if err != nil {
 		t.Fatalf("CreateWorktree failed: %v", err)
 	}
@@ -293,12 +293,12 @@ func TestMock_CreateWorktree_DuplicateError(t *testing.T) {
 	m := NewMock()
 	m.SetDefaultBranch("/repo", "main")
 
-	err := m.CreateWorktree("/repo", "/repo-wt/task1")
+	err := m.CreateWorktree("/repo", "/repo-wt/task1", "")
 	if err != nil {
 		t.Fatalf("first create failed: %v", err)
 	}
 
-	err = m.CreateWorktree("/repo", "/repo-wt/task1")
+	err = m.CreateWorktree("/repo", "/repo-wt/task1", "")
 	if err == nil {
 		t.Error("expected error creating duplicate worktree")
 	}

@@ -47,7 +47,7 @@ func newWsNewCmd() *cobra.Command {
 
   bay ws new                          create in current dock, auto-named
   bay ws new login-bug                create with display name "login-bug"
-  bay ws new --branch fix/login-bug   create on a new git branch
+  bay ws new --branch fix/login-bug   checkout or create a git branch
   bay ws new --dock labs              create in a specific dock`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -122,7 +122,7 @@ func newWsNewCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Dir, "dir", "", "external directory (creates external workspace)")
 	cmd.Flags().StringVar(&opts.Agent, "agent", "", "agent type (bare --agent uses dock default)")
 	cmd.Flags().BoolVar(&shell, "shell", false, "open shell instead of agent")
-	cmd.Flags().StringVar(&opts.Branch, "branch", "", "create and checkout a git branch in the worktree")
+	cmd.Flags().StringVar(&opts.Branch, "branch", "", "git branch to checkout (creates it if new)")
 	cmd.Flags().Lookup("agent").NoOptDefVal = "default"
 
 	return cmd
