@@ -96,8 +96,8 @@ func TestCollectEntries(t *testing.T) {
 	if e1.PR != "234" {
 		t.Errorf("mem-refactor PR: got %q, want %q", e1.PR, "234")
 	}
-	if e1.Merged {
-		t.Error("mem-refactor Merged: got true, want false")
+	if !e1.Pending {
+		t.Error("mem-refactor Pending: got false, want true")
 	}
 	if e1.SurfaceCount != 2 {
 		t.Errorf("mem-refactor SurfaceCount: got %d, want 2", e1.SurfaceCount)

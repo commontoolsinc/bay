@@ -437,12 +437,35 @@ func (e *Engine) WsClose(dockName, wsName string, force bool) error {
 	return nil
 }
 
+// wsSkipFunc is called for each workspace during batch close. It returns a
+// non-empty reason string to skip the workspace, or "" to include it.
+type wsSkipFunc func(ws *manifest.Workspace, dockName string) string
+
 // WsCloseClean closes all clean (non-dirty, no unpushed commits) workspaces.
+func (e *Engine) WsCloseClean(dockName string, force bool, exclude ...string) ([]string, []string, error) {
+	return e.wsCloseBatch(dockName, force, nil, exclude...)
+}
+
+// WsCloseDone closes workspaces that are not dirty AND not pending (have an
+// unmerged branch). Only removes workspaces whose work has landed or that
+// have no branch at all.
+func (e *Engine) WsCloseDone(dockName string, force bool, exclude ...string) ([]string, []string, error) {
+	return e.wsCloseBatch(dockName, force, func(ws *manifest.Workspace, dn string) string {
+		if ws.Worktree != nil && ws.Worktree.Branch != "" && !ws.IsMerged() {
+			return "pending"
+		}
+		return ""
+	}, exclude...)
+}
+
+// wsCloseBatch is the shared implementation for batch-close operations.
+// An optional skip function can pre-filter workspaces before the safety
+// checks in closeWorkspaceState.
 //
 // Manifest updates for ALL targets are persisted before any tmux kill,
 // so that bay invoked from inside one of the affected panes doesn't
 // leave the rest of the targets half-closed when its host pane dies.
-func (e *Engine) WsCloseClean(dockName string, force bool, exclude ...string) (closed []string, skipped []string, err error) {
+func (e *Engine) wsCloseBatch(dockName string, force bool, skip wsSkipFunc, exclude ...string) (closed []string, skipped []string, err error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return nil, nil, err
@@ -469,11 +492,20 @@ func (e *Engine) WsCloseClean(dockName string, force bool, exclude ...string) (c
 			if excludeSet[ws.Name] {
 				continue
 			}
+			if skip != nil {
+				if reason := skip(ws, d.Name); reason != "" {
+					skipped = append(skipped, d.Name+":"+ws.Name+" ("+reason+")")
+					continue
+				}
+			}
 			targets = append(targets, target{dock: d.Name, name: ws.Name})
 		}
 	}
 
 	if len(targets) == 0 {
+		if len(skipped) > 0 {
+			return nil, skipped, nil
+		}
 		return nil, nil, fmt.Errorf("no workspaces found")
 	}
 
@@ -494,10 +526,6 @@ func (e *Engine) WsCloseClean(dockName string, force bool, exclude ...string) (c
 		}
 		closed = append(closed, label)
 		pending = append(pending, pendingKill{dock: t.dock, windowIDs: ids})
-	}
-
-	if len(closed) == 0 {
-		return nil, skipped, fmt.Errorf("no clean workspaces found")
 	}
 
 	// Second pass: kill tmux windows. Safe to die at any point — every

@@ -44,7 +44,7 @@ type WorkspaceInfo struct {
 	Branch       string        `json:"branch,omitempty"`
 	PR           string        `json:"pr,omitempty"`
 	Dirty        bool          `json:"dirty"`
-	Merged       bool          `json:"merged"`
+	Pending      bool          `json:"pending"`
 	Waiting      bool          `json:"waiting,omitempty"`
 	Missing      bool          `json:"missing,omitempty"`
 	Stale        bool          `json:"stale,omitempty"`
@@ -295,7 +295,7 @@ func (e *Engine) buildWorkspaceInfo(ws *manifest.Workspace, agent string) Worksp
 		Path:         ws.Path,
 		Branch:       branch,
 		PR:           pr,
-		Merged:       ws.IsMerged(),
+		Pending:      ws.Worktree != nil && ws.Worktree.Branch != "" && !ws.IsMerged(),
 		Missing:      ws.Path != "" && statErr != nil,
 		DefaultAgent: agent,
 		SyncStatus:   manifest.SyncStatusOK,
