@@ -16,6 +16,10 @@ After merging, reinstall from main so you're not running stale code:
 git checkout main && go install ./cmd/bay
 ```
 
+## After implementation
+
+Review your own changes before moving on. Read the diff, check for code reuse (search for existing helpers before writing new ones), redundant state, copy-paste, and unnecessary work on hot paths.
+
 ## Before pushing
 
 Run `scripts/presubmit.sh` before every `git push`. It mirrors CI: build, gofmt, vet, staticcheck, and tests with `-race`. Fix any failures before pushing.
