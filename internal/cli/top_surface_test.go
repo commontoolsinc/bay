@@ -6,7 +6,6 @@ import (
 
 	"github.com/commontoolsinc/bay/internal/engine"
 	"github.com/commontoolsinc/bay/internal/manifest"
-	"github.com/commontoolsinc/bay/internal/tmux"
 )
 
 // --- runSurfaceNew ---
@@ -347,28 +346,6 @@ func TestRunSurfaceRename_Self(t *testing.T) {
 	if foundSecond {
 		t.Error("'second' should have been renamed away")
 	}
-}
-
-// mockTmuxFromEngine extracts the tmux Mock from an engine. The engine's
-// Tmux field is the Interface, but the test fixtures install a *tmux.Mock.
-func mockTmuxFromEngine(t *testing.T, eng *engine.Engine) *tmux.Mock {
-	t.Helper()
-	m, ok := eng.Tmux.(*tmux.Mock)
-	if !ok {
-		t.Fatalf("engine tmux is not a *tmux.Mock")
-	}
-	return m
-}
-
-// mockHasRespawn returns true if mockTmux recorded a RespawnPane call on the
-// given pane ID since its Calls slice was last reset.
-func mockHasRespawn(mockTmux *tmux.Mock, paneID string) bool {
-	for _, c := range mockTmux.Calls {
-		if c.Method == "RespawnPane" && len(c.Args) > 0 && c.Args[0] == paneID {
-			return true
-		}
-	}
-	return false
 }
 
 // --- runSurfaceShow ---
