@@ -46,6 +46,27 @@ func TestHasSession_Missing(t *testing.T) {
 	}
 }
 
+// TestHasSession_ExactMatch verifies that HasSession does not
+// prefix-match. A session named "loom-old" should not cause
+// HasSession("loom") to return true.
+func TestHasSession_ExactMatch(t *testing.T) {
+	m := NewMock()
+	m.NewSession("loom-old")
+	has, err := m.HasSession("loom")
+	if err != nil {
+		t.Fatalf("HasSession: %v", err)
+	}
+	if has {
+		t.Error("HasSession should use exact matching, not prefix matching")
+	}
+}
+
+func TestExactSession(t *testing.T) {
+	if got := exactSession("loom"); got != "=loom" {
+		t.Errorf("exactSession(loom) = %q, want =loom", got)
+	}
+}
+
 func TestListSessions(t *testing.T) {
 	m := NewMock()
 	m.NewSession("alpha")
