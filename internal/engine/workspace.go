@@ -20,7 +20,7 @@ type WsNewOptions struct {
 	Agent        string // agent override
 	RequireAgent bool   // fail if no agent can be resolved
 	Shell        bool   // open shell instead of agent
-	Branch       string // create and checkout this git branch
+	Branch       string // git branch to checkout (creates it if new)
 }
 
 // WsNew creates a new workspace with surfaces.
@@ -42,6 +42,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	var wsType manifest.WorkspaceType
 	var wsPath string
 	var worktreeAttrs *manifest.WorktreeAttrs
+	var branchExists bool
 	repoName := opts.Repo
 	if repoName == "" {
 		repoName = dock.Repo
@@ -105,7 +106,21 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		}
 
 		repoPath := config.ExpandPath(repo.Path)
-		if err := e.Git.CreateWorktree(repoPath, wsPath); err != nil {
+
+		// When a branch is requested, check if it already exists so we
+		// can create the worktree directly on it instead of detached.
+		if opts.Branch != "" {
+			_ = e.Git.Fetch(repoPath) // best-effort; needed for BranchExists to see remote refs
+			if exists, err := e.Git.BranchExists(repoPath, opts.Branch); err == nil && exists {
+				branchExists = true
+			}
+		}
+
+		wtBranch := ""
+		if branchExists {
+			wtBranch = opts.Branch
+		}
+		if err := e.Git.CreateWorktree(repoPath, wsPath, wtBranch); err != nil {
 			return nil, fmt.Errorf("creating worktree: %w", err)
 		}
 
@@ -239,10 +254,13 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		return nil, fmt.Errorf("workspace %q not found after creation", finalName)
 	}
 
-	// Create git branch if requested.
+	// Set up git branch if requested. For existing branches the worktree
+	// was already created on the branch; for new branches we create it now.
 	if opts.Branch != "" && addedWs.Worktree != nil {
-		if err := e.Git.CreateBranch(wsPath, opts.Branch); err != nil {
-			return addedWs, fmt.Errorf("workspace created but branch creation failed: %w", err)
+		if !branchExists {
+			if err := e.Git.CreateBranch(wsPath, opts.Branch); err != nil {
+				return addedWs, fmt.Errorf("workspace created but branch creation failed: %w", err)
+			}
 		}
 		if err := e.withManifest(func(m *manifest.Manifest) error {
 			dock := m.FindDock(dockName)

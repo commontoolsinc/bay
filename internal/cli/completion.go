@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/commontoolsinc/bay/internal/config"
@@ -146,6 +147,7 @@ func registerCompletions(root *cobra.Command) {
 		cmd.RegisterFlagCompletionFunc("dock", dockFlagCompl)
 		cmd.RegisterFlagCompletionFunc("agent", agentFlagCompletions)
 		cmd.RegisterFlagCompletionFunc("repo", repoCompletions)
+		cmd.RegisterFlagCompletionFunc("branch", branchCompletions)
 	}
 	// surface new is now a parent with shell/agent/cmd/edit subcommands
 	// (same objects as bay new). Flag completions are registered on those
@@ -506,4 +508,88 @@ func splitCompletions(cmd *cobra.Command, args []string, toComplete string) ([]s
 		"h\thorizontal",
 		"v\tvertical",
 	}, cobra.ShellCompDirectiveNoFileComp
+}
+
+// branchCompletions returns remote branch names for the --branch flag,
+// filtering out the default branch and branches already checked out in
+// a bay workspace.
+func branchCompletions(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	m := loadManifestForCompletions()
+	repoPath := repoPathForCompletion(cmd, m)
+	if repoPath == "" {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	// List remote branches.
+	gitCmd := exec.Command("git", "-C", repoPath, "branch", "-r", "--format=%(refname:short)")
+	out, err := gitCmd.Output()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	// Determine default branch for filtering.
+	defaultBranch := "main"
+	if defOut, defErr := exec.Command("git", "-C", repoPath, "symbolic-ref", "refs/remotes/origin/HEAD").Output(); defErr == nil {
+		parts := strings.Split(strings.TrimSpace(string(defOut)), "/")
+		if len(parts) > 0 {
+			defaultBranch = parts[len(parts)-1]
+		}
+	}
+
+	// Collect branches already in use by bay workspaces.
+	inUse := map[string]bool{}
+	if m != nil {
+		for _, ref := range manifest.AllWorkspaces(m) {
+			if ref.Workspace.Worktree != nil && ref.Workspace.Worktree.Branch != "" {
+				inUse[ref.Workspace.Worktree.Branch] = true
+			}
+		}
+	}
+
+	var completions []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		branch := strings.TrimPrefix(line, "origin/")
+		if branch == "" || branch == "HEAD" || branch == defaultBranch {
+			continue
+		}
+		if inUse[branch] {
+			continue
+		}
+		completions = append(completions, branch)
+	}
+	return completions, cobra.ShellCompDirectiveNoFileComp
+}
+
+// repoPathForCompletion resolves a repo path for completion context.
+// It checks the --dock flag, then falls back to the CWD git root.
+func repoPathForCompletion(cmd *cobra.Command, m *manifest.Manifest) string {
+	// Try --dock flag → dock's repo.
+	if dockFlag, err := cmd.Flags().GetString("dock"); err == nil && dockFlag != "" && m != nil {
+		if dock := m.FindDock(dockFlag); dock != nil && dock.Repo != "" {
+			if repo := m.FindRepo(dock.Repo); repo != nil {
+				return config.ExpandPath(repo.Path)
+			}
+		}
+	}
+
+	// Try current tmux session → dock's repo.
+	if m != nil {
+		if sess, err := tmuxpkg.NewReal().CurrentSession(); err == nil {
+			if dock := m.FindDock(sess); dock != nil && dock.Repo != "" {
+				if repo := m.FindRepo(dock.Repo); repo != nil {
+					return config.ExpandPath(repo.Path)
+				}
+			}
+		}
+	}
+
+	// Fall back to CWD git root.
+	if cwd, err := os.Getwd(); err == nil {
+		gitCmd := exec.Command("git", "-C", cwd, "rev-parse", "--show-toplevel")
+		if out, err := gitCmd.Output(); err == nil {
+			return strings.TrimSpace(string(out))
+		}
+	}
+
+	return ""
 }

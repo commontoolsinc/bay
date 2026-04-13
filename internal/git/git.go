@@ -9,7 +9,11 @@ type Interface interface {
 	RepoRoot(path string) (string, error)
 
 	// Worktree operations
-	CreateWorktree(repoPath string, worktreePath string) error
+	// CreateWorktree creates a git worktree. If branch is empty the
+	// worktree is created in detached HEAD at the default branch. If
+	// branch names an existing local or remote-tracking branch, the
+	// worktree checks it out directly.
+	CreateWorktree(repoPath, worktreePath, branch string) error
 	RemoveWorktree(repoPath string, worktreePath string, force bool) error
 
 	// State checks
@@ -24,6 +28,9 @@ type Interface interface {
 	// Branch operations
 	CreateBranch(path, branchName string) error
 	DeleteBranch(repoPath, branchName string) error
+	// BranchExists reports whether branchName exists as a local branch
+	// or as a remote-tracking branch (origin/<branchName>).
+	BranchExists(repoPath, branchName string) (bool, error)
 
 	// PR detection
 	PRForBranch(path, branch string) (string, error)
