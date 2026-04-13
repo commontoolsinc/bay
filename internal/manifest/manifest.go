@@ -82,13 +82,13 @@ type Manifest struct {
 
 // Dock represents a tmux session and its associated terminal window.
 type Dock struct {
-	Name       string      `json:"name"`                 // unique; matches config key and tmux session name
-	Repo       string      `json:"repo,omitempty"`       // default repo for workspaces
-	Agent      string      `json:"agent,omitempty"`      // default agent
+	Name       string              `json:"name"`                 // unique; matches config key and tmux session name
+	Repo       string              `json:"repo,omitempty"`       // default repo for workspaces
+	Agent      string              `json:"agent,omitempty"`      // default agent
 	AgentArgs  map[string][]string `json:"agent_args,omitempty"` // per-agent args
-	Host       *GUIAttrs   `json:"host,omitempty"`       // terminal window hosting this dock's tmux session; nil if unmanaged
-	Surfaces   []Surface   `json:"surfaces,omitempty"`   // dock-level surfaces (e.g., dock-scoped editor)
-	Workspaces []Workspace `json:"workspaces"`
+	Host       *GUIAttrs           `json:"host,omitempty"`       // terminal window hosting this dock's tmux session; nil if unmanaged
+	Surfaces   []Surface           `json:"surfaces,omitempty"`   // dock-level surfaces (e.g., dock-scoped editor)
+	Workspaces []Workspace         `json:"workspaces"`
 }
 
 // Workspace represents a unit of work — typically one branch/PR.

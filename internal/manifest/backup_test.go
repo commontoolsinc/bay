@@ -82,13 +82,13 @@ func TestPruneBackups_KeepsRetentionPolicy(t *testing.T) {
 
 	// Create backups spanning different retention windows.
 	times := []time.Duration{
-		-1 * time.Minute,  // recent — keep
-		-2 * time.Minute,  // recent — keep
-		-3 * time.Minute,  // recent — keep
-		-2 * time.Hour,    // hourly — keep
-		-3 * time.Hour,    // hourly — keep
-		-25 * time.Hour,   // expired — prune
-		-48 * time.Hour,   // expired — prune
+		-1 * time.Minute, // recent — keep
+		-2 * time.Minute, // recent — keep
+		-3 * time.Minute, // recent — keep
+		-2 * time.Hour,   // hourly — keep
+		-3 * time.Hour,   // hourly — keep
+		-25 * time.Hour,  // expired — prune
+		-48 * time.Hour,  // expired — prune
 	}
 	for _, d := range times {
 		ts := now.Add(d)
@@ -111,13 +111,12 @@ func TestPruneBackups_KeepsRetentionPolicy(t *testing.T) {
 
 func TestPruneBackups_DeduplicatesPerBucket(t *testing.T) {
 	dir := t.TempDir()
-	now := time.Now()
 
 	// Two backups in the same minute — only one should survive.
 	// Use a fixed time to avoid crossing minute boundaries.
 	t1 := time.Date(2026, 4, 12, 14, 30, 10, 0, time.Local)
 	t2 := time.Date(2026, 4, 12, 14, 30, 40, 0, time.Local)
-	now = time.Date(2026, 4, 12, 14, 32, 0, 0, time.Local)
+	now := time.Date(2026, 4, 12, 14, 32, 0, 0, time.Local)
 	for _, ts := range []time.Time{t1, t2} {
 		name := backupPrefix + ts.Format(backupTimeFormat) + backupSuffix
 		os.WriteFile(filepath.Join(dir, name), []byte("{}"), 0o644)
