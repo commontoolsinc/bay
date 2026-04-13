@@ -61,9 +61,12 @@ func newWsNewCmd() *cobra.Command {
 				opts.Name = args[0]
 			}
 
-			// Resolve dock: explicit --dock > current tmux session > auto-bootstrap.
+			// Resolve dock: explicit --dock > current tmux pane's session > auto-bootstrap.
+			// Only trust CurrentSession() when TMUX_PANE is set — $TMUX alone
+			// is inherited by child shells outside tmux and would cause bay to
+			// silently add workspaces to the wrong dock.
 			opts.Dock = dockFlag
-			if opts.Dock == "" {
+			if opts.Dock == "" && os.Getenv("TMUX_PANE") != "" {
 				dock, tmuxErr := eng.Tmux.CurrentSession()
 				if tmuxErr == nil {
 					m, _ := eng.LoadManifest()
@@ -99,17 +102,13 @@ func newWsNewCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			fmt.Printf("Created %s:%s\n", opts.Dock, ws.Name)
+
 			// Suggest how to get into the workspace if not already there.
 			currentSession, tmuxErr := eng.Tmux.CurrentSession()
-			if tmuxErr != nil {
-				// Not in tmux — print helpful attach hint.
-				fmt.Printf("Workspace %s created in dock %s (path: %s)\n",
-					ws.Name, opts.Dock, ws.Path)
+			if tmuxErr != nil || os.Getenv("TMUX_PANE") == "" {
 				fmt.Printf("\nAttach with:\n  tmux attach -t %s\n", opts.Dock)
 			} else if currentSession != opts.Dock {
-				// In tmux but different session — print switch hint.
-				fmt.Printf("Workspace %s created in dock %s (path: %s)\n",
-					ws.Name, opts.Dock, ws.Path)
 				fmt.Printf("\nSwitch with:\n  tmux switch-client -t %s\n", opts.Dock)
 			}
 
@@ -401,9 +400,9 @@ func probeAgent() string {
 func resolveCurrentDock(eng *engine.Engine) (dockName, repoName string, err error) {
 	m, _ := eng.LoadManifest()
 
-	// Try: current tmux session.
-	if sess, tmuxErr := eng.Tmux.CurrentSession(); tmuxErr == nil {
-		if m != nil && m.FindDock(sess) != nil {
+	// Try: current tmux pane's session (only when actually inside tmux).
+	if os.Getenv("TMUX_PANE") != "" {
+		if sess, tmuxErr := eng.Tmux.CurrentSession(); tmuxErr == nil && m != nil && m.FindDock(sess) != nil {
 			dock := m.FindDock(sess)
 			return sess, dock.Repo, nil
 		}
