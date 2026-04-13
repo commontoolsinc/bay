@@ -173,6 +173,7 @@ var bayKeybindings = []bayKeybinding{
 
 	// Creation
 	{"M-c", "bay ws new", "Option+c: create workspace in current dock", "run-shell"},
+	{"M-C", "bay ws new --agent", "Option+C: create workspace with agent in current dock", "run-shell"},
 	{"M-s", "bay shell --window", "Option+s: shell in a new window", "run-shell"},
 	{"M-S", "bay shell --pane", "Option+S: shell as split pane", "run-shell"},
 	{"M-a", "bay agent --window", "Option+a: agent in a new window", "run-shell"},
