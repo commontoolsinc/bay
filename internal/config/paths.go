@@ -23,7 +23,7 @@ func DefaultPaths() Paths {
 		ConfigFile:   DefaultConfigPath(),
 		ManifestFile: filepath.Join(dataDir, "manifest.json"),
 		ArchiveFile:  filepath.Join(dataDir, "archive.json"),
-		PatternsFile: filepath.Join(configDir, "bay-prompts.txt"),
+		PatternsFile: filepath.Join(configDir, "waiting-patterns.txt"),
 		PIDFile:      filepath.Join(dataDir, "monitor.pid"),
 	}
 }
