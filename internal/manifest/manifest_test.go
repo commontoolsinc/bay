@@ -187,9 +187,9 @@ func TestRoundTrip(t *testing.T) {
 				Name: "labs",
 				Workspaces: []Workspace{
 					{
-						Name:   "auth-fix",
-						Type:   WorkspaceTypeWorktree,
-						Path:   "/tmp/ws1",
+						Name: "auth-fix",
+						Type: WorkspaceTypeWorktree,
+						Path: "/tmp/ws1",
 						Worktree: &WorktreeAttrs{
 							Repo:   "labs",
 							Branch: "fix-auth",

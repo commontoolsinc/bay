@@ -236,8 +236,8 @@ func createTestManifest(t *testing.T, dir string, tmuxWindowID string) string {
 			Name: "dev",
 			Workspaces: []manifest.Workspace{
 				{
-					Name:   "test-ws",
-					Type:   manifest.WorkspaceTypeWorktree,
+					Name: "test-ws",
+					Type: manifest.WorkspaceTypeWorktree,
 					Surfaces: []manifest.Surface{
 						{
 							ID: 1, Name: "agent", Type: manifest.SurfaceTypeAgent,
@@ -270,8 +270,8 @@ func createShellOnlyManifest(t *testing.T, dir string, tmuxWindowID string) stri
 			Name: "dev",
 			Workspaces: []manifest.Workspace{
 				{
-					Name:   "shell-ws",
-					Type:   manifest.WorkspaceTypeWorktree,
+					Name: "shell-ws",
+					Type: manifest.WorkspaceTypeWorktree,
 					Surfaces: []manifest.Surface{
 						{
 							ID: 1, Name: "shell", Type: manifest.SurfaceTypeShell,
