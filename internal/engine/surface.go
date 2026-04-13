@@ -123,6 +123,7 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 			return fmt.Errorf("creating tmux window: %w", err)
 		}
 		e.cleanPlaceholders(dockName)
+		e.positionNewWindow(dockName, winID, wsName, nil)
 
 		tmuxWindowID = winID
 		layoutGroup = nextLayoutGroup(ws)

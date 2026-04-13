@@ -133,13 +133,15 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		return nil, err
 	}
 
-	// Create tmux window.
+	// Create tmux window and position it at the end of existing workspace
+	// windows so new workspaces appear rightmost in the tab bar.
 	windowID, err := e.Tmux.NewWindow(dockName, displayName, wsPath)
 	if err != nil {
 		rollbackWorktree()
 		return nil, fmt.Errorf("creating tmux window: %w", err)
 	}
 	e.cleanPlaceholders(dockName)
+	e.positionNewWindow(dockName, windowID, "", m)
 
 	// Get the first pane in the new window.
 	panes, _ := e.Tmux.ListPanes(windowID)
@@ -784,6 +786,90 @@ func nextAvailableWorkspaceName(dock *manifest.Dock, wtDir string) string {
 		}
 		return name
 	}
+}
+
+// positionNewWindow moves a newly created window so that tmux tab order
+// matches manifest order. For a new workspace (wsName==""), the window goes
+// after the last window of the last existing workspace. For a new surface in
+// an existing workspace, it goes after the last window of that workspace.
+// If m is nil the manifest is loaded; callers with a pre-loaded manifest
+// can pass it to avoid a second read.
+func (e *Engine) positionNewWindow(dockName, windowID, wsName string, m *manifest.Manifest) {
+	if m == nil {
+		var err error
+		m, err = e.LoadManifest()
+		if err != nil {
+			return
+		}
+	}
+	dock := m.FindDock(dockName)
+	if dock == nil {
+		return
+	}
+
+	var afterID string
+	if wsName == "" {
+		// New workspace: goes after the last window of the last existing workspace.
+		for i := len(dock.Workspaces) - 1; i >= 0; i-- {
+			if id := lastWindowIDInWorkspace(dock, dock.Workspaces[i].Name); id != "" {
+				afterID = id
+				break
+			}
+		}
+	} else {
+		// New surface: goes after the last window of this workspace,
+		// falling back to the last window of the previous workspace.
+		afterID = lastWindowIDInWorkspace(dock, wsName)
+		if afterID == "" {
+			afterID = lastWindowIDBeforeWorkspace(dock, wsName)
+		}
+	}
+
+	if afterID != "" && afterID != windowID {
+		_ = e.Tmux.MoveWindowAfter(windowID, afterID)
+	}
+}
+
+// lastWindowIDBeforeWorkspace returns the tmux window ID that a new window
+// for the given workspace should be placed after, based on manifest order.
+// It walks backwards through workspaces (and surfaces within the target
+// workspace) to find the nearest existing window. Returns "" if none found.
+func lastWindowIDBeforeWorkspace(dock *manifest.Dock, wsName string) string {
+	wsIdx := -1
+	for i, ws := range dock.Workspaces {
+		if ws.Name == wsName {
+			wsIdx = i
+			break
+		}
+	}
+	if wsIdx == -1 {
+		return ""
+	}
+	// Walk backwards from the previous workspace to find any existing window.
+	for i := wsIdx - 1; i >= 0; i-- {
+		for j := len(dock.Workspaces[i].Surfaces) - 1; j >= 0; j-- {
+			s := dock.Workspaces[i].Surfaces[j]
+			if s.Tmux != nil && s.Tmux.WindowID != "" {
+				return s.Tmux.WindowID
+			}
+		}
+	}
+	return ""
+}
+
+// lastWindowIDInWorkspace returns the last tmux window ID among the surfaces
+// of the given workspace. Returns "" if the workspace has no windows.
+func lastWindowIDInWorkspace(dock *manifest.Dock, wsName string) string {
+	ws := dock.FindWorkspace(wsName)
+	if ws == nil {
+		return ""
+	}
+	for i := len(ws.Surfaces) - 1; i >= 0; i-- {
+		if ws.Surfaces[i].Tmux != nil && ws.Surfaces[i].Tmux.WindowID != "" {
+			return ws.Surfaces[i].Tmux.WindowID
+		}
+	}
+	return ""
 }
 
 func findWorkspaceByPath(dock *manifest.Dock, path string) *manifest.Workspace {

@@ -88,13 +88,14 @@ func (r *Real) HasUnpushedCommits(path string) (bool, error) {
 }
 
 // hasCommitsAboveDefault checks if HEAD has commits beyond the default branch.
+// Uses origin/<default> so a stale local ref doesn't produce false positives.
 func (r *Real) hasCommitsAboveDefault(path string) (bool, error) {
 	defaultBranch, err := r.DefaultBranch(path)
 	if err != nil {
 		// Can't determine default branch — fail safe
 		return false, fmt.Errorf("cannot determine default branch: %w", err)
 	}
-	logCmd := exec.Command("git", "-C", path, "log", defaultBranch+"..HEAD", "--oneline")
+	logCmd := exec.Command("git", "-C", path, "log", "origin/"+defaultBranch+"..HEAD", "--oneline")
 	logOut, logErr := logCmd.Output()
 	if logErr != nil {
 		return false, nil
