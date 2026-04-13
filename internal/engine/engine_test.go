@@ -2973,6 +2973,27 @@ func TestWsNew_ExistingBranchWithExplicitName(t *testing.T) {
 	}
 }
 
+// TestWsNew_FetchesBeforeWorktreeCreation verifies that bay fetches
+// remote refs before creating a worktree, even without --branch.
+func TestWsNew_FetchesBeforeWorktreeCreation(t *testing.T) {
+	eng, dir := testEngine(t)
+	mockGit := eng.Git.(*git.Mock)
+
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+
+	repoPath := filepath.Join(dir, "repos", "labs")
+	fetchCalls := mockGit.Calls("Fetch")
+	if len(fetchCalls) != 1 {
+		t.Fatalf("expected 1 Fetch call, got %d", len(fetchCalls))
+	}
+	if fetchCalls[0].Args[0] != repoPath {
+		t.Errorf("Fetch path = %q, want %q", fetchCalls[0].Args[0], repoPath)
+	}
+}
+
 // TestSyncDetach_DeletesPushedBranch verifies that when sync detects a
 // detached HEAD, it deletes the local branch if it's been pushed.
 func TestSyncDetach_DeletesPushedBranch(t *testing.T) {

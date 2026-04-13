@@ -56,7 +56,9 @@ func (r *Real) CreateWorktree(repoPath, worktreePath, branch string) error {
 	if err != nil {
 		return fmt.Errorf("finding default branch: %w", err)
 	}
-	cmd := exec.Command("git", "-C", repoPath, "worktree", "add", "--detach", worktreePath, defaultBranch)
+	// Use origin/<default> so the worktree starts at the latest fetched
+	// commit, not wherever the local branch happens to be.
+	cmd := exec.Command("git", "-C", repoPath, "worktree", "add", "--detach", worktreePath, "origin/"+defaultBranch)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git worktree add: %s: %w", strings.TrimSpace(string(out)), err)
 	}
