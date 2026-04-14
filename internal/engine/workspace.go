@@ -115,11 +115,11 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 
 		repoPath := config.ExpandPath(repo.Path)
 
-		// Fetch so the worktree starts at the latest remote HEAD, and
-		// so BranchExists can see remote refs for --branch.
-		_ = e.Git.Fetch(repoPath)
-
+		// Only fetch when --branch is used so the common case (no branch)
+		// stays fast. The detached worktree uses origin/<default> which
+		// relies on whatever was last fetched.
 		if opts.Branch != "" {
+			_ = e.Git.Fetch(repoPath)
 			if exists, err := e.Git.BranchExists(repoPath, opts.Branch); err == nil && exists {
 				branchExists = true
 			}

@@ -468,7 +468,7 @@ func TestAutoBootstrap_CreatesRepoAndDock(t *testing.T) {
 	os.Chdir(repoDir)
 	defer os.Chdir(origDir)
 
-	dockName, err := autoBootstrap(eng)
+	dockName, err := autoBootstrap(eng, false)
 	if err != nil {
 		t.Fatalf("autoBootstrap: %v", err)
 	}
@@ -507,7 +507,7 @@ func TestAutoBootstrap_NotInGitRepo(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(origDir)
 
-	_, err := autoBootstrap(eng)
+	_, err := autoBootstrap(eng, false)
 	if err == nil {
 		t.Error("expected error when not in a git repo")
 	}
@@ -552,7 +552,7 @@ func TestAutoBootstrap_SkipsExistingDock(t *testing.T) {
 	os.Chdir(repoDir)
 	defer os.Chdir(origDir)
 
-	dockName, err := autoBootstrap(eng)
+	dockName, err := autoBootstrap(eng, false)
 	if err != nil {
 		t.Fatalf("autoBootstrap: %v", err)
 	}

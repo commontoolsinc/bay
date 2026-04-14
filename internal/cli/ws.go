@@ -38,6 +38,7 @@ func newWsCmd() *cobra.Command {
 func newWsNewCmd() *cobra.Command {
 	var opts engine.WsNewOptions
 	var shell bool
+	var quiet bool
 	var dockFlag string
 
 	cmd := &cobra.Command{
@@ -76,7 +77,7 @@ func newWsNewCmd() *cobra.Command {
 				}
 			}
 			if opts.Dock == "" {
-				dockName, bootstrapErr := autoBootstrap(eng)
+				dockName, bootstrapErr := autoBootstrap(eng, quiet)
 				if bootstrapErr != nil {
 					return bootstrapErr
 				}
@@ -102,19 +103,12 @@ func newWsNewCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// Print feedback when the user can't see the new tmux window
-			// directly (outside tmux or in a different session). Inside
-			// the dock's session the new tab appearing is feedback enough.
-			// Note: don't gate on TMUX_PANE here — tmux run-shell (used
-			// by keybindings) doesn't set it, but the user can still see
-			// the new tab.
-			currentSession, tmuxErr := eng.Tmux.CurrentSession()
-			inDock := tmuxErr == nil && currentSession == opts.Dock
-			if !inDock {
+			if !quiet {
 				fmt.Printf("Created %s:%s\n", opts.Dock, ws.Name)
+				currentSession, tmuxErr := eng.Tmux.CurrentSession()
 				if tmuxErr != nil || os.Getenv("TMUX_PANE") == "" {
 					fmt.Printf("\nAttach with:\n  tmux attach -t %s\n", opts.Dock)
-				} else {
+				} else if currentSession != opts.Dock {
 					fmt.Printf("\nSwitch with:\n  tmux switch-client -t %s\n", opts.Dock)
 				}
 			}
@@ -129,6 +123,7 @@ func newWsNewCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Agent, "agent", "", "agent type (bare --agent uses dock default)")
 	cmd.Flags().BoolVar(&shell, "shell", false, "open shell instead of agent")
 	cmd.Flags().StringVar(&opts.Branch, "branch", "", "git branch to checkout (creates it if new)")
+	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "suppress output")
 	cmd.Flags().Lookup("agent").NoOptDefVal = "default"
 
 	return cmd
@@ -345,7 +340,7 @@ func newWsRenameCmd() *cobra.Command {
 
 // autoBootstrap detects the CWD git repo, creates a dock and repo in the manifest,
 // and saves. Returns the dock name to use for ws new.
-func autoBootstrap(eng *engine.Engine) (string, error) {
+func autoBootstrap(eng *engine.Engine, quiet bool) (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("cannot determine working directory")
@@ -385,12 +380,14 @@ func autoBootstrap(eng *engine.Engine) (string, error) {
 		}
 	}
 
-	fmt.Printf("Auto-configured: repo %s, dock %s", repoName, dockName)
-	if agentName != "" {
-		fmt.Printf(", agent %s", agentName)
+	if !quiet {
+		fmt.Printf("Auto-configured: repo %s, dock %s", repoName, dockName)
+		if agentName != "" {
+			fmt.Printf(", agent %s", agentName)
+		}
+		fmt.Println()
+		fmt.Println("Run `bay setup` to install keybindings and shell completions.")
 	}
-	fmt.Println()
-	fmt.Println("Run `bay setup` to install keybindings and shell completions.")
 
 	return dockName, nil
 }

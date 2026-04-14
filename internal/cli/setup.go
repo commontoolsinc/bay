@@ -182,8 +182,8 @@ var bayKeybindings = []bayKeybinding{
 	{"M-G", "bay ws go --pick", "Option+G: pick workspace in dock", "run-shell"},
 
 	// Creation
-	{"M-c", "bay ws new", "Option+c: create workspace in current dock", "run-shell"},
-	{"M-C", "bay ws new --agent", "Option+C: create workspace with agent in current dock", "run-shell"},
+	{"M-c", "bay ws new -q", "Option+c: create workspace in current dock", "run-shell"},
+	{"M-C", "bay ws new -q --agent", "Option+C: create workspace with agent in current dock", "run-shell"},
 	{"M-s", "bay shell --window", "Option+s: shell in a new window", "run-shell"},
 	{"M-S", "bay shell --pane", "Option+S: shell as split pane", "run-shell"},
 	{"M-a", "bay agent --window", "Option+a: agent in a new window", "run-shell"},

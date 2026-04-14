@@ -2974,20 +2974,31 @@ func TestWsNew_ExistingBranchWithExplicitName(t *testing.T) {
 }
 
 // TestWsNew_FetchesBeforeWorktreeCreation verifies that bay fetches
-// remote refs before creating a worktree, even without --branch.
+// remote refs before creating a worktree when --branch is used,
+// and does NOT fetch without --branch (to keep the common case fast).
 func TestWsNew_FetchesBeforeWorktreeCreation(t *testing.T) {
 	eng, dir := testEngine(t)
 	mockGit := eng.Git.(*git.Mock)
 
+	// Without --branch: no fetch.
 	_, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
-		t.Fatalf("WsNew: %v", err)
+		t.Fatalf("WsNew without branch: %v", err)
+	}
+	if n := len(mockGit.Calls("Fetch")); n != 0 {
+		t.Fatalf("expected 0 Fetch calls without --branch, got %d", n)
+	}
+
+	// With --branch: fetches once.
+	_, err = eng.WsNew(WsNewOptions{Dock: "labs", Branch: "feat/test"})
+	if err != nil {
+		t.Fatalf("WsNew with branch: %v", err)
 	}
 
 	repoPath := filepath.Join(dir, "repos", "labs")
 	fetchCalls := mockGit.Calls("Fetch")
 	if len(fetchCalls) != 1 {
-		t.Fatalf("expected 1 Fetch call, got %d", len(fetchCalls))
+		t.Fatalf("expected 1 Fetch call with --branch, got %d", len(fetchCalls))
 	}
 	if fetchCalls[0].Args[0] != repoPath {
 		t.Errorf("Fetch path = %q, want %q", fetchCalls[0].Args[0], repoPath)
