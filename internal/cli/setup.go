@@ -2,8 +2,10 @@ package cli
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -76,8 +78,11 @@ Do you want to proceed
 				fmt.Printf("Prompts written to %s\n", promptsPath)
 			}
 
-			// Install Claude Code skill
-			installBaySkill()
+			// Claude Code integration (only if claude is installed)
+			if _, err := exec.LookPath("claude"); err == nil {
+				installBaySkill()
+				installClaudeHooks(reader)
+			}
 
 			// Install shell completions
 			installCompletions(cmd.Root(), reader)
@@ -463,6 +468,82 @@ description: Bay workspace management — git worktrees and tmux windows. Use wh
 
 !` + "`bay agent-guide`" + `
 `
+
+// installClaudeHooks adds a PermissionRequest hook to Claude Code's
+// settings.json that sends a terminal bell, so tmux highlights the tab
+// when Claude needs permission. Merges with existing settings.
+func installClaudeHooks(reader *bufio.Reader) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+
+	fmt.Println()
+	fmt.Println("Enable tmux tab highlighting when Claude needs permission?")
+	fmt.Println("This sends a terminal bell so tmux flags the tab, and Option+R can jump to it.")
+	fmt.Print("Enable? [Y/n] ")
+	answer, _ := reader.ReadString('\n')
+	if strings.TrimSpace(strings.ToLower(answer)) == "n" {
+		return
+	}
+
+	// Load existing settings (or start fresh).
+	var settings map[string]any
+	if data, err := os.ReadFile(settingsPath); err == nil {
+		if err := json.Unmarshal(data, &settings); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not parse %s: %v\n", settingsPath, err)
+			return
+		}
+	} else {
+		settings = make(map[string]any)
+	}
+
+	// Check if PermissionRequest hook already exists.
+	if hooks, ok := settings["hooks"].(map[string]any); ok {
+		if _, ok := hooks["PermissionRequest"]; ok {
+			fmt.Printf("Claude Code PermissionRequest hook already configured in %s\n", settingsPath)
+			return
+		}
+	}
+
+	// Add the hook. Guard with $TMUX check so non-tmux users don't hear a bell.
+	bellHook := []any{
+		map[string]any{
+			"hooks": []any{
+				map[string]any{
+					"type":    "command",
+					"command": `[ -n "$TMUX" ] && printf '\a'`,
+				},
+			},
+		},
+	}
+
+	hooks, ok := settings["hooks"].(map[string]any)
+	if !ok {
+		hooks = make(map[string]any)
+	}
+	hooks["PermissionRequest"] = bellHook
+	settings["hooks"] = hooks
+
+	data, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not marshal settings: %v\n", err)
+		return
+	}
+
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not create directory: %v\n", err)
+		return
+	}
+	if err := os.WriteFile(settingsPath, append(data, '\n'), 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not write %s: %v\n", settingsPath, err)
+		return
+	}
+
+	fmt.Printf("Claude Code bell hook installed in %s\n", settingsPath)
+}
 
 func installBaySkill() {
 	home, err := os.UserHomeDir()
