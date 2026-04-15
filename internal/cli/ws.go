@@ -62,12 +62,12 @@ func newWsNewCmd() *cobra.Command {
 				opts.Name = args[0]
 			}
 
-			// Resolve dock: explicit --dock > current tmux pane's session > auto-bootstrap.
-			// Only trust CurrentSession() when TMUX_PANE is set — $TMUX alone
-			// is inherited by child shells outside tmux and would cause bay to
-			// silently add workspaces to the wrong dock.
+			// Resolve dock: explicit --dock > current tmux session > auto-bootstrap.
+			// Check $TMUX (not $TMUX_PANE) because tmux run-shell doesn't
+			// set TMUX_PANE. The FindDock check below ensures we only use
+			// the session if it's actually a bay dock.
 			opts.Dock = dockFlag
-			if opts.Dock == "" && os.Getenv("TMUX_PANE") != "" {
+			if opts.Dock == "" && os.Getenv("TMUX") != "" {
 				dock, tmuxErr := eng.Tmux.CurrentSession()
 				if tmuxErr == nil {
 					m, _ := eng.LoadManifest()
@@ -106,7 +106,7 @@ func newWsNewCmd() *cobra.Command {
 			if !quiet {
 				fmt.Printf("Created %s:%s\n", opts.Dock, ws.Name)
 				currentSession, tmuxErr := eng.Tmux.CurrentSession()
-				if tmuxErr != nil || os.Getenv("TMUX_PANE") == "" {
+				if tmuxErr != nil || os.Getenv("TMUX") == "" {
 					fmt.Printf("\nAttach with:\n  tmux attach -t %s\n", opts.Dock)
 				} else if currentSession != opts.Dock {
 					fmt.Printf("\nSwitch with:\n  tmux switch-client -t %s\n", opts.Dock)
@@ -404,8 +404,8 @@ func probeAgent() string {
 func resolveCurrentDock(eng *engine.Engine) (dockName, repoName string, err error) {
 	m, _ := eng.LoadManifest()
 
-	// Try: current tmux pane's session (only when actually inside tmux).
-	if os.Getenv("TMUX_PANE") != "" {
+	// Try: current tmux session (only when inside tmux).
+	if os.Getenv("TMUX") != "" {
 		if sess, tmuxErr := eng.Tmux.CurrentSession(); tmuxErr == nil && m != nil && m.FindDock(sess) != nil {
 			dock := m.FindDock(sess)
 			return sess, dock.Repo, nil
