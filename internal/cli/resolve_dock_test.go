@@ -12,8 +12,8 @@ func TestResolveCurrentDock_TmuxSession(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 	mockTmux.SetCurrentSession("labs")
 
-	// Simulate being inside a tmux pane.
-	t.Setenv("TMUX_PANE", "%0")
+	// Simulate being inside tmux.
+	t.Setenv("TMUX", "/tmp/tmux-501/default,12345,0")
 
 	dock, repo, err := resolveCurrentDock(eng)
 	if err != nil {
@@ -28,18 +28,18 @@ func TestResolveCurrentDock_TmuxSession(t *testing.T) {
 }
 
 // TestResolveCurrentDock_IgnoresTmuxOutsidePane verifies that
-// CurrentSession is NOT used when TMUX_PANE is unset (e.g. a shell
-// that inherited $TMUX but is not inside a tmux pane).
+// CurrentSession is NOT used when $TMUX is unset (e.g. a shell
+// that is not inside tmux).
 func TestResolveCurrentDock_IgnoresTmuxOutsidePane(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 	mockTmux.SetCurrentSession("labs")
 
-	// TMUX_PANE is NOT set — simulates being outside tmux.
-	t.Setenv("TMUX_PANE", "")
+	// $TMUX is NOT set — simulates being outside tmux.
+	t.Setenv("TMUX", "")
 
 	_, _, err := resolveCurrentDock(eng)
 	if err == nil {
-		t.Error("expected error: should not resolve via tmux session when TMUX_PANE is unset")
+		t.Error("expected error: should not resolve via tmux session when TMUX is unset")
 	}
 }
 
