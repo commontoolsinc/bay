@@ -544,7 +544,12 @@ Manage the background pane monitor. Detects when agents are waiting
 for input and highlights those tmux windows. Also handles
 activity-gated merge detection.
 
-To add a new waiting-detection pattern, edit
+Waiting detection uses two mechanisms: bell-based (agents that send
+`\a`, like codex natively or claude via a PermissionRequest hook
+installed by `bay setup`) and pattern-based (regex matching via the
+monitor). Both feed into `--next-waiting` navigation.
+
+To add a new pattern-based detection rule, edit
 `~/.config/bay/waiting-patterns.txt` directly — one regex per line. The
 monitor reloads patterns on every cycle (default 3s), so no restart
 is needed.

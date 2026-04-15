@@ -63,7 +63,9 @@ bay setup
 ```
 
 This creates your config file, installs tmux keybindings, sets up shell
-completions, and configures your default agent and editor.
+completions, and configures your default agent and editor. If Claude Code
+is installed, it also installs a bell hook so tmux highlights the tab when
+Claude needs permission — Option+R then jumps straight to it.
 
 ### Explicit repo and dock
 
@@ -562,11 +564,18 @@ Bay runs a background monitor that provides two services:
 
 ### Waiting detection
 
-The monitor watches for agents waiting for input (permission prompts,
-confirmation dialogs). When detected, the tmux window is highlighted.
+Bay detects agents waiting for input using two mechanisms:
 
-It captures the last few lines of each agent pane, strips ANSI codes,
-and matches against regex patterns in
+**Bell-based (preferred).** Agents that send a terminal bell (`\a`)
+when they need attention are detected automatically via tmux's
+`window_bell_flag`. Codex does this natively. For Claude Code,
+`bay setup` installs a `PermissionRequest` hook that sends a bell
+when Claude asks for permission. No polling or configuration needed —
+tmux highlights the tab and `Option+R` jumps to it.
+
+**Pattern-based (fallback).** The monitor watches agent panes by
+capturing the last few lines of output, stripping ANSI codes, and
+matching against regex patterns in
 `~/.config/bay/waiting-patterns.txt`:
 
 ```
@@ -773,9 +782,11 @@ finished workspaces, or `--clean` for anything non-dirty. Add `--dry-run`
 to preview first.
 
 **"The waiting indicator isn't working."**
-Check `bay monitor status`. If running, the prompt text probably doesn't
-match any pattern. Add a regex for it to `~/.config/bay/waiting-patterns.txt`
-(one regex per line) — the monitor reloads patterns on every cycle.
+For bell-based detection: ensure `monitor-bell` is on in tmux (it is by
+default). For Claude Code, re-run `bay setup` to install the bell hook.
+For pattern-based detection: check `bay monitor status`. If running, the
+prompt text probably doesn't match any pattern. Add a regex to
+`~/.config/bay/waiting-patterns.txt` — the monitor reloads every cycle.
 
 **"I want to use bay with an agent that isn't Claude or Codex."**
 Add an agent definition to your config:
