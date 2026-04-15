@@ -40,9 +40,19 @@ func CollectEntries(m *manifest.Manifest, tc tmux.Interface) []Entry {
 			continue
 		}
 
-		// Batch: get all waiting windows for this dock in one tmux
-		// call instead of one GetWindowOption per surface.
+		// Two sources of "waiting" state:
+		// 1. @bay-waiting — set by the monitor via regex pattern matching
+		//    (generic, works for any agent). May be removed if all agents
+		//    adopt bell-based signaling.
+		// 2. window_bell_flag — set by agents that send a terminal bell
+		//    (codex natively, claude via PermissionRequest hook).
+		// Both are merged so Option-R finds either.
 		waitingWindows, _ := tc.WaitingWindowIDs(dockName)
+		if bellWindows, err := tc.BellWindowIDs(dockName); err == nil {
+			for id := range bellWindows {
+				waitingWindows[id] = true
+			}
+		}
 
 		for i := range dock.Workspaces {
 			ws := &dock.Workspaces[i]

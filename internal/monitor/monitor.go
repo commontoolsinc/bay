@@ -1,6 +1,12 @@
 // Package monitor provides background detection of agent panes waiting for user input.
 // It reads the manifest to find windows with agent/cmd panes, captures their content,
 // checks for configured patterns, and sets tmux window styles/options to highlight waiting windows.
+//
+// This is the legacy approach to waiting detection. Agents that send a terminal bell
+// (codex natively, claude via a PermissionRequest hook) are detected directly by tmux's
+// window_bell_flag without needing the monitor. The monitor remains useful as a fallback
+// for agents that don't send bells. It may be removed if all supported agents adopt
+// bell-based signaling.
 package monitor
 
 import (

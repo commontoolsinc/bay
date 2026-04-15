@@ -43,6 +43,7 @@ type Interface interface {
 
 	// Batch queries
 	WaitingWindowIDs(session string) (map[string]bool, error) // windows with @bay-waiting=1
+	BellWindowIDs(session string) (map[string]bool, error)    // windows with bell flag set
 
 	MoveWindow(windowID string, targetIndex int) error
 	MoveWindowAfter(windowID string, afterWindowID string) error

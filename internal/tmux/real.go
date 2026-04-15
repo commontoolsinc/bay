@@ -138,6 +138,25 @@ func (r *Real) WaitingWindowIDs(session string) (map[string]bool, error) {
 	return result, nil
 }
 
+func (r *Real) BellWindowIDs(session string) (map[string]bool, error) {
+	out, err := run("list-windows", "-t", exactSession(session), "-F", "#{window_id}\t#{window_bell_flag}")
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]bool)
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) == 2 && parts[1] == "1" {
+			result[parts[0]] = true
+		}
+	}
+	return result, nil
+}
+
 func (r *Real) ListWindows(session string) ([]Window, error) {
 	out, err := run("list-windows", "-t", exactSession(session), "-F", "#{window_id}\t#{window_name}\t#{window_index}")
 	if err != nil {
