@@ -123,6 +123,12 @@ func (e *Engine) SyncAll() {
 		return changed, nil
 	})
 
+	// Refresh tab name lengths for all docks.
+	if m, err := e.LoadManifest(); err == nil {
+		for i := range m.Docks {
+			e.refreshDockWindowNames(&m.Docks[i])
+		}
+	}
 }
 
 func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace) (workspaceSyncUpdate, bool) {

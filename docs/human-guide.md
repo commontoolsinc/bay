@@ -689,13 +689,28 @@ bay ws show auth-fix --json | jq '.branch'
 Use `bay status-line` in your tmux config to show workspace info:
 
 ```tmux
-set -g status-right '#(bay status-line full)'
+set -g status-right-length 40
+set -g status-right '#(bay status-line full --width #{status-right-length})'
 ```
 
-Fields: `name`, `branch`, `pr`, `dirty`, `dock`, `merged`, `full`.
+The `full` field outputs `repo:branch #PR | status` (e.g.
+`bay:fix/login #42 | dirty`). The `--width` flag enables adaptive
+truncation — when space is tight, it progressively shortens the branch
+name, drops the repo prefix, and abbreviates status indicators. Pass
+`#{status-right-length}` so tmux tells bay how much space is available.
+
+Other fields: `name`, `branch`, `pr`, `status`, `dock`, `merged`.
 
 The `merged` field shows a count of merged workspaces in the current
 dock (e.g. "2 merged"). Useful for a status bar reminder to clean up.
+
+### Tab name truncation
+
+Bay automatically shortens tmux tab names when a dock has many
+workspaces, so tabs don't overflow the status bar. The full workspace
+name is preserved in the manifest for navigation and completion —
+only the tmux window title is truncated. Names expand again when
+workspaces are closed.
 
 ## Recovery
 

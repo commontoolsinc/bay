@@ -307,6 +307,10 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	if updatedWs == nil {
 		return nil, fmt.Errorf("workspace at %q not found in dock %q", wsPath, dockName)
 	}
+
+	// Re-evaluate tab name lengths now that workspace count changed.
+	e.refreshDockWindowNames(updatedDock)
+
 	return updatedWs, nil
 }
 
@@ -460,6 +464,13 @@ func (e *Engine) WsClose(dockName, wsName string, force bool) error {
 	for _, id := range windowIDs {
 		e.ensurePlaceholderIfLastWindow(dockName, id)
 		_ = e.Tmux.KillWindow(id)
+	}
+
+	// Re-evaluate tab name lengths now that workspace count changed.
+	if m, err := e.LoadManifest(); err == nil {
+		if dock := m.FindDock(dockName); dock != nil {
+			e.refreshDockWindowNames(dock)
+		}
 	}
 	return nil
 }
@@ -771,6 +782,50 @@ func (e *Engine) updateWindowNames(ws *manifest.Workspace, wsName string) {
 			seen[s.Tmux.WindowID] = true
 		}
 	}
+}
+
+// refreshDockWindowNames recomputes the max tab name length for a dock based
+// on the terminal width and workspace count, then renames all windows. This
+// keeps tab names maximally informative without overflowing the status bar.
+func (e *Engine) refreshDockWindowNames(dock *manifest.Dock) {
+	clientWidth, _ := e.Tmux.ClientWidth()
+	maxLen := maxTabNameLen(clientWidth, len(dock.Workspaces))
+	for i := range dock.Workspaces {
+		ws := &dock.Workspaces[i]
+		e.updateWindowNames(ws, truncateForDisplay(ws.Name, maxLen))
+	}
+}
+
+// maxTabNameLen computes the maximum tab name length given the terminal width
+// and number of workspaces. Assumes ~50 cells for status-left + status-right
+// and 6 cells of per-tab overhead (index, separator, padding).
+func maxTabNameLen(clientWidth, wsCount int) int {
+	if wsCount <= 0 {
+		return 20
+	}
+	available := clientWidth - 50
+	if available < 0 {
+		available = 0
+	}
+	maxLen := available/wsCount - 6
+	if maxLen < 3 {
+		maxLen = 3
+	}
+	if maxLen > 20 {
+		maxLen = 20
+	}
+	return maxLen
+}
+
+// truncateForDisplay truncates a name for tmux display, appending ".." if shortened.
+func truncateForDisplay(name string, maxLen int) string {
+	if len(name) <= maxLen {
+		return name
+	}
+	if maxLen <= 2 {
+		return name[:maxLen]
+	}
+	return name[:maxLen-2] + ".."
 }
 
 // SetLastFocused records which surface was last focused in a workspace and
