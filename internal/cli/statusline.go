@@ -2,8 +2,10 @@ package cli
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
+	"github.com/commontoolsinc/bay/internal/engine"
 	gitpkg "github.com/commontoolsinc/bay/internal/git"
 	"github.com/commontoolsinc/bay/internal/manifest"
 	tmuxpkg "github.com/commontoolsinc/bay/internal/tmux"
@@ -11,7 +13,10 @@ import (
 )
 
 func newStatusLineCmd() *cobra.Command {
-	var width int
+	// --width is a string (not int) so unexpanded tmux format vars
+	// like "#{status-right-length}" degrade gracefully to the full
+	// format instead of surfacing a parse error in the status line.
+	var widthStr string
 
 	cmd := &cobra.Command{
 		Use:   "status-line <field>",
@@ -22,7 +27,8 @@ Designed for use in tmux status-format strings. Outputs empty string if not in a
 Fields: name, branch, pr, status, dock, merged, full
 
 The full field outputs repo:branch #PR | status. Use --width to enable
-adaptive truncation (pass #{status-right-length} from tmux).`,
+adaptive truncation (pass #{status-right-length} from tmux). Non-numeric
+width values are treated as 0 (full format, no truncation).`,
 		Args: cobra.ExactArgs(1),
 		// Tmux status-right runs this command on every refresh — do
 		// NOT fork the monitor from here.
@@ -115,6 +121,7 @@ adaptive truncation (pass #{status-right-length} from tmux).`,
 					status = "merged"
 				}
 
+				width, _ := strconv.Atoi(widthStr)
 				out = formatStatusLine(repo, branch, pr, status, width)
 			default:
 				return fmt.Errorf("unknown field %q; valid fields: name, branch, pr, status, dock, merged, full", field)
@@ -127,7 +134,7 @@ adaptive truncation (pass #{status-right-length} from tmux).`,
 		},
 	}
 
-	cmd.Flags().IntVar(&width, "width", 0, "available width in cells; enables adaptive truncation")
+	cmd.Flags().StringVar(&widthStr, "width", "", "available width in cells; enables adaptive truncation")
 
 	return cmd
 }
@@ -141,11 +148,14 @@ adaptive truncation (pass #{status-right-length} from tmux).`,
 //	medium:  repo:bran.. #PR | status   (truncate branch)
 //	compact: bran.. #PR *               (drop repo, shorten status)
 //	minimal: bran.. *                   (also drop PR)
+//	repo-only: bay *                    (no branch available — truncate repo)
 func formatStatusLine(repo, branch, pr, status string, width int) string {
 	full := buildFull(repo, branch, pr, status)
 	if width <= 0 || len(full) <= width {
 		return full
 	}
+
+	shortStatus := abbreviateStatus(status)
 
 	// Medium: truncate branch, keep everything else.
 	if branch != "" {
@@ -161,7 +171,7 @@ func formatStatusLine(repo, branch, pr, status string, width int) string {
 		}
 		budget := width - overhead
 		if budget >= 4 {
-			med := buildFull(repo, truncateStr(branch, budget), pr, status)
+			med := buildFull(repo, engine.TruncateName(branch, budget), pr, status)
 			if len(med) <= width {
 				return med
 			}
@@ -169,7 +179,6 @@ func formatStatusLine(repo, branch, pr, status string, width int) string {
 	}
 
 	// Compact: drop repo, abbreviate status.
-	shortStatus := abbreviateStatus(status)
 	if branch != "" {
 		overhead := 0
 		if pr != "" {
@@ -180,7 +189,7 @@ func formatStatusLine(repo, branch, pr, status string, width int) string {
 		}
 		budget := width - overhead
 		if budget >= 4 {
-			return buildCompact(truncateStr(branch, budget), pr, shortStatus)
+			return buildCompact(engine.TruncateName(branch, budget), pr, shortStatus)
 		}
 	}
 
@@ -192,7 +201,25 @@ func formatStatusLine(repo, branch, pr, status string, width int) string {
 		}
 		budget := width - overhead
 		if budget >= 4 {
-			return buildCompact(truncateStr(branch, budget), "", shortStatus)
+			return buildCompact(engine.TruncateName(branch, budget), "", shortStatus)
+		}
+	}
+
+	// Repo-only: no branch available, so fall back to truncated repo +
+	// abbreviated status. Rare (bay workspaces almost always have a branch),
+	// but beats dropping the repo entirely when only status fits.
+	if branch == "" && repo != "" {
+		overhead := 0
+		if shortStatus != "" {
+			overhead += 1 + len(shortStatus)
+		}
+		budget := width - overhead
+		if budget >= 3 {
+			out := engine.TruncateName(repo, budget)
+			if shortStatus != "" {
+				out += " " + shortStatus
+			}
+			return out
 		}
 	}
 
@@ -253,17 +280,6 @@ func abbreviateStatus(status string) string {
 	default:
 		return ""
 	}
-}
-
-// truncateStr truncates s to maxLen, appending ".." if shortened.
-func truncateStr(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	if maxLen <= 2 {
-		return s[:maxLen]
-	}
-	return s[:maxLen-2] + ".."
 }
 
 // resolveWindowID finds the dock and workspace that own a tmux window ID.

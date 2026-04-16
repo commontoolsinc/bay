@@ -467,11 +467,7 @@ func (e *Engine) WsClose(dockName, wsName string, force bool) error {
 	}
 
 	// Re-evaluate tab name lengths now that workspace count changed.
-	if m, err := e.LoadManifest(); err == nil {
-		if dock := m.FindDock(dockName); dock != nil {
-			e.refreshDockWindowNames(dock)
-		}
-	}
+	e.refreshDockWindowNamesByName(dockName)
 	return nil
 }
 
@@ -784,48 +780,90 @@ func (e *Engine) updateWindowNames(ws *manifest.Workspace, wsName string) {
 	}
 }
 
+// Tab-name truncation tuning. These are conservative estimates of a typical
+// tmux status bar; configs with heavier status-left/right may still overflow.
+const (
+	// Cells reserved for status-left + status-right + padding,
+	// subtracted from terminal width to get space for tab names.
+	tabStatusBarOverhead = 50
+	// Per-tab overhead for window index, separator, and padding.
+	tabPerTabOverhead = 6
+	// Floor on truncation — below this, names become unreadable.
+	tabMinNameLen = 3
+	// Ceiling — longer names are rare and waste status-bar space.
+	tabMaxNameLen = 20
+)
+
 // refreshDockWindowNames recomputes the max tab name length for a dock based
 // on the terminal width and workspace count, then renames all windows. This
 // keeps tab names maximally informative without overflowing the status bar.
+//
+// If no tmux client is attached (ClientWidth errors or returns <= 0), the
+// full name is used without truncation — we'd rather over-run the status bar
+// when the user next attaches than clobber all names to 3 chars in CI / bay
+// invocations from outside tmux.
 func (e *Engine) refreshDockWindowNames(dock *manifest.Dock) {
-	clientWidth, _ := e.Tmux.ClientWidth()
-	maxLen := maxTabNameLen(clientWidth, len(dock.Workspaces))
+	clientWidth, err := e.Tmux.ClientWidth()
+	truncate := err == nil && clientWidth > 0
+	maxLen := 0
+	if truncate {
+		maxLen = maxTabNameLen(clientWidth, len(dock.Workspaces))
+	}
 	for i := range dock.Workspaces {
 		ws := &dock.Workspaces[i]
-		e.updateWindowNames(ws, truncateForDisplay(ws.Name, maxLen))
+		name := ws.Name
+		if truncate {
+			name = TruncateName(name, maxLen)
+		}
+		e.updateWindowNames(ws, name)
 	}
 }
 
+// refreshDockWindowNamesByName loads the manifest, finds the named dock, and
+// refreshes its tab names. Silently no-ops on errors (tab-name refresh is
+// decorative — don't fail the calling operation for it).
+func (e *Engine) refreshDockWindowNamesByName(dockName string) {
+	m, err := e.LoadManifest()
+	if err != nil {
+		return
+	}
+	dock := m.FindDock(dockName)
+	if dock == nil {
+		return
+	}
+	e.refreshDockWindowNames(dock)
+}
+
 // maxTabNameLen computes the maximum tab name length given the terminal width
-// and number of workspaces. Assumes ~50 cells for status-left + status-right
-// and 6 cells of per-tab overhead (index, separator, padding).
+// and number of workspaces.
 func maxTabNameLen(clientWidth, wsCount int) int {
 	if wsCount <= 0 {
-		return 20
+		return tabMaxNameLen
 	}
-	available := clientWidth - 50
+	available := clientWidth - tabStatusBarOverhead
 	if available < 0 {
 		available = 0
 	}
-	maxLen := available/wsCount - 6
-	if maxLen < 3 {
-		maxLen = 3
+	maxLen := available/wsCount - tabPerTabOverhead
+	if maxLen < tabMinNameLen {
+		maxLen = tabMinNameLen
 	}
-	if maxLen > 20 {
-		maxLen = 20
+	if maxLen > tabMaxNameLen {
+		maxLen = tabMaxNameLen
 	}
 	return maxLen
 }
 
-// truncateForDisplay truncates a name for tmux display, appending ".." if shortened.
-func truncateForDisplay(name string, maxLen int) string {
-	if len(name) <= maxLen {
-		return name
+// TruncateName truncates a display name to maxLen, appending ".." if shortened.
+// Shared between engine (tab names) and cli (status-line formatting).
+func TruncateName(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
 	}
 	if maxLen <= 2 {
-		return name[:maxLen]
+		return s[:maxLen]
 	}
-	return name[:maxLen-2] + ".."
+	return s[:maxLen-2] + ".."
 }
 
 // SetLastFocused records which surface was last focused in a workspace and

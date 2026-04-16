@@ -27,24 +27,26 @@ func TestMaxTabNameLen(t *testing.T) {
 	}
 }
 
-func TestTruncateForDisplay(t *testing.T) {
+func TestTruncateName(t *testing.T) {
 	tests := []struct {
 		name   string
+		input  string
 		maxLen int
 		want   string
 	}{
-		{"no truncation", 20, "auth-fix"},
-		{"exact fit", 8, "auth-fix"},
-		{"truncate", 6, "auth.."},
-		{"very short", 3, "a.."},
-		{"min", 2, "au"},
+		{"no truncation", "auth-fix", 20, "auth-fix"},
+		{"exact fit", "auth-fix", 8, "auth-fix"},
+		{"truncate", "auth-fix", 6, "auth.."},
+		{"very short", "auth-fix", 3, "a.."},
+		{"min", "auth-fix", 2, "au"},
+		{"single char", "hello", 1, "h"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := truncateForDisplay("auth-fix", tt.maxLen)
+			got := TruncateName(tt.input, tt.maxLen)
 			if got != tt.want {
-				t.Errorf("truncateForDisplay(%q, %d) = %q, want %q", "auth-fix", tt.maxLen, got, tt.want)
+				t.Errorf("TruncateName(%q, %d) = %q, want %q", tt.input, tt.maxLen, got, tt.want)
 			}
 		})
 	}

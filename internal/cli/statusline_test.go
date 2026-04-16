@@ -90,25 +90,34 @@ func TestFormatStatusLine_WithWidth(t *testing.T) {
 	}
 }
 
-func TestTruncateStr(t *testing.T) {
+func TestFormatStatusLine_EmptyBranch(t *testing.T) {
+	// When branch is empty (unusual but possible), fall back to
+	// repo-only tier instead of dropping the repo entirely.
 	tests := []struct {
-		s      string
-		maxLen int
+		name   string
+		repo   string
+		status string
+		width  int
 		want   string
 	}{
-		{"hello", 10, "hello"},
-		{"hello", 5, "hello"},
-		{"hello", 4, "he.."},
-		{"hello", 3, "h.."},
-		{"hello", 2, "he"},
-		{"hello", 1, "h"},
+		{"repo + dirty fits", "bay", "dirty", 20, "bay | dirty"},
+		{"repo-only tier", "bay", "dirty", 5, "bay *"},
+		{"repo truncated", "verylongrepo", "dirty", 8, "very.. *"},
+		{"too tight, status only", "bay", "dirty", 2, "*"},
+		{"no status, no repo", "", "", 5, ""},
 	}
 
 	for _, tt := range tests {
-		got := truncateStr(tt.s, tt.maxLen)
-		if got != tt.want {
-			t.Errorf("truncateStr(%q, %d) = %q, want %q", tt.s, tt.maxLen, got, tt.want)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatStatusLine(tt.repo, "", "", tt.status, tt.width)
+			if got != tt.want {
+				t.Errorf("formatStatusLine(repo=%q, status=%q, width=%d) = %q, want %q",
+					tt.repo, tt.status, tt.width, got, tt.want)
+			}
+			if tt.width > 0 && len(got) > tt.width {
+				t.Errorf("output %q exceeds width %d", got, tt.width)
+			}
+		})
 	}
 }
 
