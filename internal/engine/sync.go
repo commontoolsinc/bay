@@ -89,6 +89,7 @@ func (e *Engine) SyncAll() {
 		return
 	}
 
+	var dockNames []string
 	_ = e.withManifestMaybe(func(m *manifest.Manifest) (bool, error) {
 		changed := false
 		for _, update := range updates {
@@ -120,9 +121,20 @@ func (e *Engine) SyncAll() {
 			}
 			dock.Surfaces = live
 		}
+
+		// Capture dock names so we can refresh tab names after the
+		// lock is released (tmux RPCs shouldn't block the manifest).
+		dockNames = make([]string, len(m.Docks))
+		for i := range m.Docks {
+			dockNames[i] = m.Docks[i].Name
+		}
 		return changed, nil
 	})
 
+	// Refresh tab name lengths for all docks.
+	for _, name := range dockNames {
+		e.refreshDockWindowNamesByName(name)
+	}
 }
 
 func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace) (workspaceSyncUpdate, bool) {
