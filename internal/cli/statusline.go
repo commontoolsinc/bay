@@ -18,6 +18,11 @@ func newStatusLineCmd() *cobra.Command {
 	// format instead of surfacing a parse error in the status line.
 	var widthStr string
 
+	// --window takes an explicit tmux window ID (e.g. "@7") instead
+	// of asking tmux which window is "current". See the long comment
+	// in RunE for why this matters for correctness.
+	var windowID string
+
 	cmd := &cobra.Command{
 		Use:   "status-line <field>",
 		Short: "Output workspace info for tmux status line",
@@ -28,7 +33,11 @@ Fields: name, branch, pr, status, dock, merged, full
 
 The full field outputs repo:branch #PR | status. Use --width to enable
 adaptive truncation (pass #{status-right-length} from tmux). Non-numeric
-width values are treated as 0 (full format, no truncation).`,
+width values are treated as 0 (full format, no truncation).
+
+Pass --window #{window_id} so each window gets its own #() cache entry
+in tmux; otherwise the status line can show stale data from a different
+window until the next status-interval tick.`,
 		Args: cobra.ExactArgs(1),
 		// Tmux status-right runs this command on every refresh — do
 		// NOT fork the monitor from here.
@@ -43,9 +52,38 @@ width values are treated as 0 (full format, no truncation).`,
 			t := tmuxpkg.NewReal()
 			g := gitpkg.NewReal()
 
-			winID, err := t.CurrentWindowID()
-			if err != nil {
-				return nil // not in tmux
+			// Resolve the window this status line represents.
+			//
+			// Prefer --window over asking tmux for the "current"
+			// window. Reason: tmux caches #(shell-cmd) output per
+			// client, keyed by the literal command string, and only
+			// refreshes on status-interval ticks (default 15s).
+			// If the config is
+			//     set -g status-right '#(bay status-line full)'
+			// then every window/session sees the same cached output
+			// — whichever window happened to be "current" when the
+			// command last ran. Switching windows or docks shows
+			// stale info until the next tick.
+			//
+			// When callers interpolate #{window_id} into the command
+			// string:
+			//     set -g status-right '#(bay status-line full --window #{window_id})'
+			// tmux expands it to a different string per window
+			// ("@1", "@2", ...), giving each its own cache entry.
+			// The cache miss on a new window triggers a fresh run
+			// with the correct --window, and bay reports that
+			// window's workspace rather than whichever one tmux
+			// reports as "current".
+			//
+			// Fall back to CurrentWindowID() for backward compat
+			// with configs that don't pass --window yet.
+			winID := windowID
+			if winID == "" {
+				var err error
+				winID, err = t.CurrentWindowID()
+				if err != nil {
+					return nil // not in tmux
+				}
 			}
 
 			p := bayPaths()
@@ -135,6 +173,7 @@ width values are treated as 0 (full format, no truncation).`,
 	}
 
 	cmd.Flags().StringVar(&widthStr, "width", "", "available width in cells; enables adaptive truncation")
+	cmd.Flags().StringVar(&windowID, "window", "", "tmux window ID (pass #{window_id} so each window gets its own #() cache entry)")
 
 	return cmd
 }

@@ -289,9 +289,12 @@ another repo. Create workspaces from it with `bay ws new --repo backend`.
 **Explicit control:** The zero-config flow creates docks automatically.
 For more control: `bay dock new myproject --repo myproject`.
 
-**Status line:** Add `#(bay status-line full)` to your tmux `status-right`
-to always see your current workspace. Other field names: `name`, `branch`,
-`pr`, `dirty`, `dock`, `merged`.
+**Status line:** Add `#(bay status-line full --window #{window_id})` to
+your tmux `status-right` to always see your current workspace. Pass
+`#{window_id}` so each window gets its own tmux `#()` cache entry —
+without it, tmux may show stale status from a different window. Other
+field names: `name`, `branch`, `pr`, `dirty`, `dock`, `merged`. See the
+human guide for details.
 
 ---
 

@@ -690,7 +690,7 @@ Use `bay status-line` in your tmux config to show workspace info:
 
 ```tmux
 set -g status-right-length 40
-set -g status-right '#(bay status-line full --width #{status-right-length})'
+set -g status-right '#(bay status-line full --window #{window_id} --width #{status-right-length})'
 ```
 
 The `full` field outputs `repo:branch #PR | status` (e.g.
@@ -698,6 +698,14 @@ The `full` field outputs `repo:branch #PR | status` (e.g.
 truncation — when space is tight, it progressively shortens the branch
 name, drops the repo prefix, and abbreviates status indicators. Pass
 `#{status-right-length}` so tmux tells bay how much space is available.
+
+**Pass `--window #{window_id}`.** Tmux caches `#()` output per client
+keyed by the literal command string, and only refreshes on the
+`status-interval` tick (default 15s). Without an interpolated
+`#{window_id}`, every window and dock shares a single cache entry, so
+you'll see a stale status from another window until the next tick.
+Interpolating the window ID gives each window its own cache, and bay
+uses the explicit ID instead of asking tmux which window is "current".
 
 Other fields: `name`, `branch`, `pr`, `status`, `dock`, `merged`.
 
