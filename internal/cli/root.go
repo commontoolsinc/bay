@@ -113,6 +113,8 @@ func NewRootCmd(version string) *cobra.Command {
 	topShowCmd.GroupID = "surface"
 	topRenameCmd := newTopRenameCmd()
 	topRenameCmd.GroupID = "workspace"
+	topDescribeCmd := newTopDescribeCmd()
+	topDescribeCmd.GroupID = "workspace"
 
 	// Navigation commands
 	goCmd := newGoCmd()
@@ -157,6 +159,7 @@ func NewRootCmd(version string) *cobra.Command {
 		topCloseCmd,
 		topShowCmd,
 		topRenameCmd,
+		topDescribeCmd,
 		goCmd,
 		lsCmd,
 		treeCmd,

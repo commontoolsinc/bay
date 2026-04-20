@@ -17,6 +17,7 @@ type WsNewOptions struct {
 	Repo         string // repo name override (optional, defaults to dock's repo)
 	Dir          string // external directory (makes it external type)
 	Name         string // display name override
+	Description  string // short free-form label shown in picker/ls/tree
 	Agent        string // agent override
 	RequireAgent bool   // fail if no agent can be resolved
 	Shell        bool   // open shell instead of agent
@@ -66,6 +67,10 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		}
 	}
 	if err := ValidateName(displayName); err != nil {
+		return nil, err
+	}
+	desc := strings.TrimSpace(opts.Description)
+	if err := ValidateDescription(desc); err != nil {
 		return nil, err
 	}
 	if nameExplicit && dock.FindWorkspace(displayName) != nil {
@@ -209,6 +214,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		NameOverridden: nameExplicit,
 		Type:           wsType,
 		Path:           wsPath,
+		Description:    desc,
 		LastActive:     time.Now().Unix(),
 		Worktree:       worktreeAttrs,
 		Surfaces:       []manifest.Surface{},
@@ -623,6 +629,29 @@ func (e *Engine) WsUpdate(dockName, wsName string, branch, pr *string) error {
 			e.updateWindowNames(ws, ws.Name)
 		}
 
+		return nil
+	})
+}
+
+// WsDescribe sets (or clears, if desc is "") a workspace's description.
+// Descriptions appear in the workspace picker and in ls/tree output; they
+// have no effect on tmux tab names, which stay short by design.
+func (e *Engine) WsDescribe(dockName, wsName, desc string) error {
+	desc = strings.TrimSpace(desc)
+	if err := ValidateDescription(desc); err != nil {
+		return err
+	}
+	return e.withManifest(func(m *manifest.Manifest) error {
+		dock := m.FindDock(dockName)
+		if dock == nil {
+			return fmt.Errorf("unknown dock %q", dockName)
+		}
+		ws := dock.FindWorkspace(wsName)
+		if ws == nil {
+			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
+		}
+		ws.Description = desc
+		ws.LastActive = time.Now().Unix()
 		return nil
 	})
 }

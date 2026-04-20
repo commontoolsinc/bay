@@ -119,6 +119,26 @@ func ValidateName(name string) error {
 	return nil
 }
 
+// MaxDescriptionLen caps workspace descriptions. Descriptions are shown in
+// one-line contexts (picker, ls/tree) and compete with other metadata for
+// terminal width; ~40 is the target but we accept up to this bound to stay
+// forgiving of PR titles or slightly-long labels.
+const MaxDescriptionLen = 80
+
+// ValidateDescription rejects descriptions that contain control characters
+// or exceed MaxDescriptionLen. An empty string is valid and means "clear".
+func ValidateDescription(desc string) error {
+	if len(desc) > MaxDescriptionLen {
+		return fmt.Errorf("description too long (%d > %d)", len(desc), MaxDescriptionLen)
+	}
+	for _, r := range desc {
+		if r == '\n' || r == '\r' || r == '\t' {
+			return fmt.Errorf("description must be a single line")
+		}
+	}
+	return nil
+}
+
 func uniqueWorkspaceName(dock *manifest.Dock, current *manifest.Workspace, base string) string {
 	candidate := base
 	for i := 2; ; i++ {

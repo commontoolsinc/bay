@@ -14,6 +14,9 @@ PR, dirty/merged flags). Each workspace has:
   overridden with `bay rename` (or `bay ws rename`), which sticks permanently.
 - A **full reference** — `dock:name` (e.g., `labs:auth-fix`). Bare
   name (`auth-fix`) works when unambiguous across docks.
+- An optional **description** — short free-form label (~40 chars)
+  shown in the picker and `bay ls`/`bay tree`. Set with `bay ws
+  describe` (or `bay describe`). Does not affect tmux tab names.
 
 A **dock** is a named tmux session grouping related workspaces. Each
 dock has a default agent type and optionally a default repo and host
@@ -217,6 +220,7 @@ of focus scope.
 ```json
 {
   "name": "auth-fix",
+  "description": "Login flow fixes",
   "repo": "labs",
   "dock": "labs",
   "type": "worktree",
@@ -289,7 +293,7 @@ operations.
 
 ### Workspace commands
 
-#### `bay ws new [name] [--dock DOCK] [--repo NAME] [--dir PATH] [--branch NAME] [--agent [TYPE]]`
+#### `bay ws new [name] [--dock DOCK] [--repo NAME] [--dir PATH] [--branch NAME] [--agent [TYPE]] [--description TEXT]`
 
 Create a workspace with its first surface. The positional names the
 new workspace; `--dock` selects which dock to create it in. `--dock`
@@ -300,6 +304,9 @@ Default behavior opens a shell. Use `--agent` for the dock's default
 agent, or `--agent TYPE` for a specific one. Or create the workspace
 first and add an agent with `bay agent`.
 
+`--description` is optional and can be set or changed later via
+`bay ws describe`.
+
 ```
 bay ws new                                  # auto-bootstrap from CWD
 bay ws new auth-fix                         # named workspace in current dock
@@ -308,6 +315,7 @@ bay ws new auth-fix --repo ct-server        # using a different repo
 bay ws new auth-fix --dir ~/projects/foo    # external workspace
 bay ws new auth-fix --branch fix-auth       # checkout or create branch
 bay ws new auth-fix --agent                 # with dock's default agent
+bay ws new auth-fix --description "Login flow fixes"
 ```
 
 #### `bay ws close [name] [--force] [--done] [--clean] [--dry-run]`
@@ -353,6 +361,24 @@ workspace.
 ```
 bay ws rename mem-refactor                 # rename current workspace
 bay ws rename auth-fix mem-refactor        # rename by name
+```
+
+#### `bay ws describe [name] [<description>]` (also: `bay describe`)
+
+Set a short free-form description for a workspace. The description
+appears in the workspace picker, `bay ls`, `bay tree`, and `bay ws
+show`; it does not affect tmux tab names. Target around 40
+characters (hard cap 80). An empty string or `--clear` clears it.
+
+Agents should call this when starting work on a task so the user
+can identify workspaces in the navigation picker — set it from the
+task prompt or PR title.
+
+```
+bay ws describe "Login flow fixes"          # set current workspace's description
+bay ws describe auth-fix "Login fixes"      # set by workspace name
+bay ws describe --clear                     # clear current workspace's description
+bay describe "Login flow fixes"             # top-level shortcut
 ```
 
 ### Navigation

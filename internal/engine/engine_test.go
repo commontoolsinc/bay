@@ -772,6 +772,46 @@ func TestWsRename(t *testing.T) {
 	}
 }
 
+func TestWsDescribe(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Description: "initial description"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	ws, _ := eng.WsShow("labs", "w1")
+	if ws.Description != "initial description" {
+		t.Errorf("initial description = %q, want %q", ws.Description, "initial description")
+	}
+
+	if err := eng.WsDescribe("labs", "w1", "  login flow fixes  "); err != nil {
+		t.Fatalf("WsDescribe failed: %v", err)
+	}
+	ws, _ = eng.WsShow("labs", "w1")
+	if ws.Description != "login flow fixes" {
+		t.Errorf("description = %q, want trimmed %q", ws.Description, "login flow fixes")
+	}
+
+	if err := eng.WsDescribe("labs", "w1", ""); err != nil {
+		t.Fatalf("WsDescribe clear failed: %v", err)
+	}
+	ws, _ = eng.WsShow("labs", "w1")
+	if ws.Description != "" {
+		t.Errorf("cleared description = %q, want empty", ws.Description)
+	}
+
+	// Reject newlines.
+	if err := eng.WsDescribe("labs", "w1", "line one\nline two"); err == nil {
+		t.Errorf("expected error for multi-line description")
+	}
+
+	// Reject over-length.
+	tooLong := strings.Repeat("x", MaxDescriptionLen+1)
+	if err := eng.WsDescribe("labs", "w1", tooLong); err == nil {
+		t.Errorf("expected error for over-length description")
+	}
+}
+
 func TestSurfaceAdd_NewLayoutGroup(t *testing.T) {
 	eng, _ := testEngine(t)
 

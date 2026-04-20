@@ -25,6 +25,7 @@ func newWsCmd() *cobra.Command {
 		newWsCloseCmd(),
 		newWsShowCmd(),
 		newWsRenameCmd(),
+		newWsDescribeCmd(),
 		newWsLsCmd(),
 		newWsTreeCmd(),
 		newWsGoCmd(),
@@ -123,6 +124,7 @@ func newWsNewCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Agent, "agent", "", "agent type (bare --agent uses dock default)")
 	cmd.Flags().BoolVar(&shell, "shell", false, "open shell instead of agent")
 	cmd.Flags().StringVar(&opts.Branch, "branch", "", "git branch to checkout (creates it if new)")
+	cmd.Flags().StringVar(&opts.Description, "description", "", "short description shown in picker/ls/tree (~40 chars)")
 	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "suppress output")
 	cmd.Flags().Lookup("agent").NoOptDefVal = "default"
 
@@ -270,6 +272,7 @@ func newWsShowCmd() *cobra.Command {
 			if jsonOutput {
 				out := map[string]interface{}{
 					"name":          wsInfo.Name,
+					"description":   wsInfo.Description,
 					"repo":          repoName,
 					"dock":          dockName,
 					"type":          wsInfo.Type,
@@ -336,6 +339,68 @@ func newWsRenameCmd() *cobra.Command {
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare workspace name)")
 
 	return cmd
+}
+
+func newWsDescribeCmd() *cobra.Command {
+	var dockFlag string
+	var clear bool
+
+	cmd := &cobra.Command{
+		Use:   "describe [name] [<description>]",
+		Short: "Set a workspace description (defaults to current)",
+		Long: `Set a short, free-form description for a workspace. Descriptions appear
+in the workspace picker, bay ls, and bay tree; they do not affect tmux
+tab names. Target around 40 characters (hard cap 80).
+
+  bay ws describe "Login flow fixes"         set current workspace's description
+  bay ws describe auth-fix "Login fixes"     set by workspace name
+  bay ws describe self ""                    clear current workspace's description
+  bay ws describe --clear                    clear current workspace's description`,
+		Args: cobra.RangeArgs(0, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runDescribe(args, dockFlag, clear)
+		},
+	}
+
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare workspace name)")
+	cmd.Flags().BoolVar(&clear, "clear", false, "clear the description")
+
+	return cmd
+}
+
+// runDescribe is shared between `bay ws describe` and the top-level `bay
+// describe`. Unlike `bay rename` (which has distinct tab-rename behavior on
+// the top-level variant), describe is a direct pass-through to the workspace
+// command, so the two cobra wrappers only differ in Use/Short/Long strings.
+func runDescribe(args []string, dockFlag string, clear bool) error {
+	eng, err := newEngine()
+	if err != nil {
+		return err
+	}
+
+	var target, desc string
+	switch len(args) {
+	case 0:
+		if !clear {
+			return fmt.Errorf("specify a description, or pass --clear")
+		}
+		target = "self"
+	case 1:
+		target = "self"
+		desc = args[0]
+	case 2:
+		target = args[0]
+		desc = args[1]
+	}
+	if clear {
+		desc = ""
+	}
+
+	dockName, wsID, err := resolveWsArg(eng, target, dockFlag)
+	if err != nil {
+		return err
+	}
+	return eng.WsDescribe(dockName, wsID, desc)
 }
 
 // autoBootstrap detects the CWD git repo, creates a dock and repo in the manifest,
@@ -713,10 +778,15 @@ func wsCycle(eng *engine.Engine, forward bool) error {
 func pickWorkspace(eng *engine.Engine, entries []nav.Entry) error {
 	currentWinID, _ := eng.Tmux.CurrentWindowID()
 	currentIdx := 0
-	maxWs, maxBranch, maxPR := 0, 0, 0
+	maxWs, maxDesc, maxBranch, maxPR := 0, 0, 0, 0
+	descs := make([]string, len(entries))
 	for i, e := range entries {
+		descs[i] = engine.TruncateName(e.Description, pickerDescMaxLen)
 		if len(e.WsName) > maxWs {
 			maxWs = len(e.WsName)
+		}
+		if len(descs[i]) > maxDesc {
+			maxDesc = len(descs[i])
 		}
 		if len(e.Branch) > maxBranch {
 			maxBranch = len(e.Branch)
@@ -745,6 +815,12 @@ func pickWorkspace(eng *engine.Engine, entries []nav.Entry) error {
 		if e.Waiting {
 			tags += "  WAITING"
 		}
+		if maxDesc > 0 {
+			s := fmt.Sprintf("%-*s  %-*s  %-*s  %-*s%s",
+				maxWs, e.WsName, maxDesc, descs[i], maxBranch, e.Branch, maxPR, pr, tags)
+			items[i] = picker.Item{Display: s, Value: i}
+			continue
+		}
 		s := fmt.Sprintf("%-*s  %-*s  %-*s%s",
 			maxWs, e.WsName, maxBranch, e.Branch, maxPR, pr, tags)
 		items[i] = picker.Item{Display: s, Value: i}
@@ -756,3 +832,8 @@ func pickWorkspace(eng *engine.Engine, entries []nav.Entry) error {
 	}
 	return eng.Tmux.SelectWindow(entries[selected].TmuxWindowID)
 }
+
+// pickerDescMaxLen caps description width in the workspace picker. Larger than
+// tab names (where space is scarce) but still bounded to keep the picker
+// scannable.
+const pickerDescMaxLen = 40

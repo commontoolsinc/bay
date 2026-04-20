@@ -398,3 +398,29 @@ func newTopRenameCmd() *cobra.Command {
 
 	return cmd
 }
+
+func newTopDescribeCmd() *cobra.Command {
+	var dockFlag string
+	var clear bool
+
+	cmd := &cobra.Command{
+		Use:   "describe [name] [<description>]",
+		Short: "Set the current workspace's description (alias for `bay ws describe`)",
+		Long: `Set a short, free-form description for a workspace. Descriptions appear
+in the workspace picker, bay ls, and bay tree; they do not affect tmux
+tab names. Target around 40 characters (hard cap 80).
+
+  bay describe "Login flow fixes"       set current workspace's description
+  bay describe auth-fix "Login fixes"   set by workspace name
+  bay describe --clear                  clear current workspace's description`,
+		Args: cobra.RangeArgs(0, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runDescribe(args, dockFlag, clear)
+		},
+	}
+
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare workspace name)")
+	cmd.Flags().BoolVar(&clear, "clear", false, "clear the description")
+
+	return cmd
+}
