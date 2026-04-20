@@ -438,6 +438,51 @@ func TestFormatListView_NoHighlightWithoutContext(t *testing.T) {
 	}
 }
 
+func TestDetectStdoutWidth_ColumnsOverride(t *testing.T) {
+	t.Setenv("COLUMNS", "200")
+	if got := detectStdoutWidth(); got != 200 {
+		t.Errorf("detectStdoutWidth() with COLUMNS=200 = %d, want 200", got)
+	}
+
+	t.Setenv("COLUMNS", "0")
+	// COLUMNS=0 is ignored; real tty width (or 0 if piped) wins.
+	if got := detectStdoutWidth(); got < 0 {
+		t.Errorf("detectStdoutWidth() with COLUMNS=0 = %d, want >=0 (fallback)", got)
+	}
+
+	t.Setenv("COLUMNS", "garbage")
+	if got := detectStdoutWidth(); got < 0 {
+		t.Errorf("detectStdoutWidth() with COLUMNS=garbage = %d, want >=0 (fallback)", got)
+	}
+}
+
+func TestDescStrMaxForWidth(t *testing.T) {
+	// Long mode: overhead is 6 (1 separator + 2 quotes + 3 "ds=").
+	tests := []struct {
+		name         string
+		termWidth    int
+		nonDescWidth int
+		short        bool
+		want         int
+	}{
+		{"piped returns full cap", 0, 100, false, listDescPipedStrMax},
+		{"narrow terminal floors at min", 60, 80, false, listDescMinStrLen},
+		{"medium terminal gets moderate budget", 120, 60, false, 54},
+		{"wide terminal caps at max", 400, 60, false, listDescPipedStrMax},
+		{"exactly min available", 80, 59, false, listDescMinStrLen},
+		{"just above min", 100, 70, false, 24},
+		// Short mode: overhead is 3 (separator + quotes only, no "ds=").
+		{"short mode gets extra 3 chars", 120, 60, true, 57},
+	}
+	for _, tc := range tests {
+		got := descStrMaxForWidth(tc.termWidth, tc.nonDescWidth, tc.short)
+		if got != tc.want {
+			t.Errorf("%s: descStrMaxForWidth(%d, %d, short=%v) = %d, want %d",
+				tc.name, tc.termWidth, tc.nonDescWidth, tc.short, got, tc.want)
+		}
+	}
+}
+
 func TestFormatDockTree_IncludesNoRepoDocks(t *testing.T) {
 	docks := []engine.DockInfo{
 		{

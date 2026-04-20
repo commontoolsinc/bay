@@ -185,6 +185,18 @@ Each workspace gets a display **name** that defaults to the
 auto-abbreviated branch name (`feature/refactor-memory` becomes
 `refactor-memory`). You can rename it with `bay rename` (or `bay ws rename`).
 
+Workspaces can also carry a **description** — a short (~40 character)
+free-form label shown in the workspace picker (Option-Shift-G) and in
+`bay ls` / `bay tree`. Set it with `bay describe "Login flow fixes"`
+(or `bay ws describe`). Descriptions don't affect tmux tab names — tabs
+stay short and truncate to fit, while descriptions give you a more
+human-readable hint when you're scanning for the right workspace.
+
+In `bay ls` / `bay tree`, description length adapts to terminal width
+(floored at 15 characters, capped at 80). Pipe the output or set
+`COLUMNS=200 bay tree` to force a wider layout; piped output always
+uses the full 80-character cap.
+
 ### Surfaces
 
 A **surface** is anything you can focus and jump to within a workspace.
@@ -338,6 +350,7 @@ bay ws new [name] --dock <d>                # target a specific dock
 bay ws new [name] --branch <b>              # checkout or create branch
 bay ws new [name] --repo <r>                # override dock's repo
 bay ws new [name] --dir <path>              # external workspace
+bay ws new [name] --description "<text>"    # set description at creation time
 bay ws close [name]                         # close + delete pushed branch ('self' for current)
 bay ws close [name] --force                 # skip safety checks (keeps unpushed branches)
 bay ws close --done                         # close workspaces not dirty or pending
@@ -346,6 +359,8 @@ bay ws close --done --dry-run               # preview what --done would close
 bay ws show [name]                          # detailed view (default: current)
 bay ws show [name] --json                   # machine-readable
 bay ws rename [name] <new-name>             # rename (defaults to current workspace)
+bay ws describe [name] [<text>]             # set/clear description (defaults to current)
+bay describe [name] [<text>]                # top-level shortcut for the above
 bay ws tree                                 # tree of current dock
 bay ws go [query]                           # workspace picker (intra-dock)
 bay ws go --waiting                         # filter to waiting workspaces

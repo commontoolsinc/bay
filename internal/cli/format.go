@@ -2,13 +2,16 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/commontoolsinc/bay/internal/engine"
 	"github.com/commontoolsinc/bay/internal/manifest"
+	"golang.org/x/term"
 )
 
 type FocusKind string
@@ -324,25 +327,31 @@ func truncateCommand(cmd string) string {
 }
 
 // workspaceMetaCols returns fixed-position columns for workspace metadata.
-// Column positions: 0=branch, 1=dir (only when different from name),
-// 2=status, 3=count, 4=sync/waiting.
+// Column positions: 0=description, 1=branch, 2=dir (only when different from
+// name), 3=status, 4=count, 5=sync/waiting.
+//
+// Descriptions come through at full stored length; FormatListView shrinks
+// them in place (index 0) if the computed terminal budget is tighter.
 func workspaceMetaCols(ws engine.WorkspaceInfo, showCounts, short bool) []metaCol {
-	cols := make([]metaCol, 5)
-	cols[0] = metaField("br", ws.Branch, short)
+	cols := make([]metaCol, 6)
+	if ws.Description != "" {
+		cols[0] = descField(ws.Description, engine.MaxDescriptionLen, short)
+	}
+	cols[1] = metaField("br", ws.Branch, short)
 	// Show directory basename only when it differs from the workspace name.
 	if ws.Path != "" {
 		dir := filepath.Base(ws.Path)
 		if dir != ws.Name {
-			cols[1] = metaField("dir", dir, short)
+			cols[2] = metaField("dir", dir, short)
 		}
 	}
 	if ws.Dirty {
-		cols[2] = metaField("st", "dirty", short)
+		cols[3] = metaField("st", "dirty", short)
 	} else if ws.Pending {
-		cols[2] = metaField("st", "pending", short)
+		cols[3] = metaField("st", "pending", short)
 	}
 	if showCounts {
-		cols[3] = metaField("n", fmt.Sprintf("%d", ws.SurfaceCount), short)
+		cols[4] = metaField("n", fmt.Sprintf("%d", ws.SurfaceCount), short)
 	}
 	// Sync and waiting indicators share the trailing column.
 	var parts []string
@@ -365,9 +374,43 @@ func workspaceMetaCols(ws engine.WorkspaceInfo, showCounts, short bool) []metaCo
 		}
 	}
 	if len(parts) > 0 {
-		cols[4] = metaCol{text: strings.Join(parts, " "), width: tailWidth}
+		cols[5] = metaCol{text: strings.Join(parts, " "), width: tailWidth}
 	}
 	return cols
+}
+
+// listDescMinStrLen floors the description string length so even a narrow
+// terminal shows a useful 15-char hint instead of near-nothing.
+const listDescMinStrLen = 15
+
+// listDescPipedStrMax is the cap applied when stdout isn't a terminal
+// (pipe, redirect, CI). Pipes have no natural width; downstream consumers
+// should see the complete stored value.
+const listDescPipedStrMax = engine.MaxDescriptionLen
+
+// descColLabel is the key-prefix for a description column in long format.
+const descColLabel = "ds="
+
+// descColOverhead returns the non-string characters in a rendered
+// description column: two quotes, plus the "ds=" prefix in long format.
+// Used by the width budget to map a column budget back to a string budget.
+func descColOverhead(short bool) int {
+	if short {
+		return 2
+	}
+	return 2 + len(descColLabel)
+}
+
+// descField renders a description as ds="..." (or a bare quoted string in
+// short mode), truncating the string to strMax characters and quoting so
+// embedded spaces don't blur the column boundary.
+func descField(desc string, strMax int, short bool) metaCol {
+	quoted := `"` + engine.TruncateName(desc, strMax) + `"`
+	w := utf8.RuneCountInString(quoted)
+	if short {
+		return metaCol{text: quoted, width: w}
+	}
+	return metaCol{text: dim(descColLabel) + quoted, width: len(descColLabel) + w}
 }
 
 // surfaceMetaCols returns fixed-position columns for surface metadata.
@@ -492,7 +535,72 @@ func alignColumnWidths(rows []alignedRow) []int {
 	return widths
 }
 
+// detectStdoutWidth returns the current terminal width of stdout. Returns 0
+// when stdout is not a terminal (pipe, redirect, CI) so callers can switch to
+// pipe-friendly behavior (no width-aware truncation).
+//
+// `COLUMNS` wins when it's set to a positive integer — standard Unix override
+// that also works through pipes (e.g. `COLUMNS=80 bay tree | less -S`).
+func detectStdoutWidth() int {
+	if c := os.Getenv("COLUMNS"); c != "" {
+		if w, err := strconv.Atoi(c); err == nil && w > 0 {
+			return w
+		}
+	}
+	fd := int(os.Stdout.Fd())
+	if !term.IsTerminal(fd) {
+		return 0
+	}
+	w, _, err := term.GetSize(fd)
+	if err != nil || w <= 0 {
+		return 0
+	}
+	return w
+}
+
+// descStrMaxForWidth returns the max description string length that fits
+// alongside the rest of a workspace row at the given terminal width.
+// termWidth == 0 means "not a terminal" (pipe/redirect) and returns the
+// storage cap so consumers see the full stored value.
+//
+// nonDescWidth is the precomputed width of everything in the row except the
+// description column and its leading inter-column separator.
+func descStrMaxForWidth(termWidth, nonDescWidth int, short bool) int {
+	if termWidth <= 0 {
+		return listDescPipedStrMax
+	}
+	const interColSeparator = 1
+	budget := termWidth - nonDescWidth - interColSeparator - descColOverhead(short)
+	if budget < listDescMinStrLen {
+		return listDescMinStrLen
+	}
+	if budget > listDescPipedStrMax {
+		return listDescPipedStrMax
+	}
+	return budget
+}
+
+// nonDescRowWidth returns the displayed row width excluding the description
+// column (index 0), using the already-computed prefix alignment and
+// per-column max widths.
+func nonDescRowWidth(prefixAlign int, colWidths []int) int {
+	total := prefixAlign + 2 // prefix + min padding to first col
+	first := true
+	for i := 1; i < len(colWidths); i++ {
+		if colWidths[i] == 0 {
+			continue
+		}
+		if !first {
+			total++
+		}
+		first = false
+		total += colWidths[i]
+	}
+	return total
+}
+
 func FormatListView(view ListView, long, short bool) string {
+	termWidth := detectStdoutWidth()
 	var b strings.Builder
 	for _, repo := range view.Repos {
 		p, _ := indentedPrefix(0, "rp", repo.Name, short)
@@ -537,10 +645,6 @@ func FormatListView(view ListView, long, short bool) string {
 			}
 			showChildren := view.Recursive || view.Focus.Kind == FocusWorkspace
 
-			// First pass: build all workspace rows AND surface rows
-			// up front. Both prefix alignment and per-column alignment
-			// are computed across the whole dock so columns stay stable
-			// as the eye scans down the output.
 			wsRows := make([]alignedRow, len(dock.Workspaces))
 			var allSfRows []alignedRow
 			for i, ws := range dock.Workspaces {
@@ -574,8 +678,28 @@ func FormatListView(view ListView, long, short bool) string {
 				wsRows[i].surfaceRows = sfRows
 				allSfRows = append(allSfRows, sfRows...)
 			}
+
 			wsAlign := alignWidth(wsRows)
 			wsColWidths := alignColumnWidths(wsRows)
+
+			// Fit description column (index 0) to terminal width by
+			// shrinking too-long rows in place. No-op when no workspace
+			// has a description (wsColWidths[0] is 0).
+			if wsColWidths[0] > 0 {
+				strMax := descStrMaxForWidth(termWidth, nonDescRowWidth(wsAlign, wsColWidths), short)
+				shrunk := false
+				for i, ws := range dock.Workspaces {
+					if ws.Description == "" || len(ws.Description) <= strMax {
+						continue
+					}
+					wsRows[i].metaCols[0] = descField(ws.Description, strMax, short)
+					shrunk = true
+				}
+				if shrunk {
+					wsColWidths = alignColumnWidths(wsRows)
+				}
+			}
+
 			sfAlign := alignWidth(allSfRows)
 			sfColWidths := alignColumnWidths(allSfRows)
 
@@ -630,6 +754,9 @@ func FormatWorkspaceShow(repoName, dockName string, ws *engine.WorkspaceInfo, lo
 
 	var rows []showRow
 	rows = append(rows, showRow{"workspace", ws.Name})
+	if ws.Description != "" {
+		rows = append(rows, showRow{"description", ws.Description})
+	}
 	rows = append(rows, showRow{"repo", repoName})
 	rows = append(rows, showRow{"dock", dockName})
 	if ws.Type != "" && ws.Type != "worktree" {

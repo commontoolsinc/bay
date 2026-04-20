@@ -201,6 +201,21 @@ func TestFuzzyMatch_ByDockName(t *testing.T) {
 	}
 }
 
+func TestFuzzyMatch_ByDescription(t *testing.T) {
+	entries := []Entry{
+		{WsName: "w2", Description: "Login flow fixes", Branch: "fix/login", DockName: "labs"},
+		{WsName: "w3", Description: "Unrelated refactor", Branch: "refactor/foo", DockName: "labs"},
+	}
+
+	result := FuzzyMatch(entries, "login flow")
+	if len(result) != 1 {
+		t.Fatalf("expected 1 match for description substring, got %d", len(result))
+	}
+	if result[0].WsName != "w2" {
+		t.Errorf("expected w2, got %q", result[0].WsName)
+	}
+}
+
 func TestFuzzyMatch_CaseInsensitive(t *testing.T) {
 	entries := []Entry{
 		{WsName: "Mem-Refactor", Branch: "Feature/MEM", PR: "234", DockName: "Labs"},

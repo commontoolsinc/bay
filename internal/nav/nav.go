@@ -11,12 +11,13 @@ import (
 
 // Entry represents a navigable workspace.
 type Entry struct {
-	DockName string
-	WsName   string
-	Branch   string
-	PR       string
-	Pending  bool
-	Waiting  bool
+	DockName    string
+	WsName      string
+	Description string
+	Branch      string
+	PR          string
+	Pending     bool
+	Waiting     bool
 	// TmuxWindowID of any surface in this workspace (for focusing).
 	TmuxWindowID string
 	SurfaceCount int
@@ -83,6 +84,7 @@ func CollectEntries(m *manifest.Manifest, tc tmux.Interface) []Entry {
 			entries = append(entries, Entry{
 				DockName:     dockName,
 				WsName:       ws.Name,
+				Description:  ws.Description,
 				Branch:       branch,
 				PR:           pr,
 				Pending:      ws.Worktree != nil && ws.Worktree.Branch != "" && !ws.IsMerged(),
@@ -104,6 +106,7 @@ func FuzzyMatch(entries []Entry, query string) []Entry {
 	var matched []Entry
 	for _, e := range entries {
 		if strings.Contains(strings.ToLower(e.WsName), q) ||
+			strings.Contains(strings.ToLower(e.Description), q) ||
 			strings.Contains(strings.ToLower(e.Branch), q) ||
 			strings.Contains(strings.ToLower(e.PR), q) ||
 			strings.Contains(strings.ToLower(e.DockName), q) {
