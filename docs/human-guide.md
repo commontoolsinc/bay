@@ -254,6 +254,20 @@ dirty and not pending — the truly finished ones. `bay ws close --clean`
 is broader, closing anything not dirty. Use `--dry-run` with either to
 preview what would be closed.
 
+### Orphan cleanup
+
+If a workspace's last pane disappears — via tmux-native kill
+(`Ctrl-B x`, process exit), or via `Option+W`/`bay sf close` (no
+`--force`) — bay schedules the workspace for auto-close after a
+60-second grace window. You can rescue it during that window by
+adding a surface back (`bay sf new --ws <name>`); the pending close
+cancels. If you don't act, bay runs `bay ws close` with the normal
+safety gates: clean and pushed workspaces get cleaned up, dirty or
+unpushed ones stay in place.
+
+`bay sf close --force` and direct `bay ws close` are unaffected —
+those are explicit user actions and close immediately.
+
 ### Naming and references
 
 Workspaces can be referenced by name (`auth-fix`), by full qualifier

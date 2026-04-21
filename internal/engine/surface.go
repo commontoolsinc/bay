@@ -179,6 +179,9 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 			return err
 		}
 		ws.LastActive = time.Now().Unix()
+		// Adding a surface cancels any scheduled auto-close — the user
+		// clearly wants this workspace to live.
+		ws.PendingCloseAt = 0
 		return nil
 	})
 	if err != nil {
@@ -279,13 +282,29 @@ func (e *Engine) SurfaceClose(dockName, wsName, surfaceName string, force bool) 
 		_ = e.Tmux.KillPane(paneIDToKill)
 	}
 
-	// Auto-close the workspace if no surfaces remain. If the workspace
-	// has dirty/unpushed state, WsClose returns an error — surface is
-	// already gone, so just report the leftover workspace to the caller.
+	// Workspace became empty. With force, close immediately; without,
+	// schedule the grace-windowed auto-close (see orphan-hygiene.md).
 	if wsEmpty {
-		if err := e.WsClose(dockName, wsName, force); err != nil {
-			return fmt.Errorf("surface closed, but workspace %q not removed: %w", wsName, err)
+		if force {
+			if err := e.WsClose(dockName, wsName, force); err != nil {
+				return fmt.Errorf("surface closed, but workspace %q not removed: %w", wsName, err)
+			}
+			return nil
 		}
+		_ = e.withManifest(func(m *manifest.Manifest) error {
+			dock := m.FindDock(dockName)
+			if dock == nil {
+				return nil
+			}
+			ws := dock.FindWorkspace(wsName)
+			if ws == nil {
+				return nil
+			}
+			if ws.PendingCloseAt == 0 {
+				ws.PendingCloseAt = time.Now().Unix() + orphanGraceSeconds
+			}
+			return nil
+		})
 	}
 	return nil
 }

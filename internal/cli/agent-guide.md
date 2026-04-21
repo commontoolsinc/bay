@@ -365,6 +365,21 @@ bay ws close --done --dry-run
 bay ws close --clean
 ```
 
+**Orphan auto-close (with grace window).** When a workspace's last
+surface goes away — via sync-detected tmux kill or via
+`bay sf close` (no `--force`) on the last surface — bay schedules
+the workspace for auto-close after a 60-second grace window
+(`Workspace.PendingCloseAt` in the manifest). The user (or an
+agent) can cancel by re-adding a surface; `SurfaceAdd` clears
+`PendingCloseAt` unconditionally. If the grace expires with no
+surfaces, sync runs `WsClose(force=false)` — clean + pushed
+finalizes the teardown; dirty or unpushed clears `PendingCloseAt`
+to stop retries and leaves a permanent orphan for the user to
+resolve manually.
+
+Direct `bay ws close <name>`, `--done`, `--clean`, and
+`bay sf close --force` close immediately (no grace).
+
 #### `bay ws show [name] [--json|--short|--flash|--popup] [--plain]`
 
 Show workspace details: path, branch, PR, dirty/merged, surfaces. Defaults

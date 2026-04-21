@@ -16,6 +16,12 @@ import (
 // display latency reasonable on docks with many fresh workspaces.
 const syncProbeConcurrency = 10
 
+// orphanGraceSeconds is how long a newly-emptied workspace lingers
+// before auto-close finalizes. The user can cancel by re-adding a
+// surface (bay sf new --ws <name>) during this window. Var (not
+// const) so tests can set it to 0 to exercise immediate finalization.
+var orphanGraceSeconds int64 = 60
+
 type workspaceSyncUpdate struct {
 	dockName           string
 	originalName       string
@@ -84,11 +90,17 @@ func (e *Engine) SyncAll() {
 			updates = append(updates, results[i])
 		}
 	}
-	if len(updates) == 0 {
-		return
-	}
+	// Note: no early return on `len(updates) == 0` — the pending-close
+	// scan in the closure below must still run to finalize any
+	// previously-scheduled auto-closes whose grace windows have
+	// elapsed since the last sync.
 
 	var dockNames []string
+	// Workspaces whose PendingCloseAt has expired — finalize via
+	// WsClose after the lock releases (WsClose acquires its own lock).
+	type orphanCandidate struct{ dock, ws string }
+	var toFinalize []orphanCandidate
+
 	_ = e.withManifestMaybe(func(m *manifest.Manifest) (bool, error) {
 		changed := false
 		for _, update := range updates {
@@ -121,6 +133,28 @@ func (e *Engine) SyncAll() {
 			dock.Surfaces = live
 		}
 
+		// Scan for pending-close workspaces: clear the flag if a
+		// surface was re-added since scheduling (user saved it);
+		// collect the expired ones for post-lock finalization.
+		now := time.Now().Unix()
+		for di := range m.Docks {
+			dock := &m.Docks[di]
+			for wi := range dock.Workspaces {
+				ws := &dock.Workspaces[wi]
+				if ws.PendingCloseAt == 0 {
+					continue
+				}
+				if len(ws.Surfaces) > 0 {
+					ws.PendingCloseAt = 0
+					changed = true
+					continue
+				}
+				if ws.PendingCloseAt <= now {
+					toFinalize = append(toFinalize, orphanCandidate{dock.Name, ws.Name})
+				}
+			}
+		}
+
 		// Capture dock names so we can refresh tab names after the
 		// lock is released (tmux RPCs shouldn't block the manifest).
 		dockNames = make([]string, len(m.Docks))
@@ -129,6 +163,19 @@ func (e *Engine) SyncAll() {
 		}
 		return changed, nil
 	})
+
+	// Finalize expired pending closes. Best-effort: any failure
+	// (gate refused, I/O error) leaves PendingCloseAt set; we clear
+	// it on gate failures to stop retrying every sync pass (a
+	// permanent orphan is on the user to resolve).
+	for _, o := range toFinalize {
+		if stillEmpty, err := e.workspaceIsEmpty(o.dock, o.ws); err != nil || !stillEmpty {
+			continue
+		}
+		if err := e.WsClose(o.dock, o.ws, false); err != nil {
+			e.clearPendingClose(o.dock, o.ws)
+		}
+	}
 
 	// Refresh tab name lengths for all docks.
 	for _, name := range dockNames {
@@ -221,7 +268,6 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 	if ws == nil {
 		return false
 	}
-
 	changed := false
 	if update.branchChanged && ws.Worktree != nil && ws.Worktree.Branch != update.branch {
 		ws.Worktree.Branch = update.branch
@@ -304,10 +350,54 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 		if removed {
 			ws.Surfaces = live
 			changed = true
+			// If the strip emptied the workspace, schedule auto-close
+			// after a grace window. The user has that long to re-open
+			// a surface (bay sf new --ws <name>) to cancel.
+			if len(ws.Surfaces) == 0 && ws.PendingCloseAt == 0 {
+				ws.PendingCloseAt = time.Now().Unix() + orphanGraceSeconds
+			}
 		}
 	}
 
 	return changed
+}
+
+// clearPendingClose resets PendingCloseAt on a workspace to 0. Used
+// after a finalize attempt fails so the orphan doesn't get retried
+// on every sync pass; the user must resolve the underlying issue
+// (dirty, unpushed) and close manually.
+func (e *Engine) clearPendingClose(dockName, wsName string) {
+	_ = e.withManifest(func(m *manifest.Manifest) error {
+		dock := m.FindDock(dockName)
+		if dock == nil {
+			return nil
+		}
+		ws := dock.FindWorkspace(wsName)
+		if ws == nil {
+			return nil
+		}
+		ws.PendingCloseAt = 0
+		return nil
+	})
+}
+
+// workspaceIsEmpty returns true if the workspace exists and has zero
+// surfaces at this moment. Used by the orphan auto-close guard to
+// skip workspaces that gained a surface concurrently with sync.
+func (e *Engine) workspaceIsEmpty(dockName, wsName string) (bool, error) {
+	m, err := e.LoadManifest()
+	if err != nil {
+		return false, err
+	}
+	dock := m.FindDock(dockName)
+	if dock == nil {
+		return false, nil
+	}
+	ws := dock.FindWorkspace(wsName)
+	if ws == nil {
+		return false, nil
+	}
+	return len(ws.Surfaces) == 0, nil
 }
 
 func (e *Engine) deadSurfaceIDs(ws *manifest.Workspace) map[int]bool {

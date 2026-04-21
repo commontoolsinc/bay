@@ -85,13 +85,14 @@ type Dock struct {
 
 // Workspace represents a unit of work — typically one branch/PR.
 type Workspace struct {
-	Name           string         `json:"name"`                      // unique within dock; user-facing, renameable
-	Type           WorkspaceType  `json:"type"`                      // "worktree" or "external"
-	Path           string         `json:"path,omitempty"`            // absolute path to the working directory
-	Description    string         `json:"description,omitempty"`     // short free-form label shown in picker/ls/tree
-	NameOverridden bool           `json:"name_overridden,omitempty"` // true if user explicitly renamed
-	LastFocused    int            `json:"last_focused,omitempty"`    // surface ID; 0 = none yet
-	LastActive     int64          `json:"last_active,omitempty"`     // unix timestamp; updated by bay commands
+	Name           string         `json:"name"`                       // unique within dock; user-facing, renameable
+	Type           WorkspaceType  `json:"type"`                       // "worktree" or "external"
+	Path           string         `json:"path,omitempty"`             // absolute path to the working directory
+	Description    string         `json:"description,omitempty"`      // short free-form label shown in picker/ls/tree
+	NameOverridden bool           `json:"name_overridden,omitempty"`  // true if user explicitly renamed
+	LastFocused    int            `json:"last_focused,omitempty"`     // surface ID; 0 = none yet
+	LastActive     int64          `json:"last_active,omitempty"`      // unix timestamp; updated by bay commands
+	PendingCloseAt int64          `json:"pending_close_at,omitempty"` // unix ts; non-zero = scheduled for auto-close at this time unless a surface is re-added first
 	Surfaces       []Surface      `json:"surfaces"`
 	Worktree       *WorktreeAttrs `json:"worktree,omitempty"` // type=worktree only
 
