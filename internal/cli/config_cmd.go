@@ -9,6 +9,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/commontoolsinc/bay/internal/config"
+	"github.com/commontoolsinc/bay/internal/engine"
 	"github.com/spf13/cobra"
 )
 
@@ -43,22 +44,27 @@ func newConfigEditCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			editorCmd, isGUI := resolveEditor(eng.Config)
-			if editorCmd == "" {
-				return fmt.Errorf("no editor found; set with 'bay config editor <name>', or via $VISUAL/$EDITOR")
-			}
-			path := bayPaths().ConfigFile
-			// Fresh-install safety: create the parent directory and
-			// seed a default config if the file doesn't exist, so
-			// the user opens a real file with the right structure
-			// instead of an empty buffer at a non-existent path.
-			if err := prepareConfigFileForEdit(path); err != nil {
-				return err
-			}
-			_, err = launchEditor(editorCmd, isGUI, []string{path})
-			return err
+			return runConfigEdit(eng)
 		},
 	}
+}
+
+// runConfigEdit opens the bay config file in the configured editor. Shared
+// by `bay config edit` and the palette's "Edit config" entry.
+func runConfigEdit(eng *engine.Engine) error {
+	editorCmd, isGUI := resolveEditor(eng.Config)
+	if editorCmd == "" {
+		return fmt.Errorf("no editor found; set with 'bay config editor <name>', or via $VISUAL/$EDITOR")
+	}
+	path := bayPaths().ConfigFile
+	// Fresh-install safety: create the parent directory and seed a default
+	// config if the file doesn't exist, so the user opens a real file with
+	// the right structure instead of an empty buffer at a non-existent path.
+	if err := prepareConfigFileForEdit(path); err != nil {
+		return err
+	}
+	_, err := launchEditor(editorCmd, isGUI, []string{path})
+	return err
 }
 
 func newConfigShowCmd() *cobra.Command {

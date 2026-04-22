@@ -24,6 +24,7 @@ bay recover                     # reconstruct everything after reboot
 - **Editor integration** — `bay edit` opens your workspace in cursor, VS Code, zed, nvim, or vim. `bay edit --all` for multi-root.
 - **Agent support** — optionally launch AI agents (Claude Code, Codex, Gemini). Agent surfaces resume on restart via configured `resume_args`. Closing an agent surface prompts for confirmation.
 - **Scoped navigation** — `bay go` (Option+j/k) cycles surfaces within the current workspace; `bay ws go` (Option+Shift+J/K) cycles workspaces within the current dock. Cycling flashes a brief position indicator.
+- **Command palette** — `Option+p` opens a VS Code-style palette in a tmux popup: fuzzy-search every bay command, see its hotkey if it has one, and launch without leaving the keyboard.
 - **Hierarchical browsing** — `bay ls` shows the dock/workspace structure scoped to your current focus; `bay tree` (or `bay ls -R`) shows the full hierarchy including surfaces.
 - **Status line** — `bay status-line <field>` provides workspace info for tmux status bar composition.
 - **Shell completion** — tab-complete workspace names, dock names, and flag values in bash, zsh, and fish.

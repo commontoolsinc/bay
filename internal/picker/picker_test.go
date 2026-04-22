@@ -170,3 +170,108 @@ func TestTruncateDisplay(t *testing.T) {
 		})
 	}
 }
+
+func TestPrompt_AcceptsPrefillOnEnter(t *testing.T) {
+	in := feedKeys(t, "\r")
+	out := devNull(t)
+	defer in.Close()
+	defer out.Close()
+
+	got, ok, err := Prompt("rename: ", "auth-fix", in, out)
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	if !ok {
+		t.Fatal("ok=false; want true")
+	}
+	if got != "auth-fix" {
+		t.Errorf("got %q; want prefill", got)
+	}
+}
+
+func TestPrompt_TypesAfterPrefill(t *testing.T) {
+	in := feedKeys(t, "-2\r")
+	out := devNull(t)
+	defer in.Close()
+	defer out.Close()
+
+	got, ok, _ := Prompt("rename: ", "auth", in, out)
+	if !ok || got != "auth-2" {
+		t.Errorf("got (%q, %v); want (auth-2, true)", got, ok)
+	}
+}
+
+func TestPrompt_BackspaceDeletes(t *testing.T) {
+	in := feedKeys(t, "\x7f\x7f\r") // two backspaces then Enter
+	out := devNull(t)
+	defer in.Close()
+	defer out.Close()
+
+	got, ok, _ := Prompt("> ", "abc", in, out)
+	if !ok || got != "a" {
+		t.Errorf("got (%q, %v); want (a, true)", got, ok)
+	}
+}
+
+func TestPrompt_CtrlUClears(t *testing.T) {
+	in := feedKeys(t, "\x15new\r") // Ctrl-U, type "new", Enter
+	out := devNull(t)
+	defer in.Close()
+	defer out.Close()
+
+	got, ok, _ := Prompt("> ", "old-name", in, out)
+	if !ok || got != "new" {
+		t.Errorf("got (%q, %v); want (new, true)", got, ok)
+	}
+}
+
+func TestPrompt_LeftRightArrows(t *testing.T) {
+	// Start with prefill "ac", move left once, insert 'b' → "abc".
+	in := feedKeys(t, "\x1b[Db\r")
+	out := devNull(t)
+	defer in.Close()
+	defer out.Close()
+
+	got, ok, _ := Prompt("> ", "ac", in, out)
+	if !ok || got != "abc" {
+		t.Errorf("got (%q, %v); want (abc, true)", got, ok)
+	}
+}
+
+func TestPrompt_HomeEndAndCtrlAE(t *testing.T) {
+	// Start with "end", Ctrl-A (home), type "X" → "Xend"
+	in := feedKeys(t, "\x01X\r")
+	out := devNull(t)
+	defer in.Close()
+	defer out.Close()
+
+	got, ok, _ := Prompt("> ", "end", in, out)
+	if !ok || got != "Xend" {
+		t.Errorf("got (%q, %v); want (Xend, true)", got, ok)
+	}
+}
+
+func TestPrompt_DeleteKey(t *testing.T) {
+	// Start with "abc", Home, Delete → "bc"
+	in := feedKeys(t, "\x01\x1b[3~\r")
+	out := devNull(t)
+	defer in.Close()
+	defer out.Close()
+
+	got, ok, _ := Prompt("> ", "abc", in, out)
+	if !ok || got != "bc" {
+		t.Errorf("got (%q, %v); want (bc, true)", got, ok)
+	}
+}
+
+func TestPrompt_EscapeCancels(t *testing.T) {
+	in := feedKeys(t, "\x1b")
+	out := devNull(t)
+	defer in.Close()
+	defer out.Close()
+
+	got, ok, _ := Prompt("> ", "prefill", in, out)
+	if ok || got != "" {
+		t.Errorf("got (%q, %v); want ('', false)", got, ok)
+	}
+}

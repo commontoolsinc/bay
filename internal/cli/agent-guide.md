@@ -426,6 +426,13 @@ bay ws go --next-waiting        # cycle through waiting
 
 Cycle to the next or previous surface within the current workspace.
 
+#### `bay palette` (hidden)
+
+Backs the `Option+p` command palette popup. Not an agent-facing
+command — it opens an interactive picker inside a tmux popup and is
+intended for human use. Agents should invoke the underlying commands
+(`bay ws go`, `bay shell`, `bay ws describe`, etc.) directly.
+
 #### `bay ws next` / `bay ws prev`
 
 Cycle to the next or previous workspace within the current dock.
