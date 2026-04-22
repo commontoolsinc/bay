@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // Real implements Interface by executing tmux commands.
@@ -404,4 +405,86 @@ func (r *Real) ClientWidth() (int, error) {
 		return 100, nil
 	}
 	return w, nil
+}
+
+// StatusReservedCells returns the actual visible width of the rendered
+// status-left and status-right sections (capped at their respective *-length
+// limits). This is the cells that are unavailable for window tabs.
+//
+// Using actual rendered widths instead of the configured *-length limits
+// avoids wasting budget when limits are set high but content is short.
+//
+// Caveat: tmux evaluates `#(shell-command)` substitutions asynchronously and
+// caches the result. On the first query, the cache may be cold and return
+// empty for those segments. We fall back to the configured *-length in that
+// case to stay conservative and avoid tabs overflowing into the empty region
+// once the shell-substitution populates.
+func (r *Real) StatusReservedCells() (int, error) {
+	out, err := run("display-message", "-p", "#{T:status-left}\t#{T:status-right}")
+	if err != nil {
+		return 0, err
+	}
+	parts := strings.SplitN(out, "\t", 2)
+	if len(parts) != 2 {
+		return 0, fmt.Errorf("unexpected output: %q", out)
+	}
+	left := visibleWidth(parts[0])
+	right := visibleWidth(parts[1])
+
+	// Per-side: cap measured by configured length; fall back to length when
+	// measured is 0 (likely an uncached `#(...)` substitution).
+	leftLen, leftLenErr := optInt("status-left-length")
+	rightLen, rightLenErr := optInt("status-right-length")
+	if leftLenErr == nil {
+		if left == 0 || left > leftLen {
+			left = leftLen
+		}
+	}
+	if rightLenErr == nil {
+		if right == 0 || right > rightLen {
+			right = rightLen
+		}
+	}
+	return left + right, nil
+}
+
+// optInt fetches a tmux integer option via `show -gv`.
+func optInt(name string) (int, error) {
+	out, err := run("show", "-gv", name)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(out))
+}
+
+// visibleWidth returns the number of visible cells in a tmux-evaluated string,
+// stripping #[...] style directives. Assumes most chars are single-width;
+// multi-byte runes count as one cell each (close enough for status-bar text).
+func visibleWidth(s string) int {
+	n := 0
+	for i := 0; i < len(s); {
+		// Handle ## (literal #) and #[...] style directives.
+		if i+1 < len(s) && s[i] == '#' {
+			if s[i+1] == '#' {
+				n++
+				i += 2
+				continue
+			}
+			if s[i+1] == '[' {
+				end := strings.IndexByte(s[i+2:], ']')
+				if end == -1 {
+					break
+				}
+				i += 2 + end + 1
+				continue
+			}
+		}
+		_, size := utf8.DecodeRuneInString(s[i:])
+		if size == 0 {
+			break
+		}
+		n++
+		i += size
+	}
+	return n
 }

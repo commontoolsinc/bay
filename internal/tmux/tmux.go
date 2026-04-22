@@ -53,6 +53,10 @@ type Interface interface {
 	DisplayMessage(msg string) error
 	DisplayPopup(cmd string) error
 	ClientWidth() (int, error)
+	// StatusReservedCells returns status-left-length + status-right-length —
+	// the maximum cells reserved for status-left and status-right sections.
+	// Used to compute how much width is actually available for window tabs.
+	StatusReservedCells() (int, error)
 }
 
 // Session represents a tmux session.

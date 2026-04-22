@@ -57,8 +57,9 @@ type Mock struct {
 	currentWindowIDSet bool
 	currentPaneIDSet   bool
 
-	clientWidth     int
-	displayMessages []string // recorded DisplayMessage calls in order
+	clientWidth         int
+	statusReservedCells int
+	displayMessages     []string // recorded DisplayMessage calls in order
 
 	// OnKill is an optional test hook fired at the start of any
 	// destructive operation (KillPane / KillWindow / KillSession)
@@ -556,6 +557,14 @@ func (m *Mock) ClientWidth() (int, error) {
 	return m.clientWidth, nil
 }
 
+func (m *Mock) StatusReservedCells() (int, error) {
+	m.record("StatusReservedCells")
+	if m.statusReservedCells <= 0 {
+		return 50, nil
+	}
+	return m.statusReservedCells, nil
+}
+
 // --- Mock helpers (not part of Interface) ---
 
 // SetCurrentSession sets the value returned by CurrentSession.
@@ -586,6 +595,11 @@ func (m *Mock) SetCaptureContent(paneID string, content string) {
 // SetClientWidth sets the value returned by ClientWidth.
 func (m *Mock) SetClientWidth(w int) {
 	m.clientWidth = w
+}
+
+// SetStatusReservedCells sets the value returned by StatusReservedCells.
+func (m *Mock) SetStatusReservedCells(c int) {
+	m.statusReservedCells = c
 }
 
 // DisplayMessages returns a copy of the messages recorded via DisplayMessage,

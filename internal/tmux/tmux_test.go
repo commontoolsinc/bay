@@ -9,6 +9,31 @@ import (
 var _ Interface = (*Mock)(nil)
 var _ Interface = (*Real)(nil)
 
+func TestVisibleWidth(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want int
+	}{
+		{"empty", "", 0},
+		{"plain ascii", "hello", 5},
+		{"with style", "#[bold]hello#[default]", 5},
+		{"multiple styles", "#[fg=red]a#[fg=blue]bc#[default]", 3},
+		{"escaped hash", "a##b", 3},
+		{"unicode single-width", "│", 1},
+		{"realistic status-left", "#[bold] bay #[nobold]│ mikecf ", 14},
+		{"unterminated style", "#[bold", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := visibleWidth(tt.in)
+			if got != tt.want {
+				t.Errorf("visibleWidth(%q) = %d, want %d", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 // --- Session tests ---
 
 func TestNewSession(t *testing.T) {
