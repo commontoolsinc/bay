@@ -295,6 +295,31 @@ bind-key -n M-g display-popup -E 'bay go'
 		}
 	})
 
+	t.Run("duplicate-command canonical bindings require each key", func(t *testing.T) {
+		// M-j and M-J both run `select-pane -D` by design (Shift-held
+		// chords shouldn't lose the modifier). If only M-J is bound,
+		// M-j must still be reported missing — command match alone is
+		// ambiguous for duplicates.
+		dupKbs := []bayKeybinding{
+			{key: "M-j", cmd: "select-pane -D", isTmuxCommand: true},
+			{key: "M-J", cmd: "select-pane -D", isTmuxCommand: true},
+			{key: "M-k", cmd: "select-pane -U", isTmuxCommand: true},
+			{key: "M-K", cmd: "select-pane -U", isTmuxCommand: true},
+		}
+		block := `# Bay keybindings
+bind-key -n M-J select-pane -D
+bind-key -n M-K select-pane -U
+`
+		got := missingCanonicalLines(block, dupKbs)
+		want := []string{
+			"bind-key -n M-j select-pane -D",
+			"bind-key -n M-k select-pane -U",
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("missingCanonicalLines() = %v, want %v", got, want)
+		}
+	})
+
 	t.Run("empty block reports everything missing", func(t *testing.T) {
 		block := `# Bay keybindings`
 		got := missingCanonicalLines(block, kbs)
