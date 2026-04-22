@@ -67,6 +67,15 @@ func Run(items []Item, opts Options, in *os.File, out *os.File) (int, error) {
 		defer term.Restore(fd, oldState)
 	}
 
+	// Detect display width so we can truncate long lines. Any line wider
+	// than the terminal/popup wraps to a second row, which breaks our
+	// cursor math (one-line-per-item) and causes the display to march
+	// down the screen as the user navigates.
+	width := 0
+	if tw, _, err := term.GetSize(fd); err == nil && tw > 0 {
+		width = tw
+	}
+
 	query := ""
 	cursor := opts.Selected
 	if cursor < 0 || cursor >= len(items) {
@@ -85,7 +94,7 @@ func Run(items []Item, opts Options, in *os.File, out *os.File) (int, error) {
 			cursor = 0
 		}
 
-		prevHeight = renderPicker(out, filtered, cursor, prompt, query, prevHeight)
+		prevHeight = renderPicker(out, filtered, cursor, prompt, query, prevHeight, width)
 
 		key := reader.read()
 
@@ -214,16 +223,18 @@ func filter(items []Item, query string) []Item {
 	return result
 }
 
-// render draws the picker state to the output.
 // renderPicker draws the picker and returns the total height (for clearing).
 // prevHeight is the height of the previous render — any extra lines are erased.
-func renderPicker(out io.Writer, items []Item, cursor int, prompt, query string, prevHeight int) int {
+// width is the display width; if > 0, lines are truncated to fit so they
+// never wrap (a wrapped line would break our one-line-per-item cursor math).
+func renderPicker(out io.Writer, items []Item, cursor int, prompt, query string, prevHeight, width int) int {
 	fmt.Fprintf(out, "\r\x1b[K%s%s\r\n", prompt, query)
 	for i, item := range items {
+		display := truncateDisplay(item.Display, width)
 		if i == cursor {
-			fmt.Fprintf(out, "\x1b[7m%s\x1b[0m\x1b[K\r\n", item.Display)
+			fmt.Fprintf(out, "\x1b[7m%s\x1b[0m\x1b[K\r\n", display)
 		} else {
-			fmt.Fprintf(out, "%s\x1b[K\r\n", item.Display)
+			fmt.Fprintf(out, "%s\x1b[K\r\n", display)
 		}
 	}
 	height := len(items) + 1
@@ -238,6 +249,25 @@ func renderPicker(out io.Writer, items []Item, cursor int, prompt, query string,
 	fmt.Fprintf(out, "\x1b[%dA", totalHeight)
 	fmt.Fprintf(out, "\r\x1b[%dC", len(prompt)+len(query))
 	return height
+}
+
+// truncateDisplay shortens s to fit within maxCells terminal cells, appending
+// "…" if shortened. maxCells == 0 means no truncation (width unknown).
+// We leave one cell of margin from the true width to avoid edge cases with
+// terminals that wrap at exactly column=width.
+func truncateDisplay(s string, maxCells int) string {
+	if maxCells <= 0 {
+		return s
+	}
+	budget := maxCells - 1
+	runes := []rune(s)
+	if len(runes) <= budget {
+		return s
+	}
+	if budget <= 1 {
+		return string(runes[:budget])
+	}
+	return string(runes[:budget-1]) + "…"
 }
 
 // clearDisplay clears the picker display area.

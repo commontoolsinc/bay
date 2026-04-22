@@ -517,7 +517,6 @@ prefix required — just press the key combo directly.
 | Key | Action |
 |-----|--------|
 | `Option+j` / `Option+k` | Next / previous surface in workspace |
-| `Option+g` | Surface picker (popup) |
 | `Option+Shift+j` / `Option+Shift+k` | Next / previous workspace in dock |
 | `Option+Shift+g` | Workspace picker (popup) |
 
@@ -540,7 +539,7 @@ prefix required — just press the key combo directly.
 
 Without Shift = intra-workspace. With Shift = intra-dock. For creation
 keys, lowercase opens a new window, Shift opens a split pane. The
-pickers (`Option+g`, `Option+Shift+g`) open in a tmux popup.
+workspace picker (`Option+Shift+g`) opens in a tmux popup.
 
 ### Installing and updating
 

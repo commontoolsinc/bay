@@ -144,3 +144,29 @@ func TestRun_FilterNoMatch(t *testing.T) {
 		t.Errorf("result = %d, want -1 (no matches)", result)
 	}
 }
+
+func TestTruncateDisplay(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		max  int
+		want string
+	}{
+		{"no max", "hello world", 0, "hello world"},
+		{"fits with margin", "hello", 10, "hello"},
+		// budget = max-1 = 7 cells; prefix 6 runes + "…" = 7 cells
+		{"truncates with ellipsis", "hello world", 8, "hello …"},
+		{"exact margin boundary", "abcdef", 7, "abcdef"},
+		{"no margin, needs truncate", "abcdef", 6, "abcd…"},
+		{"tiny budget", "hello", 2, "h"},
+		{"zero budget", "hello", 1, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := truncateDisplay(tt.in, tt.max)
+			if got != tt.want {
+				t.Errorf("truncateDisplay(%q, %d) = %q, want %q", tt.in, tt.max, got, tt.want)
+			}
+		})
+	}
+}
