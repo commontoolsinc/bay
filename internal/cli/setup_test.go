@@ -383,3 +383,134 @@ bind-key -n M-l next-window
 		t.Errorf("commentedCommandsInBlock() = %v, want %v", got, want)
 	}
 }
+
+func TestMismatchedBindings(t *testing.T) {
+	kbs := []bayKeybinding{
+		{key: "M-s", cmd: "bay shell --pane", tmuxVerb: "run-shell"},
+		{key: "M-S", cmd: "bay shell --window", tmuxVerb: "run-shell"},
+		{key: "M-e", cmd: "bay edit --ws", tmuxVerb: "run-shell"},
+		{key: "M-E", cmd: "bay edit --dock", tmuxVerb: "run-shell"},
+	}
+
+	t.Run("swap-case drift is flagged", func(t *testing.T) {
+		// User has the old canonical: M-s=window, M-S=pane. Canonical
+		// has since flipped. Both keys are bound, so the "missing" path
+		// sees nothing — mismatch is what catches this.
+		block := `# Bay keybindings
+bind-key -n M-s run-shell 'bay shell --window || true'
+bind-key -n M-S run-shell 'bay shell --pane || true'
+bind-key -n M-e run-shell 'bay edit --ws || true'
+bind-key -n M-E run-shell 'bay edit --dock || true'
+`
+		got := mismatchedBindings(block, kbs)
+		wantKeys := []string{"M-s", "M-S"}
+		if len(got) != len(wantKeys) {
+			t.Fatalf("mismatchedBindings() returned %d; want %d: %+v", len(got), len(wantKeys), got)
+		}
+		for i, k := range wantKeys {
+			if got[i].canonical.key != k {
+				t.Errorf("mismatchedBindings()[%d].key = %q; want %q", i, got[i].canonical.key, k)
+			}
+		}
+	})
+
+	t.Run("canonical bindings report no mismatch", func(t *testing.T) {
+		block := `# Bay keybindings
+bind-key -n M-s run-shell 'bay shell --pane || true'
+bind-key -n M-S run-shell 'bay shell --window || true'
+`
+		if got := mismatchedBindings(block, kbs); len(got) != 0 {
+			t.Errorf("mismatchedBindings() = %+v; want empty", got)
+		}
+	})
+
+	t.Run("non-bay rebinds are not mismatches", func(t *testing.T) {
+		// User rebound M-s to something unrelated. Not drift we own —
+		// skip silently.
+		block := `# Bay keybindings
+bind-key -n M-s run-shell 'my-custom-script || true'
+`
+		if got := mismatchedBindings(block, kbs); len(got) != 0 {
+			t.Errorf("mismatchedBindings() = %+v; want empty", got)
+		}
+	})
+
+	t.Run("bay-keep marker suppresses mismatch", func(t *testing.T) {
+		block := `# Bay keybindings
+# bay-keep: M-s
+bind-key -n M-s run-shell 'bay shell --window || true'
+bind-key -n M-S run-shell 'bay shell --pane || true'
+`
+		got := mismatchedBindings(block, kbs)
+		if len(got) != 1 || got[0].canonical.key != "M-S" {
+			t.Errorf("mismatchedBindings() = %+v; want only M-S mismatch", got)
+		}
+	})
+
+	t.Run("missing key is not flagged as mismatch", func(t *testing.T) {
+		// M-s not bound at all → missingBindings handles it; mismatch
+		// only fires when the key is actively bound to the wrong thing.
+		block := `# Bay keybindings
+bind-key -n M-S run-shell 'bay shell --window || true'
+`
+		if got := mismatchedBindings(block, kbs); len(got) != 0 {
+			t.Errorf("mismatchedBindings() = %+v; want empty (M-s unbound is missing, not mismatch)", got)
+		}
+	})
+
+	t.Run("bay-keep with multiple keys on one line", func(t *testing.T) {
+		block := `# Bay keybindings
+# bay-keep: M-s M-e
+bind-key -n M-s run-shell 'bay shell --window || true'
+bind-key -n M-e run-shell 'bay edit --dock || true'
+`
+		if got := mismatchedBindings(block, kbs); len(got) != 0 {
+			t.Errorf("mismatchedBindings() = %+v; want empty (both pinned)", got)
+		}
+	})
+}
+
+func TestReplaceBindingInBlock(t *testing.T) {
+	content := `set -g mouse on
+
+# Bay keybindings
+bind-key -n M-s run-shell 'bay shell --window || true'
+bind-key -n M-S run-shell 'bay shell --pane || true'
+
+set -g base-index 1
+`
+	kb := bayKeybinding{key: "M-s", cmd: "bay shell --pane", tmuxVerb: "run-shell"}
+	got := replaceBindingInBlock(content, kb)
+	want := `set -g mouse on
+
+# Bay keybindings
+bind-key -n M-s run-shell 'bay shell --pane || true'
+bind-key -n M-S run-shell 'bay shell --pane || true'
+
+set -g base-index 1
+`
+	if got != want {
+		t.Errorf("replaceBindingInBlock:\nGOT:\n%s\nWANT:\n%s", got, want)
+	}
+}
+
+func TestReplaceBindingInBlock_NoBlock(t *testing.T) {
+	content := "set -g mouse on\n"
+	kb := bayKeybinding{key: "M-s", cmd: "bay shell --pane", tmuxVerb: "run-shell"}
+	if got := replaceBindingInBlock(content, kb); got != content {
+		t.Errorf("expected no change, got %q", got)
+	}
+}
+
+func TestKeptKeys(t *testing.T) {
+	block := `# Bay keybindings
+# bay-keep: M-s M-e
+# bay-keep:  M-a
+bind-key -n M-s run-shell 'bay shell --window || true'
+`
+	got := keptKeys(block)
+	want := map[string]bool{"M-s": true, "M-e": true, "M-a": true}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("keptKeys() = %v, want %v", got, want)
+	}
+}

@@ -370,6 +370,41 @@ func commentedKeysInBlock(block string) map[string]bool {
 	return keys
 }
 
+// activeBindings returns the map of key → command for every active
+// (non-comment) bind line in the block.
+func activeBindings(block string) map[string]string {
+	out := map[string]string{}
+	for _, l := range strings.Split(block, "\n") {
+		trimmed := strings.TrimSpace(l)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if k, cmd, ok := parseBindLine(l); ok {
+			out[k] = cmd
+		}
+	}
+	return out
+}
+
+// keptKeys returns the set of keys the user has pinned via
+// `# bay-keep: KEY [KEY...]` comments. Those keys are exempt from the
+// mismatch check so bay stops re-asking about a non-canonical binding
+// the user has decided to keep.
+func keptKeys(block string) map[string]bool {
+	keys := map[string]bool{}
+	for _, l := range strings.Split(block, "\n") {
+		trimmed := strings.TrimSpace(l)
+		rest, ok := strings.CutPrefix(trimmed, "# bay-keep:")
+		if !ok {
+			continue
+		}
+		for _, k := range strings.Fields(rest) {
+			keys[k] = true
+		}
+	}
+	return keys
+}
+
 // conflictingKeys returns the canonical keys that are already actively
 // bound in content. Walks lines and skips blanks and comments, so a
 // commented-out binding does not count as a conflict.
@@ -466,6 +501,77 @@ func commandMatches(cmds map[string]bool, want string) bool {
 	return false
 }
 
+// bayKeybindingMismatch records a canonical key whose active binding
+// runs a bay command that exists in the canonical set but isn't the
+// canonical one for that key — the silent-drift case that appears
+// when bay ships a canonical change and the user hasn't re-run setup.
+type bayKeybindingMismatch struct {
+	canonical bayKeybinding
+	userCmd   string
+}
+
+// mismatchedBindings returns canonical kbs whose key is actively bound
+// to a non-canonical-for-that-key bay command. Keys pinned via
+// `# bay-keep:` are skipped; truly-missing keys are left for
+// missingBindings. We only flag drift against bay's own canonical set
+// so unrelated user rebinds aren't touched.
+func mismatchedBindings(block string, kbs []bayKeybinding) []bayKeybindingMismatch {
+	active := activeBindings(block)
+	kept := keptKeys(block)
+	canonicalCmds := map[string]bool{}
+	for _, kb := range kbs {
+		canonicalCmds[kb.cmd] = true
+	}
+
+	var out []bayKeybindingMismatch
+	for _, kb := range kbs {
+		if kept[kb.key] {
+			continue
+		}
+		userCmd, ok := active[kb.key]
+		if !ok {
+			continue
+		}
+		if commandMatches(map[string]bool{userCmd: true}, kb.cmd) {
+			continue
+		}
+		for c := range canonicalCmds {
+			if c == kb.cmd {
+				continue
+			}
+			if commandMatches(map[string]bool{userCmd: true}, c) {
+				out = append(out, bayKeybindingMismatch{canonical: kb, userCmd: userCmd})
+				break
+			}
+		}
+	}
+	return out
+}
+
+// replaceBindingInBlock rewrites the first active bind line in the bay
+// block that matches kb.key with kb's canonical line. No-op if the
+// block or key isn't found.
+func replaceBindingInBlock(content string, kb bayKeybinding) string {
+	block, found := extractBayBlock(content)
+	if !found {
+		return content
+	}
+	lines := strings.Split(block, "\n")
+	for i, l := range lines {
+		trimmed := strings.TrimSpace(l)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		k, _, ok := parseBindLine(l)
+		if !ok || k != kb.key {
+			continue
+		}
+		lines[i] = kb.canonicalLine()
+		break
+	}
+	return strings.Replace(content, block, strings.Join(lines, "\n"), 1)
+}
+
 // appendToBayBlock inserts newLines at the end of the existing bay
 // keybindings block in content. Returns content unchanged if no block
 // is present (installKeybindings guards this before calling).
@@ -478,6 +584,76 @@ func appendToBayBlock(content string, newLines []string) string {
 	return strings.Replace(content, block, updated, 1)
 }
 
+func promptMissingBindings(reader *bufio.Reader, tmuxConf, content string, missing []bayKeybinding) {
+	fmt.Printf("%d canonical binding(s) not bound in your block:\n", len(missing))
+	for _, kb := range missing {
+		fmt.Printf("  %s\n", kb.canonicalLine())
+	}
+	fmt.Print("Add these to your block? [Y/n/c] (y=add, n=skip once, c=add commented stubs so bay stops asking) ")
+	answer, _ := reader.ReadString('\n')
+	answer = strings.TrimSpace(strings.ToLower(answer))
+	switch answer {
+	case "n":
+		fmt.Println("Leaving block as-is. Bay will ask again on next setup run.")
+	case "c":
+		var stubs []string
+		for _, kb := range missing {
+			stubs = append(stubs, "# "+kb.canonicalLine())
+		}
+		if err := os.WriteFile(tmuxConf, []byte(appendToBayBlock(content, stubs)), 0o644); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not write %s: %v\n", tmuxConf, err)
+			return
+		}
+		fmt.Printf("Added %d commented stub(s) to %s — bay won't re-ask about these.\n", len(stubs), tmuxConf)
+	default: // "" (default) or "y"
+		var lines []string
+		for _, kb := range missing {
+			lines = append(lines, kb.canonicalLine())
+		}
+		if err := os.WriteFile(tmuxConf, []byte(appendToBayBlock(content, lines)), 0o644); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not write %s: %v\n", tmuxConf, err)
+			return
+		}
+		fmt.Printf("Added %d binding(s) to %s\n", len(lines), tmuxConf)
+	}
+}
+
+func promptMismatchedBindings(reader *bufio.Reader, tmuxConf, content string, mismatches []bayKeybindingMismatch) {
+	fmt.Printf("%d binding(s) in your block don't match the current canonical:\n", len(mismatches))
+	for _, m := range mismatches {
+		fmt.Printf("  %s is bound to `%s`; canonical: `%s`\n",
+			m.canonical.key, m.userCmd, m.canonical.cmd)
+	}
+	fmt.Print("Update these to canonical? [Y/n/k] (y=update, n=skip once, k=keep yours so bay stops asking) ")
+	answer, _ := reader.ReadString('\n')
+	answer = strings.TrimSpace(strings.ToLower(answer))
+	switch answer {
+	case "n":
+		fmt.Println("Leaving block as-is. Bay will ask again on next setup run.")
+	case "k":
+		keys := make([]string, 0, len(mismatches))
+		for _, m := range mismatches {
+			keys = append(keys, m.canonical.key)
+		}
+		marker := "# bay-keep: " + strings.Join(keys, " ")
+		if err := os.WriteFile(tmuxConf, []byte(appendToBayBlock(content, []string{marker})), 0o644); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not write %s: %v\n", tmuxConf, err)
+			return
+		}
+		fmt.Printf("Pinned %d binding(s) with bay-keep marker — bay won't re-ask.\n", len(keys))
+	default: // "" (default) or "y"
+		updated := content
+		for _, m := range mismatches {
+			updated = replaceBindingInBlock(updated, m.canonical)
+		}
+		if err := os.WriteFile(tmuxConf, []byte(updated), 0o644); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not write %s: %v\n", tmuxConf, err)
+			return
+		}
+		fmt.Printf("Updated %d binding(s) in %s\n", len(mismatches), tmuxConf)
+	}
+}
+
 func installKeybindings(reader *bufio.Reader) {
 	fmt.Println()
 
@@ -488,49 +664,25 @@ func installKeybindings(reader *bufio.Reader) {
 	content := string(existing)
 
 	// If a "# Bay keybindings" block already exists, keep the user's
-	// customizations but offer to append any canonical bindings that
-	// aren't present. Commented-out bindings count as opt-outs, so a
-	// user who once said "no" isn't re-asked.
+	// customizations but offer to reconcile drift. Two passes: missing
+	// canonical bindings (key never bound) and mismatched bindings
+	// (canonical key bound to a non-canonical bay command — silent
+	// drift after a canonical change). Opt-outs: commented stubs
+	// suppress "missing"; `# bay-keep: KEY` suppresses "mismatched".
 	if block, found := extractBayBlock(content); found {
 		fmt.Printf("Bay keybindings block found in %s.\n", tmuxConf)
-		missing := missingBindings(block, bayKeybindings)
-		if len(missing) == 0 {
-			return
+
+		if missing := missingBindings(block, bayKeybindings); len(missing) > 0 {
+			promptMissingBindings(reader, tmuxConf, content, missing)
+			existing, _ = os.ReadFile(tmuxConf)
+			content = string(existing)
+			block, _ = extractBayBlock(content)
 		}
-		fmt.Printf("%d canonical binding(s) not bound in your block:\n", len(missing))
-		for _, kb := range missing {
-			fmt.Printf("  %s\n", kb.canonicalLine())
+
+		if mismatches := mismatchedBindings(block, bayKeybindings); len(mismatches) > 0 {
+			promptMismatchedBindings(reader, tmuxConf, content, mismatches)
 		}
-		fmt.Print("Add these to your block? [Y/n/c] (y=add, n=skip once, c=add commented stubs so bay stops asking) ")
-		answer, _ := reader.ReadString('\n')
-		answer = strings.TrimSpace(strings.ToLower(answer))
-		switch answer {
-		case "n":
-			fmt.Println("Leaving block as-is. Bay will ask again on next setup run.")
-			return
-		case "c":
-			var stubs []string
-			for _, kb := range missing {
-				stubs = append(stubs, "# "+kb.canonicalLine())
-			}
-			if err := os.WriteFile(tmuxConf, []byte(appendToBayBlock(content, stubs)), 0o644); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not write %s: %v\n", tmuxConf, err)
-				return
-			}
-			fmt.Printf("Added %d commented stub(s) to %s — bay won't re-ask about these.\n", len(stubs), tmuxConf)
-			return
-		default: // "" (default) or "y"
-			var lines []string
-			for _, kb := range missing {
-				lines = append(lines, kb.canonicalLine())
-			}
-			if err := os.WriteFile(tmuxConf, []byte(appendToBayBlock(content, lines)), 0o644); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not write %s: %v\n", tmuxConf, err)
-				return
-			}
-			fmt.Printf("Added %d binding(s) to %s\n", len(lines), tmuxConf)
-			return
-		}
+		return
 	}
 
 	// No existing block. Check for conflicts on canonical keys.

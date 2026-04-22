@@ -208,8 +208,16 @@ func runDoctor(eng *engine.Engine, w io.Writer) {
 }
 
 func missingKeybindings(content string) []string {
+	kept := map[string]bool{}
+	if block, found := extractBayBlock(content); found {
+		kept = keptKeys(block)
+	}
 	var missing []string
-	for _, line := range tmuxKeybindingLines() {
+	for _, kb := range bayKeybindings {
+		if kept[kb.key] {
+			continue
+		}
+		line := kb.canonicalLine()
 		if !strings.Contains(content, line) {
 			missing = append(missing, line)
 		}
