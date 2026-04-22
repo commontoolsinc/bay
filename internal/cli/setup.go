@@ -277,33 +277,33 @@ func extractBayBlock(content string) (string, bool) {
 	return strings.Join(blockLines, "\n"), true
 }
 
-// parseBindLine extracts the command portion of a tmux bind line. It
-// handles both active lines and commented lines (leading `#`). Returns
-// "", false if the line isn't a bind-key/bind binding.
+// parseBindLine extracts the key and command portion of a tmux bind
+// line. Handles both active lines and commented lines (leading `#`).
+// Returns "", "", false if the line isn't a bind-key/bind binding.
 //
 // For bay-invoking bindings the returned command is the quoted shell
 // contents (e.g. `bay ws new -q || true`); for tmux-native bindings
 // it's the raw tmux command (e.g. `previous-window`, `select-pane -L`).
-func parseBindLine(line string) (string, bool) {
+func parseBindLine(line string) (key, cmd string, ok bool) {
 	trimmed := strings.TrimSpace(line)
 	if strings.HasPrefix(trimmed, "#") {
 		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "#"))
 	}
 	if !strings.HasPrefix(trimmed, "bind-key") && !strings.HasPrefix(trimmed, "bind ") {
-		return "", false
+		return "", "", false
 	}
 	parts := strings.SplitN(trimmed, " ", 4)
 	if len(parts) < 4 || parts[1] != "-n" {
-		return "", false
+		return "", "", false
 	}
 	rest := parts[3]
 	if open := strings.IndexAny(rest, "'\""); open >= 0 {
 		close := strings.LastIndexByte(rest, rest[open])
 		if close > open {
-			return rest[open+1 : close], true
+			return parts[2], rest[open+1 : close], true
 		}
 	}
-	return rest, true
+	return parts[2], rest, true
 }
 
 // commandsInBlock returns the set of commands found on any active
@@ -315,7 +315,7 @@ func commandsInBlock(block string) map[string]bool {
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		if cmd, ok := parseBindLine(l); ok {
+		if _, cmd, ok := parseBindLine(l); ok {
 			cmds[cmd] = true
 		}
 	}
@@ -323,9 +323,7 @@ func commandsInBlock(block string) map[string]bool {
 }
 
 // commentedCommandsInBlock returns the set of commands found on commented-
-// out bind lines in the block. Bay treats these as opt-out signals: a
-// user who removed a binding and left a commented stub behind is saying
-// "don't re-add this on the next setup run."
+// out bind lines in the block.
 func commentedCommandsInBlock(block string) map[string]bool {
 	cmds := map[string]bool{}
 	for _, l := range strings.Split(block, "\n") {
@@ -333,11 +331,44 @@ func commentedCommandsInBlock(block string) map[string]bool {
 		if !strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		if cmd, ok := parseBindLine(l); ok {
+		if _, cmd, ok := parseBindLine(l); ok {
 			cmds[cmd] = true
 		}
 	}
 	return cmds
+}
+
+// activeKeysInBlock returns the set of keys bound on active (non-comment)
+// bind-key/bind lines in the block.
+func activeKeysInBlock(block string) map[string]bool {
+	keys := map[string]bool{}
+	for _, l := range strings.Split(block, "\n") {
+		trimmed := strings.TrimSpace(l)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if k, _, ok := parseBindLine(l); ok {
+			keys[k] = true
+		}
+	}
+	return keys
+}
+
+// commentedKeysInBlock returns the set of keys from commented-out bind
+// lines. Bay treats these as opt-out signals: a user who removed a
+// binding and left a commented stub is saying "don't re-add this."
+func commentedKeysInBlock(block string) map[string]bool {
+	keys := map[string]bool{}
+	for _, l := range strings.Split(block, "\n") {
+		trimmed := strings.TrimSpace(l)
+		if !strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if k, _, ok := parseBindLine(l); ok {
+			keys[k] = true
+		}
+	}
+	return keys
 }
 
 // conflictingKeys returns the canonical keys that are already actively
@@ -382,22 +413,49 @@ func missingCanonicalLines(block string, kbs []bayKeybinding) []string {
 	return lines
 }
 
-// missingBindings returns bay keybindings whose command is neither
-// actively bound in the block nor appears as a commented-out stub.
+// missingBindings returns bay keybindings that aren't bound in the
+// block. Matching is primarily by key:
+//
+//   - If the canonical key is bound (active or commented) → present.
+//   - Else, if the canonical command is UNIQUE within kbs AND appears
+//     bound at a different key (active or commented) → present. This
+//     preserves rebind tolerance for bindings with a 1:1 key↔command
+//     mapping (e.g. M-c → `bay ws new -q`).
+//   - Else → missing.
+//
+// The uniqueness guard matters because bay ships intentional command-
+// duplicates for ergonomics (M-j and M-J both run `select-pane -D`,
+// so Shift-held chords don't lose the modifier). For duplicated
+// commands, the command-match path is ambiguous, so we fall through
+// to key-only matching — otherwise bay would silently consider M-j
+// "present" whenever M-J is bound (and vice versa).
 func missingBindings(block string, kbs []bayKeybinding) []bayKeybinding {
-	active := commandsInBlock(block)
-	commented := commentedCommandsInBlock(block)
+	activeKeys := activeKeysInBlock(block)
+	commentedKeys := commentedKeysInBlock(block)
+	activeCmds := commandsInBlock(block)
+	commentedCmds := commentedCommandsInBlock(block)
+
+	cmdCount := map[string]int{}
+	for _, kb := range kbs {
+		cmdCount[kb.cmd]++
+	}
+
 	var missing []bayKeybinding
 	for _, kb := range kbs {
-		if commandMatches(active, kb.cmd) || commandMatches(commented, kb.cmd) {
+		if activeKeys[kb.key] || commentedKeys[kb.key] {
 			continue
+		}
+		if cmdCount[kb.cmd] == 1 {
+			if commandMatches(activeCmds, kb.cmd) || commandMatches(commentedCmds, kb.cmd) {
+				continue
+			}
 		}
 		missing = append(missing, kb)
 	}
 	return missing
 }
 
-// commandMatches returns true if kb.cmd is present in cmds, either
+// commandMatches returns true if want is present in cmds, either
 // exactly or as a prefix of a longer string (to tolerate shell
 // suffixes like `|| true` on bay-invoking bindings).
 func commandMatches(cmds map[string]bool, want string) bool {
