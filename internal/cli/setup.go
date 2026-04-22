@@ -507,9 +507,29 @@ func installClaudeHooks(reader *bufio.Reader) {
 
 	settingsPath := filepath.Join(home, ".claude", "settings.json")
 
+	// The exact command the hook will run. Kept as a constant so we show
+	// the same string to the user as we write to settings.json.
+	const bellCommand = `[ -n "$TMUX" ] && printf '\a'`
+
+	// Check up front whether it's already installed — avoids showing the
+	// prompt and wasting user attention.
+	if data, err := os.ReadFile(settingsPath); err == nil {
+		var existing map[string]any
+		if err := json.Unmarshal(data, &existing); err == nil {
+			if hooks, ok := existing["hooks"].(map[string]any); ok {
+				if _, ok := hooks["PermissionRequest"]; ok {
+					fmt.Printf("Claude Code PermissionRequest hook already configured in %s\n", settingsPath)
+					return
+				}
+			}
+		}
+	}
+
 	fmt.Println()
 	fmt.Println("Enable tmux tab highlighting when Claude needs permission?")
-	fmt.Println("This sends a terminal bell so tmux flags the tab, and Option+R can jump to it.")
+	fmt.Printf("This adds a PermissionRequest hook to %s that runs:\n", settingsPath)
+	fmt.Printf("    %s\n", bellCommand)
+	fmt.Println("Sends a terminal bell so tmux flags the tab; Option+R jumps to it.")
 	fmt.Print("Enable? [Y/n] ")
 	answer, _ := reader.ReadString('\n')
 	if strings.TrimSpace(strings.ToLower(answer)) == "n" {
@@ -527,21 +547,13 @@ func installClaudeHooks(reader *bufio.Reader) {
 		settings = make(map[string]any)
 	}
 
-	// Check if PermissionRequest hook already exists.
-	if hooks, ok := settings["hooks"].(map[string]any); ok {
-		if _, ok := hooks["PermissionRequest"]; ok {
-			fmt.Printf("Claude Code PermissionRequest hook already configured in %s\n", settingsPath)
-			return
-		}
-	}
-
 	// Add the hook. Guard with $TMUX check so non-tmux users don't hear a bell.
 	bellHook := []any{
 		map[string]any{
 			"hooks": []any{
 				map[string]any{
 					"type":    "command",
-					"command": `[ -n "$TMUX" ] && printf '\a'`,
+					"command": bellCommand,
 				},
 			},
 		},
