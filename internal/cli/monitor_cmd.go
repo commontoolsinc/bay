@@ -118,20 +118,27 @@ func newMonitorStatusCmd() *cobra.Command {
 		Use:   "status",
 		Short: "Check if the monitor is running",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			mon, err := newMonitorWithConfig()
-			if err != nil {
-				return err
-			}
-			running, pid, err := mon.Status()
-			if err != nil {
-				return err
-			}
-			if running {
-				fmt.Printf("Monitor running (pid %d)\n", pid)
-			} else {
-				fmt.Println("Monitor not running")
-			}
+			fmt.Println(monitorStatusString())
 			return nil
 		},
 	}
+}
+
+// monitorStatusString returns the one-line status of the pane monitor.
+// Shared by `bay monitor status` and the palette's "Monitor status" entry.
+// Any error (config load, status probe) is folded into the string so
+// callers can always display it directly.
+func monitorStatusString() string {
+	mon, err := newMonitorWithConfig()
+	if err != nil {
+		return fmt.Sprintf("Monitor status unavailable: %v", err)
+	}
+	running, pid, err := mon.Status()
+	if err != nil {
+		return fmt.Sprintf("Monitor status unavailable: %v", err)
+	}
+	if running {
+		return fmt.Sprintf("Monitor running (pid %d)", pid)
+	}
+	return "Monitor not running"
 }

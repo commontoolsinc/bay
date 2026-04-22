@@ -534,6 +534,7 @@ prefix required — just press the key combo directly.
 | Key | Action |
 |-----|--------|
 | `Option+w` | Close current pane/surface |
+| `Option+p` / `Option+Shift+p` | Command palette (window / pane mode) |
 
 ### Pattern
 
@@ -546,6 +547,33 @@ workspace picker (`Option+Shift+g`) opens in a tmux popup.
 `bay setup` installs all keybindings in `~/.tmux.conf`. It detects
 conflicts with existing bindings and prompts before overwriting. Run
 `bay doctor` to check if keybindings are current.
+
+## Command palette
+
+`Option+p` (or `Option+Shift+p`) opens the command palette in a tmux
+popup: a fuzzy-searchable list of every bay command that doesn't have
+a dedicated hotkey. Commands that *do* have a hotkey show it in the
+right-hand column, so the palette doubles as a cheat-sheet.
+
+- **Filtering**: type to narrow the list (substring match on titles).
+  The section grouping collapses to a single flat list while a filter
+  is active.
+- **Recents**: the top "Recent" section shows the most recently used
+  command as slot 1 (for `M-p, Enter = redo last`), followed by the
+  most frequently used commands from the last ~20 invocations.
+- **Mode toggle**: entries that create a surface respect the Mode
+  shown in the footer. `Option+p` starts in **window** mode (new tmux
+  window); `Option+Shift+p` starts in **pane** mode (split the current
+  window). `Tab` flips the mode mid-palette.
+- **Parametric entries** end in `...`: they chain to a sub-picker
+  (e.g., "New agent..." → pick agent type) or a text prompt
+  (e.g., "Rename workspace..." prefilled with the current name).
+- **Scope**: entries that require a workspace are hidden when you
+  open the palette outside one; same for dock-scoped entries.
+
+Every command in the palette can also be run directly from the
+shell — the palette is not a new surface, just a discovery and
+launcher layer.
 
 ## Editor integration
 

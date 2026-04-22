@@ -200,6 +200,10 @@ var bayKeybindings = []bayKeybinding{
 
 	// Utility
 	{"M-w", "bay sf close self", "Option+w: close current surface (or pane)", "run-shell"},
+
+	// Command palette
+	{"M-p", "bay palette", "Option+p: command palette (window mode)", "display-popup -w 80% -h 80% -E"},
+	{"M-P", "bay palette --split pane", "Option+P: command palette (pane mode)", "display-popup -w 80% -h 80% -E"},
 }
 
 const bayKeybindingsMarker = "# Bay keybindings"

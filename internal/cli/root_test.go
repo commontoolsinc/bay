@@ -18,6 +18,7 @@ func TestNewRootCmd(t *testing.T) {
 		"setup": false, "monitor": false, "version": false,
 		"shell": false, "edit": false, "status-line": false,
 		"agent-guide": false,
+		"palette":     false,
 	}
 	for _, cmd := range root.Commands() {
 		if _, ok := expected[cmd.Name()]; ok {
@@ -37,6 +38,13 @@ func TestNewRootCmd(t *testing.T) {
 				t.Error("close-pane should be hidden")
 			}
 			break
+		}
+	}
+
+	// Palette is hidden — it's only invoked via tmux keybinding, not typed.
+	for _, cmd := range root.Commands() {
+		if cmd.Name() == "palette" && !cmd.Hidden {
+			t.Error("palette should be hidden")
 		}
 	}
 }

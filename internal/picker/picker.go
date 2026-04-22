@@ -37,15 +37,41 @@ func (b *Builtin) Pick(items []Item, opts Options) (int, error) {
 	return Run(items, opts, os.Stdin, os.Stdout)
 }
 
-// key constants returned by readKey.
+// Key constants returned by a KeyReader. Negative values indicate named
+// keys; zero-positive values are literal rune codes for printable input.
 const (
-	keyEnter     = -1
-	keyEscape    = -2
-	keyCtrlC     = -3
-	keyBackspace = -4
-	keyUp        = -5
-	keyDown      = -6
-	keyEOF       = -7
+	KeyEnter     = -1
+	KeyEscape    = -2
+	KeyCtrlC     = -3
+	KeyBackspace = -4
+	KeyUp        = -5
+	KeyDown      = -6
+	KeyEOF       = -7
+	KeyLeft      = -8
+	KeyRight     = -9
+	KeyHome      = -10
+	KeyEnd       = -11
+	KeyDelete    = -12
+	KeyCtrlU     = -13
+	KeyTab       = -14
+)
+
+// Legacy lowercase aliases (picker.go's own switches pre-date the export).
+const (
+	keyEnter     = KeyEnter
+	keyEscape    = KeyEscape
+	keyCtrlC     = KeyCtrlC
+	keyBackspace = KeyBackspace
+	keyUp        = KeyUp
+	keyDown      = KeyDown
+	keyEOF       = KeyEOF
+	keyLeft      = KeyLeft
+	keyRight     = KeyRight
+	keyHome      = KeyHome
+	keyEnd       = KeyEnd
+	keyDelete    = KeyDelete
+	keyCtrlU     = KeyCtrlU
+	keyTab       = KeyTab
 )
 
 // Run displays an interactive picker and returns the selected item's Value.
@@ -135,11 +161,27 @@ func Run(items []Item, opts Options, in *os.File, out *os.File) (int, error) {
 	}
 }
 
+// KeyReader reads one logical keystroke at a time from a byte stream. It
+// handles raw-mode terminal input including escape sequences and
+// pre-defined Ctrl-combinations. Use NewKeyReader to construct one.
+type KeyReader = keyReader
+
 // keyReader reads one logical keystroke at a time from a byte stream.
 type keyReader struct {
 	in  io.Reader
 	buf []byte // unprocessed bytes from previous read
 }
+
+// NewKeyReader returns a KeyReader that reads from in. Callers that need
+// raw-mode input should wrap the underlying tty with term.MakeRaw before
+// reading.
+func NewKeyReader(in io.Reader) *KeyReader {
+	return newKeyReader(in)
+}
+
+// Read returns the next key event. Printable chars return their rune
+// value; special keys return negative Key* constants.
+func (r *keyReader) Read() int { return r.read() }
 
 func newKeyReader(in io.Reader) *keyReader {
 	return &keyReader{in: in}
@@ -165,6 +207,10 @@ func (r *keyReader) read() int {
 		r.buf = r.buf[1:]
 		return keyEnter
 
+	case b == '\t':
+		r.buf = r.buf[1:]
+		return keyTab
+
 	case b == 0x03: // Ctrl-C
 		r.buf = r.buf[1:]
 		return keyCtrlC
@@ -172,6 +218,10 @@ func (r *keyReader) read() int {
 	case b == 0x7f: // Backspace
 		r.buf = r.buf[1:]
 		return keyBackspace
+
+	case b == 0x15: // Ctrl-U — clear line (readline convention).
+		r.buf = r.buf[1:]
+		return keyCtrlU
 
 	case b == 0x0e: // Ctrl-N
 		r.buf = r.buf[1:]
@@ -181,15 +231,46 @@ func (r *keyReader) read() int {
 		r.buf = r.buf[1:]
 		return keyUp
 
+	case b == 0x01: // Ctrl-A
+		r.buf = r.buf[1:]
+		return keyHome
+
+	case b == 0x05: // Ctrl-E
+		r.buf = r.buf[1:]
+		return keyEnd
+
 	case b == 0x1b: // Escape or escape sequence
 		if len(r.buf) >= 3 && r.buf[1] == '[' {
-			arrow := r.buf[2]
+			seq := r.buf[2]
+			// Some terminals emit three-byte sequences (ESC [ A), others
+			// four (ESC [ 3 ~). Handle the four-byte Delete/Home/End cases.
+			if len(r.buf) >= 4 && r.buf[3] == '~' {
+				switch seq {
+				case '3':
+					r.buf = r.buf[4:]
+					return keyDelete
+				case '1', '7':
+					r.buf = r.buf[4:]
+					return keyHome
+				case '4', '8':
+					r.buf = r.buf[4:]
+					return keyEnd
+				}
+			}
 			r.buf = r.buf[3:]
-			switch arrow {
+			switch seq {
 			case 'A':
 				return keyUp
 			case 'B':
 				return keyDown
+			case 'C':
+				return keyRight
+			case 'D':
+				return keyLeft
+			case 'H':
+				return keyHome
+			case 'F':
+				return keyEnd
 			default:
 				return -100 // unknown sequence, ignore
 			}
@@ -273,8 +354,104 @@ func truncateDisplay(s string, maxCells int) string {
 // clearDisplay clears the picker display area.
 func clearDisplay(out io.Writer, lines int) {
 	fmt.Fprint(out, "\r")
-	for i := 0; i < lines; i++ {
+	for range lines {
 		fmt.Fprint(out, "\x1b[K\r\n")
 	}
 	fmt.Fprintf(out, "\x1b[%dA", lines)
+}
+
+// Prompt shows a single-line editable text input and returns the submitted
+// value. Returns (value, true, nil) on Enter, ("", false, nil) on Esc or
+// Ctrl-C. Cursor is positioned at end of prefill when the prompt opens.
+//
+// Controls:
+//
+//   - printable chars insert at cursor
+//   - Backspace deletes one rune before the cursor
+//   - Ctrl-U clears the entire line (critical for rename with prefill —
+//     lets users type-over an entire current name without holding
+//     Backspace)
+//   - Left/Right move the cursor; Home / Ctrl-A jump to start; End /
+//     Ctrl-E jump to end; Delete removes the rune at the cursor
+//   - Enter submits; Esc / Ctrl-C cancel
+func Prompt(label, prefill string, in *os.File, out *os.File) (string, bool, error) {
+	fd := int(in.Fd())
+	oldState, rawErr := term.MakeRaw(fd)
+	if rawErr == nil {
+		defer term.Restore(fd, oldState)
+	}
+
+	runes := []rune(prefill)
+	cursor := len(runes)
+	reader := newKeyReader(in)
+
+	for {
+		renderPrompt(out, label, runes, cursor)
+		key := reader.read()
+
+		switch key {
+		case keyEnter:
+			clearPrompt(out)
+			return string(runes), true, nil
+
+		case keyEscape, keyCtrlC, keyEOF:
+			clearPrompt(out)
+			return "", false, nil
+
+		case keyBackspace:
+			if cursor > 0 {
+				runes = append(runes[:cursor-1], runes[cursor:]...)
+				cursor--
+			}
+
+		case keyDelete:
+			if cursor < len(runes) {
+				runes = append(runes[:cursor], runes[cursor+1:]...)
+			}
+
+		case keyCtrlU:
+			runes = runes[:0]
+			cursor = 0
+
+		case keyLeft:
+			if cursor > 0 {
+				cursor--
+			}
+
+		case keyRight:
+			if cursor < len(runes) {
+				cursor++
+			}
+
+		case keyHome:
+			cursor = 0
+
+		case keyEnd:
+			cursor = len(runes)
+
+		case keyTab:
+			// Reserved for future completion UX; ignore for now so Tab
+			// doesn't accidentally insert a literal tab character.
+
+		default:
+			if key >= 0x20 && key < 0x7f {
+				runes = append(runes[:cursor], append([]rune{rune(key)}, runes[cursor:]...)...)
+				cursor++
+			}
+		}
+	}
+}
+
+func renderPrompt(out io.Writer, label string, runes []rune, cursor int) {
+	// CR, clear line, label + content, then CR + forward to cursor.
+	fmt.Fprintf(out, "\r\x1b[K%s%s", label, string(runes))
+	col := len(label) + cursor
+	fmt.Fprintf(out, "\r")
+	if col > 0 {
+		fmt.Fprintf(out, "\x1b[%dC", col)
+	}
+}
+
+func clearPrompt(out io.Writer) {
+	fmt.Fprint(out, "\r\x1b[K")
 }
