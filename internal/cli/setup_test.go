@@ -142,6 +142,31 @@ bind-key -n M-k run-shell 'bay surface prev'
 	}
 }
 
+func TestCommandsInBlock_TmuxNativeUnquoted(t *testing.T) {
+	// Tmux-native bindings (like the M-h/l/HJKL nav set bay ships) emit
+	// `bind-key -n KEY <tmux-cmd>` with no quoted shell payload. The
+	// command extractor must still capture them, otherwise bay falsely
+	// reports them as missing every setup run.
+	block := `# Bay keybindings
+bind-key -n M-h previous-window
+bind-key -n M-l next-window
+bind-key -n M-H select-pane -L
+bind-key -n M-J select-pane -D
+bind-key -n M-g run-shell 'bay ws go --pick || true'
+`
+	got := commandsInBlock(block)
+	want := map[string]bool{
+		"previous-window":          true,
+		"next-window":              true,
+		"select-pane -L":           true,
+		"select-pane -D":           true,
+		"bay ws go --pick || true": true,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("commandsInBlock() = %v, want %v", got, want)
+	}
+}
+
 func TestCommandsInBlock_IgnoresCommentedBindings(t *testing.T) {
 	// Critical: the commented binding must NOT show up. This is the
 	// core regression — substring-based detection treated commented
