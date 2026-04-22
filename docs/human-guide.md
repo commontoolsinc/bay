@@ -417,10 +417,10 @@ bay shell [name]                # shell in new window (default)
 bay shell [name] --pane         # shell as split pane
 bay agent [type]                # agent in new window
 bay agent --pane                # agent as split pane
-bay edit [workspace]            # open workspace in editor
+bay edit [workspace]            # open workspace in editor (default)
 bay edit --editor vim           # use a specific editor this time
 bay edit --pane                 # editor as split pane
-bay edit --dock                 # dock editor (default, all workspaces)
+bay edit --dock                 # dock editor (all workspaces)
 bay close <name>                # alias for bay surface close (prompts on agents)
 bay show [name]                 # alias for bay surface show (defaults to current)
 bay rename [name] <new-name>    # rename workspace (defaults to current)
@@ -528,7 +528,7 @@ prefix required — just press the key combo directly.
 |-----|--------|
 | `Option+s` / `Option+S` | Shell window / shell pane |
 | `Option+a` / `Option+A` | Agent window / agent pane |
-| `Option+e` / `Option+E` | Dock editor / workspace editor |
+| `Option+e` / `Option+E` | Workspace editor / dock editor |
 | `Option+c` | Create workspace in current dock |
 
 ### Utility
@@ -589,10 +589,10 @@ the editor's own file browser to navigate within the project. To edit
 individual files, open a shell and launch your editor from there.
 
 ```
-bay edit                    # current workspace
+bay edit                    # current workspace (default)
 bay edit auth-fix           # specific workspace
 bay edit --editor vim       # use a specific editor this time
-bay edit --dock             # dock editor (default, all workspaces)
+bay edit --dock             # dock editor (all workspaces)
 bay edit --pane             # split pane instead of new window
 ```
 
