@@ -179,7 +179,6 @@ var bayKeybindings = []bayKeybinding{
 	// Surface navigation (intra-workspace)
 	{"M-j", "bay surface next", "Option+j: next surface in workspace", "run-shell"},
 	{"M-k", "bay surface prev", "Option+k: prev surface in workspace", "run-shell"},
-	{"M-g", "bay go --pick", "Option+g: pick surface in workspace", "run-shell"},
 
 	// Workspace navigation (intra-dock)
 	{"M-J", "bay ws next", "Option+J: next workspace in dock", "run-shell"},

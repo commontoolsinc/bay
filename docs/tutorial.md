@@ -178,12 +178,11 @@ Three surfaces, all navigable. (`bay ws ls` shows all workspaces;
 **Within a workspace**, jump between surfaces:
 
 - `Option+j` / `Option+k` — next / previous surface
-- `Option+g` — fuzzy picker (type to filter, Enter to select)
 
 **Between workspaces**:
 
 - `Option+Shift+j` / `Option+Shift+k` — next / previous workspace
-- `Option+Shift+g` — fuzzy picker for workspaces
+- `Option+Shift+g` — fuzzy picker for workspaces (type to filter, Enter to select)
 
 The pattern: **without Shift = within your workspace, with Shift =
 between workspaces.**
@@ -209,7 +208,7 @@ Add a shell alongside it
 with `Option+s` (or `bay shell`).
 
 When the agent waits for your input, bay highlights it. Use `Option+j`
-/ `Option+k` to cycle between surfaces, or `Option+g` to pick one.
+/ `Option+k` to cycle between surfaces.
 
 ## 6. Inspect
 
