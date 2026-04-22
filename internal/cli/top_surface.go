@@ -246,7 +246,7 @@ func resolveSurfaceWorkspace(eng *engine.Engine, wsFlag, dockFlag string) (strin
 	if dockFlag != "" {
 		return eng.ResolveWorkspace(dockFlag + ":" + wsFlag)
 	}
-	return eng.ResolveWorkspace(wsFlag)
+	return resolveBareWs(eng, wsFlag)
 }
 
 // newTopCloseCmd is `bay close` — close a surface (alias: rm, hidden).
