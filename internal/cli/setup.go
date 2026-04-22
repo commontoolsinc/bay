@@ -161,55 +161,70 @@ func shellRCFile(shell string) string {
 }
 
 // bayKeybinding describes one canonical bay tmux binding.
+//
+// Most bindings invoke bay itself (tmuxVerb="run-shell", cmd="bay ..."), but
+// bay also ships native tmux navigation bindings (next-window, swap-window)
+// to give users a convenient navigation layout. For those, isTmuxCommand=true
+// and cmd is the raw tmux command, not a shell invocation.
 type bayKeybinding struct {
-	key      string
-	cmd      string
-	desc     string
-	tmuxVerb string // "run-shell" or "display-popup -E" (for interactive commands)
+	key           string
+	cmd           string
+	desc          string
+	tmuxVerb      string // "run-shell" or "display-popup -E" (ignored when isTmuxCommand)
+	isTmuxCommand bool   // cmd is a raw tmux command (e.g., "next-window")
 }
 
 // bayKeybindings defines all bay tmux keybindings.
 //
-// canonicalLine() appends "|| true" to every binding so that keybindings
-// are silent in non-bay tmux sessions. Without it, tmux run-shell displays
+// canonicalLine() appends "|| true" to bay-invoking bindings so they are
+// silent in non-bay tmux sessions. Without it, tmux run-shell displays
 // 'bay ... returned 1' in the status line when bay exits with an error
 // (e.g., "not in a bay workspace"). Stderr is already invisible in
 // run-shell, so only the exit code needs masking.
+//
+// Navigation bindings (M-j/k/J/K) are tmux-native rather than bay
+// commands so they work everywhere, including non-bay tmux sessions.
+// Installing them is opt-in via conflict detection: if the user already
+// has M-j (etc.) bound to something else, bay asks first.
 var bayKeybindings = []bayKeybinding{
-	// Surface navigation (intra-workspace)
-	{"M-j", "bay surface next", "Option+j: next surface in workspace", "run-shell"},
-	{"M-k", "bay surface prev", "Option+k: prev surface in workspace", "run-shell"},
+	// Window navigation (tmux-native; works regardless of bay state)
+	{key: "M-j", cmd: "next-window", desc: "Option+j: next window", isTmuxCommand: true},
+	{key: "M-k", cmd: "previous-window", desc: "Option+k: previous window", isTmuxCommand: true},
 
-	// Workspace navigation (intra-dock)
-	{"M-J", "bay ws next", "Option+J: next workspace in dock", "run-shell"},
-	{"M-K", "bay ws prev", "Option+K: prev workspace in dock", "run-shell"},
-	{"M-G", "bay ws go --pick", "Option+G: pick workspace in dock", "run-shell"},
+	// Workspace picker
+	{key: "M-g", cmd: "bay ws go --pick", desc: "Option+g: pick workspace in dock", tmuxVerb: "run-shell"},
 
 	// Creation
-	{"M-c", "bay ws new -q", "Option+c: create workspace in current dock", "run-shell"},
-	{"M-C", "bay ws new -q --agent", "Option+C: create workspace with agent in current dock", "run-shell"},
-	{"M-s", "bay shell --window", "Option+s: shell in a new window", "run-shell"},
-	{"M-S", "bay shell --pane", "Option+S: shell as split pane", "run-shell"},
-	{"M-a", "bay agent --window", "Option+a: agent in a new window", "run-shell"},
-	{"M-A", "bay agent --pane", "Option+A: agent as split pane", "run-shell"},
-	{"M-e", "bay edit --dock", "Option+e: dock editor", "run-shell"},
-	{"M-E", "bay edit --ws", "Option+E: workspace editor", "run-shell"},
+	{key: "M-c", cmd: "bay ws new -q", desc: "Option+c: create workspace in current dock", tmuxVerb: "run-shell"},
+	{key: "M-C", cmd: "bay ws new -q --agent", desc: "Option+C: create workspace with agent in current dock", tmuxVerb: "run-shell"},
+	{key: "M-s", cmd: "bay shell --window", desc: "Option+s: shell in a new window", tmuxVerb: "run-shell"},
+	{key: "M-S", cmd: "bay shell --pane", desc: "Option+S: shell as split pane", tmuxVerb: "run-shell"},
+	{key: "M-a", cmd: "bay agent --window", desc: "Option+a: agent in a new window", tmuxVerb: "run-shell"},
+	{key: "M-A", cmd: "bay agent --pane", desc: "Option+A: agent as split pane", tmuxVerb: "run-shell"},
+	{key: "M-e", cmd: "bay edit --dock", desc: "Option+e: dock editor", tmuxVerb: "run-shell"},
+	{key: "M-E", cmd: "bay edit --ws", desc: "Option+E: workspace editor", tmuxVerb: "run-shell"},
 
 	// Navigation (dock-wide)
-	{"M-r", "bay ws go --next-waiting", "Option+r: jump to next waiting workspace", "run-shell"},
+	{key: "M-r", cmd: "bay ws go --next-waiting", desc: "Option+r: jump to next waiting workspace", tmuxVerb: "run-shell"},
 
 	// Utility
-	{"M-w", "bay sf close self", "Option+w: close current surface (or pane)", "run-shell"},
+	{key: "M-w", cmd: "bay sf close self", desc: "Option+w: close current surface (or pane)", tmuxVerb: "run-shell"},
 
 	// Command palette
-	{"M-p", "bay palette", "Option+p: command palette (window mode)", "display-popup -w 80% -h 80% -E"},
-	{"M-P", "bay palette --split pane", "Option+P: command palette (pane mode)", "display-popup -w 80% -h 80% -E"},
+	{key: "M-p", cmd: "bay palette", desc: "Option+p: command palette (window mode)", tmuxVerb: "display-popup -w 80% -h 80% -E"},
+	{key: "M-P", cmd: "bay palette --split pane", desc: "Option+P: command palette (pane mode)", tmuxVerb: "display-popup -w 80% -h 80% -E"},
 }
 
 const bayKeybindingsMarker = "# Bay keybindings"
 
 // canonicalLine returns the literal line bay would write for this binding.
 func (kb bayKeybinding) canonicalLine() string {
+	if kb.isTmuxCommand {
+		// Raw tmux command: no shell wrapper, no "|| true" — tmux commands
+		// don't fail with distracting status-line messages the way shell
+		// commands do via run-shell.
+		return fmt.Sprintf("bind-key -n %s %s", kb.key, kb.cmd)
+	}
 	// Ensure exit 0 so keybindings are silent in non-bay sessions.
 	// tmux run-shell displays "returned N" for non-zero exits.
 	return fmt.Sprintf("bind-key -n %s %s '%s || true'", kb.key, kb.tmuxVerb, kb.cmd)

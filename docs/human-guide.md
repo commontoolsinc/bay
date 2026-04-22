@@ -100,8 +100,8 @@ bay go                      # pick a surface (agent/shell/editor)
 bay ws go                   # pick a workspace
 ```
 
-Or use keybindings: Option+j/k to cycle surfaces, Option+Shift+J/K to cycle
-workspaces.
+Or use keybindings: Option+j/k to cycle windows, Option+g for the
+workspace picker.
 
 ### Check on things
 
@@ -516,9 +516,8 @@ prefix required — just press the key combo directly.
 
 | Key | Action |
 |-----|--------|
-| `Option+j` / `Option+k` | Next / previous surface in workspace |
-| `Option+Shift+j` / `Option+Shift+k` | Next / previous workspace in dock |
-| `Option+Shift+g` | Workspace picker (popup) |
+| `Option+j` / `Option+k` | Next / previous window (tmux-native) |
+| `Option+g` | Workspace picker (popup) |
 
 ### Creation (lowercase = window, Shift = split pane)
 
@@ -538,9 +537,11 @@ prefix required — just press the key combo directly.
 
 ### Pattern
 
-Without Shift = intra-workspace. With Shift = intra-dock. For creation
-keys, lowercase opens a new window, Shift opens a split pane. The
-workspace picker (`Option+Shift+g`) opens in a tmux popup.
+For creation keys, lowercase opens a new window, Shift opens a split
+pane. Navigation bindings `Option+j/k` are tmux-native window cycling.
+The workspace picker (`Option+g`) opens in a tmux popup and is usually
+the fastest way to jump across workspaces — fuzzy-match by name or
+description.
 
 ### Installing and updating
 
