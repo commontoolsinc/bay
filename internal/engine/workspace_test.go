@@ -6,22 +6,25 @@ func TestMaxTabNameLen(t *testing.T) {
 	tests := []struct {
 		name        string
 		clientWidth int
+		reserved    int
 		wsCount     int
 		want        int
 	}{
-		{"wide terminal few ws", 200, 3, 20}, // (150/3)-6=44, clamped to 20
-		{"normal 3 ws", 100, 3, 10},          // (50/3)-6=10
-		{"normal 5 ws", 100, 5, 4},           // (50/5)-6=4
-		{"normal 8 ws", 100, 8, 3},           // (50/8)-6=0, clamped to 3
-		{"narrow terminal", 60, 5, 3},        // (10/5)-6<0, clamped to 3
-		{"zero workspaces", 100, 0, 20},      // edge case
+		{"wide terminal few ws light status", 200, 50, 3, 20},  // (150/3)-4=46, clamped to 20
+		{"wide terminal few ws heavy status", 200, 140, 3, 16}, // (60/3)-4=16
+		{"normal 3 ws", 100, 50, 3, 12},                        // (50/3)-4=12
+		{"normal 5 ws", 100, 50, 5, 6},                         // (50/5)-4=6
+		{"normal 8 ws", 100, 50, 8, 3},                         // (50/8)-4=2, clamped to 3
+		{"narrow terminal", 60, 50, 5, 3},                      // (10/5)-4<0, clamped to 3
+		{"heavy status overflows", 100, 140, 3, 3},             // available<0, clamped to 3
+		{"zero workspaces", 100, 50, 0, 20},                    // edge case
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := maxTabNameLen(tt.clientWidth, tt.wsCount)
+			got := maxTabNameLen(tt.clientWidth, tt.reserved, tt.wsCount)
 			if got != tt.want {
-				t.Errorf("maxTabNameLen(%d, %d) = %d, want %d", tt.clientWidth, tt.wsCount, got, tt.want)
+				t.Errorf("maxTabNameLen(%d, %d, %d) = %d, want %d", tt.clientWidth, tt.reserved, tt.wsCount, got, tt.want)
 			}
 		})
 	}
@@ -47,6 +50,31 @@ func TestTruncateName(t *testing.T) {
 			got := TruncateName(tt.input, tt.maxLen)
 			if got != tt.want {
 				t.Errorf("TruncateName(%q, %d) = %q, want %q", tt.input, tt.maxLen, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTruncateTabName(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		maxLen int
+		want   string
+	}{
+		{"no truncation", "auth-fix", 20, "auth-fix"},
+		{"exact fit", "auth-fix", 8, "auth-fix"},
+		{"truncate", "auth-fix", 6, "auth-…"},
+		{"floor 3", "auth-fix", 3, "au…"},
+		{"two", "auth-fix", 2, "a…"},
+		{"single char", "hello", 1, "h"},
+		{"unicode in name", "café-fix", 5, "café…"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := TruncateTabName(tt.input, tt.maxLen)
+			if got != tt.want {
+				t.Errorf("TruncateTabName(%q, %d) = %q, want %q", tt.input, tt.maxLen, got, tt.want)
 			}
 		})
 	}

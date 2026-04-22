@@ -809,14 +809,16 @@ func (e *Engine) updateWindowNames(ws *manifest.Workspace, wsName string) {
 	}
 }
 
-// Tab-name truncation tuning. These are conservative estimates of a typical
-// tmux status bar; configs with heavier status-left/right may still overflow.
+// Tab-name truncation tuning.
 const (
-	// Cells reserved for status-left + status-right + padding,
-	// subtracted from terminal width to get space for tab names.
-	tabStatusBarOverhead = 50
-	// Per-tab overhead for window index, separator, and padding.
-	tabPerTabOverhead = 6
+	// Fallback cells reserved for status-left + status-right when tmux can't
+	// report the actual values. Real tmux reports status-left-length +
+	// status-right-length, which is far more accurate than a fixed estimate.
+	tabStatusBarOverheadFallback = 50
+	// Per-tab overhead for window index, colon separator, and one space
+	// between tabs — e.g. "1:foo " is 2 chars of overhead beyond the name.
+	// Set slightly higher to leave a little safety margin.
+	tabPerTabOverhead = 4
 	// Floor on truncation — below this, names become unreadable.
 	tabMinNameLen = 3
 	// Ceiling — longer names are rare and waste status-bar space.
@@ -824,8 +826,9 @@ const (
 )
 
 // refreshDockWindowNames recomputes the max tab name length for a dock based
-// on the terminal width and workspace count, then renames all windows. This
-// keeps tab names maximally informative without overflowing the status bar.
+// on the terminal width, status-left/right lengths, and workspace count, then
+// renames all windows. This keeps tab names maximally informative without
+// overflowing the status bar.
 //
 // If no tmux client is attached (ClientWidth errors or returns <= 0), the
 // full name is used without truncation — we'd rather over-run the status bar
@@ -836,13 +839,17 @@ func (e *Engine) refreshDockWindowNames(dock *manifest.Dock) {
 	truncate := err == nil && clientWidth > 0
 	maxLen := 0
 	if truncate {
-		maxLen = maxTabNameLen(clientWidth, len(dock.Workspaces))
+		reserved, rerr := e.Tmux.StatusReservedCells()
+		if rerr != nil || reserved <= 0 {
+			reserved = tabStatusBarOverheadFallback
+		}
+		maxLen = maxTabNameLen(clientWidth, reserved, len(dock.Workspaces))
 	}
 	for i := range dock.Workspaces {
 		ws := &dock.Workspaces[i]
 		name := ws.Name
 		if truncate {
-			name = TruncateName(name, maxLen)
+			name = TruncateTabName(name, maxLen)
 		}
 		e.updateWindowNames(ws, name)
 	}
@@ -863,13 +870,13 @@ func (e *Engine) refreshDockWindowNamesByName(dockName string) {
 	e.refreshDockWindowNames(dock)
 }
 
-// maxTabNameLen computes the maximum tab name length given the terminal width
-// and number of workspaces.
-func maxTabNameLen(clientWidth, wsCount int) int {
+// maxTabNameLen computes the maximum tab name length given the terminal width,
+// the cells reserved for status-left + status-right, and the workspace count.
+func maxTabNameLen(clientWidth, reservedCells, wsCount int) int {
 	if wsCount <= 0 {
 		return tabMaxNameLen
 	}
-	available := clientWidth - tabStatusBarOverhead
+	available := clientWidth - reservedCells
 	if available < 0 {
 		available = 0
 	}
@@ -884,7 +891,8 @@ func maxTabNameLen(clientWidth, wsCount int) int {
 }
 
 // TruncateName truncates a display name to maxLen, appending ".." if shortened.
-// Shared between engine (tab names) and cli (status-line formatting).
+// Used by status-line formatting (where byte-length math matters because the
+// output is composed by overhead-tracking code expecting ASCII).
 func TruncateName(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
@@ -893,6 +901,24 @@ func TruncateName(s string, maxLen int) string {
 		return s[:maxLen]
 	}
 	return s[:maxLen-2] + ".."
+}
+
+// truncTabEllipsis is the single-cell, single-rune ellipsis used in tab names.
+// Reclaims a cell of name space vs. ".." — important when budgets are tight.
+const truncTabEllipsis = "…"
+
+// TruncateTabName is like TruncateName but uses a single-cell "…" ellipsis
+// and counts in runes. Intended for tmux tab names where tight budgets make
+// every cell count and tmux renders cell-based.
+func TruncateTabName(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	if maxLen <= 1 {
+		return string(runes[:maxLen])
+	}
+	return string(runes[:maxLen-1]) + truncTabEllipsis
 }
 
 // SetLastFocused records which surface was last focused in a workspace and
