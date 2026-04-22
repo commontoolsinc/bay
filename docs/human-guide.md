@@ -100,7 +100,7 @@ bay go                      # pick a surface (agent/shell/editor)
 bay ws go                   # pick a workspace
 ```
 
-Or use keybindings: Option+j/k to cycle windows, Option+g for the
+Or use keybindings: Option+h/l to cycle windows, Option+g for the
 workspace picker.
 
 ### Check on things
@@ -516,7 +516,9 @@ prefix required — just press the key combo directly.
 
 | Key | Action |
 |-----|--------|
-| `Option+j` / `Option+k` | Next / previous window (tmux-native) |
+| `Option+h` / `Option+l` | Previous / next window (tmux-native) |
+| `Option+H` / `Option+L` | Select pane left / right (tmux-native) |
+| `Option+J` / `Option+K` | Select pane down / up (tmux-native) |
 | `Option+g` | Workspace picker (popup) |
 
 ### Creation (lowercase = window, Shift = split pane)
@@ -537,11 +539,12 @@ prefix required — just press the key combo directly.
 
 ### Pattern
 
-For creation keys, lowercase opens a new window, Shift opens a split
-pane. Navigation bindings `Option+j/k` are tmux-native window cycling.
-The workspace picker (`Option+g`) opens in a tmux popup and is usually
-the fastest way to jump across workspaces — fuzzy-match by name or
-description.
+Navigation is vim-flavored: `Option+h/l` cycle left/right through
+windows (tabs are horizontal in the status bar); `Option+Shift+HJKL`
+select panes within the current window (the 2D axis). For creation
+keys, lowercase opens a new window and Shift opens a split pane. The
+workspace picker (`Option+g`) is usually the fastest way to jump
+across workspaces — fuzzy-match by name or description.
 
 ### Installing and updating
 

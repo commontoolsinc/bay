@@ -113,9 +113,10 @@ bay tree
 
 ## 4. Navigate (45s)
 
-**Do:** Hit `Option+k` a few times — cycle back through windows.
+**Do:** Hit `Option+h` a few times — cycle back through windows.
 
-> Option-J and K cycle through tmux windows. Every surface — agent,
+> Option-h and l cycle through tmux windows (vim-style left/right —
+> tabs run horizontally across the status bar). Every surface — agent,
 > shell, editor — is a window, so this walks through all of them
 > regardless of which workspace they belong to.
 
