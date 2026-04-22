@@ -292,6 +292,82 @@ func TestResolveWsArg_DockFlagConflict(t *testing.T) {
 	}
 }
 
+// chdirTo enters the given workspace path so CurrentContext resolves to
+// its dock. Restores cwd on test cleanup.
+func chdirTo(t *testing.T, eng *engine.Engine, dockName, wsName string) {
+	t.Helper()
+	ws, err := eng.WsShow(dockName, wsName)
+	if err != nil {
+		t.Fatalf("WsShow %s:%s: %v", dockName, wsName, err)
+	}
+	if err := os.MkdirAll(ws.Path, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", ws.Path, err)
+	}
+	orig, _ := os.Getwd()
+	if err := os.Chdir(ws.Path); err != nil {
+		t.Fatalf("Chdir %s: %v", ws.Path, err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+}
+
+func TestResolveWsArg_BareAmbiguousPrefersCurrentDock(t *testing.T) {
+	// Both labs and labs2 have a workspace named "w1". From inside
+	// labs:solo, a bare `w1` should resolve to labs:w1, not error.
+	eng := wsArgFixture(t)
+	chdirTo(t, eng, "labs", "solo")
+
+	dock, ws, err := resolveWsArg(eng, "w1", "")
+	if err != nil {
+		t.Fatalf("resolveWsArg: %v", err)
+	}
+	if dock != "labs" || ws != "w1" {
+		t.Errorf("got (%q,%q), want (labs,w1)", dock, ws)
+	}
+}
+
+func TestResolveWsArg_BareFallsThroughWhenCurrentDockLacksIt(t *testing.T) {
+	// labs2 has no "solo" workspace. From inside labs2:w1, a bare `solo`
+	// should still resolve — the current-dock shortcut just falls through
+	// to the all-dock search when it misses.
+	eng := wsArgFixture(t)
+	chdirTo(t, eng, "labs2", "w1")
+
+	dock, ws, err := resolveWsArg(eng, "solo", "")
+	if err != nil {
+		t.Fatalf("resolveWsArg: %v", err)
+	}
+	if dock != "labs" || ws != "solo" {
+		t.Errorf("got (%q,%q), want (labs,solo)", dock, ws)
+	}
+}
+
+func TestResolveWsArg_BareAmbiguousWhenCurrentDockLacksIt(t *testing.T) {
+	// Add a third dock that contains neither copy of the ambiguous name.
+	// From inside this third dock, `w1` is truly ambiguous — no current-
+	// dock shortcut applies — and bay must report the ambiguity.
+	eng := wsArgFixture(t)
+
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "repos", "thirdrepo"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := eng.RepoAdd("thirdrepo", filepath.Join(dir, "repos", "thirdrepo"), "", "", true); err != nil {
+		t.Fatalf("RepoAdd: %v", err)
+	}
+	if err := eng.DockNew("third", "thirdrepo", "claude", ""); err != nil {
+		t.Fatalf("DockNew third: %v", err)
+	}
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "third", Name: "only-here", Shell: true}); err != nil {
+		t.Fatalf("WsNew third:only-here: %v", err)
+	}
+	chdirTo(t, eng, "third", "only-here")
+
+	_, _, err := resolveWsArg(eng, "w1", "")
+	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Errorf("expected ambiguous error, got %v", err)
+	}
+}
+
 // --- resolveSurfaceArgOrSelf ---
 
 // selfFixture builds a workspace with two surfaces and pins the tmux mock to

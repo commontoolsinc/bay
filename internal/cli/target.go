@@ -46,6 +46,13 @@ func parseSurfaceArg(arg string) (dock, ws, surface string, err error) {
 // (dockName, wsName). The positional may be "self", a bare workspace name,
 // or "dock:name". --dock disambiguates a bare name and may not conflict
 // with a dock prefix in the positional.
+//
+// For a bare name, the current dock (resolved from cwd/tmux) wins if it
+// has a workspace with that name. This matches user intent: typing
+// `bay ws rm w2` from inside loom means loom:w2, not "error because
+// crew also has w2". Falls through to a full-manifest search when the
+// current dock doesn't have a match, which may then error with
+// "ambiguous" as before.
 func resolveWsArg(eng *engine.Engine, posArg, dockFlag string) (string, string, error) {
 	if posArg == "self" {
 		if dockFlag != "" {
@@ -68,6 +75,20 @@ func resolveWsArg(eng *engine.Engine, posArg, dockFlag string) (string, string, 
 
 	if dock != "" {
 		return eng.ResolveWorkspace(dock + ":" + ws)
+	}
+	return resolveBareWs(eng, ws)
+}
+
+// resolveBareWs resolves a bare workspace name, preferring the current
+// dock to disambiguate. If the current dock (from cwd/tmux) has a
+// workspace with this name, that wins; otherwise falls through to a
+// full-manifest search, which may error with "ambiguous" if the name
+// appears in multiple docks and none is the current one.
+func resolveBareWs(eng *engine.Engine, ws string) (string, string, error) {
+	if ctx, err := eng.CurrentContext(); err == nil && ctx.Dock != "" {
+		if dn, wn, resolveErr := eng.ResolveWorkspace(ctx.Dock + ":" + ws); resolveErr == nil {
+			return dn, wn, nil
+		}
 	}
 	return eng.ResolveWorkspace(ws)
 }
@@ -162,7 +183,7 @@ func resolveSurfaceArg(eng *engine.Engine, posArg, wsFlag, dockFlag string) (str
 	case dock != "" && ws != "":
 		dockName, wsName, err = eng.ResolveWorkspace(dock + ":" + ws)
 	case ws != "":
-		dockName, wsName, err = eng.ResolveWorkspace(ws)
+		dockName, wsName, err = resolveBareWs(eng, ws)
 	default:
 		dockName, wsName, err = eng.ResolveSelf()
 	}

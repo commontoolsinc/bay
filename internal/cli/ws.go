@@ -496,10 +496,14 @@ func resolveCurrentDock(eng *engine.Engine) (dockName, repoName string, err erro
 	return "", "", fmt.Errorf("cannot determine current dock — not in a tmux session or a known git repo")
 }
 
-// resolveTarget resolves "self" or a workspace query.
+// resolveTarget resolves "self" or a workspace query. Bare names
+// prefer the current dock for disambiguation (see resolveBareWs).
 func resolveTarget(eng *engine.Engine, target string) (string, string, error) {
 	if target == "self" {
 		return eng.ResolveSelf()
+	}
+	if dock, ws, err := parseWsArg(target); err == nil && dock == "" {
+		return resolveBareWs(eng, ws)
 	}
 	return eng.ResolveWorkspace(target)
 }

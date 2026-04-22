@@ -13,7 +13,9 @@ PR, dirty/merged flags). Each workspace has:
   branch name (stripping prefixes like `feature/`, `fix/`). Can be
   overridden with `bay rename` (or `bay ws rename`), which sticks permanently.
 - A **full reference** — `dock:name` (e.g., `labs:auth-fix`). Bare
-  name (`auth-fix`) works when unambiguous across docks.
+  name (`auth-fix`) resolves to the current dock first; if absent
+  there, falls through to a cross-dock search (which errors on
+  ambiguity).
 - An optional **description** — short free-form label (~40 chars)
   shown in the picker and `bay ls`/`bay tree`. Set with `bay ws
   describe` (or `bay describe`). Does not affect tmux tab names.
