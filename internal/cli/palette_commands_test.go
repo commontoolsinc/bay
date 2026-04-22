@@ -120,18 +120,18 @@ func TestBuildPaletteEntries_ModeSensitiveHotkeysFlip(t *testing.T) {
 	// entry's Hotkey swaps between window/pane modes as the user Tabs.
 	env := testPaletteEnv()
 	env.Hotkeys = fakeHotkeys(map[string]string{
-		"bay shell --window": "M-s",
-		"bay shell --pane":   "M-S",
+		"bay shell --pane":   "M-s",
+		"bay shell --window": "M-S",
 	})
 
 	win := findEntry(t, buildPaletteEntries(env, palette.ModeWindow), "new-shell")
 	pane := findEntry(t, buildPaletteEntries(env, palette.ModePane), "new-shell")
 
-	if win.Hotkey != "M-s" {
-		t.Errorf("window-mode new-shell hotkey=%q; want M-s", win.Hotkey)
+	if win.Hotkey != "M-S" {
+		t.Errorf("window-mode new-shell hotkey=%q; want M-S", win.Hotkey)
 	}
-	if pane.Hotkey != "M-S" {
-		t.Errorf("pane-mode new-shell hotkey=%q; want M-S", pane.Hotkey)
+	if pane.Hotkey != "M-s" {
+		t.Errorf("pane-mode new-shell hotkey=%q; want M-s", pane.Hotkey)
 	}
 }
 
