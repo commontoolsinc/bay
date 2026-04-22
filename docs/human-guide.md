@@ -555,6 +555,12 @@ jump across workspaces — fuzzy-match by name or description.
 conflicts with existing bindings and prompts before overwriting. Run
 `bay doctor` to check if keybindings are current.
 
+When bay ships a canonical change (e.g. flipping `M-s` from window to
+pane), `bay setup` on re-run detects canonical keys bound to a
+non-canonical bay command and prompts to update them. Opt out per-key
+by adding `# bay-keep: M-s` to the bay block — bay will stop asking
+about that key, and `bay doctor` will stop reporting it as missing.
+
 ## Command palette
 
 `Option+p` opens the command palette in a tmux popup: a

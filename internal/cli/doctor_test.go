@@ -16,6 +16,22 @@ func TestMissingKeybindings(t *testing.T) {
 	}
 }
 
+func TestMissingKeybindings_HonorsBayKeep(t *testing.T) {
+	// A user who pinned M-s via `# bay-keep:` has chosen a non-canonical
+	// binding on purpose. Doctor should not warn about the canonical
+	// M-s line being "missing" — otherwise the pin has no end-to-end
+	// effect (setup stops asking but doctor still nags).
+	content := `# Bay keybindings
+# bay-keep: M-s
+bind-key -n M-s run-shell 'bay shell --window || true'
+`
+	for _, line := range missingKeybindings(content) {
+		if strings.Contains(line, "M-s ") {
+			t.Errorf("missingKeybindings reported pinned key M-s as missing: %q", line)
+		}
+	}
+}
+
 func TestKeybindingsIncludeSurfaceNavigation(t *testing.T) {
 	lines := tmuxKeybindingLines()
 	joined := strings.Join(lines, "\n")
