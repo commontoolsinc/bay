@@ -22,7 +22,8 @@ func TestKeybindingsIncludeSurfaceNavigation(t *testing.T) {
 
 	// Navigation + creation keybindings must be present.
 	for _, want := range []string{
-		"M-j", "M-k", // next/prev window (tmux-native)
+		"M-h", "M-l", // prev/next window (tmux-native)
+		"M-H", "M-L", "M-J", "M-K", // pane nav (tmux-native, vim-style)
 		"M-g", // workspace picker
 		"M-a", // create agent
 		"M-c", // create workspace

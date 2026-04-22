@@ -175,11 +175,12 @@ Three surfaces, all navigable. (`bay ws ls` shows all workspaces;
 
 ## 4. Navigate
 
-- `Option+j` / `Option+k` — next / previous window (tmux-native cycling
-  across all workspaces' surfaces)
+- `Option+h` / `Option+l` — previous / next window (tmux-native cycling
+  through tabs; vim-style left/right)
+- `Option+Shift+HJKL` — select panes within the current window
 - `Option+g` — workspace picker (type to filter, Enter to select)
 
-With only a handful of tabs, `Option+j/k` cycles fine. Once you have
+With only a handful of tabs, `Option+h/l` cycles fine. Once you have
 more than a few workspaces, the picker is usually faster — especially
 with descriptions.
 
@@ -203,8 +204,8 @@ workspace with an agent as the first surface: `bay ws new --agent`.
 Add a shell alongside it
 with `Option+s` (or `bay shell`).
 
-When the agent waits for your input, bay highlights it. Use `Option+j`
-/ `Option+k` to cycle between windows.
+When the agent waits for your input, bay highlights it. Use `Option+h`
+/ `Option+l` to cycle between windows.
 
 ## 6. Inspect
 
