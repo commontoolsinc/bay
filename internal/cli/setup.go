@@ -286,15 +286,26 @@ func commandsInBlock(block string) map[string]bool {
 		if !strings.HasPrefix(trimmed, "bind-key") && !strings.HasPrefix(trimmed, "bind ") {
 			continue
 		}
-		open := strings.IndexAny(trimmed, "'\"")
-		if open < 0 {
+		// Split into "<bind-key> <-n> <KEY> <rest...>". Anything beyond
+		// the key is the command portion.
+		parts := strings.SplitN(trimmed, " ", 4)
+		if len(parts) < 4 || parts[1] != "-n" {
 			continue
 		}
-		close := strings.LastIndexByte(trimmed, trimmed[open])
-		if close <= open {
-			continue
+		rest := parts[3]
+		// Bay-invoking bindings wrap the shell command in quotes
+		// (e.g. `run-shell 'bay ws new -q || true'`); for those, the
+		// command we want to compare is the quoted contents. Tmux-native
+		// bindings have no quotes (e.g. `previous-window`,
+		// `select-pane -L`); use the rest verbatim.
+		if open := strings.IndexAny(rest, "'\""); open >= 0 {
+			close := strings.LastIndexByte(rest, rest[open])
+			if close > open {
+				cmds[rest[open+1:close]] = true
+				continue
+			}
 		}
-		cmds[trimmed[open+1:close]] = true
+		cmds[rest] = true
 	}
 	return cmds
 }
