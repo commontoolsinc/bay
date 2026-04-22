@@ -185,6 +185,13 @@ Each workspace gets a display **name** that defaults to the
 auto-abbreviated branch name (`feature/refactor-memory` becomes
 `refactor-memory`). You can rename it with `bay rename` (or `bay ws rename`).
 
+For worktree workspaces, the on-disk directory is always sequential
+(`w1`, `w2`, `w3`, ...) and independent of the workspace name. The
+directory stays stable even if the workspace is renamed or repurposed
+for unrelated work — the name can drift, the path won't. Use the
+workspace name (or `bay pwd`) to identify workspaces; the directory is
+plumbing.
+
 Workspaces can also carry a **description** — a short (~40 character)
 free-form label shown in the workspace picker (Option-Shift-G) and in
 `bay ls` / `bay tree`. Set it with `bay describe "Login flow fixes"`

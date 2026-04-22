@@ -2170,14 +2170,15 @@ func TestWsUpdate_BranchCollisionGetsUniqueName(t *testing.T) {
 	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "existing", Shell: true}); err != nil {
 		t.Fatalf("seed workspace: %v", err)
 	}
-	// No explicit Name on the target → bay auto-names to w1,
-	// NameOverridden=false, so the branch update can rename it.
+	// No explicit Name on the target → bay auto-names to dir basename
+	// (w2, since the seed claimed w1 on disk). NameOverridden=false, so
+	// the branch update can rename it.
 	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("target workspace: %v", err)
 	}
 
 	branch := "feature/existing"
-	if err := eng.WsUpdate("labs", "w1", &branch, nil); err != nil {
+	if err := eng.WsUpdate("labs", "w2", &branch, nil); err != nil {
 		t.Fatalf("WsUpdate: %v", err)
 	}
 
