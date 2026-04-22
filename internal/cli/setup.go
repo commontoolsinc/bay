@@ -212,10 +212,10 @@ var bayKeybindings = []bayKeybinding{
 	// Creation
 	{key: "M-c", cmd: "bay ws new -q", desc: "Option+c: create workspace in current dock", tmuxVerb: "run-shell"},
 	{key: "M-C", cmd: "bay ws new -q --agent", desc: "Option+C: create workspace with agent in current dock", tmuxVerb: "run-shell"},
-	{key: "M-s", cmd: "bay shell --window", desc: "Option+s: shell in a new window", tmuxVerb: "run-shell"},
-	{key: "M-S", cmd: "bay shell --pane", desc: "Option+S: shell as split pane", tmuxVerb: "run-shell"},
-	{key: "M-a", cmd: "bay agent --window", desc: "Option+a: agent in a new window", tmuxVerb: "run-shell"},
-	{key: "M-A", cmd: "bay agent --pane", desc: "Option+A: agent as split pane", tmuxVerb: "run-shell"},
+	{key: "M-s", cmd: "bay shell --pane", desc: "Option+s: shell as split pane", tmuxVerb: "run-shell"},
+	{key: "M-S", cmd: "bay shell --window", desc: "Option+S: shell in a new window", tmuxVerb: "run-shell"},
+	{key: "M-a", cmd: "bay agent --pane", desc: "Option+a: agent as split pane", tmuxVerb: "run-shell"},
+	{key: "M-A", cmd: "bay agent --window", desc: "Option+A: agent in a new window", tmuxVerb: "run-shell"},
 	{key: "M-e", cmd: "bay edit --ws", desc: "Option+e: workspace editor", tmuxVerb: "run-shell"},
 	{key: "M-E", cmd: "bay edit --dock", desc: "Option+E: dock editor", tmuxVerb: "run-shell"},
 
@@ -226,8 +226,7 @@ var bayKeybindings = []bayKeybinding{
 	{key: "M-w", cmd: "bay sf close self", desc: "Option+w: close current surface (or pane)", tmuxVerb: "run-shell"},
 
 	// Command palette
-	{key: "M-p", cmd: "bay palette", desc: "Option+p: command palette (window mode)", tmuxVerb: "display-popup -w 80% -h 80% -E"},
-	{key: "M-P", cmd: "bay palette --split pane", desc: "Option+P: command palette (pane mode)", tmuxVerb: "display-popup -w 80% -h 80% -E"},
+	{key: "M-p", cmd: "bay palette", desc: "Option+p: command palette (Tab inside to flip mode)", tmuxVerb: "display-popup -w 80% -h 80% -E"},
 }
 
 const bayKeybindingsMarker = "# Bay keybindings"

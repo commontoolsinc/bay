@@ -10,7 +10,7 @@ import (
 )
 
 // newPaletteCmd is the hidden `bay palette` command that powers the
-// tmux popup. It's invoked by the M-p / M-P keybindings registered by
+// tmux popup. It's invoked by the M-p keybinding registered by
 // `bay setup`.
 func newPaletteCmd() *cobra.Command {
 	var splitMode string

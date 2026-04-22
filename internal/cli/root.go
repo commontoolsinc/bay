@@ -174,7 +174,7 @@ func NewRootCmd(version string) *cobra.Command {
 		monitorCmd,
 		versionCmd,
 		newAgentGuideCmd(), // hidden, for skill
-		newPaletteCmd(),    // hidden, for M-p / M-P keybindings
+		newPaletteCmd(),    // hidden, for M-p keybinding
 	)
 
 	RegisterCompletion(root)

@@ -522,12 +522,12 @@ prefix required — just press the key combo directly.
 | `Option+J` / `Option+K` | Select pane down / up (mirrors `j`/`k`) |
 | `Option+g` | Workspace picker (popup) |
 
-### Creation (lowercase = window, Shift = split pane)
+### Creation (lowercase = split pane, Shift = new window)
 
 | Key | Action |
 |-----|--------|
-| `Option+s` / `Option+S` | Shell window / shell pane |
-| `Option+a` / `Option+A` | Agent window / agent pane |
+| `Option+s` / `Option+S` | Shell pane / shell window |
+| `Option+a` / `Option+A` | Agent pane / agent window |
 | `Option+e` / `Option+E` | Workspace editor / dock editor |
 | `Option+c` | Create workspace in current dock |
 
@@ -536,7 +536,7 @@ prefix required — just press the key combo directly.
 | Key | Action |
 |-----|--------|
 | `Option+w` | Close current pane/surface |
-| `Option+p` / `Option+Shift+p` | Command palette (window / pane mode) |
+| `Option+p` | Command palette (Tab inside to flip window/pane mode) |
 
 ### Pattern
 
@@ -545,8 +545,8 @@ Navigation is vim-flavored hjkl. `Option+h/l` cycle windows left/right
 down/up (most splits stack vertically). `Option+Shift+H/L` handle the
 less-common horizontal pane axis; `Option+Shift+J/K` mirror `j/k` so
 a sequence like H-J-L keeps the Shift held the whole time. For
-creation keys, lowercase opens a new window and Shift opens a split
-pane. The workspace picker (`Option+g`) is usually the fastest way to
+creation keys, lowercase opens a split pane in the current window and
+Shift opens a new window. The workspace picker (`Option+g`) is usually the fastest way to
 jump across workspaces — fuzzy-match by name or description.
 
 ### Installing and updating
@@ -557,9 +557,9 @@ conflicts with existing bindings and prompts before overwriting. Run
 
 ## Command palette
 
-`Option+p` (or `Option+Shift+p`) opens the command palette in a tmux
-popup: a fuzzy-searchable list of every bay command that doesn't have
-a dedicated hotkey. Commands that *do* have a hotkey show it in the
+`Option+p` opens the command palette in a tmux popup: a
+fuzzy-searchable list of every bay command that doesn't have a
+dedicated hotkey. Commands that *do* have a hotkey show it in the
 right-hand column, so the palette doubles as a cheat-sheet.
 
 - **Filtering**: type to narrow the list (substring match on titles).
@@ -569,9 +569,9 @@ right-hand column, so the palette doubles as a cheat-sheet.
   command as slot 1 (for `M-p, Enter = redo last`), followed by the
   most frequently used commands from the last ~20 invocations.
 - **Mode toggle**: entries that create a surface respect the Mode
-  shown in the footer. `Option+p` starts in **window** mode (new tmux
-  window); `Option+Shift+p` starts in **pane** mode (split the current
-  window). `Tab` flips the mode mid-palette.
+  shown in the footer. The palette starts in **window** mode (new tmux
+  window); press `Tab` to flip to **pane** mode (split the current
+  window).
 - **Parametric entries** end in `...`: they chain to a sub-picker
   (e.g., "New agent..." → pick agent type) or a text prompt
   (e.g., "Rename workspace..." prefilled with the current name).
