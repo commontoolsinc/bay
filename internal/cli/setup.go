@@ -182,23 +182,29 @@ type bayKeybinding struct {
 // (e.g., "not in a bay workspace"). Stderr is already invisible in
 // run-shell, so only the exit code needs masking.
 //
-// Navigation bindings (M-h/l and M-HJKL) are tmux-native rather than bay
-// commands so they work everywhere, including non-bay tmux sessions.
-// The scheme is vim-flavored: lowercase h/l for window nav (tabs are
-// horizontal), shift-tier HJKL for the 2D pane nav within a window.
+// Navigation bindings are tmux-native so they work everywhere, including
+// non-bay tmux sessions. The scheme is vim-flavored hjkl:
+//   - h/l: previous/next window (tabs run horizontally in the status bar)
+//   - j/k: pane down/up (most pane splits stack vertically)
+//   - H/L: pane left/right (horizontal splits are the secondary axis)
+//   - J/K: pane down/up — duplicates j/k on purpose, so a user holding
+//     Shift for a sequence like H, J, L can keep the modifier down
+//     without releasing it mid-chord.
+//
 // Installing these is opt-in via conflict detection: if the user already
 // has a binding on one of these keys, bay asks first.
 var bayKeybindings = []bayKeybinding{
-	// Window navigation (tmux-native; tabs run left-right across the status bar)
+	// Window navigation (tabs run left-right across the status bar)
 	{key: "M-h", cmd: "previous-window", desc: "Option+h: previous window", isTmuxCommand: true},
 	{key: "M-l", cmd: "next-window", desc: "Option+l: next window", isTmuxCommand: true},
 
-	// Pane navigation within the current window (vim-style HJKL; shift
-	// differentiates from window nav since panes are a secondary axis).
+	// Pane navigation within the current window.
+	{key: "M-j", cmd: "select-pane -D", desc: "Option+j: select pane down", isTmuxCommand: true},
+	{key: "M-k", cmd: "select-pane -U", desc: "Option+k: select pane up", isTmuxCommand: true},
 	{key: "M-H", cmd: "select-pane -L", desc: "Option+H: select pane left", isTmuxCommand: true},
 	{key: "M-L", cmd: "select-pane -R", desc: "Option+L: select pane right", isTmuxCommand: true},
-	{key: "M-J", cmd: "select-pane -D", desc: "Option+J: select pane down", isTmuxCommand: true},
-	{key: "M-K", cmd: "select-pane -U", desc: "Option+K: select pane up", isTmuxCommand: true},
+	{key: "M-J", cmd: "select-pane -D", desc: "Option+J: select pane down (mirror of j)", isTmuxCommand: true},
+	{key: "M-K", cmd: "select-pane -U", desc: "Option+K: select pane up (mirror of k)", isTmuxCommand: true},
 
 	// Workspace picker
 	{key: "M-g", cmd: "bay ws go --pick", desc: "Option+g: pick workspace in dock", tmuxVerb: "run-shell"},

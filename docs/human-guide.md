@@ -517,8 +517,9 @@ prefix required — just press the key combo directly.
 | Key | Action |
 |-----|--------|
 | `Option+h` / `Option+l` | Previous / next window (tmux-native) |
+| `Option+j` / `Option+k` | Select pane down / up (tmux-native) |
 | `Option+H` / `Option+L` | Select pane left / right (tmux-native) |
-| `Option+J` / `Option+K` | Select pane down / up (tmux-native) |
+| `Option+J` / `Option+K` | Select pane down / up (mirrors `j`/`k`) |
 | `Option+g` | Workspace picker (popup) |
 
 ### Creation (lowercase = window, Shift = split pane)
@@ -539,12 +540,14 @@ prefix required — just press the key combo directly.
 
 ### Pattern
 
-Navigation is vim-flavored: `Option+h/l` cycle left/right through
-windows (tabs are horizontal in the status bar); `Option+Shift+HJKL`
-select panes within the current window (the 2D axis). For creation
-keys, lowercase opens a new window and Shift opens a split pane. The
-workspace picker (`Option+g`) is usually the fastest way to jump
-across workspaces — fuzzy-match by name or description.
+Navigation is vim-flavored hjkl. `Option+h/l` cycle windows left/right
+(tabs are horizontal in the status bar); `Option+j/k` select panes
+down/up (most splits stack vertically). `Option+Shift+H/L` handle the
+less-common horizontal pane axis; `Option+Shift+J/K` mirror `j/k` so
+a sequence like H-J-L keeps the Shift held the whole time. For
+creation keys, lowercase opens a new window and Shift opens a split
+pane. The workspace picker (`Option+g`) is usually the fastest way to
+jump across workspaces — fuzzy-match by name or description.
 
 ### Installing and updating
 
