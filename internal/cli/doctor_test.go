@@ -20,12 +20,11 @@ func TestKeybindingsIncludeSurfaceNavigation(t *testing.T) {
 	lines := tmuxKeybindingLines()
 	joined := strings.Join(lines, "\n")
 
-	// Surface navigation keybindings must be present.
+	// Navigation + creation keybindings must be present.
 	for _, want := range []string{
-		"M-j", "M-k", // surface next/prev
-		"M-a",        // create agent
-		"M-J", "M-K", // workspace next/prev
-		"M-G", // workspace picker
+		"M-j", "M-k", // next/prev window (tmux-native)
+		"M-g", // workspace picker
+		"M-a", // create agent
 		"M-c", // create workspace
 	} {
 		if !strings.Contains(joined, want) {

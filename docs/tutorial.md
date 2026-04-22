@@ -121,7 +121,7 @@ Four workspaces in creation order. The two with `--branch` show their
 branch; `review` and `w1` have no branch. The `*` marks where you
 are now.
 
-Switch between them with `Option+Shift+j` / `Option+Shift+k` (requires
+Switch between them with `Option+g` (workspace picker, requires
 `bay setup`) or `bay ws go`.
 
 ## 3. Add tools to your workspace
@@ -175,23 +175,19 @@ Three surfaces, all navigable. (`bay ws ls` shows all workspaces;
 
 ## 4. Navigate
 
-**Within a workspace**, jump between surfaces:
+- `Option+j` / `Option+k` — next / previous window (tmux-native cycling
+  across all workspaces' surfaces)
+- `Option+g` — workspace picker (type to filter, Enter to select)
 
-- `Option+j` / `Option+k` — next / previous surface
-
-**Between workspaces**:
-
-- `Option+Shift+j` / `Option+Shift+k` — next / previous workspace
-- `Option+Shift+g` — fuzzy picker for workspaces (type to filter, Enter to select)
-
-The pattern: **without Shift = within your workspace, with Shift =
-between workspaces.**
+With only a handful of tabs, `Option+j/k` cycles fine. Once you have
+more than a few workspaces, the picker is usually faster — especially
+with descriptions.
 
 All of these work without the Option-key shortcuts too:
 
 ```
-bay go shell        # jump to the shell surface
-bay ws go review    # jump to the review workspace
+bay go shell        # jump to the shell surface by name
+bay ws go review    # jump to the review workspace by name
 ```
 
 ## 5. Add an AI agent
@@ -208,7 +204,7 @@ Add a shell alongside it
 with `Option+s` (or `bay shell`).
 
 When the agent waits for your input, bay highlights it. Use `Option+j`
-/ `Option+k` to cycle between surfaces.
+/ `Option+k` to cycle between windows.
 
 ## 6. Inspect
 

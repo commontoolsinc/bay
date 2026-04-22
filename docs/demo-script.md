@@ -113,16 +113,17 @@ bay tree
 
 ## 4. Navigate (45s)
 
-**Do:** Hit `Option+Shift+K` a few times — cycle through workspaces.
+**Do:** Hit `Option+k` a few times — cycle back through windows.
 
-> Option-Shift-J and K cycle between workspaces. Each one is its own
-> worktree — totally isolated checkout, different branch, different
-> state.
+> Option-J and K cycle through tmux windows. Every surface — agent,
+> shell, editor — is a window, so this walks through all of them
+> regardless of which workspace they belong to.
 
-**Do:** Within a workspace, hit `Option+J` / `Option+K` to cycle surfaces.
+**Do:** Hit `Option+g` — the workspace picker pops up.
 
-> Within a workspace, Option-J and K cycle between surfaces — agent,
-> shell, editor, whatever you've got open.
+> Once you have more than a few workspaces, cycling gets tedious.
+> Option-g is the fuzzy picker — filter by name or description, Enter
+> to jump.
 
 **Do:** Hit `Option+R`. Pause — let the audience see it land on
 `cache-ttl`.
