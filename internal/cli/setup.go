@@ -277,11 +277,37 @@ func extractBayBlock(content string) (string, bool) {
 	return strings.Join(blockLines, "\n"), true
 }
 
-// commandsInBlock returns the set of quoted commands found on any
-// active (non-comment) bind-key/bind line in the block. Both single-
-// and double-quoted commands are recognized; whichever quote character
-// appears first opens the command, and the last occurrence of that
-// same character closes it.
+// parseBindLine extracts the command portion of a tmux bind line. It
+// handles both active lines and commented lines (leading `#`). Returns
+// "", false if the line isn't a bind-key/bind binding.
+//
+// For bay-invoking bindings the returned command is the quoted shell
+// contents (e.g. `bay ws new -q || true`); for tmux-native bindings
+// it's the raw tmux command (e.g. `previous-window`, `select-pane -L`).
+func parseBindLine(line string) (string, bool) {
+	trimmed := strings.TrimSpace(line)
+	if strings.HasPrefix(trimmed, "#") {
+		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "#"))
+	}
+	if !strings.HasPrefix(trimmed, "bind-key") && !strings.HasPrefix(trimmed, "bind ") {
+		return "", false
+	}
+	parts := strings.SplitN(trimmed, " ", 4)
+	if len(parts) < 4 || parts[1] != "-n" {
+		return "", false
+	}
+	rest := parts[3]
+	if open := strings.IndexAny(rest, "'\""); open >= 0 {
+		close := strings.LastIndexByte(rest, rest[open])
+		if close > open {
+			return rest[open+1 : close], true
+		}
+	}
+	return rest, true
+}
+
+// commandsInBlock returns the set of commands found on any active
+// (non-comment) bind-key/bind line in the block.
 func commandsInBlock(block string) map[string]bool {
 	cmds := map[string]bool{}
 	for _, l := range strings.Split(block, "\n") {
@@ -289,29 +315,27 @@ func commandsInBlock(block string) map[string]bool {
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		if !strings.HasPrefix(trimmed, "bind-key") && !strings.HasPrefix(trimmed, "bind ") {
+		if cmd, ok := parseBindLine(l); ok {
+			cmds[cmd] = true
+		}
+	}
+	return cmds
+}
+
+// commentedCommandsInBlock returns the set of commands found on commented-
+// out bind lines in the block. Bay treats these as opt-out signals: a
+// user who removed a binding and left a commented stub behind is saying
+// "don't re-add this on the next setup run."
+func commentedCommandsInBlock(block string) map[string]bool {
+	cmds := map[string]bool{}
+	for _, l := range strings.Split(block, "\n") {
+		trimmed := strings.TrimSpace(l)
+		if !strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		// Split into "<bind-key> <-n> <KEY> <rest...>". Anything beyond
-		// the key is the command portion.
-		parts := strings.SplitN(trimmed, " ", 4)
-		if len(parts) < 4 || parts[1] != "-n" {
-			continue
+		if cmd, ok := parseBindLine(l); ok {
+			cmds[cmd] = true
 		}
-		rest := parts[3]
-		// Bay-invoking bindings wrap the shell command in quotes
-		// (e.g. `run-shell 'bay ws new -q || true'`); for those, the
-		// command we want to compare is the quoted contents. Tmux-native
-		// bindings have no quotes (e.g. `previous-window`,
-		// `select-pane -L`); use the rest verbatim.
-		if open := strings.IndexAny(rest, "'\""); open >= 0 {
-			close := strings.LastIndexByte(rest, rest[open])
-			if close > open {
-				cmds[rest[open+1:close]] = true
-				continue
-			}
-		}
-		cmds[rest] = true
 	}
 	return cmds
 }
@@ -343,26 +367,58 @@ func conflictingKeys(content string, kbs []bayKeybinding) []string {
 }
 
 // missingCanonicalLines returns the canonical bind-key lines for any
-// command in kbs that is not bound in the block. Diff is by the bay
-// command prefix (ignoring shell suffixes like 2>/dev/null), not by
+// command in kbs that is not bound in the block. Diff is by bay
+// command prefix (ignoring shell suffixes like `|| true`), not by
 // key, so a user who rebound a bay command to a different key is not
-// flagged as missing it.
+// flagged as missing it. Commands present only as commented-out
+// bindings are ALSO treated as bound — a commented stub is an opt-out
+// signal from the user ("I removed this on purpose; don't re-add").
 func missingCanonicalLines(block string, kbs []bayKeybinding) []string {
-	have := commandsInBlock(block)
-	var missing []string
+	missing := missingBindings(block, kbs)
+	lines := make([]string, 0, len(missing))
+	for _, kb := range missing {
+		lines = append(lines, kb.canonicalLine())
+	}
+	return lines
+}
+
+// missingBindings returns bay keybindings whose command is neither
+// actively bound in the block nor appears as a commented-out stub.
+func missingBindings(block string, kbs []bayKeybinding) []bayKeybinding {
+	active := commandsInBlock(block)
+	commented := commentedCommandsInBlock(block)
+	var missing []bayKeybinding
 	for _, kb := range kbs {
-		found := false
-		for cmd := range have {
-			if cmd == kb.cmd || strings.HasPrefix(cmd, kb.cmd+" ") {
-				found = true
-				break
-			}
+		if commandMatches(active, kb.cmd) || commandMatches(commented, kb.cmd) {
+			continue
 		}
-		if !found {
-			missing = append(missing, kb.canonicalLine())
-		}
+		missing = append(missing, kb)
 	}
 	return missing
+}
+
+// commandMatches returns true if kb.cmd is present in cmds, either
+// exactly or as a prefix of a longer string (to tolerate shell
+// suffixes like `|| true` on bay-invoking bindings).
+func commandMatches(cmds map[string]bool, want string) bool {
+	for cmd := range cmds {
+		if cmd == want || strings.HasPrefix(cmd, want+" ") {
+			return true
+		}
+	}
+	return false
+}
+
+// appendToBayBlock inserts newLines at the end of the existing bay
+// keybindings block in content. Returns content unchanged if no block
+// is present (installKeybindings guards this before calling).
+func appendToBayBlock(content string, newLines []string) string {
+	block, found := extractBayBlock(content)
+	if !found || len(newLines) == 0 {
+		return content
+	}
+	updated := block + "\n" + strings.Join(newLines, "\n")
+	return strings.Replace(content, block, updated, 1)
 }
 
 func installKeybindings(reader *bufio.Reader) {
@@ -374,20 +430,50 @@ func installKeybindings(reader *bufio.Reader) {
 	existing, _ := os.ReadFile(tmuxConf)
 	content := string(existing)
 
-	// If a "# Bay keybindings" block already exists, leave it alone —
-	// the user may have customized it. Print a heads-up listing any
-	// canonical commands their block doesn't bind, so they know what
-	// they could be missing.
+	// If a "# Bay keybindings" block already exists, keep the user's
+	// customizations but offer to append any canonical bindings that
+	// aren't present. Commented-out bindings count as opt-outs, so a
+	// user who once said "no" isn't re-asked.
 	if block, found := extractBayBlock(content); found {
-		fmt.Printf("Bay keybindings block found in %s — leaving as-is.\n", tmuxConf)
-		if missing := missingCanonicalLines(block, bayKeybindings); len(missing) > 0 {
-			fmt.Printf("Note: %d canonical binding(s) not bound in your block:\n", len(missing))
-			for _, line := range missing {
-				fmt.Printf("  %s\n", line)
-			}
-			fmt.Printf("(To re-install the defaults, delete the block from %s and re-run bay setup.)\n", tmuxConf)
+		fmt.Printf("Bay keybindings block found in %s.\n", tmuxConf)
+		missing := missingBindings(block, bayKeybindings)
+		if len(missing) == 0 {
+			return
 		}
-		return
+		fmt.Printf("%d canonical binding(s) not bound in your block:\n", len(missing))
+		for _, kb := range missing {
+			fmt.Printf("  %s\n", kb.canonicalLine())
+		}
+		fmt.Print("Add these to your block? [Y/n/c] (y=add, n=skip once, c=add commented stubs so bay stops asking) ")
+		answer, _ := reader.ReadString('\n')
+		answer = strings.TrimSpace(strings.ToLower(answer))
+		switch answer {
+		case "n":
+			fmt.Println("Leaving block as-is. Bay will ask again on next setup run.")
+			return
+		case "c":
+			var stubs []string
+			for _, kb := range missing {
+				stubs = append(stubs, "# "+kb.canonicalLine())
+			}
+			if err := os.WriteFile(tmuxConf, []byte(appendToBayBlock(content, stubs)), 0o644); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not write %s: %v\n", tmuxConf, err)
+				return
+			}
+			fmt.Printf("Added %d commented stub(s) to %s — bay won't re-ask about these.\n", len(stubs), tmuxConf)
+			return
+		default: // "" (default) or "y"
+			var lines []string
+			for _, kb := range missing {
+				lines = append(lines, kb.canonicalLine())
+			}
+			if err := os.WriteFile(tmuxConf, []byte(appendToBayBlock(content, lines)), 0o644); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not write %s: %v\n", tmuxConf, err)
+				return
+			}
+			fmt.Printf("Added %d binding(s) to %s\n", len(lines), tmuxConf)
+			return
+		}
 	}
 
 	// No existing block. Check for conflicts on canonical keys.

@@ -280,16 +280,18 @@ bind-key -n M-k run-shell 'bay surface prev'
 		}
 	})
 
-	t.Run("user commented out a binding", func(t *testing.T) {
+	t.Run("commented binding is an opt-out, not missing", func(t *testing.T) {
+		// A user who removed a binding and left a commented stub is
+		// signaling "don't re-add this." missingCanonicalLines must
+		// treat commented bindings as present so bay doesn't nag.
 		block := `# Bay keybindings
 bind-key -n M-j run-shell 'bay surface next'
 # bind-key -n M-k run-shell 'bay surface prev'
 bind-key -n M-g display-popup -E 'bay go'
 `
 		got := missingCanonicalLines(block, kbs)
-		want := []string{"bind-key -n M-k run-shell 'bay surface prev || true'"}
-		if !reflect.DeepEqual(got, want) {
-			t.Errorf("missingCanonicalLines() = %v, want %v", got, want)
+		if len(got) != 0 {
+			t.Errorf("missingCanonicalLines() = %v, want empty (commented line should be opt-out)", got)
 		}
 	})
 
@@ -300,4 +302,59 @@ bind-key -n M-g display-popup -E 'bay go'
 			t.Errorf("expected %d missing lines, got %d: %v", len(kbs), len(got), got)
 		}
 	})
+}
+
+func TestAppendToBayBlock(t *testing.T) {
+	content := `set -g mouse on
+
+# Bay keybindings
+bind-key -n M-h previous-window
+bind-key -n M-l next-window
+
+# another thing
+set -g base-index 1
+`
+	got := appendToBayBlock(content, []string{
+		"bind-key -n M-j select-pane -D",
+		"# bind-key -n M-k select-pane -U",
+	})
+	want := `set -g mouse on
+
+# Bay keybindings
+bind-key -n M-h previous-window
+bind-key -n M-l next-window
+bind-key -n M-j select-pane -D
+# bind-key -n M-k select-pane -U
+
+# another thing
+set -g base-index 1
+`
+	if got != want {
+		t.Errorf("appendToBayBlock:\nGOT:\n%s\nWANT:\n%s", got, want)
+	}
+}
+
+func TestAppendToBayBlock_NoBlock(t *testing.T) {
+	// No bay block present — content must be returned unchanged.
+	content := "set -g mouse on\n"
+	if got := appendToBayBlock(content, []string{"x"}); got != content {
+		t.Errorf("expected no change, got %q", got)
+	}
+}
+
+func TestCommentedCommandsInBlock(t *testing.T) {
+	block := `# Bay keybindings
+bind-key -n M-j run-shell 'bay surface next'
+# bind-key -n M-k run-shell 'bay surface prev'
+#bind-key -n M-h previous-window
+bind-key -n M-l next-window
+`
+	got := commentedCommandsInBlock(block)
+	want := map[string]bool{
+		"bay surface prev": true,
+		"previous-window":  true,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("commentedCommandsInBlock() = %v, want %v", got, want)
+	}
 }
