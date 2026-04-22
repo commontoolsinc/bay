@@ -2,7 +2,6 @@ package engine
 
 import (
 	"os"
-	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -256,11 +255,10 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 		ws.Worktree.PRCheckedAt = 0
 		changed = true
 		if !ws.NameOverridden {
-			// Prefer the directory basename as the new name — it keeps
-			// workspace name and directory in sync. Fall back to the
-			// next sequential name if the directory name is taken.
-			baseName := filepath.Base(ws.Path)
-			newName := uniqueWorkspaceName(dock, ws, baseName)
+			// Branch is gone, so the existing branch-derived name no longer
+			// reflects anything. Replace with a fresh sequential name; the
+			// user can rename later if they keep working in this workspace.
+			newName := nextWorkspaceName(dock)
 			if newName != ws.Name {
 				ws.Name = newName
 				e.updateWindowNames(ws, ws.Name)

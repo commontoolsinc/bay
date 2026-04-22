@@ -1,6 +1,12 @@
 package engine
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/commontoolsinc/bay/internal/manifest"
+)
 
 func TestMaxTabNameLen(t *testing.T) {
 	tests := []struct {
@@ -77,5 +83,34 @@ func TestTruncateTabName(t *testing.T) {
 				t.Errorf("TruncateTabName(%q, %d) = %q, want %q", tt.input, tt.maxLen, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNextWorkspaceDir(t *testing.T) {
+	wtDir := t.TempDir()
+
+	// Empty dir, empty dock → w1.
+	if got := nextWorkspaceDir(wtDir, &manifest.Dock{}); got != "w1" {
+		t.Errorf("empty: got %q, want w1", got)
+	}
+
+	// w1 exists on disk → w2.
+	os.MkdirAll(filepath.Join(wtDir, "w1"), 0o755)
+	if got := nextWorkspaceDir(wtDir, &manifest.Dock{}); got != "w2" {
+		t.Errorf("w1 on disk: got %q, want w2", got)
+	}
+
+	// Manifest claims w2 but disk doesn't have it → w3 (avoids collision
+	// with the path the manifest-claimed workspace would recreate).
+	dock := &manifest.Dock{Workspaces: []manifest.Workspace{
+		{Name: "feat-foo", Path: filepath.Join(wtDir, "w2")},
+	}}
+	if got := nextWorkspaceDir(wtDir, dock); got != "w3" {
+		t.Errorf("w1 on disk + w2 in manifest: got %q, want w3", got)
+	}
+
+	// Workspace name differs from path basename — verifying decoupling.
+	if dock.Workspaces[0].Name == filepath.Base(dock.Workspaces[0].Path) {
+		t.Error("test precondition: name should not equal basename")
 	}
 }

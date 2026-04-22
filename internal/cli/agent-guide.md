@@ -17,6 +17,11 @@ PR, dirty/merged flags). Each workspace has:
 - An optional **description** — short free-form label (~40 chars)
   shown in the picker and `bay ls`/`bay tree`. Set with `bay ws
   describe` (or `bay describe`). Does not affect tmux tab names.
+- A **path** — the on-disk working directory. For worktree workspaces
+  bay assigns sequential subdirs (`w1`, `w2`, `w3`, ...) under the
+  repo's worktree dir. The path is independent of the name: renaming
+  a workspace does not move its directory. Identify workspaces by name
+  (or `dock:name`); the path basename is not a stable identifier.
 
 A **dock** is a named tmux session grouping related workspaces. Each
 dock has a default agent type and optionally a default repo and host
@@ -110,7 +115,7 @@ Returns the current bay context:
   "workspace": "auth-fix",
   "surface": "agent",
   "surface_id": 1,
-  "path": "/Users/dev/projects/labs-worktrees/auth-fix"
+  "path": "/Users/dev/projects/labs-worktrees/w1"
 }
 ```
 
@@ -150,7 +155,7 @@ Returns a tree:
             {
               "name": "auth-fix",
               "type": "worktree",
-              "path": "~/projects/labs-worktrees/auth-fix",
+              "path": "~/projects/labs-worktrees/w1",
               "branch": "feature/auth-fix",
               "dirty": false,
               "merged": false,
@@ -224,7 +229,7 @@ of focus scope.
   "repo": "labs",
   "dock": "labs",
   "type": "worktree",
-  "path": "/Users/dev/projects/labs-worktrees/auth-fix",
+  "path": "/Users/dev/projects/labs-worktrees/w1",
   "branch": "feature/auth-fix",
   "pr": "347",
   "dirty": false,

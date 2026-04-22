@@ -49,25 +49,17 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		repoName = dock.Repo
 	}
 
-	// Resolve worktree dir early so name generation can avoid directory collisions.
-	var wtDir string
-	if opts.Dir == "" && repoName != "" {
-		if repo := m.FindRepo(repoName); repo != nil {
-			wtDir = repo.EffectiveWorktreeDir()
-		}
-	}
-
 	nameExplicit := opts.Name != ""
 	displayName := opts.Name
-	if displayName == "" {
-		if opts.Branch != "" {
-			displayName = uniqueWorkspaceName(dock, nil, abbreviateBranch(opts.Branch))
-		} else {
-			displayName = nextWorkspaceName(dock, wtDir)
-		}
+	if displayName == "" && opts.Branch != "" {
+		displayName = uniqueWorkspaceName(dock, nil, abbreviateBranch(opts.Branch))
 	}
-	if err := ValidateName(displayName); err != nil {
-		return nil, err
+	// Validate explicit/branch-derived name early. Default-from-dirname is
+	// validated below after we know wsPath.
+	if displayName != "" {
+		if err := ValidateName(displayName); err != nil {
+			return nil, err
+		}
 	}
 	desc := strings.TrimSpace(opts.Description)
 	if err := ValidateDescription(desc); err != nil {
@@ -104,19 +96,14 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		}
 		worktreeAttrs = &manifest.WorktreeAttrs{Repo: repoName}
 
-		wtDir = repo.EffectiveWorktreeDir()
-		wsPath = filepath.Join(wtDir, displayName)
-		// If the directory already exists (e.g. old worktree renamed to
-		// a branch but directory kept), advance to the next sequential
-		// name for both workspace and directory.
-		if _, err := os.Stat(wsPath); err == nil {
-			displayName = nextWorkspaceName(dock, wtDir)
-			wsPath = filepath.Join(wtDir, displayName)
-		}
-
+		wtDir := repo.EffectiveWorktreeDir()
 		if err := os.MkdirAll(wtDir, 0o755); err != nil {
 			return nil, fmt.Errorf("creating worktree dir: %w", err)
 		}
+		// Worktree dirs are sequential (w1, w2, ...) and independent of
+		// the workspace name. The name can be renamed or auto-updated as
+		// work pivots, but the on-disk directory stays stable.
+		wsPath = filepath.Join(wtDir, nextWorkspaceDir(wtDir, dock))
 
 		repoPath := config.ExpandPath(repo.Path)
 
@@ -140,6 +127,19 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 
 		// Copy files listed in .worktreeinclude from repo root to worktree.
 		copyWorktreeIncludeFiles(repoPath, wsPath)
+	}
+
+	// If no explicit name and no branch, default to the path basename.
+	// For worktree workspaces this matches the sequential dir (e.g., "w4")
+	// — keeping name and dir aligned by default avoids confusion like
+	// "workspace w1 lives in dir w4". For external workspaces this picks
+	// up the directory's basename, also a sensible default.
+	if displayName == "" {
+		base := filepath.Base(wsPath)
+		displayName = uniqueWorkspaceName(dock, nil, base)
+		if err := ValidateName(displayName); err != nil {
+			return nil, err
+		}
 	}
 
 	// Resolve agent args.
@@ -982,18 +982,38 @@ func copyWorktreeIncludeFiles(repoRoot, worktreePath string) {
 }
 
 // nextWorkspaceName returns the next sequential name (w1, w2, ...) that is
-// not used as a workspace name in the dock AND does not exist as a directory
-// under wtDir. If wtDir is empty, only the manifest is checked.
-func nextWorkspaceName(dock *manifest.Dock, wtDir string) string {
+// not used as a workspace name in the dock. Workspace names and worktree
+// directory names are independent — see nextWorkspaceDir for the latter.
+func nextWorkspaceName(dock *manifest.Dock) string {
 	for i := 1; ; i++ {
 		name := fmt.Sprintf("w%d", i)
-		if dock.FindWorkspace(name) != nil {
+		if dock.FindWorkspace(name) == nil {
+			return name
+		}
+	}
+}
+
+// nextWorkspaceDir returns the next sequential directory basename (w1, w2,
+// ...) that is unclaimed — neither present on disk under wtDir nor recorded
+// as the basename of any workspace's Path in the dock. Worktree directory
+// names are intentionally decoupled from workspace names so that renaming
+// or repurposing a workspace doesn't leave a stale dirname on disk.
+func nextWorkspaceDir(wtDir string, dock *manifest.Dock) string {
+	claimed := map[string]bool{}
+	if dock != nil {
+		for _, ws := range dock.Workspaces {
+			if ws.Path != "" {
+				claimed[filepath.Base(ws.Path)] = true
+			}
+		}
+	}
+	for i := 1; ; i++ {
+		name := fmt.Sprintf("w%d", i)
+		if claimed[name] {
 			continue
 		}
-		if wtDir != "" {
-			if _, err := os.Stat(filepath.Join(wtDir, name)); err == nil {
-				continue
-			}
+		if _, err := os.Stat(filepath.Join(wtDir, name)); err == nil {
+			continue
 		}
 		return name
 	}
