@@ -175,9 +175,9 @@ Three surfaces, all navigable. (`bay ws ls` shows all workspaces;
 
 ## 4. Navigate
 
-- `Option+h` / `Option+l` — previous / next window (tmux-native cycling
-  through tabs; vim-style left/right)
-- `Option+Shift+HJKL` — select panes within the current window
+- `Option+h` / `Option+l` — previous / next window (vim-style left/right)
+- `Option+j` / `Option+k` — select pane down / up
+- `Option+Shift+H/L` — select pane left / right (for horizontal splits)
 - `Option+g` — workspace picker (type to filter, Enter to select)
 
 With only a handful of tabs, `Option+h/l` cycles fine. Once you have
