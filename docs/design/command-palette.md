@@ -75,8 +75,8 @@ Create — surface                        [mode: window · Tab: flip]
   New agent                                                M-a
   New agent...
   New cmd...
-  Open editor (workspace)                                  M-E
-  Open editor (dock)                                       M-e
+  Open editor (workspace)                                  M-e
+  Open editor (dock)                                       M-E
 Create — workspace
   New workspace                                            M-c
   New workspace with default agent                         M-C

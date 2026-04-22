@@ -19,15 +19,15 @@ func newEditCmd() *cobra.Command {
 	var window, pane bool
 
 	cmd := &cobra.Command{
-		Use:   "edit [path]",
+		Use:   "edit [workspace]",
 		Short: "Open editor on workspace or dock",
-		Long: `Open your editor. Default is dock-scoped (all workspaces).
+		Long: `Open your editor. Default is workspace-scoped (current workspace).
 
-  bay edit                    dock editor (all workspaces)
-  bay edit src/main.go        focus dock editor on a file
-  bay edit .                  focus dock editor on cwd
-  bay edit --ws               workspace editor (current workspace only)
-  bay edit --ws auth-fix      specific workspace
+  bay edit                    workspace editor (current workspace)
+  bay edit auth-fix           specific workspace
+  bay edit --dock             dock editor (all workspaces)
+  bay edit --dock src/main.go focus dock editor on a file
+  bay edit --dock .           focus dock editor on cwd
   bay edit --editor vim       use a specific editor this time
 
 Editor resolution order:
@@ -43,25 +43,25 @@ Editor resolution order:
 				return err
 			}
 
-			if wsScope {
-				sd := resolveSplit(splitDir, window, pane)
-				target := "self"
+			if dockScope {
+				focusPath := ""
 				if len(args) > 0 {
-					target = args[0]
+					focusPath = args[0]
 				}
-				return runEditCreate(eng, target, editorFlag, sd)
+				return runEditDock(eng, editorFlag, focusPath)
 			}
 
-			focusPath := ""
+			sd := resolveSplit(splitDir, window, pane)
+			target := "self"
 			if len(args) > 0 {
-				focusPath = args[0]
+				target = args[0]
 			}
-			return runEditDock(eng, editorFlag, focusPath)
+			return runEditCreate(eng, target, editorFlag, sd)
 		},
 	}
 
-	cmd.Flags().BoolVar(&dockScope, "dock", false, "dock-scoped editor (default)")
-	cmd.Flags().BoolVar(&wsScope, "ws", false, "workspace-scoped editor")
+	cmd.Flags().BoolVar(&dockScope, "dock", false, "dock-scoped editor (all workspaces)")
+	cmd.Flags().BoolVar(&wsScope, "ws", false, "workspace-scoped editor (default)")
 	cmd.Flags().StringVar(&editorFlag, "editor", "", "editor command (overrides config for this invocation)")
 	cmd.Flags().StringVar(&splitDir, "split", "", "split direction (h or v)")
 	cmd.Flags().BoolVar(&pane, "pane", false, "split into current window (shorthand for --split v)")

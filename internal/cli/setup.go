@@ -216,8 +216,8 @@ var bayKeybindings = []bayKeybinding{
 	{key: "M-S", cmd: "bay shell --pane", desc: "Option+S: shell as split pane", tmuxVerb: "run-shell"},
 	{key: "M-a", cmd: "bay agent --window", desc: "Option+a: agent in a new window", tmuxVerb: "run-shell"},
 	{key: "M-A", cmd: "bay agent --pane", desc: "Option+A: agent as split pane", tmuxVerb: "run-shell"},
-	{key: "M-e", cmd: "bay edit --dock", desc: "Option+e: dock editor", tmuxVerb: "run-shell"},
-	{key: "M-E", cmd: "bay edit --ws", desc: "Option+E: workspace editor", tmuxVerb: "run-shell"},
+	{key: "M-e", cmd: "bay edit --ws", desc: "Option+e: workspace editor", tmuxVerb: "run-shell"},
+	{key: "M-E", cmd: "bay edit --dock", desc: "Option+E: dock editor", tmuxVerb: "run-shell"},
 
 	// Navigation (dock-wide)
 	{key: "M-r", cmd: "bay ws go --next-waiting", desc: "Option+r: jump to next waiting workspace", tmuxVerb: "run-shell"},
