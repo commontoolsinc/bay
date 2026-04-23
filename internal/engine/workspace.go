@@ -707,6 +707,35 @@ func (e *Engine) WsShow(dockName, wsName string) (*manifest.Workspace, error) {
 	return ws, nil
 }
 
+// MarkPRCheckStale resets PRCheckedAt for a workspace so the monitor's
+// next sync tick re-queries gh, bypassing the TTL. Used as a
+// user-interest signal: when someone reads workspace info and the PR
+// is missing, that's a signal they expect to see one soon, so push
+// bay to re-check before the 5-minute TTL elapses.
+//
+// No-op when the PR is already populated or the branch is empty — those
+// states have no useful signal to act on.
+func (e *Engine) MarkPRCheckStale(dockName, wsName string) error {
+	return e.withManifestMaybe(func(m *manifest.Manifest) (bool, error) {
+		dock := m.FindDock(dockName)
+		if dock == nil {
+			return false, nil
+		}
+		ws := dock.FindWorkspace(wsName)
+		if ws == nil || ws.Worktree == nil {
+			return false, nil
+		}
+		if ws.Worktree.Branch == "" || ws.Worktree.PR != "" {
+			return false, nil
+		}
+		if ws.Worktree.PRCheckedAt == 0 {
+			return false, nil
+		}
+		ws.Worktree.PRCheckedAt = 0
+		return true, nil
+	})
+}
+
 // ResolveWorkspace resolves a workspace query to (dockName, wsName).
 // Accepts: "dock:name" or bare display name.
 func (e *Engine) ResolveWorkspace(query string) (string, string, error) {

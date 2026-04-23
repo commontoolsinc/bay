@@ -258,6 +258,11 @@ func newWsShowCmd() *cobra.Command {
 				if wsErr != nil {
 					return nil
 				}
+				// User interest signal: if they're looking at this
+				// workspace and its PR is still missing, ask the monitor
+				// to re-check on its next tick (~3s) rather than waiting
+				// for the full PR TTL to elapse.
+				_ = eng.MarkPRCheckStale(dockName, wsID)
 				out := formatWorkspaceShort(ws)
 				if flash {
 					// Route via tmux display-message so the status bar
@@ -278,6 +283,11 @@ func newWsShowCmd() *cobra.Command {
 			wsInfo, err := eng.WorkspaceInfoByName(dockName, wsID)
 			if err != nil {
 				return err
+			}
+			// If the full read still has no PR after SyncAll, mark stale
+			// so the next monitor tick re-queries bypassing the TTL.
+			if wsInfo.PR == "" && wsInfo.Branch != "" {
+				_ = eng.MarkPRCheckStale(dockName, wsID)
 			}
 			repoName := ""
 			ws, wsErr := eng.WsShow(dockName, wsID)
