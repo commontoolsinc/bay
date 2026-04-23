@@ -72,6 +72,13 @@ type Monitor struct {
 
 	// cycle counts check cycles for cadence-gated operations.
 	cycle int
+
+	// binaryMTime is the mtime of the bay executable at the time of the
+	// first tick. If a later tick sees a different mtime, the binary has
+	// been replaced (e.g., by `go install` or a package upgrade) and the
+	// monitor exec's itself in place to load the new code. Zero means
+	// "not yet recorded."
+	binaryMTime time.Time
 }
 
 // New creates a new Monitor without git support (PR detection disabled).
@@ -112,10 +119,51 @@ func (m *Monitor) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
+			// If the bay binary has been replaced since we started
+			// (go install, package upgrade), exec the new binary in
+			// place so users don't have to restart the monitor by
+			// hand after every update. On exec failure we just stay
+			// on the old code.
+			m.restartIfBinaryChanged()
 			// Errors during a check cycle are non-fatal; we log and continue.
 			_ = m.CheckOnce()
 		}
 	}
+}
+
+// restartIfBinaryChanged checks whether the bay executable has been
+// replaced since we started and, if so, re-exec's the process with
+// the current args and env. syscall.Exec replaces the process image
+// in place, so the PID is preserved and anything watching externally
+// sees the monitor as still alive — the code running inside is
+// simply the new build. Failures (ENOENT mid-swap, permission denied,
+// etc.) fall through and the next tick retries.
+func (m *Monitor) restartIfBinaryChanged() {
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	if !m.binaryChanged(exe) {
+		return
+	}
+	_ = syscall.Exec(exe, os.Args, os.Environ())
+}
+
+// binaryChanged stats path and returns true when its mtime differs
+// from the first mtime observed. The first call records the baseline
+// and returns false; subsequent calls compare. Errors return false so
+// a transient stat failure doesn't trigger a spurious restart.
+func (m *Monitor) binaryChanged(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	mtime := info.ModTime()
+	if m.binaryMTime.IsZero() {
+		m.binaryMTime = mtime
+		return false
+	}
+	return !mtime.Equal(m.binaryMTime)
 }
 
 // CheckOnce runs a single check cycle: reload patterns, read manifest, check all windows.

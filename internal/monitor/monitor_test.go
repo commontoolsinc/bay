@@ -891,3 +891,46 @@ func TestStatus_NotRunning(t *testing.T) {
 		t.Errorf("expected pid 0, got %d", pid)
 	}
 }
+
+func TestMonitor_BinaryChanged(t *testing.T) {
+	dir := t.TempDir()
+	bin := dir + "/fake-bay"
+	if err := os.WriteFile(bin, []byte("v1"), 0o755); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	m := &Monitor{}
+
+	// First call records baseline, reports unchanged.
+	if m.binaryChanged(bin) {
+		t.Error("first call should return false (records baseline)")
+	}
+	if m.binaryMTime.IsZero() {
+		t.Error("baseline mtime should be recorded after first call")
+	}
+
+	// Same file, same mtime → still unchanged.
+	if m.binaryChanged(bin) {
+		t.Error("second call with unchanged mtime should return false")
+	}
+
+	// Bump mtime by rewriting the file (simulates `go install`).
+	time.Sleep(10 * time.Millisecond)
+	if err := os.WriteFile(bin, []byte("v2"), 0o755); err != nil {
+		t.Fatalf("rewrite: %v", err)
+	}
+	if !m.binaryChanged(bin) {
+		t.Error("expected true after mtime changed")
+	}
+}
+
+func TestMonitor_BinaryChanged_MissingFileIsSafe(t *testing.T) {
+	m := &Monitor{}
+	// Nonexistent path must not panic and must not register a restart.
+	if m.binaryChanged("/no/such/path") {
+		t.Error("missing file should return false")
+	}
+	if !m.binaryMTime.IsZero() {
+		t.Error("missing file should not record a baseline")
+	}
+}
