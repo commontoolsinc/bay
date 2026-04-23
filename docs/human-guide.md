@@ -1,4 +1,4 @@
-# Bay -- User Guide
+# Bay -- Human Guide
 
 Bay manages concurrent workspaces built on git worktrees and tmux. Each
 workspace gets its own worktree and tmux surfaces -- so you can work on
@@ -15,6 +15,8 @@ launches AI coding agents.
   in the background. You can detach and reattach without losing state.
   Bay leans on this heavily. See the
   [tmux Getting Started guide](https://github.com/tmux/tmux/wiki/Getting-Started).
+  For a recommended starter config, see
+  [Recommended tmux setup](tmux-setup.md).
 
 - **git** -- for worktree-based workspaces.
 
