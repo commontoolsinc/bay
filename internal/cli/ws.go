@@ -224,7 +224,7 @@ workspace, or use --done/--clean to batch-close workspaces.
 }
 
 func newWsShowCmd() *cobra.Command {
-	var jsonOutput, short, plain bool
+	var jsonOutput, short, plain, flash bool
 	var dockFlag string
 
 	cmd := &cobra.Command{
@@ -244,7 +244,7 @@ func newWsShowCmd() *cobra.Command {
 			}
 			dockName, wsID, err := resolveWsArg(eng, target, dockFlag)
 			if err != nil {
-				if short {
+				if short || flash {
 					// Swallow the error so `M-?` outside a workspace
 					// leaves the status bar clean instead of flashing a
 					// traceback. Non-short paths still surface the error.
@@ -253,12 +253,20 @@ func newWsShowCmd() *cobra.Command {
 				return err
 			}
 
-			if short {
+			if short || flash {
 				ws, wsErr := eng.WsShow(dockName, wsID)
 				if wsErr != nil {
 					return nil
 				}
 				out := formatWorkspaceShort(ws)
+				if flash {
+					// Route via tmux display-message so the status bar
+					// updates synchronously on keypress. Using tmux's
+					// `#(cmd)` format cache (the earlier approach)
+					// meant the first keypress showed empty and later
+					// keypresses showed stale cached output.
+					return eng.Tmux.DisplayMessage(stripANSI(out), 5000)
+				}
 				if plain {
 					out = stripANSI(out)
 				}
@@ -322,6 +330,7 @@ func newWsShowCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON")
 	cmd.Flags().BoolVarP(&short, "short", "s", false, "one-line workspace summary (name — description — branch — #PR)")
 	cmd.Flags().BoolVar(&plain, "plain", false, "plain-text output (no ANSI colors); useful with --short for tmux display-message")
+	cmd.Flags().BoolVar(&flash, "flash", false, "send the short summary to tmux display-message for 5s (used by the M-? binding)")
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare workspace name)")
 
 	return cmd

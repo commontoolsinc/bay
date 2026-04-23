@@ -348,20 +348,24 @@ bay ws close --done --dry-run
 bay ws close --clean
 ```
 
-#### `bay ws show [name] [--json|--short] [--plain]`
+#### `bay ws show [name] [--json|--short|--flash] [--plain]`
 
 Show workspace details: path, branch, PR, dirty/merged, surfaces. Defaults
 to the current workspace; pass `self` explicitly for the same effect.
 
 `--short` produces a one-line summary: `name — description — branch — #PR`,
-skipping empty fields. Pair with `--plain` for ANSI-free output suitable
-for tmux `display-message` (used by the `M-?` flash binding).
+skipping empty fields. Pair with `--plain` for ANSI-free output.
+
+`--flash` sends the short summary to tmux `display-message` for 5 seconds.
+Used by the `M-?` keybinding. Does not print to stdout. No-ops silently
+when invoked outside a workspace.
 
 ```
 bay ws show
 bay ws show auth-fix
 bay ws show --short                # one-line workspace summary
 bay ws show --short --plain        # same, no ANSI colors
+bay ws show --flash                # flash in tmux status bar (M-?)
 bay ws show self --json
 ```
 
