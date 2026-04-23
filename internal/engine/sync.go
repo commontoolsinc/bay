@@ -180,7 +180,11 @@ func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace)
 					update.prChanged = true
 				}
 			}
-			if branchForChecks != "" && !ws.IsMerged() {
+			// Re-check merge status on branchChanged even if the stored
+			// flag says merged — the flag belongs to the old branch.
+			// Apply clears it below; this probe then re-populates it for
+			// the new branch when appropriate.
+			if branchForChecks != "" && (update.branchChanged || !ws.IsMerged()) {
 				merged, err := e.Git.IsMergedIntoDefault(wsPath, branchForChecks)
 				if err == nil && merged {
 					update.merged = true
@@ -229,6 +233,11 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 		// wrong PR.
 		ws.Worktree.PR = ""
 		ws.Worktree.PRCheckedAt = 0
+		// Merged belongs to the old branch too. Without this, a worktree
+		// that gets reused after its prior branch was merged stays stuck
+		// at Merged=true — blocking PR detection and display until the
+		// workspace is recreated.
+		ws.Worktree.Merged = false
 		changed = true
 		if !ws.NameOverridden {
 			newName := uniqueWorkspaceName(dock, ws, abbreviateBranch(update.branch))
@@ -253,6 +262,9 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 		ws.Worktree.Branch = ""
 		ws.Worktree.PR = ""
 		ws.Worktree.PRCheckedAt = 0
+		// No branch → no meaningful "merged" status; clear so the flag
+		// doesn't resurrect when the worktree gets a new branch later.
+		ws.Worktree.Merged = false
 		changed = true
 		if !ws.NameOverridden {
 			// Branch is gone, so the existing branch-derived name no longer

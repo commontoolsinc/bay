@@ -325,6 +325,103 @@ func TestSyncAll_SkipsMergeCheckForAlreadyMerged(t *testing.T) {
 	}
 }
 
+func TestSyncAll_BranchChangeClearsStaleMergedFlag(t *testing.T) {
+	// Regression: when a merged branch is replaced in-place by a new
+	// unmerged branch (common when a worktree is reused for new work
+	// after its PR merged), the old Merged=true must be cleared.
+	// Without this, the flag sticks forever, blocking merge re-checks
+	// and making the new branch look like it's already merged.
+	eng, _ := testEngine(t)
+	wsPath := seedWorktreeWorkspace(t, eng, "labs", "w1", "feature/old")
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetDefaultBranch(wsPath, "main")
+	mockGit.SetMerged(wsPath, "feature/old", true)
+
+	// First sync marks feature/old as merged.
+	eng.SyncAll()
+	m, _ := eng.LoadManifest()
+	ws := m.FindDock("labs").FindWorkspace("w1")
+	if ws.Worktree == nil || !ws.Worktree.Merged {
+		t.Fatalf("precondition: expected Merged=true after first sync")
+	}
+
+	// Switch the worktree to a new unmerged branch.
+	mockGit.SetBranch(wsPath, "feature/new")
+	// feature/new has no merged entry in the mock → not merged.
+
+	eng.SyncAll()
+
+	m, _ = eng.LoadManifest()
+	ws = m.FindDock("labs").FindWorkspace("new")
+	if ws == nil {
+		t.Fatalf("workspace 'new' missing after rename")
+	}
+	if ws.Worktree.Merged {
+		t.Errorf("Merged = true, want false (stale flag from old branch must be cleared)")
+	}
+}
+
+func TestSyncAll_BranchChangeKeepsMergedWhenNewBranchAlsoMerged(t *testing.T) {
+	// Edge case: rebase-merge or cherry-pick can land a new branch that
+	// is itself already merged. The re-check on branchChanged should
+	// catch this and keep Merged=true.
+	eng, _ := testEngine(t)
+	wsPath := seedWorktreeWorkspace(t, eng, "labs", "w1", "feature/old")
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetDefaultBranch(wsPath, "main")
+	mockGit.SetMerged(wsPath, "feature/old", true)
+	mockGit.SetMerged(wsPath, "feature/new", true)
+
+	eng.SyncAll()
+	mockGit.SetBranch(wsPath, "feature/new")
+	eng.SyncAll()
+
+	m, _ := eng.LoadManifest()
+	ws := m.FindDock("labs").FindWorkspace("new")
+	if ws == nil {
+		t.Fatalf("workspace 'new' missing after rename")
+	}
+	if !ws.Worktree.Merged {
+		t.Errorf("Merged = false, want true (new branch is actually merged)")
+	}
+}
+
+func TestSyncAll_BranchDetachClearsMergedFlag(t *testing.T) {
+	eng, _ := testEngine(t)
+	wsPath := seedWorktreeWorkspace(t, eng, "labs", "w1", "feature/old")
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetDefaultBranch(wsPath, "main")
+	mockGit.SetMerged(wsPath, "feature/old", true)
+
+	eng.SyncAll()
+
+	// Detach: branch goes to "" (tests model detached HEAD).
+	mockGit.SetBranch(wsPath, "")
+
+	eng.SyncAll()
+
+	m, _ := eng.LoadManifest()
+	dock := m.FindDock("labs")
+	// After detach the workspace is renamed to a sequential name; find
+	// it by path rather than guessing the new name.
+	var ws *manifest.Workspace
+	for i := range dock.Workspaces {
+		if dock.Workspaces[i].Path == wsPath {
+			ws = &dock.Workspaces[i]
+			break
+		}
+	}
+	if ws == nil {
+		t.Fatalf("workspace with path %q missing", wsPath)
+	}
+	if ws.Worktree != nil && ws.Worktree.Merged {
+		t.Errorf("Merged = true after detach, want false")
+	}
+}
+
 func TestSyncAll_SkipsWorkspaceWithoutBranch(t *testing.T) {
 	eng, _ := testEngine(t)
 	wsPath := filepath.Join(t.TempDir(), "w1")
