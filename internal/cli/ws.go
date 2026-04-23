@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/engine"
+	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/commontoolsinc/bay/internal/nav"
 	"github.com/commontoolsinc/bay/internal/picker"
 	"github.com/spf13/cobra"
@@ -222,7 +224,7 @@ workspace, or use --done/--clean to batch-close workspaces.
 }
 
 func newWsShowCmd() *cobra.Command {
-	var jsonOutput bool
+	var jsonOutput, short, plain bool
 	var dockFlag string
 
 	cmd := &cobra.Command{
@@ -242,7 +244,26 @@ func newWsShowCmd() *cobra.Command {
 			}
 			dockName, wsID, err := resolveWsArg(eng, target, dockFlag)
 			if err != nil {
+				if short {
+					// Swallow the error so `M-?` outside a workspace
+					// leaves the status bar clean instead of flashing a
+					// traceback. Non-short paths still surface the error.
+					return nil
+				}
 				return err
+			}
+
+			if short {
+				ws, wsErr := eng.WsShow(dockName, wsID)
+				if wsErr != nil {
+					return nil
+				}
+				out := formatWorkspaceShort(ws)
+				if plain {
+					out = stripANSI(out)
+				}
+				fmt.Println(out)
+				return nil
 			}
 
 			eng.SyncAll()
@@ -299,9 +320,36 @@ func newWsShowCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON")
+	cmd.Flags().BoolVarP(&short, "short", "s", false, "one-line workspace summary (name — description — branch — #PR)")
+	cmd.Flags().BoolVar(&plain, "plain", false, "plain-text output (no ANSI colors); useful with --short for tmux display-message")
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare workspace name)")
 
 	return cmd
+}
+
+// formatWorkspaceShort builds a one-line workspace summary:
+// `name — description — branch — #PR`, skipping empty fields.
+// The branch is omitted when it equals the workspace name — bay
+// auto-derives workspace names from branches, so in the common case
+// they match and showing both just duplicates the identifier.
+// Used by `bay ws show --short` (and the M-? flash binding).
+func formatWorkspaceShort(ws *manifest.Workspace) string {
+	if ws == nil {
+		return ""
+	}
+	parts := []string{ws.Name}
+	if ws.Description != "" {
+		parts = append(parts, ws.Description)
+	}
+	if ws.Worktree != nil {
+		if ws.Worktree.Branch != "" && ws.Worktree.Branch != ws.Name {
+			parts = append(parts, ws.Worktree.Branch)
+		}
+		if ws.Worktree.PR != "" {
+			parts = append(parts, "#"+ws.Worktree.PR)
+		}
+	}
+	return strings.Join(parts, dim(" — "))
 }
 
 func newWsRenameCmd() *cobra.Command {
