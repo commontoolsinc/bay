@@ -49,8 +49,8 @@ type Interface interface {
 	MoveWindowAfter(windowID string, afterWindowID string) error
 	FindDockEditorWindow(session string) (string, bool) // returns window ID if @bay-dock-editor=1 exists
 
-	// Client display
-	DisplayMessage(msg string) error
+	// Client display. durationMs=0 uses tmux's display-time default.
+	DisplayMessage(msg string, durationMs int) error
 	DisplayPopup(cmd string) error
 	ClientWidth() (int, error)
 	// StatusReservedCells returns status-left-length + status-right-length —

@@ -356,9 +356,13 @@ func (r *Real) CurrentPaneID() (string, error) {
 
 // DisplayMessage shows a transient message in the tmux status line. The
 // message is rendered with tmux format strings, so it may contain attribute
-// codes like #[bold]name#[default]. The display duration is governed by the
-// user's tmux display-time setting.
-func (r *Real) DisplayMessage(msg string) error {
+// codes like #[bold]name#[default]. Pass durationMs=0 to use tmux's
+// display-time default; otherwise the message stays for that many
+// milliseconds.
+func (r *Real) DisplayMessage(msg string, durationMs int) error {
+	if durationMs > 0 {
+		return runSilent("display-message", "-d", strconv.Itoa(durationMs), msg)
+	}
 	return runSilent("display-message", msg)
 }
 

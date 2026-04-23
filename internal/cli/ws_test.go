@@ -17,7 +17,7 @@ func TestFormatWorkspaceShort_AllFields(t *testing.T) {
 		},
 	}
 	got := stripANSI(formatWorkspaceShort(ws))
-	want := "auth-fix — Login flow fixes — fix/login — #123"
+	want := "auth-fix — Login flow fixes — fix/login — PR#123"
 	if got != want {
 		t.Errorf("formatWorkspaceShort = %q, want %q", got, want)
 	}
@@ -40,7 +40,7 @@ func TestFormatWorkspaceShort_SkipsEmptyFields(t *testing.T) {
 				Name:     "ws1",
 				Worktree: &manifest.WorktreeAttrs{Branch: "main", PR: "42"},
 			},
-			want: "ws1 — main — #42",
+			want: "ws1 — main — PR#42",
 		},
 		{
 			name: "description, no branch",
@@ -93,7 +93,7 @@ func TestFormatWorkspaceShort_SilencesBranchWhenEqualToName(t *testing.T) {
 		Worktree:    &manifest.WorktreeAttrs{Branch: "auth-fix", PR: "123"},
 	}
 	got := stripANSI(formatWorkspaceShort(ws))
-	want := "auth-fix — Login flow fixes — #123"
+	want := "auth-fix — Login flow fixes — PR#123"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
