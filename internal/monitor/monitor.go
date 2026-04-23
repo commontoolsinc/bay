@@ -73,9 +73,9 @@ type Monitor struct {
 	// cycle counts check cycles for cadence-gated operations.
 	cycle int
 
-	// binaryMTime is the mtime of the bay executable at the time of the
-	// first tick. If a later tick sees a different mtime, the binary has
-	// been replaced (e.g., by `go install` or a package upgrade) and the
+	// binaryMTime is the mtime of the bay executable at monitor start.
+	// If a later tick sees a different mtime, the binary has been
+	// replaced (e.g., by `go install` or a package upgrade) and the
 	// monitor exec's itself in place to load the new code. Zero means
 	// "not yet recorded."
 	binaryMTime time.Time
@@ -110,6 +110,13 @@ func (m *Monitor) SetEngine(e *engine.Engine) {
 
 // Run is the main loop. It periodically checks all windows and exits when ctx is cancelled.
 func (m *Monitor) Run(ctx context.Context) error {
+	// Record the baseline binary mtime before the loop starts, not at
+	// the first tick — otherwise a replacement happening during the
+	// first interval silently becomes the new baseline and the change
+	// is never noticed.
+	if exe, err := os.Executable(); err == nil {
+		_ = m.binaryChanged(exe)
+	}
 	interval := time.Duration(m.intervalSecs) * time.Second
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()

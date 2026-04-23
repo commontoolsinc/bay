@@ -914,10 +914,11 @@ func TestMonitor_BinaryChanged(t *testing.T) {
 		t.Error("second call with unchanged mtime should return false")
 	}
 
-	// Bump mtime by rewriting the file (simulates `go install`).
-	time.Sleep(10 * time.Millisecond)
-	if err := os.WriteFile(bin, []byte("v2"), 0o755); err != nil {
-		t.Fatalf("rewrite: %v", err)
+	// Bump mtime explicitly rather than relying on sleep + rewrite —
+	// some filesystems have coarser mtime resolution than the sleep.
+	future := time.Now().Add(time.Second)
+	if err := os.Chtimes(bin, future, future); err != nil {
+		t.Fatalf("chtimes: %v", err)
 	}
 	if !m.binaryChanged(bin) {
 		t.Error("expected true after mtime changed")
