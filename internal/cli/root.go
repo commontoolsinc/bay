@@ -173,9 +173,12 @@ func NewRootCmd(version string) *cobra.Command {
 		doctorCmd,
 		monitorCmd,
 		versionCmd,
-		newAgentGuideCmd(), // hidden, for skill
-		newPaletteCmd(),    // hidden, for M-p keybinding
+		newPaletteCmd(), // hidden, for M-p keybinding
 	)
+
+	agentGuideCmd := newAgentGuideCmd()
+	agentGuideCmd.GroupID = "other"
+	root.AddCommand(agentGuideCmd)
 
 	RegisterCompletion(root)
 
