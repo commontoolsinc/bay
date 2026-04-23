@@ -80,13 +80,7 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 				if err != nil {
 					return "", err
 				}
-				description := ""
-				if ctx.Dock != "" && ctx.Workspace != "" {
-					if ws, wsErr := env.Engine.WsShow(ctx.Dock, ctx.Workspace); wsErr == nil {
-						description = ws.Description
-					}
-				}
-				palette.Notice(env.In, env.Out, formatPWD(ctx, description, false))
+				palette.Notice(env.In, env.Out, formatPWD(ctx))
 				return "", nil
 			},
 		},
