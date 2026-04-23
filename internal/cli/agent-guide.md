@@ -557,13 +557,15 @@ bay ls -R
 bay ls --dirty
 ```
 
-#### `bay pwd [--json]`
+#### `bay pwd [--json] [--plain]`
 
-Show the current bay context.
+Show the current bay context. Includes the workspace description when
+one is set.
 
 ```
-bay pwd
-bay pwd --json
+bay pwd                       # colored, human-readable
+bay pwd --plain               # no ANSI colors (for tmux display-message, etc.)
+bay pwd --json                # structured output (description not included)
 ```
 
 #### `bay recover`

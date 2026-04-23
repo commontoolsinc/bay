@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,6 +14,15 @@ import (
 	"github.com/commontoolsinc/bay/internal/manifest"
 	"golang.org/x/term"
 )
+
+var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+// stripANSI removes ANSI escape sequences from s. Used when we need to
+// hand bay's colored output to a consumer that renders plain text only
+// (e.g. tmux display-message, which does not interpret ANSI).
+func stripANSI(s string) string {
+	return ansiRE.ReplaceAllString(s, "")
+}
 
 type FocusKind string
 

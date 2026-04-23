@@ -536,6 +536,7 @@ prefix required — just press the key combo directly.
 | Key | Action |
 |-----|--------|
 | `Option+w` | Close current pane/surface |
+| `Option+?` | Flash current bay context (dock / workspace / description / surface) |
 | `Option+p` | Command palette (Tab inside to flip window/pane mode) |
 
 ### Pattern
