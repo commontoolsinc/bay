@@ -32,6 +32,18 @@ func newLsCmd() *cobra.Command {
 				return err
 			}
 
+			// User-interest signal: any workspace the user is viewing
+			// that still has no PR despite having a branch gets marked
+			// stale so the monitor's next tick re-queries gh, rather
+			// than waiting for the full TTL.
+			for _, d := range docks {
+				for _, ws := range d.Workspaces {
+					if ws.Branch != "" && ws.PR == "" {
+						_ = eng.MarkPRCheckStale(d.Name, ws.Name)
+					}
+				}
+			}
+
 			if dirtyOnly {
 				docks = filterDirtyWorkspaces(eng, docks)
 			}

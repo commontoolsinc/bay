@@ -445,3 +445,89 @@ func TestSyncAll_SkipsWorkspaceWithoutBranch(t *testing.T) {
 		t.Errorf("SyncAll should not query PR for branchless workspace: before=%d, after=%d", before, after)
 	}
 }
+
+// --- MarkPRCheckStale ---
+
+func TestMarkPRCheckStale_ClearsCheckedAtWhenPRMissing(t *testing.T) {
+	eng, _ := testEngine(t)
+	_ = seedWorktreeWorkspace(t, eng, "labs", "w1", "feature/login")
+
+	// First sync records "no PR found" with PRCheckedAt set to now.
+	eng.SyncAll()
+	m, _ := eng.LoadManifest()
+	ws := m.FindDock("labs").FindWorkspace("w1")
+	if ws.Worktree.PRCheckedAt == 0 {
+		t.Fatalf("precondition: PRCheckedAt should be set after first sync")
+	}
+
+	if err := eng.MarkPRCheckStale("labs", "w1"); err != nil {
+		t.Fatalf("MarkPRCheckStale: %v", err)
+	}
+
+	m, _ = eng.LoadManifest()
+	ws = m.FindDock("labs").FindWorkspace("w1")
+	if ws.Worktree.PRCheckedAt != 0 {
+		t.Errorf("PRCheckedAt = %d, want 0 after MarkPRCheckStale", ws.Worktree.PRCheckedAt)
+	}
+}
+
+func TestMarkPRCheckStale_NoOpWhenPRAlreadyCached(t *testing.T) {
+	// The stale signal is only for the "user-waiting-for-PR" case. When
+	// a PR is cached, we shouldn't disturb it — NeedsPRCheck already
+	// short-circuits, but an extra clear would be misleading.
+	eng, _ := testEngine(t)
+	wsPath := seedWorktreeWorkspace(t, eng, "labs", "w1", "feature/login")
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetPR(wsPath, "feature/login", "42")
+
+	eng.SyncAll()
+	m, _ := eng.LoadManifest()
+	ws := m.FindDock("labs").FindWorkspace("w1")
+	beforeCheckedAt := ws.Worktree.PRCheckedAt
+	if ws.Worktree.PR != "42" {
+		t.Fatalf("precondition: PR should be 42, got %q", ws.Worktree.PR)
+	}
+
+	if err := eng.MarkPRCheckStale("labs", "w1"); err != nil {
+		t.Fatalf("MarkPRCheckStale: %v", err)
+	}
+
+	m, _ = eng.LoadManifest()
+	ws = m.FindDock("labs").FindWorkspace("w1")
+	if ws.Worktree.PRCheckedAt != beforeCheckedAt {
+		t.Errorf("PRCheckedAt changed (%d → %d); must be a no-op when PR is cached",
+			beforeCheckedAt, ws.Worktree.PRCheckedAt)
+	}
+}
+
+func TestMarkPRCheckStale_TriggersReQueryOnNextSync(t *testing.T) {
+	// End-to-end: user reads empty PR, marks stale, monitor tick
+	// re-queries and picks up a newly-opened PR — all without waiting
+	// for the PRCheckTTL to elapse.
+	eng, _ := testEngine(t)
+	wsPath := seedWorktreeWorkspace(t, eng, "labs", "w1", "feature/login")
+
+	// First sync: no PR in mock yet → records PRCheckedAt.
+	eng.SyncAll()
+	mockGit := eng.Git.(*git.Mock)
+	beforeCalls := len(mockGit.Calls("PRForBranch"))
+
+	// A PR is opened (faster than TTL) and the user's read marks stale.
+	mockGit.SetPR(wsPath, "feature/login", "200")
+	if err := eng.MarkPRCheckStale("labs", "w1"); err != nil {
+		t.Fatalf("MarkPRCheckStale: %v", err)
+	}
+
+	// Next sync must re-query (no TTL aging required) and pick up 200.
+	eng.SyncAll()
+	afterCalls := len(mockGit.Calls("PRForBranch"))
+	if afterCalls <= beforeCalls {
+		t.Errorf("expected additional PRForBranch call after stale mark, got same count (%d)", afterCalls)
+	}
+
+	m, _ := eng.LoadManifest()
+	ws := m.FindDock("labs").FindWorkspace("w1")
+	if ws.Worktree.PR != "200" {
+		t.Errorf("PR = %q, want 200 (re-query after stale mark should have populated it)", ws.Worktree.PR)
+	}
+}
