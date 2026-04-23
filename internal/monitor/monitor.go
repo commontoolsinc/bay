@@ -110,12 +110,12 @@ func (m *Monitor) SetEngine(e *engine.Engine) {
 
 // Run is the main loop. It periodically checks all windows and exits when ctx is cancelled.
 func (m *Monitor) Run(ctx context.Context) error {
-	// Record the baseline binary mtime before the loop starts, not at
-	// the first tick — otherwise a replacement happening during the
-	// first interval silently becomes the new baseline and the change
-	// is never noticed.
-	if exe, err := os.Executable(); err == nil {
-		_ = m.binaryChanged(exe)
+	// Resolve and stash the executable path once. Record the mtime
+	// baseline before the loop so a replacement landing during the
+	// first interval isn't silently adopted as the new baseline.
+	exe, _ := os.Executable()
+	if exe != "" {
+		m.recordBinaryMTime(exe)
 	}
 	interval := time.Duration(m.intervalSecs) * time.Second
 	ticker := time.NewTicker(interval)
@@ -126,51 +126,43 @@ func (m *Monitor) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			// If the bay binary has been replaced since we started
-			// (go install, package upgrade), exec the new binary in
-			// place so users don't have to restart the monitor by
-			// hand after every update. On exec failure we just stay
-			// on the old code.
-			m.restartIfBinaryChanged()
+			// If the bay binary has been replaced, exec the new one
+			// in place. syscall.Exec preserves the PID and falls
+			// through on failure (ENOENT mid-swap, etc.) so the next
+			// tick retries.
+			if exe != "" && m.hasBinaryChanged(exe) {
+				_ = syscall.Exec(exe, os.Args, os.Environ())
+			}
 			// Errors during a check cycle are non-fatal; we log and continue.
 			_ = m.CheckOnce()
 		}
 	}
 }
 
-// restartIfBinaryChanged checks whether the bay executable has been
-// replaced since we started and, if so, re-exec's the process with
-// the current args and env. syscall.Exec replaces the process image
-// in place, so the PID is preserved and anything watching externally
-// sees the monitor as still alive — the code running inside is
-// simply the new build. Failures (ENOENT mid-swap, permission denied,
-// etc.) fall through and the next tick retries.
-func (m *Monitor) restartIfBinaryChanged() {
-	exe, err := os.Executable()
+// recordBinaryMTime stats path and stores its mtime as the baseline.
+// Stat errors leave the baseline zeroed, and hasBinaryChanged then
+// returns false until a later recordBinaryMTime call succeeds.
+func (m *Monitor) recordBinaryMTime(path string) {
+	info, err := os.Stat(path)
 	if err != nil {
 		return
 	}
-	if !m.binaryChanged(exe) {
-		return
-	}
-	_ = syscall.Exec(exe, os.Args, os.Environ())
+	m.binaryMTime = info.ModTime()
 }
 
-// binaryChanged stats path and returns true when its mtime differs
-// from the first mtime observed. The first call records the baseline
-// and returns false; subsequent calls compare. Errors return false so
-// a transient stat failure doesn't trigger a spurious restart.
-func (m *Monitor) binaryChanged(path string) bool {
+// hasBinaryChanged reports whether path's current mtime differs from
+// the baseline set by recordBinaryMTime. Returns false before the
+// baseline is recorded or on transient stat errors, so a flaky moment
+// can't trigger a spurious restart.
+func (m *Monitor) hasBinaryChanged(path string) bool {
+	if m.binaryMTime.IsZero() {
+		return false
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return false
 	}
-	mtime := info.ModTime()
-	if m.binaryMTime.IsZero() {
-		m.binaryMTime = mtime
-		return false
-	}
-	return !mtime.Equal(m.binaryMTime)
+	return !info.ModTime().Equal(m.binaryMTime)
 }
 
 // CheckOnce runs a single check cycle: reload patterns, read manifest, check all windows.
