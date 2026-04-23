@@ -891,3 +891,53 @@ func TestStatus_NotRunning(t *testing.T) {
 		t.Errorf("expected pid 0, got %d", pid)
 	}
 }
+
+func TestMonitor_BinaryChangeDetection(t *testing.T) {
+	dir := t.TempDir()
+	bin := dir + "/fake-bay"
+	if err := os.WriteFile(bin, []byte("v1"), 0o755); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	m := &Monitor{}
+
+	// Before baseline: hasBinaryChanged must return false regardless
+	// of file state. Otherwise the monitor could exec itself on
+	// startup before it's even recorded what it started with.
+	if m.hasBinaryChanged(bin) {
+		t.Error("hasBinaryChanged should return false before baseline is recorded")
+	}
+
+	m.recordBinaryMTime(bin)
+	if m.binaryMTime.IsZero() {
+		t.Error("recordBinaryMTime should set binaryMTime")
+	}
+
+	if m.hasBinaryChanged(bin) {
+		t.Error("unchanged file should not report a change")
+	}
+
+	// Bump mtime explicitly rather than relying on sleep + rewrite —
+	// some filesystems have coarser mtime resolution than the sleep.
+	future := time.Now().Add(time.Second)
+	if err := os.Chtimes(bin, future, future); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+	if !m.hasBinaryChanged(bin) {
+		t.Error("expected true after mtime changed")
+	}
+}
+
+func TestMonitor_BinaryChangeDetection_MissingFileIsSafe(t *testing.T) {
+	m := &Monitor{}
+	// Missing file during record: baseline stays zero; hasBinaryChanged
+	// keeps returning false. Monitor silently stays on current code
+	// rather than restart-looping on a broken path.
+	m.recordBinaryMTime("/no/such/path")
+	if !m.binaryMTime.IsZero() {
+		t.Error("missing file should not record a baseline")
+	}
+	if m.hasBinaryChanged("/no/such/path") {
+		t.Error("missing file should not report a change")
+	}
+}

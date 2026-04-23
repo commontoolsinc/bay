@@ -72,6 +72,13 @@ type Monitor struct {
 
 	// cycle counts check cycles for cadence-gated operations.
 	cycle int
+
+	// binaryMTime is the mtime of the bay executable at monitor start.
+	// If a later tick sees a different mtime, the binary has been
+	// replaced (e.g., by `go install` or a package upgrade) and the
+	// monitor exec's itself in place to load the new code. Zero means
+	// "not yet recorded."
+	binaryMTime time.Time
 }
 
 // New creates a new Monitor without git support (PR detection disabled).
@@ -103,6 +110,13 @@ func (m *Monitor) SetEngine(e *engine.Engine) {
 
 // Run is the main loop. It periodically checks all windows and exits when ctx is cancelled.
 func (m *Monitor) Run(ctx context.Context) error {
+	// Resolve and stash the executable path once. Record the mtime
+	// baseline before the loop so a replacement landing during the
+	// first interval isn't silently adopted as the new baseline.
+	exe, _ := os.Executable()
+	if exe != "" {
+		m.recordBinaryMTime(exe)
+	}
 	interval := time.Duration(m.intervalSecs) * time.Second
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -112,10 +126,43 @@ func (m *Monitor) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
+			// If the bay binary has been replaced, exec the new one
+			// in place. syscall.Exec preserves the PID and falls
+			// through on failure (ENOENT mid-swap, etc.) so the next
+			// tick retries.
+			if exe != "" && m.hasBinaryChanged(exe) {
+				_ = syscall.Exec(exe, os.Args, os.Environ())
+			}
 			// Errors during a check cycle are non-fatal; we log and continue.
 			_ = m.CheckOnce()
 		}
 	}
+}
+
+// recordBinaryMTime stats path and stores its mtime as the baseline.
+// Stat errors leave the baseline zeroed, and hasBinaryChanged then
+// returns false until a later recordBinaryMTime call succeeds.
+func (m *Monitor) recordBinaryMTime(path string) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+	m.binaryMTime = info.ModTime()
+}
+
+// hasBinaryChanged reports whether path's current mtime differs from
+// the baseline set by recordBinaryMTime. Returns false before the
+// baseline is recorded or on transient stat errors, so a flaky moment
+// can't trigger a spurious restart.
+func (m *Monitor) hasBinaryChanged(path string) bool {
+	if m.binaryMTime.IsZero() {
+		return false
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return !info.ModTime().Equal(m.binaryMTime)
 }
 
 // CheckOnce runs a single check cycle: reload patterns, read manifest, check all windows.
