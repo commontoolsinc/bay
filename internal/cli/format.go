@@ -341,11 +341,13 @@ func truncateCommand(cmd string) string {
 // name), 3=status, 4=count, 5=sync/waiting.
 //
 // Descriptions come through at full stored length; FormatListView shrinks
-// them in place (index 0) if the computed terminal budget is tighter.
+// them in place (index 0) if the computed terminal budget is tighter. Only
+// the first line of the description is shown — bodies are opt-in and appear
+// in the M-? popup, not on the list row.
 func workspaceMetaCols(ws engine.WorkspaceInfo, showCounts, short bool) []metaCol {
 	cols := make([]metaCol, 6)
-	if ws.Description != "" {
-		cols[0] = descField(ws.Description, engine.MaxDescriptionLen, short)
+	if first := engine.DescriptionFirstLine(ws.Description); first != "" {
+		cols[0] = descField(first, engine.MaxDescriptionFirstLineLen, short)
 	}
 	cols[1] = metaField("br", ws.Branch, short)
 	// Show directory basename only when it differs from the workspace name.
@@ -395,8 +397,8 @@ const listDescMinStrLen = 15
 
 // listDescPipedStrMax is the cap applied when stdout isn't a terminal
 // (pipe, redirect, CI). Pipes have no natural width; downstream consumers
-// should see the complete stored value.
-const listDescPipedStrMax = engine.MaxDescriptionLen
+// should see the complete first-line value (bodies are opt-in popup-only).
+const listDescPipedStrMax = engine.MaxDescriptionFirstLineLen
 
 // descColLabel is the key-prefix for a description column in long format.
 const descColLabel = "ds="
@@ -699,10 +701,11 @@ func FormatListView(view ListView, long, short bool) string {
 				strMax := descStrMaxForWidth(termWidth, nonDescRowWidth(wsAlign, wsColWidths), short)
 				shrunk := false
 				for i, ws := range dock.Workspaces {
-					if ws.Description == "" || len(ws.Description) <= strMax {
+					first := engine.DescriptionFirstLine(ws.Description)
+					if first == "" || len(first) <= strMax {
 						continue
 					}
-					wsRows[i].metaCols[0] = descField(ws.Description, strMax, short)
+					wsRows[i].metaCols[0] = descField(first, strMax, short)
 					shrunk = true
 				}
 				if shrunk {
@@ -765,7 +768,15 @@ func FormatWorkspaceShow(repoName, dockName string, ws *engine.WorkspaceInfo, lo
 	var rows []showRow
 	rows = append(rows, showRow{"workspace", ws.Name})
 	if ws.Description != "" {
-		rows = append(rows, showRow{"description", ws.Description})
+		// Show the first line as the aligned "description" row; render any
+		// body as follow-on unlabeled rows so alignment stays clean.
+		first, body, _ := strings.Cut(ws.Description, "\n")
+		rows = append(rows, showRow{"description", first})
+		if body != "" {
+			for _, line := range strings.Split(body, "\n") {
+				rows = append(rows, showRow{"", line})
+			}
+		}
 	}
 	rows = append(rows, showRow{"repo", repoName})
 	rows = append(rows, showRow{"dock", dockName})

@@ -401,26 +401,31 @@ func newTopRenameCmd() *cobra.Command {
 
 func newTopDescribeCmd() *cobra.Command {
 	var dockFlag string
-	var clear bool
+	var clear, edit bool
 
 	cmd := &cobra.Command{
 		Use:   "describe [name] [<description>]",
-		Short: "Set the current workspace's description (alias for `bay ws describe`)",
-		Long: `Set a short, free-form description for a workspace. Descriptions appear
-in the workspace picker, bay ls, and bay tree; they do not affect tmux
-tab names. Target around 40 characters (hard cap 80).
+		Short: "Read or set the current workspace's description (alias for `bay ws describe`)",
+		Long: `Read or set a free-form description for a workspace. The first line
+is a short label (cap 80) shown in the picker, bay ls, bay tree, and
+the M-/ flash. Optional trailing lines (separated from the first by a
+blank line, commit-message style) are context notes surfaced via the
+M-? popup — useful for returning to a workspace after working elsewhere.
 
+  bay describe                          print current workspace's description
   bay describe "Login flow fixes"       set current workspace's description
   bay describe auth-fix "Login fixes"   set by workspace name
+  bay describe --edit                   open $EDITOR to edit the description
   bay describe --clear                  clear current workspace's description`,
 		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDescribe(args, dockFlag, clear)
+			return runDescribe(args, dockFlag, clear, edit)
 		},
 	}
 
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare workspace name)")
 	cmd.Flags().BoolVar(&clear, "clear", false, "clear the description")
+	cmd.Flags().BoolVar(&edit, "edit", false, "open $EDITOR to edit the description (for multi-line bodies)")
 
 	return cmd
 }

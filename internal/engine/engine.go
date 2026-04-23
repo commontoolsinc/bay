@@ -119,21 +119,41 @@ func ValidateName(name string) error {
 	return nil
 }
 
-// MaxDescriptionLen caps workspace descriptions. Descriptions are shown in
-// one-line contexts (picker, ls/tree) and compete with other metadata for
-// terminal width; ~40 is the target but we accept up to this bound to stay
-// forgiving of PR titles or slightly-long labels.
-const MaxDescriptionLen = 80
+// MaxDescriptionFirstLineLen caps the first line of a workspace description.
+// The first line is the glanceable label — shown in picker, ls/tree, and the
+// M-/ flash — and competes with other metadata for terminal width.
+const MaxDescriptionFirstLineLen = 80
 
-// ValidateDescription rejects descriptions that contain control characters
-// or exceed MaxDescriptionLen. An empty string is valid and means "clear".
+// MaxDescriptionLen caps the total description length (first line plus
+// optional body). The body is opt-in context for return-to-workspace recall
+// and is surfaced only via the M-? popup and JSON output.
+const MaxDescriptionLen = 2000
+
+// DescriptionFirstLine returns the first line of a description (the part
+// before the first newline), or the whole string if it is single-line.
+// Used in contexts where descriptions must fit on one row (picker, ls/tree,
+// flash).
+func DescriptionFirstLine(desc string) string {
+	first, _, _ := strings.Cut(desc, "\n")
+	return first
+}
+
+// ValidateDescription rejects descriptions with disallowed control characters,
+// a first line longer than MaxDescriptionFirstLineLen, or total length
+// exceeding MaxDescriptionLen. Newlines are allowed (for the optional body);
+// carriage returns and tabs are not. An empty string is valid and means
+// "clear".
 func ValidateDescription(desc string) error {
 	if len(desc) > MaxDescriptionLen {
 		return fmt.Errorf("description too long (%d > %d)", len(desc), MaxDescriptionLen)
 	}
+	first := DescriptionFirstLine(desc)
+	if len(first) > MaxDescriptionFirstLineLen {
+		return fmt.Errorf("description first line too long (%d > %d)", len(first), MaxDescriptionFirstLineLen)
+	}
 	for _, r := range desc {
-		if r == '\n' || r == '\r' || r == '\t' {
-			return fmt.Errorf("description must be a single line")
+		if r == '\r' || r == '\t' {
+			return fmt.Errorf("description must not contain tabs or carriage returns")
 		}
 	}
 	return nil

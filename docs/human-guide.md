@@ -194,17 +194,29 @@ for unrelated work — the name can drift, the path won't. Use the
 workspace name (or `bay pwd`) to identify workspaces; the directory is
 plumbing.
 
-Workspaces can also carry a **description** — a short (~40 character)
-free-form label shown in the workspace picker (Option-Shift-G) and in
-`bay ls` / `bay tree`. Set it with `bay describe "Login flow fixes"`
-(or `bay ws describe`). Descriptions don't affect tmux tab names — tabs
-stay short and truncate to fit, while descriptions give you a more
-human-readable hint when you're scanning for the right workspace.
+Workspaces can also carry a **description** — commit-message-style
+text with two parts:
 
-In `bay ls` / `bay tree`, description length adapts to terminal width
-(floored at 15 characters, capped at 80). Pipe the output or set
-`COLUMNS=200 bay tree` to force a wider layout; piped output always
-uses the full 80-character cap.
+- **First line**: a short (~40 character, cap 80) label shown in the
+  workspace picker (Option-Shift-G), `bay ls` / `bay tree`, and the
+  `Option+/` flash.
+- **Body** (optional): trailing lines separated from the first line by
+  a blank line. Shown only in the `Option+?` popup — useful for longer
+  context when you step back into a workspace after working elsewhere
+  ("paused mid-rebase; rename conflict on helper.ts; tests green except
+  auth_test.go").
+
+Set it with `bay describe "Login flow fixes"` (or `bay ws describe`).
+Shells handle newlines in quoted strings, so you can pass a multi-line
+body directly; or use `bay describe --edit` to open `$EDITOR`.
+Descriptions don't affect tmux tab names — tabs stay short and truncate
+to fit, while descriptions give you a more human-readable hint when
+you're scanning for the right workspace.
+
+In `bay ls` / `bay tree`, only the first line is shown and its length
+adapts to terminal width (floored at 15 characters, capped at 80). Pipe
+the output or set `COLUMNS=200 bay tree` to force a wider layout; piped
+output always uses the full 80-character cap.
 
 ### Surfaces
 
@@ -376,8 +388,13 @@ bay ws close --clean                        # close all non-dirty workspaces
 bay ws close --done --dry-run               # preview what --done would close
 bay ws show [name]                          # detailed view (default: current)
 bay ws show [name] --json                   # machine-readable
+bay ws show [name] --flash                  # first-line flash in status bar (Option+/)
+bay ws show [name] --popup                  # full description in popup (Option+?)
 bay ws rename [name] <new-name>             # rename (defaults to current workspace)
-bay ws describe [name] [<text>]             # set/clear description (defaults to current)
+bay ws describe                             # print current description
+bay ws describe [name] [<text>]             # set (first line + optional blank-line-separated body)
+bay ws describe --edit                      # open $EDITOR for multi-line editing
+bay ws describe --clear                     # clear description
 bay describe [name] [<text>]                # top-level shortcut for the above
 bay ws tree                                 # tree of current dock
 bay ws go [query]                           # workspace picker (intra-dock)
@@ -547,7 +564,8 @@ prefix required — just press the key combo directly.
 | Key | Action |
 |-----|--------|
 | `Option+w` | Close current pane/surface |
-| `Option+?` | Flash current workspace (name — description — branch — #PR) |
+| `Option+/` | Flash current workspace (name — first-line description — branch — #PR) |
+| `Option+?` | Popup with full workspace description (including body) |
 | `Option+p` | Command palette (Tab inside to flip window/pane mode) |
 
 ### Pattern

@@ -224,7 +224,8 @@ var bayKeybindings = []bayKeybinding{
 
 	// Utility
 	{key: "M-w", cmd: "bay sf close self", desc: "Option+w: close current surface (or pane)", tmuxVerb: "run-shell"},
-	{key: "M-?", cmd: "bay ws show --flash", desc: "Option+?: flash current workspace info", tmuxVerb: "run-shell"},
+	{key: "M-/", cmd: "bay ws show --flash", desc: "Option+/: flash current workspace info (first line)", tmuxVerb: "run-shell"},
+	{key: "M-?", cmd: "bay ws show --popup", desc: "Option+?: popup with full workspace description", tmuxVerb: "run-shell"},
 
 	// Command palette
 	{key: "M-p", cmd: "bay palette", desc: "Option+p: command palette (Tab inside to flip mode)", tmuxVerb: "display-popup -w 80% -h 80% -E"},

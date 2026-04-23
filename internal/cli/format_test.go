@@ -311,6 +311,28 @@ func TestFormatListView_SuppressesSyncOKAndShowsStale(t *testing.T) {
 	}
 }
 
+func TestFormatWorkspaceShow_RendersMultiLineDescription(t *testing.T) {
+	ws := &engine.WorkspaceInfo{
+		Name:        "auth-fix",
+		Description: "Login flow fixes\n\nhit rebase conflict on helper.ts\ntests green except auth_test.go",
+		Type:        "worktree",
+		Path:        "~/x",
+		SyncStatus:  "ok",
+	}
+	out := stripANSI(FormatWorkspaceShow("bay", "api", ws, false))
+	// First line is shown inline with the description label; each body
+	// line is on its own row indented to the value column.
+	for _, want := range []string{
+		"description Login flow fixes",
+		"hit rebase conflict on helper.ts",
+		"tests green except auth_test.go",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("workspace show missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestFormatWorkspaceShow_IncludesDefaultAgentAndSurfaces(t *testing.T) {
 	ws := &engine.WorkspaceInfo{
 		Name:         "auth-fix",

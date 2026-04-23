@@ -845,15 +845,55 @@ func TestWsDescribe(t *testing.T) {
 		t.Errorf("cleared description = %q, want empty", ws.Description)
 	}
 
-	// Reject newlines.
-	if err := eng.WsDescribe("labs", "w1", "line one\nline two"); err == nil {
-		t.Errorf("expected error for multi-line description")
+	// Accept a multi-line description (label + body).
+	multi := "label line\n\nbody line one\nbody line two"
+	if err := eng.WsDescribe("labs", "w1", multi); err != nil {
+		t.Fatalf("WsDescribe multi-line failed: %v", err)
+	}
+	ws, _ = eng.WsShow("labs", "w1")
+	if ws.Description != multi {
+		t.Errorf("multi-line description = %q, want %q", ws.Description, multi)
 	}
 
-	// Reject over-length.
+	// Reject tabs and carriage returns.
+	if err := eng.WsDescribe("labs", "w1", "has\ttab"); err == nil {
+		t.Errorf("expected error for tab in description")
+	}
+	if err := eng.WsDescribe("labs", "w1", "has\rcr"); err == nil {
+		t.Errorf("expected error for carriage return in description")
+	}
+
+	// Reject first line over the first-line cap.
+	longFirst := strings.Repeat("x", MaxDescriptionFirstLineLen+1)
+	if err := eng.WsDescribe("labs", "w1", longFirst); err == nil {
+		t.Errorf("expected error for over-length first line")
+	}
+
+	// First line at cap is fine even if body pushes total size higher.
+	okFirst := strings.Repeat("x", MaxDescriptionFirstLineLen)
+	if err := eng.WsDescribe("labs", "w1", okFirst+"\nbody"); err != nil {
+		t.Errorf("first line at cap should be accepted: %v", err)
+	}
+
+	// Reject over-length total.
 	tooLong := strings.Repeat("x", MaxDescriptionLen+1)
 	if err := eng.WsDescribe("labs", "w1", tooLong); err == nil {
 		t.Errorf("expected error for over-length description")
+	}
+}
+
+func TestDescriptionFirstLine(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"", ""},
+		{"single line", "single line"},
+		{"first\nbody", "first"},
+		{"first\n\nbody line 1\nbody line 2", "first"},
+		{"\nstarts with newline", ""},
+	}
+	for _, c := range cases {
+		if got := DescriptionFirstLine(c.in); got != c.want {
+			t.Errorf("DescriptionFirstLine(%q) = %q, want %q", c.in, got, c.want)
+		}
 	}
 }
 
