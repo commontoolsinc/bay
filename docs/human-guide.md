@@ -325,9 +325,18 @@ repos missing bay awareness.
 
 ### .worktreeinclude
 
-Bay reads `.worktreeinclude` as a newline-delimited list of repo-root
-paths to copy into each new worktree. At worktree creation time, bay
-copies any listed files that exist into the new worktree.
+Bay reads `.worktreeinclude` as a **gitignore-format** file — each line
+is a pattern (globs, negations, directory rules) resolved by git itself.
+At worktree creation time, bay expands the patterns and copies matching
+files from the repo root into the new worktree.
+
+To protect against accidentally spraying checked-in files across
+worktrees, bay refuses to sync any match that is **tracked in git** or
+**not covered by `.gitignore`** — only files that cannot end up in git
+get copied. Refusals are printed to stderr, but the worktree is still
+created and other valid matches are still copied. Fix by adding the
+refused files to `.gitignore` or removing the pattern from
+`.worktreeinclude`.
 
 ### Session resumption
 

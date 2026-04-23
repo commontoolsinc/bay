@@ -254,8 +254,11 @@ func newRepoSyncCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "sync [name]",
 		Short: "Copy .worktreeinclude files into all worktrees",
-		Long: `Copy files listed in .worktreeinclude from the repo root
-into every existing worktree for the repo.
+		Long: `Copy files matching .worktreeinclude patterns (gitignore
+syntax) from the repo root into every existing worktree for the repo.
+
+Bay refuses to sync matches that are tracked in git or not covered by
+.gitignore (refusals are logged to stderr; valid matches still copy).
 
   bay repo sync labs    sync by repo name
   bay repo sync         infer repo from CWD`,

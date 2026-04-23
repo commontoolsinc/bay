@@ -371,24 +371,25 @@ func TestWsNew_CopiesWorktreeincludeFiles(t *testing.T) {
 
 	repoDir := filepath.Join(dir, "repos", "labs")
 
-	// Create a .worktreeinclude file listing ".env".
-	os.WriteFile(filepath.Join(repoDir, ".worktreeinclude"), []byte(".env\n"), 0o644)
+	// .worktreeinclude uses gitignore syntax — a glob here exercises that.
+	os.WriteFile(filepath.Join(repoDir, ".worktreeinclude"), []byte("*.env\n"), 0o644)
 
-	// Create the .env file in the repo root.
-	os.WriteFile(filepath.Join(repoDir, ".env"), []byte("SECRET=abc\n"), 0o644)
+	// Source file the pattern should match, and mock the expansion.
+	os.WriteFile(filepath.Join(repoDir, "local.env"), []byte("SECRET=abc\n"), 0o644)
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetExcludeMatches(repoDir, ".worktreeinclude", nil, []string{"local.env"})
 
 	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	if err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 
-	// The .env file should have been copied into the worktree.
-	data, err := os.ReadFile(filepath.Join(ws.Path, ".env"))
+	data, err := os.ReadFile(filepath.Join(ws.Path, "local.env"))
 	if err != nil {
-		t.Fatalf(".env not copied to worktree: %v", err)
+		t.Fatalf("local.env not copied to worktree: %v", err)
 	}
 	if string(data) != "SECRET=abc\n" {
-		t.Errorf(".env content = %q, want SECRET=abc", data)
+		t.Errorf("local.env content = %q, want SECRET=abc", data)
 	}
 }
 
@@ -401,6 +402,50 @@ func TestWsNew_SkipsWorktreeincludeIfMissing(t *testing.T) {
 		t.Fatalf("WsNew: %v", err)
 	}
 	_ = ws
+}
+
+func TestWsNew_RefusesWorktreeincludeTrackedFile(t *testing.T) {
+	eng, dir := testEngine(t)
+
+	repoDir := filepath.Join(dir, "repos", "labs")
+	os.WriteFile(filepath.Join(repoDir, ".worktreeinclude"), []byte("config.toml\n*.env\n"), 0o644)
+	os.WriteFile(filepath.Join(repoDir, "local.env"), []byte("OK=1\n"), 0o644)
+
+	// config.toml is tracked → refuse; local.env is untracked + ignored → copy.
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetExcludeMatches(repoDir, ".worktreeinclude",
+		[]string{"config.toml"}, []string{"local.env"})
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	if err != nil {
+		t.Fatalf("WsNew should not error on refusal; got: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(ws.Path, "config.toml")); !os.IsNotExist(err) {
+		t.Errorf("tracked config.toml should NOT have been copied into worktree")
+	}
+	if _, err := os.Stat(filepath.Join(ws.Path, "local.env")); err != nil {
+		t.Errorf("valid local.env should still have been copied: %v", err)
+	}
+}
+
+func TestWsNew_RefusesWorktreeincludeNonIgnoredFile(t *testing.T) {
+	eng, dir := testEngine(t)
+
+	repoDir := filepath.Join(dir, "repos", "labs")
+	os.WriteFile(filepath.Join(repoDir, ".worktreeinclude"), []byte("notes.txt\n"), 0o644)
+	os.WriteFile(filepath.Join(repoDir, "notes.txt"), []byte("x\n"), 0o644)
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetGlobalIgnored(false) // notes.txt is NOT covered by .gitignore
+	mockGit.SetExcludeMatches(repoDir, ".worktreeinclude", nil, []string{"notes.txt"})
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	if err != nil {
+		t.Fatalf("WsNew should not error on refusal; got: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(ws.Path, "notes.txt")); !os.IsNotExist(err) {
+		t.Errorf("non-gitignored notes.txt should NOT have been copied into worktree")
+	}
 }
 
 func TestWsNew_SequentialDefaultNames(t *testing.T) {
@@ -1879,6 +1924,53 @@ func TestRepoInit_UnknownRepo(t *testing.T) {
 	err := eng.RepoInit("nonexistent")
 	if err == nil {
 		t.Error("expected error for unknown repo")
+	}
+}
+
+func TestRepoSync_CopiesToAllWorktrees(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	m, _ := eng.LoadManifest()
+	repo := m.FindRepo("labs")
+	repoPath := repo.Path
+	wtDir := repo.EffectiveWorktreeDir()
+
+	// Two worktree-shaped dirs under the worktree parent — RepoSync scans
+	// the parent and syncs every subdir reporting as a git repo.
+	os.MkdirAll(filepath.Join(wtDir, "w1"), 0o755)
+	os.MkdirAll(filepath.Join(wtDir, "w2"), 0o755)
+
+	// Source file + matching pattern.
+	os.WriteFile(filepath.Join(repoPath, ".worktreeinclude"), []byte("*.env\n"), 0o644)
+	os.WriteFile(filepath.Join(repoPath, "local.env"), []byte("SECRET=1\n"), 0o644)
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetExcludeMatches(repoPath, ".worktreeinclude", nil, []string{"local.env"})
+
+	count, err := eng.RepoSync("labs")
+	if err != nil {
+		t.Fatalf("RepoSync: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("count = %d, want 2", count)
+	}
+
+	for _, ws := range []string{"w1", "w2"} {
+		data, err := os.ReadFile(filepath.Join(wtDir, ws, "local.env"))
+		if err != nil {
+			t.Errorf("%s/local.env not copied: %v", ws, err)
+			continue
+		}
+		if string(data) != "SECRET=1\n" {
+			t.Errorf("%s/local.env content = %q", ws, data)
+		}
+	}
+
+	// Validation/expansion must happen once across the whole sync, not
+	// once per worktree — this is the contract RepoSync relies on to
+	// avoid an N-fold git-subprocess fan-out.
+	if calls := mockGit.Calls("ExpandExcludes"); len(calls) != 1 {
+		t.Errorf("ExpandExcludes called %d times, want 1 (validate-once)", len(calls))
 	}
 }
 

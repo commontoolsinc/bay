@@ -198,7 +198,9 @@ func (e *Engine) RepoInit(name string) error {
 	// .worktreeinclude: create with a comment if it doesn't exist.
 	wtIncludePath := filepath.Join(repoPath, ".worktreeinclude")
 	if _, err := os.Stat(wtIncludePath); os.IsNotExist(err) {
-		content := "# Repo-root paths to copy into new worktrees.\n# Example: .env\n"
+		content := "# Gitignore-syntax patterns copied into new worktrees.\n" +
+			"# Every match must also be covered by .gitignore.\n" +
+			"# Example: .env\n"
 		if err := os.WriteFile(wtIncludePath, []byte(content), 0o644); err != nil {
 			return fmt.Errorf("creating .worktreeinclude: %w", err)
 		}
@@ -260,6 +262,13 @@ func (e *Engine) RepoSync(name string) (int, error) {
 		return 0, fmt.Errorf("reading worktree dir: %w", err)
 	}
 
+	// Resolve patterns once — the answer depends only on the repo root,
+	// and re-running per worktree would fan out git subprocesses N-fold.
+	toCopy, err := e.resolveWorktreeInclude(repoPath)
+	if err != nil {
+		return 0, err
+	}
+
 	count := 0
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -269,7 +278,9 @@ func (e *Engine) RepoSync(name string) (int, error) {
 		if !e.Git.IsGitRepo(wsPath) {
 			continue
 		}
-		copyWorktreeIncludeFiles(repoPath, wsPath)
+		if err := copyWorktreeIncludeFiles(repoPath, wsPath, toCopy); err != nil {
+			return count, err
+		}
 		count++
 	}
 	return count, nil
