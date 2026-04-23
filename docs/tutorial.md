@@ -296,7 +296,7 @@ human guide for details.
 
 **Next:**
 
-- **[User Guide](human-guide.md)** — full command reference, config
+- **[Human Guide](human-guide.md)** — full command reference, config
   options, and advanced features.
 - **[Agent Reference](agent-reference.md)** — reference for AI agents
   operating inside bay workspaces.
