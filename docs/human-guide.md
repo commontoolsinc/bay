@@ -378,8 +378,28 @@ aid, not just a label. Expect them to:
   what's next" without you re-reading the diff.
 
 `bay repo init` installs the pointer to `bay agent-guide` which tells
-agents how. For a stronger nudge, add the guidance to your
-user-global agent instructions (for Claude Code, `~/.claude/CLAUDE.md`).
+agents how. For a stronger nudge, paste the block below into your
+user-global agent instructions (for Claude Code, `~/.claude/CLAUDE.md`):
+
+```markdown
+## Bay workspace descriptions
+
+If this project uses bay, keep the current workspace's description
+current. It's what surfaces in the picker, `bay ls`/`bay tree`, and
+the `M-?` popup — the user's primary context-recall aid when they
+return to a workspace after working elsewhere.
+
+- **On start:** if empty or stale, set a first-line label with
+  `bay describe "short label"` (≤40 chars preferred, 80 max).
+- **At natural checkpoints** — pause, blocker, context switch, task
+  handoff — update the body via `bay describe --edit` with two or
+  three lines: where you left off, what's blocked, what's next.
+- **The body is why the field exists.** A label alone works, but
+  the body is what makes `M-?` useful two days later. Leaving it
+  unset defeats the feature.
+
+Run `bay agent-guide` for the full reference.
+```
 
 ### Session resumption
 
