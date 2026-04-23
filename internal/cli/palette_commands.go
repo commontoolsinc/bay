@@ -86,7 +86,7 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 						description = ws.Description
 					}
 				}
-				palette.Notice(env.In, env.Out, formatPWD(ctx, description))
+				palette.Notice(env.In, env.Out, formatPWD(ctx, description, false))
 				return "", nil
 			},
 		},

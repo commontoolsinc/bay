@@ -557,7 +557,7 @@ bay ls -R
 bay ls --dirty
 ```
 
-#### `bay pwd [--json] [--plain]`
+#### `bay pwd [--json] [--plain] [--short]`
 
 Show the current bay context. Includes the workspace description when
 one is set.
@@ -565,6 +565,7 @@ one is set.
 ```
 bay pwd                       # colored, human-readable
 bay pwd --plain               # no ANSI colors (for tmux display-message, etc.)
+bay pwd --plain --short       # plain + compact (used by the M-? flash)
 bay pwd --json                # structured output (description not included)
 ```
 
