@@ -138,6 +138,37 @@ func (r *Real) IsIgnored(repoPath, filename string) (bool, error) {
 	return false, fmt.Errorf("git check-ignore: %w", err)
 }
 
+// ExpandExcludes uses `git ls-files -i --exclude-from=<excludeFile>` to
+// resolve gitignore-format patterns against the repo. With --cached we get
+// tracked matches, with --others we get untracked matches. Matching is
+// purely against the patterns in excludeFile — standard gitignore rules
+// are not consulted here (the caller is expected to cross-check via
+// IsIgnored when relevant).
+func (r *Real) ExpandExcludes(repoPath, excludeFile string) ([]string, []string, error) {
+	tracked, err := lsFilesMatching(repoPath, excludeFile, "--cached")
+	if err != nil {
+		return nil, nil, err
+	}
+	untracked, err := lsFilesMatching(repoPath, excludeFile, "--others")
+	if err != nil {
+		return nil, nil, err
+	}
+	return tracked, untracked, nil
+}
+
+func lsFilesMatching(repoPath, excludeFile, mode string) ([]string, error) {
+	cmd := exec.Command("git", "-C", repoPath, "ls-files", "-z", "-i", "--exclude-from="+excludeFile, mode)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git ls-files %s: %w", mode, err)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	parts := strings.Split(strings.TrimRight(string(out), "\x00"), "\x00")
+	return parts, nil
+}
+
 func (r *Real) AddToGitignore(repoPath, filename string) error {
 	gitignorePath := filepath.Join(repoPath, ".gitignore")
 	f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)

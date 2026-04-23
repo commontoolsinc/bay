@@ -125,8 +125,14 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 			return nil, fmt.Errorf("creating worktree: %w", err)
 		}
 
-		// Copy files listed in .worktreeinclude from repo root to worktree.
-		copyWorktreeIncludeFiles(repoPath, wsPath)
+		toCopy, err := e.resolveWorktreeInclude(repoPath)
+		if err == nil {
+			err = copyWorktreeIncludeFiles(repoPath, wsPath, toCopy)
+		}
+		if err != nil {
+			_ = e.Git.RemoveWorktree(repoPath, wsPath, true)
+			return nil, err
+		}
 	}
 
 	// If no explicit name and no branch, default to the path basename.
@@ -974,40 +980,77 @@ func (e *Engine) SetLastFocused(dockName, wsName string, surfaceID int) error {
 	})
 }
 
-// copyWorktreeIncludeFiles reads .worktreeinclude from the repo root and copies
-// matching files into the new worktree. Each line is a filename (not a glob).
-// Missing source files and missing .worktreeinclude are silently ignored.
-func copyWorktreeIncludeFiles(repoRoot, worktreePath string) {
-	includeFile := filepath.Join(repoRoot, ".worktreeinclude")
-	data, err := os.ReadFile(includeFile)
-	if err != nil {
-		return // no .worktreeinclude — nothing to copy
+const worktreeIncludeName = ".worktreeinclude"
+
+// resolveWorktreeInclude expands .worktreeinclude patterns, prints refusals
+// to stderr (tracked matches, or matches not covered by .gitignore), and
+// returns the repo-root-relative paths that should be copied.
+//
+// A missing .worktreeinclude yields an empty list with no error. This step
+// depends only on repoRoot, so callers syncing many worktrees should call
+// it once and pass the result into each copyWorktreeIncludeFiles call.
+func (e *Engine) resolveWorktreeInclude(repoRoot string) ([]string, error) {
+	if _, err := os.Stat(filepath.Join(repoRoot, worktreeIncludeName)); os.IsNotExist(err) {
+		return nil, nil
 	}
 
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
+	tracked, untracked, err := e.Git.ExpandExcludes(repoRoot, worktreeIncludeName)
+	if err != nil {
+		return nil, fmt.Errorf("expanding %s: %w", worktreeIncludeName, err)
+	}
 
-		src := filepath.Join(repoRoot, line)
-		srcData, err := os.ReadFile(src)
+	var notIgnored, toCopy []string
+	for _, rel := range untracked {
+		ignored, err := e.Git.IsIgnored(repoRoot, rel)
 		if err != nil {
-			continue // source file doesn't exist — skip
+			return nil, fmt.Errorf("checking ignore status of %s: %w", rel, err)
 		}
-
-		dst := filepath.Join(worktreePath, line)
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		if !ignored {
+			notIgnored = append(notIgnored, rel)
 			continue
 		}
+		toCopy = append(toCopy, rel)
+	}
 
-		// Preserve the source file's permissions.
+	reportRefusal("refusing to copy tracked file(s) — remove the pattern, or untrack and .gitignore", tracked)
+	reportRefusal("refusing to copy file(s) not covered by .gitignore — add them to .gitignore first, or remove the pattern", notIgnored)
+
+	return toCopy, nil
+}
+
+func reportRefusal(reason string, files []string) {
+	if len(files) == 0 {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "%s: %s:\n", worktreeIncludeName, reason)
+	for _, f := range files {
+		fmt.Fprintf(os.Stderr, "  - %s\n", f)
+	}
+}
+
+// copyWorktreeIncludeFiles copies files (repo-root-relative paths produced
+// by resolveWorktreeInclude) from repoRoot into worktreePath, preserving
+// file mode.
+func copyWorktreeIncludeFiles(repoRoot, worktreePath string, files []string) error {
+	for _, rel := range files {
+		src := filepath.Join(repoRoot, rel)
 		info, err := os.Stat(src)
 		if err != nil {
-			continue
+			return fmt.Errorf("stat %s: %w", rel, err)
 		}
-		_ = os.WriteFile(dst, srcData, info.Mode())
+		srcData, err := os.ReadFile(src)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", rel, err)
+		}
+		dst := filepath.Join(worktreePath, rel)
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return fmt.Errorf("mkdir %s: %w", filepath.Dir(dst), err)
+		}
+		if err := os.WriteFile(dst, srcData, info.Mode()); err != nil {
+			return fmt.Errorf("write %s: %w", dst, err)
+		}
 	}
+	return nil
 }
 
 // nextWorkspaceName returns the next sequential name (w1, w2, ...) that is

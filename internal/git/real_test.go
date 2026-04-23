@@ -1,8 +1,10 @@
 package git
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -99,5 +101,57 @@ func TestReal_IsMergedIntoDefault_UnmergedBranchNotDetected(t *testing.T) {
 	}
 	if merged {
 		t.Error("unmerged branch with commits should NOT be detected as merged")
+	}
+}
+
+// TestReal_ExpandExcludes verifies that gitignore-syntax patterns in an
+// exclude file match both tracked and untracked files, and that the two
+// buckets are returned separately.
+func TestReal_ExpandExcludes(t *testing.T) {
+	clone := setupRemoteAndClone(t)
+
+	// Tracked file: config.toml — matches "*.toml".
+	writeFile(t, filepath.Join(clone, "config.toml"), "x")
+	gitRun(t, "-C", clone, "add", "config.toml")
+	gitRun(t, "-C", clone, "commit", "-m", "add config")
+
+	// Untracked files.
+	writeFile(t, filepath.Join(clone, "local.env"), "SECRET=1")      // matches *.env
+	writeFile(t, filepath.Join(clone, "keep.md"), "docs")            // no match
+	writeFile(t, filepath.Join(clone, "sub/nested.env"), "NESTED=1") // matches *.env recursively
+
+	// Exclude file with gitignore syntax.
+	writeFile(t, filepath.Join(clone, ".wti"), "*.env\n*.toml\n")
+
+	r := Real{}
+	tracked, untracked, err := r.ExpandExcludes(clone, ".wti")
+	if err != nil {
+		t.Fatalf("ExpandExcludes: %v", err)
+	}
+
+	if !slices.Contains(tracked, "config.toml") {
+		t.Errorf("tracked = %v, want to contain config.toml", tracked)
+	}
+	if !slices.Contains(untracked, "local.env") {
+		t.Errorf("untracked = %v, want to contain local.env", untracked)
+	}
+	if !slices.Contains(untracked, "sub/nested.env") {
+		t.Errorf("untracked = %v, want to contain sub/nested.env (recursive)", untracked)
+	}
+	if slices.Contains(untracked, "keep.md") {
+		t.Errorf("untracked = %v, should not contain keep.md (no pattern match)", untracked)
+	}
+	if slices.Contains(untracked, ".wti") {
+		t.Errorf("untracked = %v, should not contain the exclude file itself", untracked)
+	}
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", path, err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
 	}
 }

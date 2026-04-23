@@ -23,6 +23,14 @@ type repoState struct {
 	merged        map[string]bool   // branch → merged
 	branchExists  map[string]bool   // branch → exists (local or remote)
 	repoRoot      string
+	// excludeMatches[excludeFile] → {tracked, untracked}. Set via
+	// SetExcludeMatches for tests exercising .worktreeinclude expansion.
+	excludeMatches map[string]excludeMatch
+}
+
+type excludeMatch struct {
+	tracked   []string
+	untracked []string
 }
 
 // Mock is a test double for Interface that tracks calls and stores state.
@@ -57,11 +65,12 @@ func (m *Mock) repo(path string) *repoState {
 	r, ok := m.repos[path]
 	if !ok {
 		r = &repoState{
-			ignored:      make(map[string]bool),
-			worktrees:    make(map[string]bool),
-			prs:          make(map[string]string),
-			merged:       make(map[string]bool),
-			branchExists: make(map[string]bool),
+			ignored:        make(map[string]bool),
+			worktrees:      make(map[string]bool),
+			prs:            make(map[string]string),
+			merged:         make(map[string]bool),
+			branchExists:   make(map[string]bool),
+			excludeMatches: make(map[string]excludeMatch),
 		}
 		m.repos[path] = r
 	}
@@ -112,6 +121,12 @@ func (m *Mock) SetBranch(path, branch string) {
 // AddIgnored marks a filename as gitignored in the repo.
 func (m *Mock) AddIgnored(repoPath, filename string) {
 	m.repo(repoPath).ignored[filename] = true
+}
+
+// SetExcludeMatches configures the tracked/untracked files that
+// ExpandExcludes should return for a given excludeFile under repoPath.
+func (m *Mock) SetExcludeMatches(repoPath, excludeFile string, tracked, untracked []string) {
+	m.repo(repoPath).excludeMatches[excludeFile] = excludeMatch{tracked: tracked, untracked: untracked}
 }
 
 // HasWorktree reports whether a worktree is currently tracked.
@@ -224,6 +239,12 @@ func (m *Mock) AddToGitignore(repoPath, filename string) error {
 	m.record("AddToGitignore", repoPath, filename)
 	m.repo(repoPath).ignored[filename] = true
 	return nil
+}
+
+func (m *Mock) ExpandExcludes(repoPath, excludeFile string) ([]string, []string, error) {
+	m.record("ExpandExcludes", repoPath, excludeFile)
+	em := m.repo(repoPath).excludeMatches[excludeFile]
+	return em.tracked, em.untracked, nil
 }
 
 func (m *Mock) BranchExists(repoPath, branchName string) (bool, error) {

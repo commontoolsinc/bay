@@ -628,6 +628,12 @@ bay repo init [name]
 agent's project file (e.g., `CLAUDE.local.md`) pointing to `bay agent-guide`,
 and creates `.worktreeinclude` if missing.
 
+`.worktreeinclude` uses gitignore syntax. Each pattern is resolved by
+git; matching files are copied from the repo root into new worktrees.
+Bay refuses to sync matches that are tracked in git or not covered by
+`.gitignore` (refusals are logged to stderr; valid matches are still
+copied) — only files that cannot be checked in are copied.
+
 ## Typical workflows
 
 ### Spin up a workspace for a task
