@@ -329,6 +329,9 @@ func newWsShowCmd() *cobra.Command {
 
 // formatWorkspaceShort builds a one-line workspace summary:
 // `name — description — branch — #PR`, skipping empty fields.
+// The branch is omitted when it equals the workspace name — bay
+// auto-derives workspace names from branches, so in the common case
+// they match and showing both just duplicates the identifier.
 // Used by `bay ws show --short` (and the M-? flash binding).
 func formatWorkspaceShort(ws *manifest.Workspace) string {
 	if ws == nil {
@@ -339,7 +342,7 @@ func formatWorkspaceShort(ws *manifest.Workspace) string {
 		parts = append(parts, ws.Description)
 	}
 	if ws.Worktree != nil {
-		if ws.Worktree.Branch != "" {
+		if ws.Worktree.Branch != "" && ws.Worktree.Branch != ws.Name {
 			parts = append(parts, ws.Worktree.Branch)
 		}
 		if ws.Worktree.PR != "" {

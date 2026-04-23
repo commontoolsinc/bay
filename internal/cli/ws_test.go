@@ -84,6 +84,21 @@ func TestFormatWorkspaceShort_NilWorkspace(t *testing.T) {
 	}
 }
 
+func TestFormatWorkspaceShort_SilencesBranchWhenEqualToName(t *testing.T) {
+	// bay auto-derives workspace names from branches; when they match,
+	// showing both duplicates the identifier.
+	ws := &manifest.Workspace{
+		Name:        "auth-fix",
+		Description: "Login flow fixes",
+		Worktree:    &manifest.WorktreeAttrs{Branch: "auth-fix", PR: "123"},
+	}
+	got := stripANSI(formatWorkspaceShort(ws))
+	want := "auth-fix — Login flow fixes — #123"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 func TestFormatWorkspaceShort_SeparatorsAreDimmed(t *testing.T) {
 	// The raw output should contain ANSI-dimmed separators; stripping
 	// them yields the plain-text form used by the M-? flash.
