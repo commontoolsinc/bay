@@ -355,7 +355,7 @@ func formatWorkspaceShort(ws *manifest.Workspace) string {
 			parts = append(parts, ws.Worktree.Branch)
 		}
 		if ws.Worktree.PR != "" {
-			parts = append(parts, "#"+ws.Worktree.PR)
+			parts = append(parts, "PR#"+ws.Worktree.PR)
 		}
 	}
 	return strings.Join(parts, dim(" — "))
