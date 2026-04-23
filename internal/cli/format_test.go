@@ -2,18 +2,11 @@ package cli
 
 import (
 	"encoding/json"
-	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/commontoolsinc/bay/internal/engine"
 )
-
-var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
-
-func stripANSI(s string) string {
-	return ansiRE.ReplaceAllString(s, "")
-}
 
 func testDocks() []engine.DockInfo {
 	return []engine.DockInfo{

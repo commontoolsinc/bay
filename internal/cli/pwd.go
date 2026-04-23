@@ -11,7 +11,7 @@ import (
 )
 
 func newPwdCmd() *cobra.Command {
-	var jsonOutput bool
+	var jsonOutput, plain bool
 
 	cmd := &cobra.Command{
 		Use:   "pwd",
@@ -36,16 +36,28 @@ func newPwdCmd() *cobra.Command {
 				return nil
 			}
 
-			fmt.Println(formatPWD(ctx))
+			description := ""
+			if ctx.Dock != "" && ctx.Workspace != "" {
+				if ws, wsErr := eng.WsShow(ctx.Dock, ctx.Workspace); wsErr == nil {
+					description = ws.Description
+				}
+			}
+
+			out := formatPWD(ctx, description)
+			if plain {
+				out = stripANSI(out)
+			}
+			fmt.Println(out)
 			return nil
 		},
 	}
 
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON")
+	cmd.Flags().BoolVar(&plain, "plain", false, "plain-text output (no ANSI colors)")
 	return cmd
 }
 
-func formatPWD(ctx *engine.Context) string {
+func formatPWD(ctx *engine.Context, description string) string {
 	parts := make([]string, 0, 5)
 	if ctx.Repo != "" {
 		parts = append(parts, labelValue("repo", ctx.Repo))
@@ -60,6 +72,9 @@ func formatPWD(ctx *engine.Context) string {
 			if dir != ctx.Workspace {
 				ws += " " + dim("(") + dim("dir") + " " + dir + dim(")")
 			}
+		}
+		if description != "" {
+			ws += " " + dim("—") + " " + description
 		}
 		parts = append(parts, labelValue("workspace", ws))
 	}
