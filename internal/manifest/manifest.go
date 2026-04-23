@@ -116,8 +116,11 @@ func (ws *Workspace) IsMerged() bool {
 
 // PRCheckTTL is how long a "no PR found" answer stays valid before we re-query
 // gh. Without this, opening a PR after the first check would never be picked
-// up. 1 hour balances responsiveness against gh API quota usage.
-const PRCheckTTL = 3600
+// up. 5 minutes balances responsiveness (matching the typical push→create-PR
+// workflow) against gh API usage — once a PR is cached, NeedsPRCheck returns
+// false and polling stops entirely, so this cost only applies to branches
+// that haven't produced a PR yet.
+const PRCheckTTL = 300
 
 // NeedsPRCheck reports whether this worktree should have its PR number
 // re-queried via gh. Returns true when:
