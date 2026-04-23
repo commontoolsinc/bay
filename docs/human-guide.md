@@ -366,6 +366,21 @@ created and other valid matches are still copied. Fix by adding the
 refused files to `.gitignore` or removing the pattern from
 `.worktreeinclude`.
 
+### Agents keep descriptions current
+
+Bay-aware agents treat the workspace description as a context-recall
+aid, not just a label. Expect them to:
+
+- Set a first-line label on start if one isn't set.
+- Update the body at natural checkpoints — pauses, blockers,
+  end-of-task — so when you return to the workspace after working
+  elsewhere, `Option+?` shows "where I left off, what's blocked,
+  what's next" without you re-reading the diff.
+
+`bay repo init` installs the pointer to `bay agent-guide` which tells
+agents how. For a stronger nudge, add the guidance to your
+user-global agent instructions (for Claude Code, `~/.claude/CLAUDE.md`).
+
 ### Session resumption
 
 Built-in agents have resume args (e.g., `--continue` for Claude Code).
