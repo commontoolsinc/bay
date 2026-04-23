@@ -948,6 +948,10 @@ func TestSurfaceClose(t *testing.T) {
 }
 
 func TestSurfaceClose_LastSurfaceClosesWorkspace(t *testing.T) {
+	// Closing the last surface via sf close (non-force) schedules the
+	// workspace for auto-close after the grace window. Set the grace
+	// to 0 so the very next sync finalizes.
+	defer withZeroGrace()()
 	eng, _ := testEngine(t)
 
 	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
@@ -955,7 +959,6 @@ func TestSurfaceClose_LastSurfaceClosesWorkspace(t *testing.T) {
 		t.Fatalf("WsNew: %v", err)
 	}
 
-	// w1 has one default surface. Closing it should also remove the workspace.
 	ws, _ := eng.WsShow("labs", "w1")
 	if len(ws.Surfaces) != 1 {
 		t.Fatalf("expected 1 surface, got %d", len(ws.Surfaces))
@@ -966,11 +969,21 @@ func TestSurfaceClose_LastSurfaceClosesWorkspace(t *testing.T) {
 		t.Fatalf("SurfaceClose: %v", err)
 	}
 
-	// Workspace should be gone.
+	// Grace is 0 → next sync finalizes the pending close.
+	eng.SyncAll()
+
 	_, err = eng.WsShow("labs", "w1")
 	if err == nil {
-		t.Error("workspace w1 still exists after closing its last surface")
+		t.Error("workspace w1 still exists after closing its last surface + sync")
 	}
+}
+
+// withZeroGrace sets orphanGraceSeconds to 0 for the duration of a
+// test and returns a cleanup func. Use with `defer withZeroGrace()()`.
+func withZeroGrace() func() {
+	prev := orphanGraceSeconds
+	orphanGraceSeconds = 0
+	return func() { orphanGraceSeconds = prev }
 }
 
 // Regression: SurfaceClose, WsClose, DockClose, and RepoRemove must
@@ -2521,15 +2534,22 @@ func TestSyncAll_RemovesStaleSurfaces(t *testing.T) {
 	}
 }
 
-func TestList_MarksStaleWorkspace(t *testing.T) {
-	// After a tmux window is killed and List is called, the workspace
-	// should show with zero surfaces (stale but not removed).
+func TestList_AutoClosesOrphanAfterWindowKill(t *testing.T) {
+	// Externally killing a workspace's last tmux window schedules it
+	// for auto-close (PendingCloseAt). With the grace window set to
+	// 0, the next sync finalizes it; the first sync schedules and
+	// the second one would normally finalize, but with grace=0 the
+	// first pass already schedules-and-finalizes via List's SyncAll
+	// call. Test at the effective-behavior level: after a sync,
+	// no orphan remains.
+	defer withZeroGrace()()
 	eng, _ := testEngine(t)
 
 	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
+	os.MkdirAll(ws.Path, 0o755)
 
 	// Kill the workspace's tmux window
 	mockTmux := eng.Tmux.(*tmux.Mock)
@@ -2539,8 +2559,8 @@ func TestList_MarksStaleWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
-	if len(docks) != 1 || len(docks[0].Workspaces) != 1 {
-		t.Fatalf("expected 1 workspace (stale), got: %#v", docks)
+	if len(docks) != 1 || len(docks[0].Workspaces) != 0 {
+		t.Fatalf("expected orphan workspace to be auto-closed, got: %#v", docks)
 	}
 }
 
@@ -2609,6 +2629,239 @@ func TestSyncAll_PreservesSurfacesWhenSessionDead(t *testing.T) {
 	ws, _ = eng.WsShow("labs", "w1")
 	if len(ws.Surfaces) != 1 {
 		t.Errorf("SyncAll stripped surfaces when session was dead; got %d surfaces, want 1 (preserved for recovery)", len(ws.Surfaces))
+	}
+}
+
+// --- Orphan auto-close on sync-detected strip ---
+
+// When sync strips the last surface of a clean+pushed workspace,
+// the workspace should be auto-closed (after the grace window).
+// Without this, tmux-native pane kills leave zero-surface orphan
+// workspaces lingering in the manifest forever.
+func TestSyncAll_AutoClosesOrphanedCleanWorkspace(t *testing.T) {
+	defer withZeroGrace()()
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	// Worktree path must exist for WsClose's safety checks.
+	os.MkdirAll(ws.Path, 0o755)
+
+	// Kill the sole pane externally (simulates Ctrl-B x, etc.).
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if len(ws.Surfaces) == 0 || ws.Surfaces[0].Tmux == nil {
+		t.Fatalf("expected 1 surface with tmux info, got %+v", ws.Surfaces)
+	}
+	mockTmux.KillPane(ws.Surfaces[0].Tmux.PaneID)
+
+	eng.SyncAll()
+
+	// Workspace should be gone from the manifest entirely.
+	m, _ := eng.LoadManifest()
+	dock := m.FindDock("labs")
+	if dock == nil {
+		t.Fatal("dock missing after SyncAll")
+	}
+	if dock.FindWorkspace(ws.Name) != nil {
+		t.Errorf("expected orphan workspace %q to be auto-closed, still present with %d surfaces", ws.Name, len(dock.FindWorkspace(ws.Name).Surfaces))
+	}
+}
+
+// Dirty orphans must NOT be auto-closed — user may have
+// uncommitted work in the worktree. WsClose's gate refuses; the
+// finalize path then clears PendingCloseAt so we don't retry on
+// every sync, leaving a permanent orphan for manual handling.
+func TestSyncAll_KeepsOrphanedDirtyWorkspace(t *testing.T) {
+	defer withZeroGrace()()
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetDirty(ws.Path, true)
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.KillPane(ws.Surfaces[0].Tmux.PaneID)
+
+	eng.SyncAll()
+
+	m, _ := eng.LoadManifest()
+	got := m.FindDock("labs").FindWorkspace(ws.Name)
+	if got == nil {
+		t.Fatalf("dirty orphan workspace %q was auto-closed; expected it to persist", ws.Name)
+	}
+	if len(got.Surfaces) != 0 {
+		t.Errorf("expected 0 surfaces (stripped), got %d", len(got.Surfaces))
+	}
+	if got.PendingCloseAt != 0 {
+		t.Errorf("expected PendingCloseAt cleared after gate refusal, got %d", got.PendingCloseAt)
+	}
+}
+
+// Unpushed commits are the other WsClose gate — orphan must
+// persist and PendingCloseAt must be cleared so we don't keep
+// retrying.
+func TestSyncAll_KeepsOrphanedUnpushedWorkspace(t *testing.T) {
+	defer withZeroGrace()()
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetUnpushed(ws.Path, true)
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.KillPane(ws.Surfaces[0].Tmux.PaneID)
+
+	eng.SyncAll()
+
+	m, _ := eng.LoadManifest()
+	got := m.FindDock("labs").FindWorkspace(ws.Name)
+	if got == nil {
+		t.Fatalf("unpushed orphan workspace %q was auto-closed; expected it to persist", ws.Name)
+	}
+	if got.PendingCloseAt != 0 {
+		t.Errorf("expected PendingCloseAt cleared after gate refusal, got %d", got.PendingCloseAt)
+	}
+}
+
+// Stripping a non-last surface should not trigger auto-close.
+// Only surfaces-went-to-zero fires the cascade.
+func TestSyncAll_DoesNotAutoCloseWorkspaceWithSurvivingSurfaces(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+	// Add a second surface so killing one doesn't empty the ws.
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell", SplitDir: "h"}); err != nil {
+		t.Fatalf("SurfaceAdd: %v", err)
+	}
+	ws, _ = eng.WsShow("labs", "w1")
+	if len(ws.Surfaces) != 2 {
+		t.Fatalf("expected 2 surfaces, got %d", len(ws.Surfaces))
+	}
+
+	// Kill only the second pane.
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.KillPane(ws.Surfaces[1].Tmux.PaneID)
+
+	eng.SyncAll()
+
+	ws, _ = eng.WsShow("labs", "w1")
+	if ws == nil {
+		t.Fatal("workspace disappeared; expected it to persist with 1 surface")
+	}
+	if len(ws.Surfaces) != 1 {
+		t.Errorf("expected 1 surviving surface, got %d", len(ws.Surfaces))
+	}
+}
+
+// Surface re-added during the grace window cancels the pending close —
+// PendingCloseAt is cleared and the workspace stays.
+func TestSyncAll_SurfaceAddCancelsPendingClose(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	// Kill the sole pane; next sync schedules pending close (not
+	// finalized because grace is the default 60s).
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.KillPane(ws.Surfaces[0].Tmux.PaneID)
+	eng.SyncAll()
+
+	// Verify PendingCloseAt is set.
+	m, _ := eng.LoadManifest()
+	got := m.FindDock("labs").FindWorkspace(ws.Name)
+	if got == nil || got.PendingCloseAt == 0 {
+		t.Fatalf("expected PendingCloseAt to be set, got %+v", got)
+	}
+
+	// User re-adds a surface (rescues the workspace).
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: ws.Name, Type: manifest.SurfaceTypeShell, Name: "saved"}); err != nil {
+		t.Fatalf("SurfaceAdd: %v", err)
+	}
+
+	// PendingCloseAt should be cleared immediately (SurfaceAdd does it).
+	m, _ = eng.LoadManifest()
+	got = m.FindDock("labs").FindWorkspace(ws.Name)
+	if got.PendingCloseAt != 0 {
+		t.Errorf("expected PendingCloseAt to be cleared after SurfaceAdd, got %d", got.PendingCloseAt)
+	}
+
+	// Even if we drop grace to 0 and sync again, the workspace stays.
+	orphanGraceSeconds = 0
+	defer func() { orphanGraceSeconds = 60 }()
+	eng.SyncAll()
+	m, _ = eng.LoadManifest()
+	if m.FindDock("labs").FindWorkspace(ws.Name) == nil {
+		t.Error("rescued workspace disappeared on next sync")
+	}
+}
+
+// Grace window not yet expired → sync does NOT finalize.
+func TestSyncAll_PendingCloseRespectsGraceWindow(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	// Kill the pane → next sync schedules pending close with a
+	// 60s grace. Workspace must still be present after sync.
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.KillPane(ws.Surfaces[0].Tmux.PaneID)
+	eng.SyncAll()
+
+	m, _ := eng.LoadManifest()
+	got := m.FindDock("labs").FindWorkspace(ws.Name)
+	if got == nil {
+		t.Fatal("workspace was closed during grace window; expected it to persist")
+	}
+	if got.PendingCloseAt == 0 {
+		t.Error("expected PendingCloseAt to be set")
+	}
+	if len(got.Surfaces) != 0 {
+		t.Errorf("expected surfaces stripped, got %d", len(got.Surfaces))
+	}
+}
+
+// sf close --force on the last surface closes the workspace
+// immediately (no grace period for explicit force).
+func TestSurfaceClose_ForceOnLastSurfaceClosesImmediately(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	ws, _ := eng.WsShow("labs", "w1")
+	surfaceName := ws.Surfaces[0].Name
+
+	if err := eng.SurfaceClose("labs", "w1", surfaceName, true); err != nil {
+		t.Fatalf("SurfaceClose --force: %v", err)
+	}
+
+	if _, err := eng.WsShow("labs", "w1"); err == nil {
+		t.Error("workspace still exists after force-close; expected immediate teardown")
 	}
 }
 
