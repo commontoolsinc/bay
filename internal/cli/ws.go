@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/engine"
@@ -13,6 +15,7 @@ import (
 	"github.com/commontoolsinc/bay/internal/nav"
 	"github.com/commontoolsinc/bay/internal/picker"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 func newWsCmd() *cobra.Command {
@@ -224,7 +227,7 @@ workspace, or use --done/--clean to batch-close workspaces.
 }
 
 func newWsShowCmd() *cobra.Command {
-	var jsonOutput, short, plain, flash bool
+	var jsonOutput, short, plain, flash, popup, popupBody bool
 	var dockFlag string
 
 	cmd := &cobra.Command{
@@ -244,13 +247,32 @@ func newWsShowCmd() *cobra.Command {
 			}
 			dockName, wsID, err := resolveWsArg(eng, target, dockFlag)
 			if err != nil {
-				if short || flash {
-					// Swallow the error so `M-?` outside a workspace
-					// leaves the status bar clean instead of flashing a
-					// traceback. Non-short paths still surface the error.
+				if short || flash || popup || popupBody {
+					// Swallow the error so the keybindings leave the
+					// status bar clean instead of flashing a traceback
+					// when invoked outside a workspace.
 					return nil
 				}
 				return err
+			}
+
+			if popup {
+				// Orchestrator side: open a tmux popup that renders the
+				// full description via --popup-body. Resolving the
+				// workspace now (rather than inside the popup) lets the
+				// popup inherit an explicit dock/name and avoids
+				// re-resolving against a possibly-different CWD.
+				return eng.Tmux.DisplayPopup(fmt.Sprintf("bay ws show %s --popup-body --dock %s", wsID, dockName))
+			}
+
+			if popupBody {
+				ws, wsErr := eng.WsShow(dockName, wsID)
+				if wsErr != nil {
+					return nil
+				}
+				_ = eng.MarkPRCheckStale(dockName, wsID)
+				renderPopupBody(ws)
+				return nil
 			}
 
 			if short || flash {
@@ -340,7 +362,10 @@ func newWsShowCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON")
 	cmd.Flags().BoolVarP(&short, "short", "s", false, "one-line workspace summary (name — description — branch — #PR)")
 	cmd.Flags().BoolVar(&plain, "plain", false, "plain-text output (no ANSI colors); useful with --short for tmux display-message")
-	cmd.Flags().BoolVar(&flash, "flash", false, "send the short summary to tmux display-message for 5s (used by the M-? binding)")
+	cmd.Flags().BoolVar(&flash, "flash", false, "send the short summary to tmux display-message for 5s (used by the M-/ binding)")
+	cmd.Flags().BoolVar(&popup, "popup", false, "open a tmux popup showing the full description (used by the M-? binding)")
+	cmd.Flags().BoolVar(&popupBody, "popup-body", false, "render the popup body and wait for keypress (invoked inside the popup)")
+	_ = cmd.Flags().MarkHidden("popup-body")
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare workspace name)")
 
 	return cmd
@@ -351,14 +376,16 @@ func newWsShowCmd() *cobra.Command {
 // The branch is omitted when it equals the workspace name — bay
 // auto-derives workspace names from branches, so in the common case
 // they match and showing both just duplicates the identifier.
-// Used by `bay ws show --short` (and the M-? flash binding).
+// Used by `bay ws show --short` (and the M-/ flash binding); the
+// description is truncated to its first line, since this output
+// must fit on a single tmux status row.
 func formatWorkspaceShort(ws *manifest.Workspace) string {
 	if ws == nil {
 		return ""
 	}
 	parts := []string{ws.Name}
-	if ws.Description != "" {
-		parts = append(parts, ws.Description)
+	if desc := engine.DescriptionFirstLine(ws.Description); desc != "" {
+		parts = append(parts, desc)
 	}
 	if ws.Worktree != nil {
 		if ws.Worktree.Branch != "" && ws.Worktree.Branch != ws.Name {
@@ -369,6 +396,177 @@ func formatWorkspaceShort(ws *manifest.Workspace) string {
 		}
 	}
 	return strings.Join(parts, dim(" — "))
+}
+
+// renderPopupBody prints the workspace's full description (including body)
+// inside a tmux popup and waits for a keypress to dismiss. Word-wraps body
+// text to the pty width; if the rendered body would overflow, clipBody
+// replaces the tail with a "+N more lines" hint. The dismiss hint is
+// absolute-positioned at the bottom-right of the popup so it stays
+// visually anchored regardless of how much body content was shown.
+func renderPopupBody(ws *manifest.Workspace) {
+	if ws == nil {
+		return
+	}
+	fd := int(os.Stdin.Fd())
+	width, height := popupDims(fd)
+	content := buildPopupContent(ws, width, height)
+
+	fmt.Print(content)
+
+	const dismiss = "(any key to dismiss)"
+	if height > 0 {
+		col := width - utf8.RuneCountInString(dismiss) + 1
+		if col < 1 {
+			col = 1
+		}
+		fmt.Printf("\x1b[%d;%dH%s", height, col, dim(dismiss))
+	} else {
+		fmt.Print("\n\n" + dim(dismiss))
+	}
+
+	if !term.IsTerminal(fd) {
+		return
+	}
+	oldState, err := term.MakeRaw(fd)
+	if err != nil {
+		return
+	}
+	defer func() { _ = term.Restore(fd, oldState) }()
+	_ = picker.NewKeyReader(os.Stdin).Read()
+}
+
+// buildPopupContent renders the workspace header and (wrapped, possibly
+// truncated) description for the popup. Isolated from the display path
+// so it can be unit-tested.
+func buildPopupContent(ws *manifest.Workspace, width, height int) string {
+	var header strings.Builder
+	fmt.Fprintln(&header, "\x1b[1m"+ws.Name+"\x1b[0m")
+	if ws.Worktree != nil {
+		var meta []string
+		if ws.Worktree.Branch != "" && ws.Worktree.Branch != ws.Name {
+			meta = append(meta, "branch "+ws.Worktree.Branch)
+		}
+		if ws.Worktree.PR != "" {
+			meta = append(meta, "PR#"+ws.Worktree.PR)
+		}
+		if len(meta) > 0 {
+			fmt.Fprintln(&header, dim(strings.Join(meta, " — ")))
+		}
+	}
+	headerLines := strings.Count(header.String(), "\n")
+
+	if ws.Description == "" {
+		return header.String() + "\n" + dim("(no description — set one with `bay describe`)")
+	}
+	body := wrapText(ws.Description, width)
+	body = clipBody(body, height, headerLines)
+	return header.String() + "\n" + body
+}
+
+// clipBody clips body to fit within the popup's available rows, appending
+// a "(+N more lines — run `bay describe` for full)" hint on the last
+// line when truncated. The explicit count removes ambiguity (the bare
+// ellipsis reads as stylistic, not as "content was cut"). Reservation
+// accounts for the header, the blank line separating it from the body,
+// and the bottom row where the caller absolute-positions the dismiss
+// hint. Returns body unchanged when termHeight is 0 (size unknown —
+// don't truncate blindly).
+func clipBody(body string, termHeight, headerLines int) string {
+	if termHeight <= 0 {
+		return body
+	}
+	reserved := headerLines + 2
+	budget := termHeight - reserved
+	if budget < 1 {
+		budget = 1
+	}
+	lines := strings.Split(body, "\n")
+	if len(lines) <= budget {
+		return body
+	}
+	keep := budget - 1
+	if keep < 1 {
+		keep = 1
+	}
+	hidden := len(lines) - keep
+	hint := fmt.Sprintf("(+%d more lines — run `bay describe` for full)", hidden)
+	lines = append(lines[:keep], dim(hint))
+	return strings.Join(lines, "\n")
+}
+
+// popupFallbackWidth is the wrap width used when the pty size can't be
+// queried (non-tty, tests). Chosen to be comfortable for prose without
+// assuming an unusually wide terminal.
+const popupFallbackWidth = 60
+
+// popupBorderMargin is the column margin subtracted from the pty width so
+// wrapped lines don't butt against the popup's right border.
+const popupBorderMargin = 2
+
+// popupDims returns (wrap width, pty height) for the popup. When the tty
+// size can't be queried, width falls back to popupFallbackWidth and
+// height to 0 — callers treat height=0 as "don't truncate".
+func popupDims(fd int) (int, int) {
+	w, h, err := term.GetSize(fd)
+	if err != nil || w <= 0 {
+		return popupFallbackWidth, 0
+	}
+	if w > popupBorderMargin*2 {
+		w -= popupBorderMargin
+	}
+	return w, h
+}
+
+// wrapText word-wraps each line of text to width, preserving blank lines
+// and the user's explicit line breaks. Words never split; a single word
+// longer than width is emitted on its own line (wider than width is
+// better than truncation for URLs and similar). Returns text unchanged
+// when width <= 0.
+func wrapText(text string, width int) string {
+	if width <= 0 {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		lines[i] = wrapLine(line, width)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// wrapLine wraps a single line, preserving its leading indentation on
+// continuation lines so bulleted or indented content stays aligned.
+func wrapLine(line string, width int) string {
+	indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+	content := line[len(indent):]
+	words := strings.Fields(content)
+	if len(words) == 0 {
+		return line
+	}
+	indentW := utf8.RuneCountInString(indent)
+	effective := width - indentW
+	if effective < 1 {
+		effective = 1
+	}
+	var b strings.Builder
+	b.WriteString(indent)
+	lineLen := 0
+	for i, w := range words {
+		wlen := utf8.RuneCountInString(w)
+		if i > 0 {
+			if lineLen+1+wlen > effective {
+				b.WriteByte('\n')
+				b.WriteString(indent)
+				lineLen = 0
+			} else {
+				b.WriteByte(' ')
+				lineLen++
+			}
+		}
+		b.WriteString(w)
+		lineLen += wlen
+	}
+	return b.String()
 }
 
 func newWsRenameCmd() *cobra.Command {
@@ -410,27 +608,35 @@ func newWsRenameCmd() *cobra.Command {
 
 func newWsDescribeCmd() *cobra.Command {
 	var dockFlag string
-	var clear bool
+	var clear, edit bool
 
 	cmd := &cobra.Command{
 		Use:   "describe [name] [<description>]",
-		Short: "Set a workspace description (defaults to current)",
-		Long: `Set a short, free-form description for a workspace. Descriptions appear
-in the workspace picker, bay ls, and bay tree; they do not affect tmux
-tab names. Target around 40 characters (hard cap 80).
+		Short: "Set, edit, or show a workspace description (defaults to current)",
+		Long: `Read or set a free-form description for a workspace. The first line
+is a short label (cap 80) shown in the picker, bay ls, bay tree, and
+the M-/ flash. Optional trailing lines (separated from the first by a
+blank line, commit-message style) are context notes surfaced via the
+M-? popup — useful for returning to a workspace after working elsewhere.
 
+  bay ws describe                            print current workspace's description
   bay ws describe "Login flow fixes"         set current workspace's description
   bay ws describe auth-fix "Login fixes"     set by workspace name
-  bay ws describe self ""                    clear current workspace's description
+  bay ws describe "label
+
+  body line 1
+  body line 2"                               set with a body (multi-line arg)
+  bay ws describe --edit                     open $EDITOR to edit the description
   bay ws describe --clear                    clear current workspace's description`,
 		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDescribe(args, dockFlag, clear)
+			return runDescribe(args, dockFlag, clear, edit)
 		},
 	}
 
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare workspace name)")
 	cmd.Flags().BoolVar(&clear, "clear", false, "clear the description")
+	cmd.Flags().BoolVar(&edit, "edit", false, "open $EDITOR to edit the description (for multi-line bodies)")
 
 	return cmd
 }
@@ -439,35 +645,113 @@ tab names. Target around 40 characters (hard cap 80).
 // describe`. Unlike `bay rename` (which has distinct tab-rename behavior on
 // the top-level variant), describe is a direct pass-through to the workspace
 // command, so the two cobra wrappers only differ in Use/Short/Long strings.
-func runDescribe(args []string, dockFlag string, clear bool) error {
+func runDescribe(args []string, dockFlag string, clear, edit bool) error {
 	eng, err := newEngine()
 	if err != nil {
 		return err
 	}
 
 	var target, desc string
+	haveDesc := false
 	switch len(args) {
 	case 0:
-		if !clear {
-			return fmt.Errorf("specify a description, or pass --clear")
-		}
 		target = "self"
 	case 1:
 		target = "self"
 		desc = args[0]
+		haveDesc = true
 	case 2:
 		target = args[0]
 		desc = args[1]
-	}
-	if clear {
-		desc = ""
+		haveDesc = true
 	}
 
 	dockName, wsID, err := resolveWsArg(eng, target, dockFlag)
 	if err != nil {
 		return err
 	}
+
+	// No-op read path: no args, no flags → print current description.
+	if !haveDesc && !clear && !edit {
+		ws, wsErr := eng.WsShow(dockName, wsID)
+		if wsErr != nil {
+			return wsErr
+		}
+		if ws.Description != "" {
+			fmt.Println(ws.Description)
+		}
+		return nil
+	}
+
+	if clear {
+		return eng.WsDescribe(dockName, wsID, "")
+	}
+
+	if edit {
+		if haveDesc {
+			return fmt.Errorf("--edit and a description argument are mutually exclusive")
+		}
+		ws, wsErr := eng.WsShow(dockName, wsID)
+		if wsErr != nil {
+			return wsErr
+		}
+		newDesc, editErr := editDescription(ws.Description)
+		if editErr != nil {
+			return editErr
+		}
+		return eng.WsDescribe(dockName, wsID, newDesc)
+	}
+
 	return eng.WsDescribe(dockName, wsID, desc)
+}
+
+// editDescription opens $EDITOR (or $VISUAL, or vi as a fallback) on a temp
+// file seeded with the current description, waits for the editor to exit, and
+// returns the edited contents with trailing whitespace trimmed. Only terminal
+// editors work — the call is synchronous.
+func editDescription(current string) (string, error) {
+	editor := os.Getenv("VISUAL")
+	if editor == "" {
+		editor = os.Getenv("EDITOR")
+	}
+	if editor == "" {
+		if _, err := exec.LookPath("vi"); err == nil {
+			editor = "vi"
+		} else {
+			return "", fmt.Errorf("no editor found; set $EDITOR or $VISUAL")
+		}
+	}
+
+	f, err := os.CreateTemp("", "bay-describe-*.txt")
+	if err != nil {
+		return "", err
+	}
+	tmpPath := f.Name()
+	defer os.Remove(tmpPath)
+	if _, err := f.WriteString(current); err != nil {
+		f.Close()
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		return "", err
+	}
+
+	// Split editor on whitespace so "$EDITOR" can carry flags (e.g. "nvim -u NONE").
+	parts := strings.Fields(editor)
+	parts = append(parts, tmpPath)
+	cmd := exec.Command(parts[0], parts[1:]...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("editor %s exited with error: %w", editor, err)
+	}
+
+	data, err := os.ReadFile(tmpPath)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimRight(string(data), "\n\r\t "), nil
 }
 
 // autoBootstrap detects the CWD git repo, creates a dock and repo in the manifest,
@@ -852,7 +1136,7 @@ func pickWorkspace(eng *engine.Engine, entries []nav.Entry) error {
 	maxWs, maxDesc, maxBranch, maxPR := 0, 0, 0, 0
 	descs := make([]string, len(entries))
 	for i, e := range entries {
-		descs[i] = engine.TruncateName(e.Description, pickerDescMaxLen)
+		descs[i] = engine.TruncateName(engine.DescriptionFirstLine(e.Description), pickerDescMaxLen)
 		if len(e.WsName) > maxWs {
 			maxWs = len(e.WsName)
 		}

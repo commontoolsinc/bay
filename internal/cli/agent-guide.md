@@ -16,9 +16,21 @@ PR, dirty/merged flags). Each workspace has:
   name (`auth-fix`) resolves to the current dock first; if absent
   there, falls through to a cross-dock search (which errors on
   ambiguity).
-- An optional **description** — short free-form label (~40 chars)
-  shown in the picker and `bay ls`/`bay tree`. Set with `bay ws
-  describe` (or `bay describe`). Does not affect tmux tab names.
+- An optional **description** — commit-message-style text. The first
+  line is a short free-form label (cap 80) shown in the picker,
+  `bay ls`/`bay tree`, and the `M-/` flash. Optional trailing lines
+  (separated from the first line by a blank line) are a richer body
+  for context recall — shown only in the `M-?` popup and JSON output.
+  Set with `bay ws describe` (or `bay describe`). Does not affect
+  tmux tab names.
+
+  **Agents should keep the description current.** Update the first
+  line when the workspace's purpose shifts, and update the body at
+  natural checkpoints — pauses, context switches, end-of-task — so
+  that when the user returns to the workspace after working elsewhere,
+  `M-?` shows "where I left off, what's blocked, what's next" without
+  re-reading the diff. The body is the whole reason the field is
+  richer than a label; an unset body defeats the feature.
 - A **path** — the on-disk working directory. For worktree workspaces
   bay assigns sequential subdirs (`w1`, `w2`, `w3`, ...) under the
   repo's worktree dir. The path is independent of the name: renaming
@@ -258,6 +270,11 @@ of focus scope.
 }
 ```
 
+Workspace fields:
+- `description` — commit-message-style text. First line (before the
+  first `\n`) is the label shown in lists and flash; anything after
+  a blank line is the optional body shown only in the popup.
+
 Surface fields:
 - `type` — `agent`, `editor`, `shell`, or `cmd`.
 - `backend` — `tmux-pane`.
@@ -348,24 +365,31 @@ bay ws close --done --dry-run
 bay ws close --clean
 ```
 
-#### `bay ws show [name] [--json|--short|--flash] [--plain]`
+#### `bay ws show [name] [--json|--short|--flash|--popup] [--plain]`
 
 Show workspace details: path, branch, PR, dirty/merged, surfaces. Defaults
 to the current workspace; pass `self` explicitly for the same effect.
 
 `--short` produces a one-line summary: `name — description — branch — #PR`,
-skipping empty fields. Pair with `--plain` for ANSI-free output.
+skipping empty fields. Only the first line of the description is included.
+Pair with `--plain` for ANSI-free output.
 
 `--flash` sends the short summary to tmux `display-message` for 5 seconds.
-Used by the `M-?` keybinding. Does not print to stdout. No-ops silently
+Used by the `M-/` keybinding. Does not print to stdout. No-ops silently
 when invoked outside a workspace.
+
+`--popup` opens a tmux popup showing the full description (including any
+body). Used by the `M-?` keybinding. Dismiss with any key.
+
+JSON output (`--json`) includes the full description, body and all.
 
 ```
 bay ws show
 bay ws show auth-fix
 bay ws show --short                # one-line workspace summary
 bay ws show --short --plain        # same, no ANSI colors
-bay ws show --flash                # flash in tmux status bar (M-?)
+bay ws show --flash                # flash first line in tmux status bar (M-/)
+bay ws show --popup                # full description in a tmux popup (M-?)
 bay ws show self --json
 ```
 
@@ -382,20 +406,42 @@ bay ws rename auth-fix mem-refactor        # rename by name
 
 #### `bay ws describe [name] [<description>]` (also: `bay describe`)
 
-Set a short free-form description for a workspace. The description
-appears in the workspace picker, `bay ls`, `bay tree`, and `bay ws
-show`; it does not affect tmux tab names. Target around 40
-characters (hard cap 80). An empty string or `--clear` clears it.
+Read or set a free-form description for a workspace. The description
+has two parts:
 
-Agents should call this when starting work on a task so the user
-can identify workspaces in the navigation picker — set it from the
-task prompt or PR title.
+- **First line** — short label (cap 80) shown in the workspace picker,
+  `bay ls`, `bay tree`, and the `M-/` flash. Target around 40 characters.
+- **Body** (optional) — trailing lines separated from the first line by
+  a blank line (commit-message style). Shown in the `M-?` popup and
+  JSON output only. Good for "paused mid-rebase; conflicts on helper.ts;
+  tests green except foo_test.py" — context the user needs when stepping
+  back into the workspace.
+
+With no args and no flags, prints the current description to stdout.
+An empty string or `--clear` clears it. `--edit` opens `$EDITOR` for
+interactive multi-line editing. Total length cap is 2000 chars.
+
+Multi-line descriptions are set directly via the positional argument;
+shells handle newlines in quoted strings natively — no escape
+interpretation of literal `\n`.
+
+**Agents should keep both parts current:** set the first line when
+starting a task (from the prompt or PR title), and update the body at
+natural checkpoints (pauses, context switches, end-of-task) so the
+user can flash `M-?` and immediately swap context back in.
 
 ```
-bay ws describe "Login flow fixes"          # set current workspace's description
-bay ws describe auth-fix "Login fixes"      # set by workspace name
-bay ws describe --clear                     # clear current workspace's description
-bay describe "Login flow fixes"             # top-level shortcut
+bay ws describe                              # print current description
+bay ws describe "Login flow fixes"           # set first line only
+bay ws describe "Login flow fixes
+
+paused mid-rebase on origin/main
+rename conflict on helper.ts
+tests green except auth_test.go"             # set with body (actual newlines)
+bay ws describe --edit                       # open $EDITOR
+bay ws describe auth-fix "Login fixes"       # set by workspace name
+bay ws describe --clear                      # clear current workspace's description
+bay describe "Login flow fixes"              # top-level shortcut
 ```
 
 ### Navigation
