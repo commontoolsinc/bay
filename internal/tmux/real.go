@@ -224,12 +224,17 @@ func (r *Real) SelectPane(paneID string) error {
 	return runSilent("select-pane", "-t", paneID)
 }
 
-func (r *Real) SplitWindow(targetID string, dir string, cwd string) (string, error) {
+func (r *Real) SplitWindow(targetID string, dir string, cwd string, before bool) (string, error) {
 	flag := "-v"
 	if dir == "h" {
 		flag = "-h"
 	}
-	out, err := run("split-window", "-t", targetID, flag, "-c", cwd, "-P", "-F", "#{pane_id}")
+	args := []string{"split-window"}
+	if before {
+		args = append(args, "-fb")
+	}
+	args = append(args, "-t", targetID, flag, "-c", cwd, "-P", "-F", "#{pane_id}")
+	out, err := run(args...)
 	if err != nil {
 		return "", err
 	}

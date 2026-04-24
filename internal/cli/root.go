@@ -109,6 +109,8 @@ func NewRootCmd(version string) *cobra.Command {
 	topNewCmd.GroupID = "surface"
 	topCloseCmd := newTopCloseCmd()
 	topCloseCmd.GroupID = "surface"
+	topRestoreCmd := newTopRestoreCmd()
+	topRestoreCmd.GroupID = "surface"
 	topShowCmd := newTopShowCmd()
 	topShowCmd.GroupID = "surface"
 	topRenameCmd := newTopRenameCmd()
@@ -157,6 +159,7 @@ func NewRootCmd(version string) *cobra.Command {
 		editCmd,
 		topNewCmd,
 		topCloseCmd,
+		topRestoreCmd,
 		topShowCmd,
 		topRenameCmd,
 		topDescribeCmd,

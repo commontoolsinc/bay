@@ -24,7 +24,11 @@ type Interface interface {
 
 	// Panes
 	SelectPane(paneID string) error
-	SplitWindow(targetID string, dir string, cwd string) (string, error) // target may be a window or pane ID; returns pane ID
+	// SplitWindow splits a tmux window or pane, returning the new pane ID.
+	// When before is true, uses `split-window -fb` to insert the new pane
+	// at the root position of the layout group (used by undo-close to
+	// restore a closed root pane in place).
+	SplitWindow(targetID string, dir string, cwd string, before bool) (string, error)
 	KillPane(paneID string) error
 	SendKeys(paneID string, keys string) error
 	CapturePane(paneID string, lines int) (string, error)

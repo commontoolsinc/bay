@@ -224,6 +224,7 @@ var bayKeybindings = []bayKeybinding{
 
 	// Utility
 	{key: "M-w", cmd: "bay sf close self", desc: "Option+w: close current surface (or pane)", tmuxVerb: "run-shell"},
+	{key: "M-z", cmd: "bay sf restore", desc: "Option+z: restore most recently closed surface (undo-close)", tmuxVerb: "run-shell"},
 	{key: "M-/", cmd: "bay ws show --flash", desc: "Option+/: flash current workspace info (first line)", tmuxVerb: "run-shell"},
 	{key: "M-?", cmd: "bay ws show --popup", desc: "Option+?: popup with full workspace description", tmuxVerb: "run-shell"},
 

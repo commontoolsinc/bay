@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -44,6 +45,41 @@ func (e *Engine) preferredSplitTarget(ws *manifest.Workspace) *manifest.Surface 
 	return nil
 }
 
+// firstSurfaceInLayoutGroup returns any surviving surface in the given
+// layout group, or nil if none. Used by restore to find a sibling to
+// split against so a restored pane rejoins its original tmux window.
+func firstSurfaceInLayoutGroup(ws *manifest.Workspace, layoutGroup int) *manifest.Surface {
+	if layoutGroup == 0 {
+		return nil
+	}
+	for i := range ws.Surfaces {
+		s := &ws.Surfaces[i]
+		if s.Tmux != nil && s.Tmux.LayoutGroup == layoutGroup && s.Tmux.PaneID != "" {
+			return s
+		}
+	}
+	return nil
+}
+
+// inferRestoreAxis picks the split axis ("h" or "v") for a root-pane
+// restore into an existing layout group. A root pane's own SplitDir is
+// empty by definition, so we consult siblings: if any sibling was
+// created with SplitDir="h", the group is horizontally split and the
+// restored root pane should be inserted with -h. Defaults to "v" if no
+// sibling has a recorded split (single-pane window).
+func inferRestoreAxis(ws *manifest.Workspace, layoutGroup int) string {
+	for i := range ws.Surfaces {
+		s := &ws.Surfaces[i]
+		if s.Tmux == nil || s.Tmux.LayoutGroup != layoutGroup {
+			continue
+		}
+		if s.Tmux.SplitDir == "h" || s.Tmux.SplitDir == "v" {
+			return s.Tmux.SplitDir
+		}
+	}
+	return "v"
+}
+
 // SurfaceAddOptions holds the parameters for adding a surface.
 type SurfaceAddOptions struct {
 	DockName string
@@ -53,6 +89,15 @@ type SurfaceAddOptions struct {
 	Agent    string
 	Command  string
 	SplitDir string
+
+	// RestoreLayoutGroup, when non-zero, asks SurfaceAdd to place the new
+	// surface in the existing tmux window of that layout group if any
+	// sibling survives. Used by undo-close so a restored pane rejoins its
+	// original window (splitting against a surviving sibling) rather than
+	// creating a new tmux window. When SplitDir is "" and a sibling
+	// exists, SurfaceAdd uses `tmux split-window -fb` so the pane lands
+	// at the root position (top/left) of the layout group.
+	RestoreLayoutGroup int
 }
 
 // SurfaceAdd adds a new surface to a workspace.
@@ -84,8 +129,28 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 	var tmuxSplitTargetID string
 	var layoutGroup int
 	var splitFromSurface int
+	splitBefore := false
+	splitAxis := splitDir
 
-	if splitDir != "" && len(ws.Surfaces) > 0 {
+	if opts.RestoreLayoutGroup > 0 && len(ws.Surfaces) > 0 {
+		if sibling := firstSurfaceInLayoutGroup(ws, opts.RestoreLayoutGroup); sibling != nil && sibling.Tmux != nil {
+			tmuxWindowID = sibling.Tmux.WindowID
+			tmuxSplitTargetID = sibling.Tmux.PaneID
+			layoutGroup = sibling.Tmux.LayoutGroup
+			if splitDir == "" {
+				// Root-pane restore: insert at the root position of the
+				// layout group via -fb. Infer axis from any sibling's
+				// SplitDir; default "v" if the layout group has no
+				// recorded splits yet. SplitFrom stays 0 — the restored
+				// surface is the new root.
+				splitBefore = true
+				splitAxis = inferRestoreAxis(ws, opts.RestoreLayoutGroup)
+			} else {
+				// Split child: parent is whichever sibling we land against.
+				splitFromSurface = sibling.ID
+			}
+		}
+	} else if splitDir != "" && len(ws.Surfaces) > 0 {
 		if parent := e.preferredSplitTarget(ws); parent != nil {
 			tmuxWindowID = parent.Tmux.WindowID
 			tmuxSplitTargetID = parent.Tmux.PaneID
@@ -97,15 +162,15 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 	var tmuxPaneID string
 	rollbackSurface := func() {}
 
-	if tmuxWindowID != "" && splitDir != "" {
+	if tmuxWindowID != "" && (splitDir != "" || splitBefore) {
 		// Split an existing window.
 		targetID := tmuxSplitTargetID
 		if targetID == "" {
 			targetID = tmuxWindowID
 		}
-		newPaneID, err := e.Tmux.SplitWindow(targetID, splitDir, ws.Path)
-		if err != nil {
-			return fmt.Errorf("splitting window: %w", err)
+		newPaneID, splitErr := e.Tmux.SplitWindow(targetID, splitAxis, ws.Path, splitBefore)
+		if splitErr != nil {
+			return fmt.Errorf("splitting window: %w", splitErr)
 		}
 		tmuxPaneID = newPaneID
 		rollbackSurface = func() {
@@ -233,6 +298,10 @@ func (e *Engine) DockSurfaceClose(dockName, surfaceName string) error {
 // when bay is invoked from inside the pane being closed, the user-visible
 // state is already correct by the time tmux SIGHUPs bay. See also
 // SurfaceRestart and the closeWorkspaceState helper for the same pattern.
+//
+// Records an undo-close entry on the dock's queue so `bay sf restore`
+// (Option+Z) can recreate the surface. Skipped for tmux-backed surfaces
+// without a pane (nothing to restore) and gui-app surfaces (Step 2).
 func (e *Engine) SurfaceClose(dockName, wsName, surfaceName string, force bool) error {
 	var windowIDToKill, paneIDToKill string
 	wsEmpty := false
@@ -259,6 +328,35 @@ func (e *Engine) SurfaceClose(dockName, wsName, surfaceName string, force bool) 
 			} else if s.Tmux.PaneID != "" {
 				paneIDToKill = s.Tmux.PaneID
 			}
+		}
+
+		// Queue an undo entry (Step 1: tmux-backed surfaces only).
+		if s.Backend == manifest.SurfaceBackendTmux {
+			entry := manifest.ClosedEntry{
+				ClosedAt: time.Now().Unix(),
+				Kind:     manifest.ClosedKindSurface,
+				Surface: &manifest.ClosedSurface{
+					Workspace: wsName,
+					Name:      s.Name,
+					Type:      s.Type,
+				},
+			}
+			if s.Agent != nil {
+				entry.Surface.Agent = *s.Agent
+			}
+			if s.Command != nil {
+				entry.Surface.Command = *s.Command
+			}
+			if s.Tmux != nil {
+				// Preserve split direction and layout group so restore can
+				// rejoin the original tmux window if any siblings survive.
+				// SplitDir="" identifies a root pane; restoring into an
+				// existing layout group uses split-window -fb to insert
+				// at the root position.
+				entry.Surface.SplitDir = s.Tmux.SplitDir
+				entry.Surface.LayoutGroup = s.Tmux.LayoutGroup
+			}
+			dock.PushClosedEntry(entry)
 		}
 
 		if err := ws.RemoveSurface(s.Name); err != nil {
@@ -307,6 +405,139 @@ func (e *Engine) SurfaceClose(dockName, wsName, surfaceName string, force bool) 
 		})
 	}
 	return nil
+}
+
+// ErrNothingToRestore indicates the undo-close queue is empty for the dock.
+// Callers (CLI/keybinding) treat this as informational, not a failure.
+var ErrNothingToRestore = errors.New("nothing to restore")
+
+// ListClosedEntries returns the dock's undo-close queue in most-recent-first
+// order after pruning expired entries. The prune is persisted.
+func (e *Engine) ListClosedEntries(dockName string) ([]manifest.ClosedEntry, error) {
+	var out []manifest.ClosedEntry
+	err := e.withManifestMaybe(func(m *manifest.Manifest) (bool, error) {
+		dock := m.FindDock(dockName)
+		if dock == nil {
+			return false, fmt.Errorf("unknown dock %q", dockName)
+		}
+		changed := dock.PruneClosedEntries(time.Now().Unix())
+		for i := len(dock.ClosedEntries) - 1; i >= 0; i-- {
+			out = append(out, dock.ClosedEntries[i])
+		}
+		return changed, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SurfaceRestore pops the most recent undo-close entry from the dock's
+// queue and recreates the closed surface. Returns the restored entry on
+// success so the caller can render user-visible feedback. Returns
+// ErrNothingToRestore (with nil entry) if the queue is empty after pruning.
+//
+// If the parent workspace no longer exists (typical when the grace window
+// elapsed and the workspace was closed), the stale entry is discarded
+// silently and ErrNothingToRestore is returned — pretending the queue was
+// empty is the right UX for the Option+Z muscle-memory case.
+//
+// On any other restore failure, the entry stays queued so the user can
+// retry after fixing the underlying issue.
+func (e *Engine) SurfaceRestore(dockName string) (*manifest.ClosedEntry, error) {
+	var entry *manifest.ClosedEntry
+	var nothingToRestore bool
+
+	// Peek + workspace-existence check in a single manifest pass: if the
+	// parent workspace is gone, drop the stale entry here so we don't
+	// reacquire the lock just to remove it.
+	err := e.withManifestMaybe(func(m *manifest.Manifest) (bool, error) {
+		dock := m.FindDock(dockName)
+		if dock == nil {
+			return false, fmt.Errorf("unknown dock %q", dockName)
+		}
+		before := len(dock.ClosedEntries)
+		entry = dock.PeekClosedEntry(time.Now().Unix())
+		pruned := len(dock.ClosedEntries) != before
+
+		if entry == nil {
+			nothingToRestore = true
+			return pruned, nil
+		}
+		if entry.Kind == manifest.ClosedKindSurface && entry.Surface != nil &&
+			dock.FindWorkspace(entry.Surface.Workspace) == nil {
+			nothingToRestore = true
+			dock.RemoveClosedEntryAt(entry.ClosedAt)
+			return true, nil
+		}
+		return pruned, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if nothingToRestore {
+		return nil, ErrNothingToRestore
+	}
+
+	switch entry.Kind {
+	case manifest.ClosedKindSurface:
+		if err := e.restoreSurfaceEntry(dockName, entry); err != nil {
+			return nil, err
+		}
+		return entry, nil
+	default:
+		// Unknown kind — drop it so we don't get stuck.
+		_ = e.dropClosedEntry(dockName, entry.ClosedAt)
+		return nil, fmt.Errorf("unknown closed-entry kind %q", entry.Kind)
+	}
+}
+
+// dropClosedEntry removes the entry with the given ClosedAt timestamp from
+// the dock's undo-close queue. Used to discard stale/unrestorable entries
+// so the queue doesn't get stuck.
+func (e *Engine) dropClosedEntry(dockName string, closedAt int64) error {
+	return e.withManifestMaybe(func(m *manifest.Manifest) (bool, error) {
+		dock := m.FindDock(dockName)
+		if dock == nil {
+			return false, nil
+		}
+		return dock.RemoveClosedEntryAt(closedAt), nil
+	})
+}
+
+// restoreSurfaceEntry handles Kind == ClosedKindSurface. It recreates the
+// surface via SurfaceAdd (which also clears any pending workspace
+// auto-close from orphan-hygiene) and drops the entry on success.
+// The parent-workspace check has already happened in SurfaceRestore.
+func (e *Engine) restoreSurfaceEntry(dockName string, entry *manifest.ClosedEntry) error {
+	cs := entry.Surface
+	if cs == nil {
+		_ = e.dropClosedEntry(dockName, entry.ClosedAt)
+		return fmt.Errorf("closed-surface entry has no payload")
+	}
+
+	// Place the restored surface back in its original tmux window when a
+	// sibling in the recorded layout group still exists (via
+	// RestoreLayoutGroup). For a root pane, SurfaceAdd uses
+	// split-window -fb so it lands at the top/left of the layout group.
+	// If the entire layout group is gone, SurfaceAdd creates a new window.
+	if addErr := e.SurfaceAdd(SurfaceAddOptions{
+		DockName:           dockName,
+		WsName:             cs.Workspace,
+		Type:               cs.Type,
+		Name:               cs.Name,
+		Agent:              cs.Agent,
+		Command:            cs.Command,
+		SplitDir:           cs.SplitDir,
+		RestoreLayoutGroup: cs.LayoutGroup,
+	}); addErr != nil {
+		// Leave the entry queued so the user can retry after fixing the
+		// underlying issue (per design "Restore is atomic from the user's
+		// perspective... leave the entry in the queue").
+		return fmt.Errorf("restoring surface %q: %w", cs.Name, addErr)
+	}
+
+	return e.dropClosedEntry(dockName, entry.ClosedAt)
 }
 
 // SurfaceRename renames a surface within a workspace.

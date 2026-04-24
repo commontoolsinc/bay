@@ -351,8 +351,12 @@ func (m *Mock) SelectWindow(windowID string) error {
 
 // --- Panes ---
 
-func (m *Mock) SplitWindow(targetID string, dir string, cwd string) (string, error) {
-	m.record("SplitWindow", targetID, dir, cwd)
+func (m *Mock) SplitWindow(targetID string, dir string, cwd string, before bool) (string, error) {
+	method := "SplitWindow"
+	if before {
+		method = "SplitWindowBefore"
+	}
+	m.record(method, targetID, dir, cwd)
 
 	windowID := targetID
 	insertAt := -1
@@ -379,11 +383,15 @@ func (m *Mock) SplitWindow(targetID string, dir string, cwd string) (string, err
 		pid:      m.nextPID(),
 		active:   false,
 	}
-	if insertAt >= 0 && insertAt <= len(w.panes) {
+	switch {
+	case before:
+		// -fb semantics: insert at root position of the layout group.
+		w.panes = append([]string{paneID}, w.panes...)
+	case insertAt >= 0 && insertAt <= len(w.panes):
 		w.panes = append(w.panes, "")
 		copy(w.panes[insertAt+1:], w.panes[insertAt:])
 		w.panes[insertAt] = paneID
-	} else {
+	default:
 		w.panes = append(w.panes, paneID)
 	}
 	m.panes[paneID] = p

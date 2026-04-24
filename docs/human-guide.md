@@ -268,6 +268,19 @@ unpushed ones stay in place.
 `bay sf close --force` and direct `bay ws close` are unaffected —
 those are explicit user actions and close immediately.
 
+### Undo-close
+
+`Option+z` (or `bay sf restore`) restores the most recently closed
+surface in the current dock. Bay keeps a per-dock LRU queue of the
+last 10 bay-initiated closes, retained for 1 hour. `bay sf close`,
+`Option+W`, and last-surface closes all push an entry; `bay sf
+restore --list` shows the queue without restoring.
+
+Restore recreates the surface in its parent workspace. If the
+workspace has since been closed (e.g. the 60s orphan-cleanup grace
+window elapsed), the entry is silently discarded — hit `Option+z`
+again to reach the next entry.
+
 ### Naming and references
 
 Workspaces can be referenced by name (`auth-fix`), by full qualifier
@@ -467,6 +480,8 @@ bay surface new shell [name] --split h     # horizontal split
 bay surface new shell [name] --ws <w>      # target a different workspace
 bay surface close <name>                   # close a surface (prompts on agents)
 bay surface close <name> --force           # skip the agent confirmation prompt
+bay surface restore                        # restore the most recently closed surface
+bay surface restore --list                 # show the undo-close queue
 bay surface show [name]                    # show details (defaults to current)
 bay surface rename [old] <new>             # rename (defaults to current surface)
 bay surface go [query]                     # surface picker (intra-workspace)
@@ -499,6 +514,7 @@ bay edit --editor vim           # use a specific editor this time
 bay edit --pane                 # editor as split pane
 bay edit --dock                 # dock editor (all workspaces)
 bay close <name>                # alias for bay surface close (prompts on agents)
+bay restore                     # alias for bay surface restore (undo-close)
 bay show [name]                 # alias for bay surface show (defaults to current)
 bay rename [name] <new-name>    # rename workspace (defaults to current)
 bay go [query]                  # alias for bay surface go (intra-workspace)
@@ -613,6 +629,7 @@ prefix required — just press the key combo directly.
 | Key | Action |
 |-----|--------|
 | `Option+w` | Close current pane/surface |
+| `Option+z` | Restore most recently closed surface (undo-close) |
 | `Option+/` | Flash current workspace (name — first-line description — branch — #PR) |
 | `Option+?` | Popup with full workspace description (including body) |
 | `Option+p` | Command palette (Tab inside to flip window/pane mode) |
