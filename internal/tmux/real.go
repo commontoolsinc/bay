@@ -364,6 +364,26 @@ func (r *Real) CurrentPaneID() (string, error) {
 // codes like #[bold]name#[default]. Pass durationMs=0 to use tmux's
 // display-time default; otherwise the message stays for that many
 // milliseconds.
+// DisplayMessageAsync fires tmux display-message without waiting for the
+// tmux client process to return. Used when bay is running inside a tmux
+// run-shell keybinding that's also doing visible tmux work (e.g. creating
+// a pane): a synchronous DisplayMessage delays run-shell's exit, which
+// delays tmux's redraw of the new pane. Fire-and-forget is safe here —
+// init (or launchd) reaps the child after the delay clears.
+func (r *Real) DisplayMessageAsync(msg string, durationMs int) error {
+	args := []string{"display-message"}
+	if durationMs > 0 {
+		args = append(args, "-d", strconv.Itoa(durationMs))
+	}
+	args = append(args, msg)
+	cmd := exec.Command("tmux", args...)
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("tmux display-message: %w", err)
+	}
+	// Detach so the child doesn't become a zombie when bay exits.
+	return cmd.Process.Release()
+}
+
 func (r *Real) DisplayMessage(msg string, durationMs int) error {
 	if durationMs > 0 {
 		return runSilent("display-message", "-d", strconv.Itoa(durationMs), msg)

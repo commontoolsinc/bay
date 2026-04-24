@@ -284,8 +284,13 @@ func runSurfaceRestore(eng *engine.Engine, list bool) error {
 // notify sends a message via tmux display-message AND stderr, so the user
 // sees it whether they invoked the command via a keybinding (run-shell,
 // detached stderr) or an interactive terminal (no tmux context).
+//
+// Uses DisplayMessageAsync so bay doesn't block on the tmux RPC — from a
+// run-shell keybinding that has also just created a pane, a synchronous
+// DisplayMessage delays run-shell's exit, which delays tmux's redraw of
+// the freshly-created pane. Advisory toasts must never block visible work.
 func notify(eng *engine.Engine, msg string) {
-	_ = eng.Tmux.DisplayMessage(msg, 2500)
+	_ = eng.Tmux.DisplayMessageAsync(msg, 2500)
 	fmt.Fprintln(os.Stderr, msg)
 }
 

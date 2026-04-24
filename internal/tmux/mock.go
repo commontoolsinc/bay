@@ -530,6 +530,14 @@ func (m *Mock) CurrentPaneID() (string, error) {
 
 // --- Client display ---
 
+func (m *Mock) DisplayMessageAsync(msg string, durationMs int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Calls = append(m.Calls, Call{Method: "DisplayMessageAsync", Args: []string{msg, strconv.Itoa(durationMs)}})
+	m.displayMessages = append(m.displayMessages, msg)
+	return nil
+}
+
 func (m *Mock) DisplayMessage(msg string, durationMs int) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

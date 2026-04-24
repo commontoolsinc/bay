@@ -55,6 +55,12 @@ type Interface interface {
 
 	// Client display. durationMs=0 uses tmux's display-time default.
 	DisplayMessage(msg string, durationMs int) error
+	// DisplayMessageAsync fires tmux display-message without waiting for
+	// the child process to return. Use from latency-sensitive contexts
+	// (e.g. run-shell keybindings that also do visible tmux work) where
+	// the message is purely advisory and blocking on the tmux RPC would
+	// delay other UI updates tmux is holding back until run-shell exits.
+	DisplayMessageAsync(msg string, durationMs int) error
 	DisplayPopup(cmd string) error
 	ClientWidth() (int, error)
 	// StatusReservedCells returns status-left-length + status-right-length —
