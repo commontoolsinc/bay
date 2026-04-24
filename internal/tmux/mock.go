@@ -4,8 +4,26 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 )
+
+// LayoutNode is the Mock's model of a tmux window's layout tree. A leaf
+// holds a pane (Pane != ""); an internal node represents a binary split
+// (Dir is "h" or "v" with two Children). The flat ListPanes/Pane slice
+// previously stored on a window is now derived by depth-first traversal,
+// matching the order tmux prints in `list-panes`.
+//
+// We model only what bay can actually express via its tmux primitives:
+// binary splits via SplitWindow (with or without -fb), single-pane
+// windows via NewWindow, leaf removals via KillPane. tmux's richer
+// layout-string vocabulary (n-ary splits, percentage sizing) is out of
+// scope — bay never produces such layouts.
+type LayoutNode struct {
+	Pane     string        // non-empty for leaves only
+	Dir      string        // "h" or "v"; non-empty for internal nodes only
+	Children []*LayoutNode // nil/empty for leaves
+}
 
 // Call records a method call on the mock.
 type Call struct {
@@ -20,7 +38,7 @@ type mockWindow struct {
 	session string
 	index   int
 	options map[string]string
-	panes   []string // pane IDs belonging to this window
+	layout  *LayoutNode // root of the window's layout tree; nil when empty
 }
 
 // mockPane holds internal mock state for a pane.
@@ -31,6 +49,147 @@ type mockPane struct {
 	active   bool
 	capture  string // content returned by CapturePane
 	cursorY  int
+}
+
+// --- LayoutNode helpers ---
+
+// newLeaf returns a leaf node holding the given pane ID.
+func newLeaf(paneID string) *LayoutNode {
+	return &LayoutNode{Pane: paneID}
+}
+
+// panesInOrder returns the leaf pane IDs in left-to-right depth-first
+// order, matching how tmux's list-panes orders its output.
+func panesInOrder(node *LayoutNode) []string {
+	if node == nil {
+		return nil
+	}
+	if node.Pane != "" {
+		return []string{node.Pane}
+	}
+	var out []string
+	for _, c := range node.Children {
+		out = append(out, panesInOrder(c)...)
+	}
+	return out
+}
+
+// findLeaf walks the tree looking for the leaf with the given pane ID
+// and returns it along with its parent (or nil parent if it's the root).
+func findLeaf(node, parent *LayoutNode, paneID string) (leaf, par *LayoutNode) {
+	if node == nil {
+		return nil, nil
+	}
+	if node.Pane == paneID {
+		return node, parent
+	}
+	for _, c := range node.Children {
+		if l, p := findLeaf(c, node, paneID); l != nil {
+			return l, p
+		}
+	}
+	return nil, nil
+}
+
+func indexOfChild(parent, child *LayoutNode) int {
+	if parent == nil {
+		return -1
+	}
+	for i, c := range parent.Children {
+		if c == child {
+			return i
+		}
+	}
+	return -1
+}
+
+// firstLeaf returns any leaf in the tree (used when the split target
+// is a window ID rather than a pane ID — tmux's split-window against a
+// window splits the active pane; the mock approximates with the first
+// leaf in depth-first order, which is sufficient for tests since callers
+// who care about precise targeting always pass a pane ID).
+func firstLeaf(node *LayoutNode) *LayoutNode {
+	if node == nil {
+		return nil
+	}
+	if node.Pane != "" {
+		return node
+	}
+	for _, c := range node.Children {
+		if l := firstLeaf(c); l != nil {
+			return l
+		}
+	}
+	return nil
+}
+
+// splitLeaf replaces a leaf with a binary split. The original leaf
+// becomes one child; a new leaf with newPaneID becomes the other.
+// before=false places the new pane after the existing one (default
+// tmux split-window behavior); before=true places it ahead.
+func splitLeaf(leaf *LayoutNode, newPaneID, dir string, before bool) {
+	existing := newLeaf(leaf.Pane)
+	addition := newLeaf(newPaneID)
+	leaf.Pane = ""
+	leaf.Dir = dir
+	if before {
+		leaf.Children = []*LayoutNode{addition, existing}
+	} else {
+		leaf.Children = []*LayoutNode{existing, addition}
+	}
+}
+
+// removeLeaf removes a leaf from its parent and collapses the parent
+// to its surviving sibling if only one remains. Returns the new tree
+// root (which may have changed if the root itself was the surviving
+// child of a now-collapsed split).
+func removeLeaf(root, parent, leaf *LayoutNode) *LayoutNode {
+	if parent == nil {
+		// leaf was the root of the window — caller must drop the tree.
+		return nil
+	}
+	idx := indexOfChild(parent, leaf)
+	if idx < 0 {
+		return root
+	}
+	parent.Children = append(parent.Children[:idx], parent.Children[idx+1:]...)
+	if len(parent.Children) == 1 {
+		// Collapse: promote the surviving sibling into the parent's slot.
+		survivor := parent.Children[0]
+		*parent = *survivor
+	}
+	return root
+}
+
+// layoutToString renders a layout tree as a parenthesized expression.
+// Vertical splits are slash-separated, horizontal pipe-separated; nested
+// internal nodes get parens for unambiguous parsing. Leaves are bare
+// pane IDs.
+//
+//	"%1"             — single pane
+//	"%1/%2/%3"       — three panes stacked vertically
+//	"%1|%2"          — two panes side by side
+//	"%1/(%2|%3)"     — %1 on top; %2 and %3 side-by-side below
+func layoutToString(node *LayoutNode) string {
+	if node == nil {
+		return ""
+	}
+	if node.Pane != "" {
+		return node.Pane
+	}
+	sep := "/"
+	if node.Dir == "h" {
+		sep = "|"
+	}
+	parts := make([]string, len(node.Children))
+	for i, c := range node.Children {
+		s := layoutToString(c)
+		if c.Pane == "" {
+			s = "(" + s + ")"
+		}
+		parts[i] = s
+	}
+	return strings.Join(parts, sep)
 }
 
 // Mock is a test double that implements Interface using in-memory state.
@@ -131,7 +290,7 @@ func (m *Mock) KillSession(name string) error {
 	// Remove all windows (and their panes) belonging to this session.
 	for wid, w := range m.windows {
 		if w.session == name {
-			for _, pid := range w.panes {
+			for _, pid := range panesInOrder(w.layout) {
 				delete(m.panes, pid)
 			}
 			delete(m.windows, wid)
@@ -204,7 +363,7 @@ func (m *Mock) NewWindow(session string, name string, cwd string) (string, error
 		pid:      m.nextPID(),
 		active:   true,
 	}
-	w.panes = []string{paneID}
+	w.layout = newLeaf(paneID)
 	m.windows[id] = w
 	m.panes[paneID] = p
 	return id, nil
@@ -219,7 +378,7 @@ func (m *Mock) KillWindow(windowID string) error {
 	if !ok {
 		return fmt.Errorf("window %q not found", windowID)
 	}
-	for _, pid := range w.panes {
+	for _, pid := range panesInOrder(w.layout) {
 		delete(m.panes, pid)
 	}
 	delete(m.windows, windowID)
@@ -358,41 +517,41 @@ func (m *Mock) SplitWindow(targetID string, dir string, cwd string, before bool)
 	}
 	m.record(method, targetID, dir, cwd)
 
-	windowID := targetID
-	insertAt := -1
+	// Resolve targetID: it may be a pane ID (split that specific leaf) or
+	// a window ID (split the active pane — approximated with the first
+	// leaf in the tree).
+	var w *mockWindow
+	var targetLeaf *LayoutNode
 	if p, ok := m.panes[targetID]; ok {
-		windowID = p.windowID
-		if w, ok := m.windows[windowID]; ok {
-			for i, paneID := range w.panes {
-				if paneID == targetID {
-					insertAt = i + 1
-					break
-				}
-			}
+		w = m.windows[p.windowID]
+		if w != nil {
+			targetLeaf, _ = findLeaf(w.layout, nil, targetID)
 		}
+	} else if win, ok := m.windows[targetID]; ok {
+		w = win
+		targetLeaf = firstLeaf(w.layout)
 	}
-
-	w, ok := m.windows[windowID]
-	if !ok {
+	if w == nil || targetLeaf == nil {
 		return "", fmt.Errorf("target %q not found", targetID)
 	}
+
 	paneID := m.nextPaneID()
 	p := &mockPane{
 		id:       paneID,
-		windowID: windowID,
+		windowID: w.id,
 		pid:      m.nextPID(),
 		active:   false,
 	}
-	switch {
-	case before:
-		// -fb semantics: insert at root position of the layout group.
-		w.panes = append([]string{paneID}, w.panes...)
-	case insertAt >= 0 && insertAt <= len(w.panes):
-		w.panes = append(w.panes, "")
-		copy(w.panes[insertAt+1:], w.panes[insertAt:])
-		w.panes[insertAt] = paneID
-	default:
-		w.panes = append(w.panes, paneID)
+	if before {
+		// -fb wraps the entire window's tree in a new split, with the
+		// new pane at the front (top/left). The target leaf is no longer
+		// special — only the window matters.
+		w.layout = &LayoutNode{
+			Dir:      dir,
+			Children: []*LayoutNode{newLeaf(paneID), w.layout},
+		}
+	} else {
+		splitLeaf(targetLeaf, paneID, dir, false)
 	}
 	m.panes[paneID] = p
 	return paneID, nil
@@ -415,13 +574,14 @@ func (m *Mock) KillPane(paneID string) error {
 	if !ok {
 		return fmt.Errorf("pane %q not found", paneID)
 	}
-	// Remove from parent window's pane list.
+	// Remove the leaf from the window's layout tree, collapsing a
+	// now-singleton parent split into its surviving child. If the leaf
+	// was the only pane in the window, the layout becomes nil — matching
+	// real tmux, which auto-kills the window on the last pane's death.
 	if w, ok := m.windows[p.windowID]; ok {
-		for i, pid := range w.panes {
-			if pid == paneID {
-				w.panes = append(w.panes[:i], w.panes[i+1:]...)
-				break
-			}
+		leaf, parent := findLeaf(w.layout, nil, paneID)
+		if leaf != nil {
+			w.layout = removeLeaf(w.layout, parent, leaf)
 		}
 	}
 	delete(m.panes, paneID)
@@ -453,6 +613,18 @@ func (m *Mock) RespawnPane(paneID string, cwd string, command string) error {
 	return nil
 }
 
+// LayoutString returns a parenthesized string representation of the
+// window's layout for compact test assertions. Slash-separated for
+// vertical splits, pipe-separated for horizontal, parens around nested
+// internal nodes; leaves are pane IDs. Empty string for an empty window.
+func (m *Mock) LayoutString(windowID string) (string, error) {
+	w, ok := m.windows[windowID]
+	if !ok {
+		return "", fmt.Errorf("window %q not found", windowID)
+	}
+	return layoutToString(w.layout), nil
+}
+
 func (m *Mock) ListPanes(windowID string) ([]Pane, error) {
 	m.record("ListPanes", windowID)
 	w, ok := m.windows[windowID]
@@ -460,7 +632,7 @@ func (m *Mock) ListPanes(windowID string) ([]Pane, error) {
 		return nil, fmt.Errorf("window %q not found", windowID)
 	}
 	var result []Pane
-	for _, pid := range w.panes {
+	for _, pid := range panesInOrder(w.layout) {
 		p := m.panes[pid]
 		result = append(result, Pane{
 			ID:     p.id,
