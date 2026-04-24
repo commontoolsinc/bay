@@ -412,6 +412,95 @@ func TestSelectPane_Missing(t *testing.T) {
 	}
 }
 
+// --- Layout tree tests ---
+
+func TestMockLayout_NewWindowIsSinglePane(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	winID, _ := m.NewWindow("work", "editor", "/home")
+
+	got, err := m.LayoutString(winID)
+	if err != nil {
+		t.Fatalf("LayoutString: %v", err)
+	}
+	if !strings.HasPrefix(got, "%") || strings.ContainsAny(got, "/|()") {
+		t.Errorf("expected single-pane layout (one pane ID), got %q", got)
+	}
+}
+
+func TestMockLayout_SplitNestsBinaryTree(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	winID, _ := m.NewWindow("work", "editor", "/home")
+	panes, _ := m.ListPanes(winID)
+	root := panes[0].ID
+
+	a, _ := m.SplitWindow(root, "v", "/home", false)
+	b, _ := m.SplitWindow(a, "v", "/home", false)
+
+	// The second split splits a's region, not the whole window — binary
+	// nesting, not a flat 3-pane stack.
+	got, _ := m.LayoutString(winID)
+	want := root + "/(" + a + "/" + b + ")"
+	if got != want {
+		t.Errorf("layout = %q, want %q", got, want)
+	}
+}
+
+func TestMockLayout_SplitBeforeWrapsRoot(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	winID, _ := m.NewWindow("work", "editor", "/home")
+	panes, _ := m.ListPanes(winID)
+	root := panes[0].ID
+
+	// First, build a vertical split inside the window.
+	b, _ := m.SplitWindow(root, "v", "/home", false)
+	// Then "split before" at the root level should wrap the entire tree.
+	prepended, _ := m.SplitWindow(root, "v", "/home", true)
+
+	got, _ := m.LayoutString(winID)
+	want := prepended + "/(" + root + "/" + b + ")"
+	if got != want {
+		t.Errorf("layout = %q, want %q", got, want)
+	}
+}
+
+func TestMockLayout_KillPaneCollapsesBinarySplit(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	winID, _ := m.NewWindow("work", "editor", "/home")
+	panes, _ := m.ListPanes(winID)
+	root := panes[0].ID
+
+	other, _ := m.SplitWindow(root, "v", "/home", false)
+
+	if err := m.KillPane(other); err != nil {
+		t.Fatalf("KillPane: %v", err)
+	}
+	// Singleton split must collapse — layout is just the root pane again.
+	got, _ := m.LayoutString(winID)
+	if got != root {
+		t.Errorf("after kill, layout = %q, want plain %q", got, root)
+	}
+}
+
+func TestMockLayout_KillLastPaneEmptiesWindow(t *testing.T) {
+	m := NewMock()
+	m.NewSession("work")
+	winID, _ := m.NewWindow("work", "editor", "/home")
+	panes, _ := m.ListPanes(winID)
+	root := panes[0].ID
+
+	if err := m.KillPane(root); err != nil {
+		t.Fatalf("KillPane: %v", err)
+	}
+	got, _ := m.LayoutString(winID)
+	if got != "" {
+		t.Errorf("after killing only pane, layout = %q, want empty", got)
+	}
+}
+
 func TestSendKeys(t *testing.T) {
 	m := NewMock()
 	m.NewSession("work")
