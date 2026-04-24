@@ -21,12 +21,12 @@ func newPaletteCmd() *cobra.Command {
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			mode := palette.ModeWindow
+			mode := palette.ModePane
 			switch splitMode {
-			case "", "window":
-				mode = palette.ModeWindow
-			case "pane":
+			case "", "pane":
 				mode = palette.ModePane
+			case "window":
+				mode = palette.ModeWindow
 			default:
 				return fmt.Errorf("invalid --split %q (window or pane)", splitMode)
 			}
@@ -34,7 +34,7 @@ func newPaletteCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&splitMode, "split", "window", "initial mode: window or pane")
+	cmd.Flags().StringVar(&splitMode, "split", "pane", "initial mode: window or pane")
 	return cmd
 }
 

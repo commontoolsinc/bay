@@ -62,6 +62,17 @@ func TestNewRootCmd_OldCommandsRemoved(t *testing.T) {
 	}
 }
 
+func TestPaletteCommandDefaultsToPaneMode(t *testing.T) {
+	cmd := newPaletteCmd()
+	flag := cmd.Flags().Lookup("split")
+	if flag == nil {
+		t.Fatal("palette command missing --split flag")
+	}
+	if flag.DefValue != "pane" {
+		t.Fatalf("palette --split default=%q; want pane", flag.DefValue)
+	}
+}
+
 func TestSurfaceSubcommands(t *testing.T) {
 	root := NewRootCmd("test")
 	sf, _, err := root.Find([]string{"surface"})

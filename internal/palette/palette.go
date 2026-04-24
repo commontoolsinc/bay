@@ -113,6 +113,14 @@ type Entry struct {
 	// for non-parametric or text-input entries.
 	Action func() (param string, err error)
 
+	// ActionWithParam runs a recent row that already has a param bound.
+	// If nil, bound recent rows fall back to Action.
+	ActionWithParam func(boundParam string) (param string, err error)
+
+	// ParamValid returns whether a stored param still resolves to a live
+	// command. Nil accepts all params.
+	ParamValid func(param string) bool
+
 	// TitleWithParam formats the title when a recents entry has a param
 	// bound. Nil falls back to Title. Used for display only; the main
 	// categorical list always uses Title.
@@ -230,7 +238,15 @@ func Run(opts RunOptions) error {
 // is the binding stored in recents (from a sub-picker) — it overrides any
 // value the action returns.
 func (s *runState) runEntry(entry Entry, paramFromRecents string) error {
-	returnedParam, err := entry.Action()
+	var (
+		returnedParam string
+		err           error
+	)
+	if paramFromRecents != "" && entry.ActionWithParam != nil {
+		returnedParam, err = entry.ActionWithParam(paramFromRecents)
+	} else {
+		returnedParam, err = entry.Action()
+	}
 	if err != nil {
 		return err
 	}
@@ -397,12 +413,19 @@ func (s *runState) renderRecents(visible []int, entryByID map[string]int, width 
 	if s.opts.Recents == nil {
 		return
 	}
-	valid := func(id, _ string) bool {
+	valid := func(id, param string) bool {
 		idx, ok := entryByID[id]
 		if !ok {
 			return false
 		}
-		return s.opts.Scope.satisfies(s.entries[idx].Needs)
+		e := s.entries[idx]
+		if !s.opts.Scope.satisfies(e.Needs) {
+			return false
+		}
+		if param != "" && e.ParamValid != nil {
+			return e.ParamValid(param)
+		}
+		return true
 	}
 	recents := s.opts.Recents.TopRecents(valid)
 	if len(recents) == 0 {

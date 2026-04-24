@@ -47,6 +47,9 @@ func modeHotkey(h *palette.Hotkeys, window, pane string, m palette.Mode) string 
 func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 	h := env.Hotkeys
 	split := modeSplit(mode)
+	agentParamValid := func(agent string) bool {
+		return agentAvailable(env.Engine.Config, agent)
+	}
 
 	return []palette.Entry{
 		// === Navigation ===
@@ -124,10 +127,11 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 			},
 		},
 		{
-			ID:      "new-agent-pick",
-			Title:   "New agent...",
-			Section: palette.SectionCreateSurface,
-			Needs:   palette.ScopeInWorkspace,
+			ID:         "new-agent-pick",
+			Title:      "New agent...",
+			Section:    palette.SectionCreateSurface,
+			Needs:      palette.ScopeInWorkspace,
+			ParamValid: agentParamValid,
 			TitleWithParam: func(p string) string {
 				return fmt.Sprintf("New agent (%s)", p)
 			},
@@ -136,20 +140,10 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 				if !ok {
 					return "", nil
 				}
-				dock, ws, err := env.Engine.ResolveSelf()
-				if err != nil {
-					return "", err
-				}
-				if err := runSurfaceNew(env.Engine, dock, ws, surfaceNewOpts{
-					Type:     manifest.SurfaceTypeAgent,
-					Agent:    agent,
-					SplitDir: split,
-				}); err != nil {
-					return "", err
-				}
-				env.Recents.RecordAgentType(agent)
-				_ = env.Recents.Save()
-				return agent, nil
+				return runPaletteNewAgent(env, split, agent)
+			},
+			ActionWithParam: func(agent string) (string, error) {
+				return runPaletteNewAgent(env, split, agent)
 			},
 		},
 		{
@@ -224,10 +218,11 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 			},
 		},
 		{
-			ID:      "new-workspace-agent-pick",
-			Title:   "New workspace with agent...",
-			Section: palette.SectionCreateWorkspace,
-			Needs:   palette.ScopeInDock,
+			ID:         "new-workspace-agent-pick",
+			Title:      "New workspace with agent...",
+			Section:    palette.SectionCreateWorkspace,
+			Needs:      palette.ScopeInDock,
+			ParamValid: agentParamValid,
 			TitleWithParam: func(p string) string {
 				return fmt.Sprintf("New workspace with agent (%s)", p)
 			},
@@ -236,16 +231,10 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 				if !ok {
 					return "", nil
 				}
-				if _, err := env.Engine.WsNew(engine.WsNewOptions{
-					Dock:         env.Ctx.Dock,
-					Agent:        agent,
-					RequireAgent: true,
-				}); err != nil {
-					return "", err
-				}
-				env.Recents.RecordAgentType(agent)
-				_ = env.Recents.Save()
-				return agent, nil
+				return runPaletteNewWorkspaceAgent(env, agent)
+			},
+			ActionWithParam: func(agent string) (string, error) {
+				return runPaletteNewWorkspaceAgent(env, agent)
 			},
 		},
 
@@ -419,6 +408,48 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 	}
 }
 
+func runPaletteNewAgent(env *paletteEnv, split, agent string) (string, error) {
+	if !agentAvailable(env.Engine.Config, agent) {
+		return "", fmt.Errorf("unknown agent %q", agent)
+	}
+	dock, ws, err := env.Engine.ResolveSelf()
+	if err != nil {
+		return "", err
+	}
+	if err := runSurfaceNew(env.Engine, dock, ws, surfaceNewOpts{
+		Type:     manifest.SurfaceTypeAgent,
+		Agent:    agent,
+		SplitDir: split,
+	}); err != nil {
+		return "", err
+	}
+	recordPaletteAgentType(env, agent)
+	return agent, nil
+}
+
+func runPaletteNewWorkspaceAgent(env *paletteEnv, agent string) (string, error) {
+	if !agentAvailable(env.Engine.Config, agent) {
+		return "", fmt.Errorf("unknown agent %q", agent)
+	}
+	if _, err := env.Engine.WsNew(engine.WsNewOptions{
+		Dock:         env.Ctx.Dock,
+		Agent:        agent,
+		RequireAgent: true,
+	}); err != nil {
+		return "", err
+	}
+	recordPaletteAgentType(env, agent)
+	return agent, nil
+}
+
+func recordPaletteAgentType(env *paletteEnv, agent string) {
+	if env.Recents == nil {
+		return
+	}
+	env.Recents.RecordAgentType(agent)
+	_ = env.Recents.Save()
+}
+
 // paletteAgentPick shows a sub-picker over the available agent types,
 // anchored by the recents MRU. Returns the chosen value, or ("", false)
 // on cancel.
@@ -475,14 +506,30 @@ func buildAgentPickerItems(mru, available []string) ([]picker.Item, []string) {
 	return items, labels
 }
 
+func agentAvailable(cfg *config.Config, agent string) bool {
+	if agent == "" {
+		return false
+	}
+	if _, ok := config.KnownAgents[agent]; ok {
+		return true
+	}
+	if cfg == nil {
+		return false
+	}
+	_, ok := cfg.Agents[agent]
+	return ok
+}
+
 // availableAgents returns the sorted list of known + configured agent names.
 func availableAgents(cfg *config.Config) []string {
 	seen := map[string]bool{}
 	for name := range config.KnownAgents {
 		seen[name] = true
 	}
-	for name := range cfg.Agents {
-		seen[name] = true
+	if cfg != nil {
+		for name := range cfg.Agents {
+			seen[name] = true
+		}
 	}
 	out := make([]string, 0, len(seen))
 	for name := range seen {

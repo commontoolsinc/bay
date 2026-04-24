@@ -30,7 +30,7 @@ func LoadHotkeys() *Hotkeys {
 // parseHotkeys extracts `bay ...` command signatures and their key bindings.
 // A bind-key line looks like one of:
 //
-//	bind-key -T root M-p display-popup -w 60 -h 20 -E 'bay palette || true'
+//	bind-key -T root M-p display-popup -w 80% -h 80% -E 'bay palette --split pane || true'
 //	bind-key -n M-p run-shell 'bay shell --window || true'
 //
 // The key is the token immediately after `-T <table>` or `-n`. The command

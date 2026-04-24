@@ -49,6 +49,9 @@ func TestKeybindingsIncludeSurfaceNavigation(t *testing.T) {
 			t.Errorf("keybindings missing %q", want)
 		}
 	}
+	if !strings.Contains(joined, "bind-key -n M-p display-popup -w 80% -h 80% -E 'bay palette --split pane || true'") {
+		t.Errorf("keybindings should default Option+p palette to pane mode; got:\n%s", joined)
+	}
 }
 
 func TestCheckManifestConsistency(t *testing.T) {

@@ -169,6 +169,7 @@ func shellRCFile(shell string) string {
 type bayKeybinding struct {
 	key           string
 	cmd           string
+	previousCmds  []string
 	desc          string
 	tmuxVerb      string // "run-shell" or "display-popup -E" (ignored when isTmuxCommand)
 	isTmuxCommand bool   // cmd is a raw tmux command (e.g., "next-window")
@@ -228,7 +229,7 @@ var bayKeybindings = []bayKeybinding{
 	{key: "M-?", cmd: "bay ws show --popup", desc: "Option+?: popup with full workspace description", tmuxVerb: "run-shell"},
 
 	// Command palette
-	{key: "M-p", cmd: "bay palette", desc: "Option+p: command palette (Tab inside to flip mode)", tmuxVerb: "display-popup -w 80% -h 80% -E"},
+	{key: "M-p", cmd: "bay palette --split pane", previousCmds: []string{"bay palette"}, desc: "Option+p: command palette (Tab inside to flip mode)", tmuxVerb: "display-popup -w 80% -h 80% -E"},
 }
 
 const bayKeybindingsMarker = "# Bay keybindings"
@@ -503,6 +504,15 @@ func commandMatches(cmds map[string]bool, want string) bool {
 	return false
 }
 
+// previousCommandMatches returns true only for the exact old command,
+// allowing the shell suffix bay adds to tmux bindings. Unlike
+// commandMatches, it must not prefix-match arguments because a user
+// binding like `bay palette --split window` is a custom choice, not
+// the old bare `bay palette` default.
+func previousCommandMatches(cmd, previous string) bool {
+	return cmd == previous || strings.HasPrefix(cmd, previous+" ||")
+}
+
 // bayKeybindingMismatch records a canonical key whose active binding
 // runs a bay command that exists in the canonical set but isn't the
 // canonical one for that key — the silent-drift case that appears
@@ -535,6 +545,17 @@ func mismatchedBindings(block string, kbs []bayKeybinding) []bayKeybindingMismat
 			continue
 		}
 		if commandMatches(map[string]bool{userCmd: true}, kb.cmd) {
+			continue
+		}
+		replacesPrevious := false
+		for _, prev := range kb.previousCmds {
+			if previousCommandMatches(userCmd, prev) {
+				out = append(out, bayKeybindingMismatch{canonical: kb, userCmd: userCmd})
+				replacesPrevious = true
+				break
+			}
+		}
+		if replacesPrevious {
 			continue
 		}
 		for c := range canonicalCmds {

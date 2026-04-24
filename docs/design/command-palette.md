@@ -36,14 +36,13 @@ the parametric ones (pick agent type, pick workspace) get a natural UI.
 
 ### Invocation
 
-- `M-p` opens the palette in **window** mode (new tmux window for
-  creates that can split).
-- `M-P` opens the palette in **pane** mode (split the current window).
+- `M-p` opens the palette in **pane** mode (split the current window
+  for creates that can split).
 - Mode only affects the 5 create-surface entries; everything else is
   mode-agnostic.
 - Mode can be flipped mid-palette with `Tab`.
 
-Both bindings use tmux `display-popup -E` so the palette floats over
+The binding uses tmux `display-popup -E` so the palette floats over
 the current pane and returns cleanly, regardless of whether the user
 is in an agent surface, a shell, or an editor.
 
@@ -258,7 +257,7 @@ consistency:
 [mode: window · Tab: flip]
 ```
 
-- `M-p` starts in window; `M-P` starts in pane.
+- `M-p` starts in pane.
 - Tab flips live during the main list and any sub-picker.
 - Mode locks when text entry begins (Tab during text entry is
   reserved for a possible future completion UX).
@@ -521,14 +520,13 @@ exits 0 if the current tmux context isn't a bay session.
 Added to `bayKeybindings` in `internal/cli/setup.go`:
 
 ```go
-{"M-p", "bay palette",              "Option+p: command palette",         "display-popup -w 60 -h 20 -E"},
-{"M-P", "bay palette --split pane", "Option+P: command palette (pane)",  "display-popup -w 60 -h 20 -E"},
+{"M-p", "bay palette --split pane", "Option+p: command palette", "display-popup -w 80% -h 80% -E"},
 ```
 
 The existing `canonicalLine` format produces:
 
 ```
-bind-key -n M-p display-popup -w 60 -h 20 -E 'bay palette || true'
+bind-key -n M-p display-popup -w 80% -h 80% -E 'bay palette --split pane || true'
 ```
 
 ### Build order

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/engine"
 	"github.com/commontoolsinc/bay/internal/palette"
 )
@@ -132,6 +133,35 @@ func TestBuildPaletteEntries_ModeSensitiveHotkeysFlip(t *testing.T) {
 	}
 	if pane.Hotkey != "M-s" {
 		t.Errorf("pane-mode new-shell hotkey=%q; want M-s", pane.Hotkey)
+	}
+}
+
+func TestBuildPaletteEntries_AgentPickEntriesSupportBoundRecents(t *testing.T) {
+	env := testPaletteEnv()
+	env.Engine.Config = &config.Config{
+		Agents: map[string]config.AgentConfig{
+			"local": {Command: "local-agent"},
+		},
+	}
+	entries := buildPaletteEntries(env, palette.ModeWindow)
+
+	for _, id := range []string{"new-agent-pick", "new-workspace-agent-pick"} {
+		entry := findEntry(t, entries, id)
+		if entry.ActionWithParam == nil {
+			t.Fatalf("%s ActionWithParam is nil; bound recents would reopen the picker", id)
+		}
+		if entry.ParamValid == nil {
+			t.Fatalf("%s ParamValid is nil; stale agent recents would stay visible", id)
+		}
+		if !entry.ParamValid("codex") {
+			t.Fatalf("%s ParamValid(codex)=false; built-in agent should be valid", id)
+		}
+		if !entry.ParamValid("local") {
+			t.Fatalf("%s ParamValid(local)=false; configured agent should be valid", id)
+		}
+		if entry.ParamValid("retired") {
+			t.Fatalf("%s ParamValid(retired)=true; unknown agent should be filtered", id)
+		}
 	}
 }
 
