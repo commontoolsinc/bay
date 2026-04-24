@@ -268,10 +268,15 @@ func runSurfaceRestore(eng *engine.Engine, list bool) error {
 		return printClosedQueue(eng, dockName)
 	}
 
-	entry, restoreErr := eng.SurfaceRestore(dockName)
+	_, restoreErr := eng.SurfaceRestore(dockName)
 	switch {
 	case restoreErr == nil:
-		notify(eng, formatRestoredToast(entry))
+		// No success toast: the restored pane appearing is the user-visible
+		// feedback. A tmux display-message fired here (even async with
+		// detached stdio) correlates with a visible stall in the new pane's
+		// content rendering — tmux appears to defer pane redraws while a
+		// status-line message is displaying. The empty-queue case below
+		// still needs a toast because there's nothing visible otherwise.
 		return nil
 	case errors.Is(restoreErr, engine.ErrNothingToRestore):
 		notify(eng, fmt.Sprintf("Nothing to restore in dock %q.", dockName))
@@ -292,16 +297,6 @@ func runSurfaceRestore(eng *engine.Engine, list bool) error {
 func notify(eng *engine.Engine, msg string) {
 	_ = eng.Tmux.DisplayMessageAsync(msg, 2500)
 	fmt.Fprintln(os.Stderr, msg)
-}
-
-// formatRestoredToast describes a just-restored entry in a single line.
-func formatRestoredToast(entry *manifest.ClosedEntry) string {
-	if entry == nil || entry.Surface == nil {
-		return "Restored."
-	}
-	s := entry.Surface
-	age := formatClosedAge(time.Now().Unix() - entry.ClosedAt)
-	return fmt.Sprintf("Restored %s %s/%s (%s)", s.Type, s.Workspace, s.Name, age)
 }
 
 func printClosedQueue(eng *engine.Engine, dockName string) error {

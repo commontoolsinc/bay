@@ -30,11 +30,12 @@ func TestRunSurfaceRestore_EmptyQueueEmitsTmuxToast(t *testing.T) {
 	}
 }
 
-// TestRunSurfaceRestore_SuccessEmitsTmuxToast confirms Option+Z gives the
-// user visual confirmation of what was restored. Without this, a user
-// mashing Option+Z on what they think is an empty queue can silently pop
-// surprise entries — which happened during manual testing.
-func TestRunSurfaceRestore_SuccessEmitsTmuxToast(t *testing.T) {
+// TestRunSurfaceRestore_SuccessEmitsNoToast regression-tests the opposite
+// of the "empty queue needs feedback" test: on successful restore we
+// must NOT emit a tmux display-message. The restored pane appearing is
+// the user-visible feedback, and a status-line message here correlates
+// with a visible stall in the new pane's content rendering.
+func TestRunSurfaceRestore_SuccessEmitsNoToast(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 	mockTmux.SetCurrentSession("labs")
 	t.Setenv("TMUX", "/tmp/tmux-501/default,12345,0")
@@ -57,12 +58,8 @@ func TestRunSurfaceRestore_SuccessEmitsTmuxToast(t *testing.T) {
 		t.Fatalf("runSurfaceRestore: %v", err)
 	}
 
-	msgs := mockTmux.DisplayMessages()
-	if len(msgs) <= before {
-		t.Fatal("expected a tmux display-message on successful restore; got none")
-	}
-	last := msgs[len(msgs)-1]
-	if !strings.Contains(last, "Restored") || !strings.Contains(last, "logs") {
-		t.Errorf("last tmux message = %q; want substrings %q and %q", last, "Restored", "logs")
+	if len(mockTmux.DisplayMessages()) != before {
+		t.Errorf("successful restore must not emit a tmux display-message; new messages: %v",
+			mockTmux.DisplayMessages()[before:])
 	}
 }
