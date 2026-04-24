@@ -76,20 +76,19 @@ func panesInOrder(node *LayoutNode) []string {
 
 // findLeaf walks the tree looking for the leaf with the given pane ID
 // and returns it along with its parent (or nil parent if it's the root).
-// The third return is the index of the leaf within parent.Children.
-func findLeaf(node, parent *LayoutNode, paneID string) (leaf, par *LayoutNode, idx int) {
+func findLeaf(node, parent *LayoutNode, paneID string) (leaf, par *LayoutNode) {
 	if node == nil {
-		return nil, nil, -1
+		return nil, nil
 	}
 	if node.Pane == paneID {
-		return node, parent, indexOfChild(parent, node)
+		return node, parent
 	}
 	for _, c := range node.Children {
-		if l, p, i := findLeaf(c, node, paneID); l != nil {
-			return l, p, i
+		if l, p := findLeaf(c, node, paneID); l != nil {
+			return l, p
 		}
 	}
-	return nil, nil, -1
+	return nil, nil
 }
 
 func indexOfChild(parent, child *LayoutNode) int {
@@ -160,21 +159,6 @@ func removeLeaf(root, parent, leaf *LayoutNode) *LayoutNode {
 		*parent = *survivor
 	}
 	return root
-}
-
-// cloneLayout returns a deep copy of a layout tree.
-func cloneLayout(node *LayoutNode) *LayoutNode {
-	if node == nil {
-		return nil
-	}
-	dup := &LayoutNode{Pane: node.Pane, Dir: node.Dir}
-	if len(node.Children) > 0 {
-		dup.Children = make([]*LayoutNode, len(node.Children))
-		for i, c := range node.Children {
-			dup.Children[i] = cloneLayout(c)
-		}
-	}
-	return dup
 }
 
 // layoutToString renders a layout tree as a parenthesized expression.
@@ -541,7 +525,7 @@ func (m *Mock) SplitWindow(targetID string, dir string, cwd string, before bool)
 	if p, ok := m.panes[targetID]; ok {
 		w = m.windows[p.windowID]
 		if w != nil {
-			targetLeaf, _, _ = findLeaf(w.layout, nil, targetID)
+			targetLeaf, _ = findLeaf(w.layout, nil, targetID)
 		}
 	} else if win, ok := m.windows[targetID]; ok {
 		w = win
@@ -595,7 +579,7 @@ func (m *Mock) KillPane(paneID string) error {
 	// was the only pane in the window, the layout becomes nil — matching
 	// real tmux, which auto-kills the window on the last pane's death.
 	if w, ok := m.windows[p.windowID]; ok {
-		leaf, parent, _ := findLeaf(w.layout, nil, paneID)
+		leaf, parent := findLeaf(w.layout, nil, paneID)
 		if leaf != nil {
 			w.layout = removeLeaf(w.layout, parent, leaf)
 		}
@@ -627,18 +611,6 @@ func (m *Mock) RespawnPane(paneID string, cwd string, command string) error {
 		return fmt.Errorf("pane %q not found", paneID)
 	}
 	return nil
-}
-
-// LayoutTree returns a deep copy of the window's layout tree. Tests that
-// need to inspect layout structure beyond pane order can walk the tree
-// directly. Returns an error if the window doesn't exist; the tree is
-// nil if the window has no panes.
-func (m *Mock) LayoutTree(windowID string) (*LayoutNode, error) {
-	w, ok := m.windows[windowID]
-	if !ok {
-		return nil, fmt.Errorf("window %q not found", windowID)
-	}
-	return cloneLayout(w.layout), nil
 }
 
 // LayoutString returns a parenthesized string representation of the
