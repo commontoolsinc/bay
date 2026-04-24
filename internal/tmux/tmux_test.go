@@ -310,7 +310,7 @@ func TestSplitWindow(t *testing.T) {
 	m := NewMock()
 	m.NewSession("work")
 	winID, _ := m.NewWindow("work", "editor", "/home")
-	paneID, err := m.SplitWindow(winID, "h", "/home")
+	paneID, err := m.SplitWindow(winID, "h", "/home", false)
 	if err != nil {
 		t.Fatalf("SplitWindow: %v", err)
 	}
@@ -331,7 +331,7 @@ func TestSplitWindow_TargetPane(t *testing.T) {
 		t.Fatalf("expected 1 initial pane, got %d", len(panes))
 	}
 
-	paneID, err := m.SplitWindow(panes[0].ID, "h", "/home")
+	paneID, err := m.SplitWindow(panes[0].ID, "h", "/home", false)
 	if err != nil {
 		t.Fatalf("SplitWindow(target pane): %v", err)
 	}
@@ -350,7 +350,7 @@ func TestSplitWindow_TargetPane(t *testing.T) {
 
 func TestSplitWindow_MissingWindow(t *testing.T) {
 	m := NewMock()
-	_, err := m.SplitWindow("@999", "h", "/home")
+	_, err := m.SplitWindow("@999", "h", "/home", false)
 	if err == nil {
 		t.Error("expected error splitting non-existent window")
 	}
@@ -360,7 +360,7 @@ func TestListPanes(t *testing.T) {
 	m := NewMock()
 	m.NewSession("work")
 	winID, _ := m.NewWindow("work", "editor", "/home")
-	m.SplitWindow(winID, "h", "/home")
+	m.SplitWindow(winID, "h", "/home", false)
 	panes, err := m.ListPanes(winID)
 	if err != nil {
 		t.Fatalf("ListPanes: %v", err)
@@ -375,7 +375,7 @@ func TestKillPane(t *testing.T) {
 	m := NewMock()
 	m.NewSession("work")
 	winID, _ := m.NewWindow("work", "editor", "/home")
-	paneID, _ := m.SplitWindow(winID, "v", "/home")
+	paneID, _ := m.SplitWindow(winID, "v", "/home", false)
 	if err := m.KillPane(paneID); err != nil {
 		t.Fatalf("KillPane: %v", err)
 	}
@@ -398,7 +398,7 @@ func TestSelectPane(t *testing.T) {
 	m := NewMock()
 	m.NewSession("work")
 	winID, _ := m.NewWindow("work", "editor", "/home")
-	paneID, _ := m.SplitWindow(winID, "v", "/home")
+	paneID, _ := m.SplitWindow(winID, "v", "/home", false)
 
 	if err := m.SelectPane(paneID); err != nil {
 		t.Fatalf("SelectPane: %v", err)

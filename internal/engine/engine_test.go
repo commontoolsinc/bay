@@ -3274,7 +3274,7 @@ func TestRecover_FindWindowByNameRefreshesSurfaceIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWindow failed: %v", err)
 	}
-	foundPaneID, err := mockTmux.SplitWindow(foundWindowID, "v", ws.Path)
+	foundPaneID, err := mockTmux.SplitWindow(foundWindowID, "v", ws.Path, false)
 	if err != nil {
 		t.Fatalf("SplitWindow failed: %v", err)
 	}

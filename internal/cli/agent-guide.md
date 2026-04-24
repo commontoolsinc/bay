@@ -380,6 +380,15 @@ resolve manually.
 Direct `bay ws close <name>`, `--done`, `--clean`, and
 `bay sf close --force` close immediately (no grace).
 
+**Undo-close interaction.** `bay sf close` (and `Option+W`) push a
+surface entry onto the dock's undo-close queue regardless of whether
+the workspace survives. When the close is the last surface, the
+surface is queued and `PendingCloseAt` is scheduled; restoring
+within the grace window recreates the surface via `SurfaceAdd`,
+which clears `PendingCloseAt` as part of its normal cancel path.
+Past the grace window, the workspace is gone and a `bay sf
+restore` call drops the stale entry silently.
+
 #### `bay ws show [name] [--json|--short|--flash|--popup] [--plain]`
 
 Show workspace details: path, branch, PR, dirty/merged, surfaces. Defaults
@@ -541,6 +550,24 @@ bay sf close self
 bay sf close agent --force
 ```
 
+#### `bay surface restore [--list]`
+
+Restore the most recently closed surface in the current dock
+(undo-close). Bay keeps a per-dock LRU queue of the last 10
+bay-initiated closes, retained for 1 hour. Pops the top entry and
+recreates the surface in its parent workspace. If the parent
+workspace is already gone (e.g. the 60s orphan-cleanup grace window
+elapsed), the entry is silently discarded — call again to skip past
+stale entries.
+
+```
+bay sf restore            # restore most recent
+bay sf restore --list     # show the queue without restoring
+bay restore               # alias
+```
+
+Bound to `Option+Z` in tmux (mirror of `Option+W`).
+
 #### `bay surface show [name] [--ws WS] [--dock DOCK]`
 
 Print details for a surface. Defaults to the current pane's surface.
@@ -556,6 +583,7 @@ bay go [query]         → bay surface go [query]
 bay shell [name]       → shell in new window (--pane for split)
 bay agent [type]       → agent in new window (--pane for split)
 bay edit [workspace]   → workspace editor (--dock for all workspaces)
+bay restore            → bay surface restore (undo-close)
 bay ls                 → list everything
 bay pwd                → show current bay context
 bay recover            → reconstruct state after reboot

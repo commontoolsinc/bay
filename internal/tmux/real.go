@@ -2,6 +2,7 @@ package tmux
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -224,12 +225,17 @@ func (r *Real) SelectPane(paneID string) error {
 	return runSilent("select-pane", "-t", paneID)
 }
 
-func (r *Real) SplitWindow(targetID string, dir string, cwd string) (string, error) {
+func (r *Real) SplitWindow(targetID string, dir string, cwd string, before bool) (string, error) {
 	flag := "-v"
 	if dir == "h" {
 		flag = "-h"
 	}
-	out, err := run("split-window", "-t", targetID, flag, "-c", cwd, "-P", "-F", "#{pane_id}")
+	args := []string{"split-window"}
+	if before {
+		args = append(args, "-fb")
+	}
+	args = append(args, "-t", targetID, flag, "-c", cwd, "-P", "-F", "#{pane_id}")
+	out, err := run(args...)
 	if err != nil {
 		return "", err
 	}
@@ -359,6 +365,38 @@ func (r *Real) CurrentPaneID() (string, error) {
 // codes like #[bold]name#[default]. Pass durationMs=0 to use tmux's
 // display-time default; otherwise the message stays for that many
 // milliseconds.
+// DisplayMessageAsync fires tmux display-message without waiting for the
+// tmux client process to return. Used when bay is running inside a tmux
+// run-shell keybinding that's also doing visible tmux work (e.g. creating
+// a pane): a synchronous DisplayMessage delays run-shell's exit, which
+// delays tmux's redraw of the new pane.
+//
+// The child's stdio MUST be redirected to /dev/null. If it inherits bay's
+// stdin/stdout/stderr, the child tmux client holds those pipes open until
+// the message clears; tmux's run-shell waits on those pipes to close
+// before considering bay "done," so the parent pane update stays blocked
+// for the full display duration — defeating the point of the async call.
+func (r *Real) DisplayMessageAsync(msg string, durationMs int) error {
+	args := []string{"display-message"}
+	if durationMs > 0 {
+		args = append(args, "-d", strconv.Itoa(durationMs))
+	}
+	args = append(args, msg)
+	devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
+	if err != nil {
+		return fmt.Errorf("open /dev/null: %w", err)
+	}
+	defer devNull.Close()
+	cmd := exec.Command("tmux", args...)
+	cmd.Stdin = devNull
+	cmd.Stdout = devNull
+	cmd.Stderr = devNull
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("tmux display-message: %w", err)
+	}
+	return cmd.Process.Release()
+}
+
 func (r *Real) DisplayMessage(msg string, durationMs int) error {
 	if durationMs > 0 {
 		return runSilent("display-message", "-d", strconv.Itoa(durationMs), msg)

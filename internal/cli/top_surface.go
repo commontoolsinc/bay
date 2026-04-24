@@ -287,6 +287,36 @@ skip the prompt.`,
 	return cmd
 }
 
+// newTopRestoreCmd is `bay restore` — top-level alias for `bay sf restore`.
+func newTopRestoreCmd() *cobra.Command {
+	var list bool
+
+	cmd := &cobra.Command{
+		Use:   "restore",
+		Short: "Restore the most recently closed surface (undo-close)",
+		Long: `Restore the most recently closed surface in the current dock.
+
+bay keeps a per-dock LRU queue of the last 10 bay-initiated closes
+(for up to 1 hour). 'bay restore' (or Option+Z in tmux) pops the
+most recent entry and recreates the surface in its parent workspace.
+
+  bay restore             restore the most recent close
+  bay restore --list      show the queue`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine()
+			if err != nil {
+				return err
+			}
+			return runSurfaceRestore(eng, list)
+		},
+	}
+
+	cmd.Flags().BoolVar(&list, "list", false, "show the undo-close queue without restoring")
+
+	return cmd
+}
+
 // newTopShowCmd is `bay show` — print surface details (alias: cat, hidden).
 func newTopShowCmd() *cobra.Command {
 	var wsFlag, dockFlag string

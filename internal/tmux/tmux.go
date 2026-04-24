@@ -24,7 +24,11 @@ type Interface interface {
 
 	// Panes
 	SelectPane(paneID string) error
-	SplitWindow(targetID string, dir string, cwd string) (string, error) // target may be a window or pane ID; returns pane ID
+	// SplitWindow splits a tmux window or pane, returning the new pane ID.
+	// When before is true, uses `split-window -fb` to insert the new pane
+	// at the root position of the layout group (used by undo-close to
+	// restore a closed root pane in place).
+	SplitWindow(targetID string, dir string, cwd string, before bool) (string, error)
 	KillPane(paneID string) error
 	SendKeys(paneID string, keys string) error
 	CapturePane(paneID string, lines int) (string, error)
@@ -51,6 +55,12 @@ type Interface interface {
 
 	// Client display. durationMs=0 uses tmux's display-time default.
 	DisplayMessage(msg string, durationMs int) error
+	// DisplayMessageAsync fires tmux display-message without waiting for
+	// the child process to return. Use from latency-sensitive contexts
+	// (e.g. run-shell keybindings that also do visible tmux work) where
+	// the message is purely advisory and blocking on the tmux RPC would
+	// delay other UI updates tmux is holding back until run-shell exits.
+	DisplayMessageAsync(msg string, durationMs int) error
 	DisplayPopup(cmd string) error
 	ClientWidth() (int, error)
 	// StatusReservedCells returns status-left-length + status-right-length —

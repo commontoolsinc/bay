@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/commontoolsinc/bay/internal/engine"
 	"github.com/commontoolsinc/bay/internal/manifest"
@@ -23,6 +25,7 @@ func newSurfaceCmd() *cobra.Command {
 	cmd.AddCommand(
 		newSurfaceNewCmd(),
 		newSurfaceCloseCmd(),
+		newSurfaceRestoreCmd(),
 		newSurfaceLsCmd(),
 		newSurfaceShowCmd(),
 		newSurfaceRenameCmd(),
@@ -215,6 +218,128 @@ func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string,
 	}
 
 	return eng.SurfaceClose(dockName, wsName, sName, force)
+}
+
+func newSurfaceRestoreCmd() *cobra.Command {
+	var list bool
+
+	cmd := &cobra.Command{
+		Use:   "restore",
+		Short: "Restore the most recently closed surface (undo-close)",
+		Long: `Restore the most recently closed surface in the current dock.
+
+bay keeps a per-dock LRU queue of the last 10 bay-initiated closes
+(for up to 1 hour). 'bay sf restore' (or Option+Z in tmux) pops the
+most recent entry and recreates the surface in its parent workspace.
+
+  bay sf restore             restore the most recent close
+  bay sf restore --list      show the queue`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine()
+			if err != nil {
+				return err
+			}
+			return runSurfaceRestore(eng, list)
+		},
+	}
+
+	cmd.Flags().BoolVar(&list, "list", false, "show the undo-close queue without restoring")
+
+	return cmd
+}
+
+// runSurfaceRestore handles `bay sf restore` and `bay restore`. Shared by
+// the CLI and the Option+Z keybinding.
+//
+// Feedback is delivered via both tmux display-message (visible when invoked
+// from run-shell, which detaches stderr) and stderr (visible when invoked
+// from a CLI terminal; tmux's display-message call fails gracefully outside
+// tmux). This dual channel is why close/restore feel symmetric — without
+// the tmux toast, an Option+Z press that finds an empty queue would be a
+// silent no-op and the user would keep pressing.
+func runSurfaceRestore(eng *engine.Engine, list bool) error {
+	dockName, _, err := resolveCurrentDock(eng)
+	if err != nil {
+		return err
+	}
+
+	if list {
+		return printClosedQueue(eng, dockName)
+	}
+
+	_, restoreErr := eng.SurfaceRestore(dockName)
+	switch {
+	case restoreErr == nil:
+		// No success toast: the restored pane appearing is the user-visible
+		// feedback. A tmux display-message fired here (even async with
+		// detached stdio) correlates with a visible stall in the new pane's
+		// content rendering — tmux appears to defer pane redraws while a
+		// status-line message is displaying. The empty-queue case below
+		// still needs a toast because there's nothing visible otherwise.
+		return nil
+	case errors.Is(restoreErr, engine.ErrNothingToRestore):
+		notify(eng, fmt.Sprintf("Nothing to restore in dock %q.", dockName))
+		return nil
+	default:
+		return restoreErr
+	}
+}
+
+// notify sends a message via tmux display-message AND stderr, so the user
+// sees it whether they invoked the command via a keybinding (run-shell,
+// detached stderr) or an interactive terminal (no tmux context).
+//
+// Uses DisplayMessageAsync so bay doesn't block on the tmux RPC — from a
+// run-shell keybinding that has also just created a pane, a synchronous
+// DisplayMessage delays run-shell's exit, which delays tmux's redraw of
+// the freshly-created pane. Advisory toasts must never block visible work.
+func notify(eng *engine.Engine, msg string) {
+	_ = eng.Tmux.DisplayMessageAsync(msg, 2500)
+	fmt.Fprintln(os.Stderr, msg)
+}
+
+func printClosedQueue(eng *engine.Engine, dockName string) error {
+	entries, err := eng.ListClosedEntries(dockName)
+	if err != nil {
+		return err
+	}
+	if len(entries) == 0 {
+		fmt.Printf("No recent closes in dock %q.\n", dockName)
+		return nil
+	}
+	now := time.Now().Unix()
+	for i, e := range entries {
+		age := formatClosedAge(now - e.ClosedAt)
+		switch e.Kind {
+		case manifest.ClosedKindSurface:
+			if e.Surface == nil {
+				continue
+			}
+			s := e.Surface
+			extra := ""
+			if s.Agent != "" {
+				extra = " agent=" + s.Agent
+			} else if s.Command != "" {
+				extra = " cmd=" + engine.TruncateTabName(s.Command, 40)
+			}
+			fmt.Printf("%d. %s surface %s/%s (%s)%s\n", i+1, age, s.Workspace, s.Name, s.Type, extra)
+		default:
+			fmt.Printf("%d. %s %s\n", i+1, age, e.Kind)
+		}
+	}
+	return nil
+}
+
+func formatClosedAge(secs int64) string {
+	switch {
+	case secs < 60:
+		return fmt.Sprintf("%ds ago", secs)
+	case secs < 3600:
+		return fmt.Sprintf("%dm ago", secs/60)
+	default:
+		return fmt.Sprintf("%dh ago", secs/3600)
+	}
 }
 
 func newSurfaceGoCmd() *cobra.Command {

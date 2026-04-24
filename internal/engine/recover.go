@@ -276,7 +276,7 @@ func (e *Engine) recoverDockWorkspaces(dock *manifest.Dock, m *manifest.Manifest
 							outcome.errs = append(outcome.errs, fmt.Sprintf("workspace %s surface %s: %v", ws.Name, s.Name, err))
 							continue
 						}
-						newPaneID, err := e.Tmux.SplitWindow(splitTargetID, dir, ws.Path)
+						newPaneID, err := e.Tmux.SplitWindow(splitTargetID, dir, ws.Path, false)
 						if err != nil {
 							outcome.errs = append(outcome.errs, fmt.Sprintf("workspace %s surface %s: split window: %v", ws.Name, s.Name, err))
 							continue
@@ -330,7 +330,7 @@ func (e *Engine) reconcileSurfaces(dockName, tmuxWindowID string, ws *manifest.W
 			outcome.errs = append(outcome.errs, fmt.Sprintf("workspace %s surface %s: %v", ws.Name, s.Name, err))
 			continue
 		}
-		newPaneID, err := e.Tmux.SplitWindow(splitTargetID, dir, ws.Path)
+		newPaneID, err := e.Tmux.SplitWindow(splitTargetID, dir, ws.Path, false)
 		if err != nil {
 			outcome.errs = append(outcome.errs, fmt.Sprintf("workspace %s surface %s: split window: %v", ws.Name, s.Name, err))
 			continue

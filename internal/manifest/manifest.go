@@ -74,13 +74,14 @@ type Manifest struct {
 
 // Dock represents a tmux session and its associated terminal window.
 type Dock struct {
-	Name       string              `json:"name"`                 // unique; matches config key and tmux session name
-	Repo       string              `json:"repo,omitempty"`       // default repo for workspaces
-	Agent      string              `json:"agent,omitempty"`      // default agent
-	AgentArgs  map[string][]string `json:"agent_args,omitempty"` // per-agent args
-	Host       *GUIAttrs           `json:"host,omitempty"`       // terminal window hosting this dock's tmux session; nil if unmanaged
-	Surfaces   []Surface           `json:"surfaces,omitempty"`   // dock-level surfaces (e.g., dock-scoped editor)
-	Workspaces []Workspace         `json:"workspaces"`
+	Name          string              `json:"name"`                 // unique; matches config key and tmux session name
+	Repo          string              `json:"repo,omitempty"`       // default repo for workspaces
+	Agent         string              `json:"agent,omitempty"`      // default agent
+	AgentArgs     map[string][]string `json:"agent_args,omitempty"` // per-agent args
+	Host          *GUIAttrs           `json:"host,omitempty"`       // terminal window hosting this dock's tmux session; nil if unmanaged
+	Surfaces      []Surface           `json:"surfaces,omitempty"`   // dock-level surfaces (e.g., dock-scoped editor)
+	Workspaces    []Workspace         `json:"workspaces"`
+	ClosedEntries []ClosedEntry       `json:"closed_entries,omitempty"` // undo-close queue (see docs/design/undo-close.md)
 }
 
 // Workspace represents a unit of work — typically one branch/PR.
@@ -172,6 +173,101 @@ type GUIAttrs struct {
 	AppCommand string `json:"app_command"`         // launch command (e.g. "cursor", "ghostty")
 	BundleID   string `json:"bundle_id,omitempty"` // macOS bundle ID for activation
 	PID        int    `json:"pid,omitempty"`       // ephemeral; for liveness probing; 0 = not tracked
+}
+
+// ClosedEntryKind is the kind tag for a ClosedEntry.
+type ClosedEntryKind string
+
+const (
+	ClosedKindSurface ClosedEntryKind = "surface"
+	// ClosedKindWorkspace is reserved for Step 2 of undo-close.
+)
+
+// ClosedQueueMax caps the number of undo-close entries retained per dock.
+const ClosedQueueMax = 10
+
+// ClosedQueueTTLSeconds is the wall-clock retention window for undo-close
+// entries. Entries older than this are pruned on next queue access.
+// 1 hour matches the Chrome-style muscle-memory case (accidental closes
+// are noticed and reversed within seconds to minutes) without allowing
+// stale entries to ambush the user hours later.
+const ClosedQueueTTLSeconds = 60 * 60
+
+// ClosedEntry is a single record in the undo-close queue.
+type ClosedEntry struct {
+	ClosedAt int64           `json:"closed_at"` // unix seconds; used for TTL expiry
+	Kind     ClosedEntryKind `json:"kind"`
+	Surface  *ClosedSurface  `json:"surface,omitempty"` // Kind == ClosedKindSurface
+}
+
+// ClosedSurface records enough state to recreate a closed surface in its
+// parent workspace. Transient fields (PaneID, WindowID, ID) are deliberately
+// omitted — they're reassigned on restore.
+type ClosedSurface struct {
+	Workspace   string      `json:"workspace"`              // parent workspace name at close time
+	Name        string      `json:"name"`                   // user-facing surface name
+	Type        SurfaceType `json:"type"`                   // agent / shell / cmd / editor
+	Agent       string      `json:"agent,omitempty"`        // type=agent
+	Command     string      `json:"command,omitempty"`      // type=cmd or type=editor
+	SplitDir    string      `json:"split_dir,omitempty"`    // "" = root pane, "h"/"v" = split
+	LayoutGroup int         `json:"layout_group,omitempty"` // original tmux window membership; restore re-joins siblings if any survive
+}
+
+// PushClosedEntry appends entry to the dock's undo-close queue, enforcing
+// the per-dock ClosedQueueMax cap by dropping the oldest entry when full.
+func (d *Dock) PushClosedEntry(entry ClosedEntry) {
+	d.ClosedEntries = append(d.ClosedEntries, entry)
+	if len(d.ClosedEntries) > ClosedQueueMax {
+		d.ClosedEntries = d.ClosedEntries[len(d.ClosedEntries)-ClosedQueueMax:]
+	}
+}
+
+// PruneClosedEntries drops entries whose ClosedAt is older than
+// now - ClosedQueueTTLSeconds. Returns true if anything was removed.
+func (d *Dock) PruneClosedEntries(now int64) bool {
+	cutoff := now - ClosedQueueTTLSeconds
+	before := len(d.ClosedEntries)
+	kept := d.ClosedEntries[:0]
+	for _, e := range d.ClosedEntries {
+		if e.ClosedAt > cutoff {
+			kept = append(kept, e)
+		}
+	}
+	d.ClosedEntries = kept
+	return len(d.ClosedEntries) != before
+}
+
+// PeekClosedEntry prunes stale entries and returns a deep copy of the most
+// recent live entry, or nil if the queue is empty. The entry is not removed
+// — callers use RemoveClosedEntryAt after confirming the restore succeeded,
+// so a failure leaves the entry queued for retry. The deep copy guarantees
+// callers can't accidentally mutate queue state through the returned
+// Surface pointer.
+func (d *Dock) PeekClosedEntry(now int64) *ClosedEntry {
+	d.PruneClosedEntries(now)
+	if len(d.ClosedEntries) == 0 {
+		return nil
+	}
+	entry := d.ClosedEntries[len(d.ClosedEntries)-1]
+	if entry.Surface != nil {
+		surfaceCopy := *entry.Surface
+		entry.Surface = &surfaceCopy
+	}
+	return &entry
+}
+
+// RemoveClosedEntryAt removes the entry with the given ClosedAt timestamp.
+// Matching by timestamp (not index) lets Peek/Remove survive interleaved
+// pushes between the two calls — if another close happens during restore,
+// we still drop the entry we restored, not the newly-pushed one.
+func (d *Dock) RemoveClosedEntryAt(closedAt int64) bool {
+	for i := len(d.ClosedEntries) - 1; i >= 0; i-- {
+		if d.ClosedEntries[i].ClosedAt == closedAt {
+			d.ClosedEntries = append(d.ClosedEntries[:i], d.ClosedEntries[i+1:]...)
+			return true
+		}
+	}
+	return false
 }
 
 // --- Constructor ---

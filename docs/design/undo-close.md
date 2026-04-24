@@ -38,16 +38,27 @@ Only bay-initiated closes are eligible for undo:
 
 - `bay sf close` / Option+W on a surface (workspace survives) →
   surface entry
-- `bay sf close` / Option+W on the last surface in a workspace
-  (cascades to workspace close) → single workspace entry, not a
-  surface entry plus a workspace entry
+- `bay sf close` / Option+W on the last surface in a workspace →
+  surface entry. Orphan-hygiene (PR #237) has since taken over
+  the cascade path: last-surface close schedules
+  `PendingCloseAt = now + 60s` instead of closing the workspace
+  synchronously. Restoring the surface within the grace window
+  re-populates the workspace and lets orphan-hygiene's existing
+  cancel path clear `PendingCloseAt`. No workspace entry is
+  queued at Option+W time — if the user lets the grace window
+  elapse and the sync-finalize path closes the workspace, that
+  pushes a workspace entry separately.
 - `bay ws close` from the CLI → workspace entry
+- Sync-finalize cascade (`WsClose` fires after the grace window,
+  succeeds) → workspace entry
 
 Out of scope for v1:
 
-- tmux-native kills (`Ctrl-B x`, `kill-pane`, `kill-window`) — bay
-  detects these after the fact; capturing pre-close state is
-  harder. Fall through unrestored.
+- tmux-native kills (`Ctrl-B x`, `kill-pane`, `kill-window`). Bay
+  detects these via sync; surfaces get stripped and orphan-hygiene
+  handles any resulting empty workspace. Undo-close doesn't cover
+  them — orphan-hygiene is the mitigation for that class of
+  accident.
 - `bay dock close` / dock teardown — recording the full dock is
   out of proportion with the muscle-memory use case, and the
   queue is per-dock so the queue itself goes with the dock.
@@ -58,9 +69,14 @@ Out of scope for v1:
   another's undo.
 - **Storage:** persisted inside the dock's state. Survives tmux
   kill, bay recover, reboot.
-- **Retention:** last 10 entries per dock, with a 24-hour wall-clock
-  expiry. Entries older than 24h are pruned on next access. When a
-  dock is torn down, its queue goes with it.
+- **Retention:** last 10 entries per dock, with a 1-hour wall-clock
+  expiry. Entries older than 1h are pruned on next access. When a
+  dock is torn down, its queue goes with it. (The retention window
+  was originally specced at 24h; shortened to 1h after testing
+  revealed that stale entries from earlier sessions ambushed users
+  expecting Option+Z to only revive recent closes. 1h matches the
+  muscle-memory use case — users notice accidental closes within
+  seconds to minutes, not overnight.)
 - **Ordering:** LIFO. `bay sf restore` pops the most recent entry.
 
 ### Entry shape
@@ -73,7 +89,7 @@ that wasn't persistent anyway.
 
 | Field | Purpose |
 |---|---|
-| `timestamp` | For 24h expiry |
+| `timestamp` | For 1h expiry |
 | `kind` | `"surface"` |
 | `dock` | Dock name (redundant with queue scope, but explicit) |
 | `workspace` | Parent workspace name |
@@ -84,7 +100,7 @@ that wasn't persistent anyway.
 
 | Field | Purpose |
 |---|---|
-| `timestamp` | For 24h expiry |
+| `timestamp` | For 1h expiry |
 | `kind` | `"workspace"` |
 | `dock` | Dock name |
 | `workspace` | Workspace name at close time |
@@ -104,10 +120,25 @@ that wasn't persistent anyway.
    its workspace. (Note: if the workspace was closed after the
    surface, that close has its own undo entry which restores the
    workspace *including* the surface.)
-2. Recreate the surface with the recorded config. Place at end of
-   the workspace's surface list for v1; exact position restoration
-   is deferred (see step 3).
+2. Recreate the surface with the recorded config. Position logic
+   (layout-faithful, added after initial-testing feedback):
+   - If any sibling survives in the recorded tmux layout group,
+     split against it so the restored pane rejoins its original
+     tmux window.
+   - If the recorded surface was a split child (SplitDir=h/v),
+     use that direction against the sibling.
+   - If the recorded surface was a root pane (SplitDir=""), use
+     `tmux split-window -fb` to insert at the root position of
+     the layout group. Axis is inferred from a sibling's recorded
+     SplitDir (or defaults to v).
+   - If no sibling survives (the whole layout group is gone),
+     create a new tmux window.
 3. Focus the restored surface.
+
+Because the queue is LIFO, multi-pane close-then-restore scenarios
+compose: closing three panes then restoring three times puts all
+three back in the original window, because each successive restore
+finds the previous one still alive in the layout group.
 
 **Stacked restores** compose naturally: if you close surface A,
 then close the workspace containing A, the queue holds
@@ -185,31 +216,12 @@ discoverability of Option+z lives in `bay sf --help` and the
 human-guide.
 
 **Dirty-leave-behind notification:** included in v1. When a
-workspace close (direct or cascaded) leaves the worktree in
-place because it's dirty, emit a notification. The channel
-depends on how the close was invoked:
-
-- **Keystroke-invoked** (Option+W cascading to last-surface
-  close): tmux toast via `tmux display-message`. CLI text output
-  isn't visible because tmux's `run-shell` detaches stderr.
-- **CLI-invoked** (`bay ws close` or `bay sf close`): write the
-  warning to stderr. The user is in a terminal and will see it;
-  a tmux toast would be redundant (and might be missed if the
-  terminal is scrolling).
-
-The message is the same in both cases:
+`bay ws close --force` on a dirty workspace leaves the worktree
+in place, write a warning to stderr:
 
 ```
 foo: worktree preserved (dirty). Option+Z to restore.
 ```
-
-**Detection heuristic:** branch on whether stderr is a TTY. CLI
-invocations in an interactive terminal have a TTY; tmux
-`run-shell` doesn't. This keeps the keybinding registrations in
-`setup.go` unchanged. Edge case: CLI invocation with stderr
-piped elsewhere (script/CI) — neither channel fires visibly,
-which is acceptable since scripts rarely care about the toast
-content and the command still succeeded.
 
 Rationale: the user asked for teardown and didn't get full
 teardown. Silent leave-behind leads to stale worktrees piling up
@@ -218,32 +230,81 @@ in the dock directory and surprise name collisions on later
 routine-close feedback — and the undo is what makes the message
 actionable ("here's the leftover, here's how to grab it back").
 
+Orphan-hygiene reroutes the Option+W cascade through the
+sync-finalize path, so there's no `tmux run-shell` stderr
+detachment issue at keystroke time — the keystroke-invoked tmux
+toast branch described in earlier revisions of this doc doesn't
+apply. The sync-finalize refuse case is covered separately below.
+
+**Refuse-to-close notification:** included in v1. When the
+orphan-hygiene sync-finalize path attempts `WsClose(force=false)`
+on a workspace whose surfaces died and the close is refused
+(dirty or unpushed), `PendingCloseAt` is cleared and the
+workspace lingers as a permanent orphan. Pre-undo-close, this
+fails silently: the user's Option+W looked like it worked, the
+workspace quietly stayed around.
+
+Emit a tmux toast via `tmux display-message -t <session>`
+addressed to the dock's tmux session:
+
+```
+foo: workspace kept (uncommitted changes).
+foo: workspace kept (unpushed commits).
+```
+
+The toast fires from the sync goroutine, which has no TTY, so
+tmux is the only available channel. No Option+Z hint — the
+workspace was never closed, so there's nothing to undo; reopening
+a surface (`bay sf new --ws foo`) is the way back in, which the
+user already knows.
+
+**CLI-invoked close** (`bay ws close` without `--force`,
+`bay sf close` on the last surface) that's refused on dirty state
+already prints an error to stderr in the current code path — no
+change needed.
+
 ### Lifecycle integration
 
 | Event | Queue effect |
 |---|---|
-| `bay sf close` | Push surface entry (unless cascade; see next row) |
-| Last-surface close | Push a single workspace entry (cascade), not a surface entry |
-| `bay ws close` | Push workspace entry |
+| `bay sf close` (workspace survives) | Push surface entry |
+| `bay sf close` on last surface (Option+W) | Push surface entry. Orphan-hygiene schedules `PendingCloseAt`; restoring the surface within 60s saves the workspace via orphan-hygiene's cancel path. |
+| Sync-finalize cascade (`WsClose` succeeds after grace) | Push workspace entry |
+| `bay ws close` | Push workspace entry; suppress surface-entry pushes from the cascading surface closes |
 | `bay sf restore` | Pop most recent, attempt restore |
 | `bay dock close` | Drop queue with the dock |
 | `bay recover` | Queue survives (lives in dock state) |
-| Entry ages past 24h | Pruned on next access |
+| Entry ages past 1h | Pruned on next access |
 | Queue exceeds 10 | Oldest entry dropped |
 
 ---
 
 ## Incremental path
 
-### Step 1: Surface-level undo [MEDIUM — ~250-300 lines]
+### Step 1: Surface-level undo [MEDIUM — ~200-250 lines]
 
 Build for the stated use case. Record a surface close, restore it
 to its parent workspace. No worktree/branch mechanics involved.
 
 Includes the full queue infrastructure: per-dock scoping,
 persistence, retention/expiry, `bay recover` integration, CLI,
-keybinding. Covers the muscle-memory case directly and ships
-independent of workspace-level work.
+keybinding. Covers the muscle-memory case directly — and, thanks
+to orphan-hygiene, also covers the last-surface Option+W case:
+surface restore re-populates the workspace before the
+`PendingCloseAt` timer elapses, and orphan-hygiene's cancel path
+takes care of the rest.
+
+Scope notes:
+- Push surface entries on `bay sf close` / Option+W, including
+  when the surface is the last one in the workspace.
+- Suppress surface-entry pushes when the close is part of a
+  workspace-level teardown (the Step 2 `bay ws close` path and
+  the sync-finalize cascade).
+- Restore verifies the parent workspace still exists; if not
+  (grace elapsed, workspace closed), discard the entry silently.
+- The dirty-leave-behind and refuse-to-close notifications are
+  independent of the queue and can ship before, alongside, or
+  after Step 1.
 
 ### Step 2: Workspace-level undo [MEDIUM-LARGE — ~400-600 lines]
 
@@ -254,13 +315,26 @@ Agent session continuity considerations (see corner case 4).
 
 Depends on step 1's queue primitives.
 
+Also pick up the **dock-surface close gap** deferred from Step 1:
+`Engine.DockSurfaceClose` (used by `bay edit --dock` and any
+dock-scoped surface) doesn't currently push a queue entry, so
+Option+W on a dock-scoped surface can't be undone. Natural home
+here since Step 2 is already widening the entry schema — either
+add a `ClosedKindDockSurface` variant or allow `ClosedSurface`
+with an empty `Workspace` and dispatch to the dock-add path on
+restore. Small addition (~30-50 lines + a test).
+
 ### Step 3: Restore polish [SMALL — incremental]
 
 Things to consider after real usage:
 
 - `--list` output formatting and column choices
-- Exact pane-layout restoration (capture tmux layout strings at
-  close time, apply on restore)
+- Exact pane-layout restoration with pixel fidelity. Step 1 already
+  rejoins the original tmux window via `split-window -fb`; Step 3
+  would go further by capturing tmux layout strings at close time
+  and replaying them on restore to preserve split geometry
+  (percentages, orientation mix). Only pursue if layout drift
+  becomes a complaint.
 - A picker for non-most-recent restore, if demand appears
 - Toasts, if discoverability turns out to be a problem
 
@@ -268,13 +342,23 @@ Things to consider after real usage:
 
 ## Corner cases and known limitations
 
-1. **Branch SHA GC.** Clean-close branch restore relies on the git
-   reflog. Default reflog expiry for unreachable commits is 30
-   days — well past our 24h undo window. But `git gc --prune=now`,
-   aggressive `gc.reflogExpireUnreachable`, or `git maintenance`
-   (auto-enabled by GitHub Desktop and newer git defaults) can
-   make recorded SHAs unrecoverable sooner. Caveat: documented,
-   not defended against.
+1. **Branch SHA GC.** Clean-close branch restore recreates a
+   branch at a recorded SHA. When bay deletes the branch and
+   removes the worktree, their reflogs go with them — so the
+   survival of the commit is governed by `gc.pruneExpire`
+   (default 2 weeks) as a dangling object, not by
+   `gc.reflogExpireUnreachable`. Two weeks is well past our 1h
+   undo window, but `git gc --prune=now`, a tight `pruneExpire`
+   setting, or `git maintenance` (auto-enabled by GitHub Desktop
+   and newer git defaults) can shorten that window.
+
+   **Hardening option (Step 2):** park each queued SHA under
+   `refs/bay/closed/<uuid>` at close time. The ref keeps the
+   commit reachable — immune to `gc.pruneExpire` — until the undo
+   entry is popped or expires, at which point bay deletes the
+   ref. This adds one `git update-ref` per close and one per
+   pop/expire, in exchange for durability against any GC
+   configuration. Decide at Step 2 implementation time.
 
 2. **Branch-name collision after clean close.** Addressed in the
    restore flow above — abort clearly rather than auto-resolve.
@@ -331,6 +415,17 @@ Things to consider after real usage:
     is a normal close candidate again — if you close it, a new
     entry goes on the queue. No special handling.
 
+11. **`bay ws close --force` discards uncommitted changes
+    permanently.** `--force` on a dirty workspace runs
+    `git worktree remove --force`, which drops working-tree edits
+    before removing the worktree. The undo entry records
+    `branch_sha` — the committed tip at close time — so restore
+    recreates the branch and a fresh worktree at that commit. It
+    does **not** bring back the uncommitted diff, because nothing
+    persists it. Users choosing `--force` should understand the
+    tradeoff: restore resurrects the branch, not the working
+    tree.
+
 ---
 
 ## Open questions (to revisit when building)
@@ -340,7 +435,7 @@ Things to consider after real usage:
    separate avoids polluting the manifest with transient state.
    Decide when implementing step 1.
 
-2. **Retention limits as config.** 10 entries + 24h is a
+2. **Retention limits as config.** 10 entries + 1h is a
    reasonable default. Worth exposing as dock config? Probably not
    in v1 — YAGNI until someone asks.
 
