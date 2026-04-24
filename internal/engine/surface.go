@@ -45,14 +45,18 @@ func (e *Engine) preferredSplitTarget(ws *manifest.Workspace) *manifest.Surface 
 	return nil
 }
 
-// firstSurfaceInLayoutGroup returns any surviving surface in the given
-// layout group, or nil if none. Used by restore to find a sibling to
-// split against so a restored pane rejoins its original tmux window.
-func firstSurfaceInLayoutGroup(ws *manifest.Workspace, layoutGroup int) *manifest.Surface {
+// lastSurfaceInLayoutGroup returns the most-recently-added surviving
+// surface in the given layout group, or nil if none. Restore uses this
+// as the split target so a re-created pane appends to the end of the
+// current tmux pane stack — which matches user expectation for "delete
+// the last pane, restore it" (the common case). Splitting against the
+// first surface instead would place the new pane next to the root and
+// visually insert it into the middle of the stack.
+func lastSurfaceInLayoutGroup(ws *manifest.Workspace, layoutGroup int) *manifest.Surface {
 	if layoutGroup == 0 {
 		return nil
 	}
-	for i := range ws.Surfaces {
+	for i := len(ws.Surfaces) - 1; i >= 0; i-- {
 		s := &ws.Surfaces[i]
 		if s.Tmux != nil && s.Tmux.LayoutGroup == layoutGroup && s.Tmux.PaneID != "" {
 			return s
@@ -133,7 +137,7 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 	splitAxis := splitDir
 
 	if opts.RestoreLayoutGroup > 0 && len(ws.Surfaces) > 0 {
-		if sibling := firstSurfaceInLayoutGroup(ws, opts.RestoreLayoutGroup); sibling != nil && sibling.Tmux != nil {
+		if sibling := lastSurfaceInLayoutGroup(ws, opts.RestoreLayoutGroup); sibling != nil && sibling.Tmux != nil {
 			tmuxWindowID = sibling.Tmux.WindowID
 			tmuxSplitTargetID = sibling.Tmux.PaneID
 			layoutGroup = sibling.Tmux.LayoutGroup

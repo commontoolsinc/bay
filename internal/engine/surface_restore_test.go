@@ -358,6 +358,86 @@ func TestSurfaceRestore_SplitChildRejoinsWindow(t *testing.T) {
 	}
 }
 
+// TestSurfaceRestore_LastPaneRestoresAtEnd regresses the "delete last of
+// three, restore, it appears in the middle instead of at the end" bug:
+// restore splits against the *last* surviving surface in the layout
+// group, not the first, so the re-created pane appends to the tmux
+// pane stack rather than landing below the root.
+func TestSurfaceRestore_LastPaneRestoresAtEnd(t *testing.T) {
+	eng, _ := testEngine(t)
+	mockTmux := eng.Tmux.(*tmux.Mock)
+
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	if err := eng.SurfaceAdd(SurfaceAddOptions{
+		DockName: "labs", WsName: "w1",
+		Type: manifest.SurfaceTypeShell, Name: "middle", SplitDir: "v",
+	}); err != nil {
+		t.Fatalf("SurfaceAdd middle: %v", err)
+	}
+	if err := eng.SurfaceAdd(SurfaceAddOptions{
+		DockName: "labs", WsName: "w1",
+		Type: manifest.SurfaceTypeShell, Name: "bottom", SplitDir: "v",
+	}); err != nil {
+		t.Fatalf("SurfaceAdd bottom: %v", err)
+	}
+
+	ws, _ := eng.WsShow("labs", "w1")
+	windowID := ws.FindSurface("middle").Tmux.WindowID
+	middlePaneID := ws.FindSurface("middle").Tmux.PaneID
+
+	if err := eng.SurfaceClose("labs", "w1", "bottom", false); err != nil {
+		t.Fatalf("SurfaceClose bottom: %v", err)
+	}
+	if _, err := eng.SurfaceRestore("labs"); err != nil {
+		t.Fatalf("SurfaceRestore: %v", err)
+	}
+
+	// The mock models split-window target-insert order: splitting against
+	// target T inserts the new pane immediately after T in the window's
+	// pane list. Asserting the new pane lands after "middle" (not between
+	// the root and "middle") confirms we split against the last surface,
+	// not the first.
+	panes, _ := mockTmux.ListPanes(windowID)
+	if len(panes) != 3 {
+		t.Fatalf("expected 3 panes after restore, got %d", len(panes))
+	}
+	middleIdx := -1
+	for i, p := range panes {
+		if p.ID == middlePaneID {
+			middleIdx = i
+			break
+		}
+	}
+	if middleIdx < 0 {
+		t.Fatal("middle pane not found after restore")
+	}
+	if middleIdx != 1 {
+		t.Errorf("middle pane at index %d; expected 1 (between root and restored)", middleIdx)
+	}
+	// Restored "bottom" must be the last pane in the window.
+	restored := ws.FindSurface("bottom")
+	if restored == nil {
+		t.Fatal("restored bottom surface not found")
+	}
+	ws, _ = eng.WsShow("labs", "w1")
+	restored = ws.FindSurface("bottom")
+	if panes[len(panes)-1].ID != restored.Tmux.PaneID {
+		t.Errorf("restored bottom is not the last pane; pane order: %v, bottom PaneID: %s",
+			panesToIDs(panes), restored.Tmux.PaneID)
+	}
+}
+
+// panesToIDs is a small helper for test failure messages.
+func panesToIDs(panes []tmux.Pane) []string {
+	ids := make([]string, len(panes))
+	for i, p := range panes {
+		ids[i] = p.ID
+	}
+	return ids
+}
+
 // TestSurfaceRestore_StackedRestoreRejoinsOriginalWindow is the end-to-end
 // scenario that motivated layout-faithful restore: close three panes of
 // a split-window, then restore three times. The LIFO queue means each
