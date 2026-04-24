@@ -268,6 +268,19 @@ unpushed ones stay in place.
 `bay sf close --force` and direct `bay ws close` are unaffected —
 those are explicit user actions and close immediately.
 
+### Last-surface close confirmation
+
+Closing the only surface in a workspace requires a second close attempt
+to keep a stray `Option+W` from tearing down the visible pane. The first
+attempt flashes a status-line message ("press again to close last surface
+in …") and leaves the surface intact; the message stays on screen for
+exactly as long as the second tap is accepted, so when it disappears the
+window has closed too. A second `Option+W` (or repeated `bay sf close …`)
+while the message is still up proceeds normally.
+
+Closes that aren't the last surface in a workspace are unaffected, and
+`--force` skips the double-tap entirely.
+
 ### Undo-close
 
 `Option+z` (or `bay sf restore`) restores the most recently closed
@@ -628,7 +641,7 @@ prefix required — just press the key combo directly.
 
 | Key | Action |
 |-----|--------|
-| `Option+w` | Close current pane/surface |
+| `Option+w` | Close current pane/surface (press twice for the last surface in a workspace) |
 | `Option+z` | Restore most recently closed surface (undo-close) |
 | `Option+/` | Flash current workspace (name — first-line description — branch — #PR) |
 | `Option+?` | Popup with full workspace description (including body) |

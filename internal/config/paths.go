@@ -12,6 +12,7 @@ type Paths struct {
 	PatternsFile   string
 	PIDFile        string
 	PaletteRecents string
+	CloseConfirm   string
 }
 
 // DefaultPaths returns the standard paths using XDG defaults.
@@ -27,5 +28,6 @@ func DefaultPaths() Paths {
 		PatternsFile:   filepath.Join(configDir, "waiting-patterns.txt"),
 		PIDFile:        filepath.Join(dataDir, "monitor.pid"),
 		PaletteRecents: filepath.Join(dataDir, "palette-recents.json"),
+		CloseConfirm:   filepath.Join(dataDir, "close-confirm"),
 	}
 }

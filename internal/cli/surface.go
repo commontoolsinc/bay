@@ -202,14 +202,27 @@ func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string,
 		return eng.DockSurfaceClose(dockName, sName)
 	}
 
-	// Confirmation prompt for agent surfaces.
+	// Two protections, neither of which fires with --force:
+	//   - last-surface double-tap: closing the only surface in a workspace
+	//     tears down the visible pane (and triggers the orphan grace timer).
+	//     Easy to fat-finger via M-w; require a second close attempt within
+	//     a short window to confirm.
+	//   - agent y/N: agent surfaces carry conversation context worth
+	//     protecting on its own. Skipped when the last-surface check has
+	//     already fired — one confirmation is enough.
 	if !force {
 		ws, err := eng.WsShow(dockName, wsName)
 		if err != nil {
 			return err
 		}
-		s := ws.FindSurface(sName)
-		if s != nil && s.Type == manifest.SurfaceTypeAgent {
+		switch s := ws.FindSurface(sName); {
+		case s == nil:
+			// Surface not in manifest; let SurfaceClose surface the error.
+		case len(ws.Surfaces) == 1:
+			if !confirmLastSurfaceClose(eng.Tmux.DisplayMessage, dockName, wsName) {
+				return nil
+			}
+		case s.Type == manifest.SurfaceTypeAgent:
 			if !confirmAgentClose(s.Name) {
 				fmt.Fprintln(os.Stderr, "not closing.")
 				return nil
