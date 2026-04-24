@@ -53,3 +53,22 @@ jobs:
 
       - name: Test
         run: go test ./... -race
+
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Install tmux
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq tmux
+          tmux -V
+
+      - name: Tmux integration tests
+        run: go test -tags=integration ./internal/tmux/ -race -run TestIntegration_
