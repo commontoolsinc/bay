@@ -2,6 +2,7 @@ package tmux
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -368,19 +369,31 @@ func (r *Real) CurrentPaneID() (string, error) {
 // tmux client process to return. Used when bay is running inside a tmux
 // run-shell keybinding that's also doing visible tmux work (e.g. creating
 // a pane): a synchronous DisplayMessage delays run-shell's exit, which
-// delays tmux's redraw of the new pane. Fire-and-forget is safe here —
-// init (or launchd) reaps the child after the delay clears.
+// delays tmux's redraw of the new pane.
+//
+// The child's stdio MUST be redirected to /dev/null. If it inherits bay's
+// stdin/stdout/stderr, the child tmux client holds those pipes open until
+// the message clears; tmux's run-shell waits on those pipes to close
+// before considering bay "done," so the parent pane update stays blocked
+// for the full display duration — defeating the point of the async call.
 func (r *Real) DisplayMessageAsync(msg string, durationMs int) error {
 	args := []string{"display-message"}
 	if durationMs > 0 {
 		args = append(args, "-d", strconv.Itoa(durationMs))
 	}
 	args = append(args, msg)
+	devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
+	if err != nil {
+		return fmt.Errorf("open /dev/null: %w", err)
+	}
+	defer devNull.Close()
 	cmd := exec.Command("tmux", args...)
+	cmd.Stdin = devNull
+	cmd.Stdout = devNull
+	cmd.Stderr = devNull
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("tmux display-message: %w", err)
 	}
-	// Detach so the child doesn't become a zombie when bay exits.
 	return cmd.Process.Release()
 }
 
