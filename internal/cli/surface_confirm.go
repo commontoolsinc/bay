@@ -37,8 +37,10 @@ var confirmLastSurfaceClose = func(flash flashFunc, dockName, wsName string) boo
 		// to let the close go through than wedge the user with no recovery.
 		return true
 	}
+	// Message duration matches the confirm window so the message vanishing
+	// is itself the deadline — no need to say "2s" and risk a stale number.
 	_ = flash(
-		fmt.Sprintf("press again within %ds to close last surface in %q", int(closeConfirmWindow/time.Second)+1, wsName),
+		fmt.Sprintf("press again to close last surface in %q", wsName),
 		int(closeConfirmWindow/time.Millisecond),
 	)
 	return false

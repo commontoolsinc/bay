@@ -545,10 +545,11 @@ Close a named surface. Pass `self` to close the current pane's
 surface. Two confirmations may apply (both skipped by `--force`):
 
 - **Last surface in workspace**: requires a second close attempt for
-  the same workspace within ~1.5 seconds. The first attempt flashes a
-  tmux status message and exits 0 without closing. Designed to keep
-  a stray `Option+W` from collapsing a workspace's only pane. Agents
-  invoking close programmatically should pass `--force`.
+  the same workspace while a tmux status message is still displayed
+  (~1.5 seconds; the message duration *is* the deadline). The first
+  attempt flashes the message and exits 0 without closing. Designed to
+  keep a stray `Option+W` from collapsing a workspace's only pane.
+  Agents invoking close programmatically should pass `--force`.
 - **Agent surface (non-last)**: TTY y/N prompt to protect conversation
   context. Auto-confirms when stdin is not a terminal.
 

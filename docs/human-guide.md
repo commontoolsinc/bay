@@ -271,11 +271,12 @@ those are explicit user actions and close immediately.
 ### Last-surface close confirmation
 
 Closing the only surface in a workspace requires a second close attempt
-within ~1.5 seconds — a deliberate double-tap to keep a stray `Option+W`
-from tearing down the visible pane. The first attempt flashes a status-line
-message ("press again within 2s to close last surface in …") and leaves the
-surface intact. A second `Option+W` (or repeated `bay sf close …`) within
-the window proceeds normally.
+to keep a stray `Option+W` from tearing down the visible pane. The first
+attempt flashes a status-line message ("press again to close last surface
+in …") and leaves the surface intact; the message stays on screen for
+exactly as long as the second tap is accepted, so when it disappears the
+window has closed too. A second `Option+W` (or repeated `bay sf close …`)
+while the message is still up proceeds normally.
 
 Closes that aren't the last surface in a workspace are unaffected, and
 `--force` skips the double-tap entirely.
