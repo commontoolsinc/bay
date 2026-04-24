@@ -18,6 +18,7 @@ package tmux
 import (
 	"fmt"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -31,13 +32,33 @@ type integrationServer struct {
 }
 
 // startTmux starts a new tmux server on a unique socket and registers a
-// cleanup hook that kills it when the test ends, even on failure.
+// cleanup hook that kills it when the test ends, even on failure. The
+// socket name embeds t.Name() so concurrent tests (under -parallel)
+// can't collide.
 func startTmux(t *testing.T) *integrationServer {
 	t.Helper()
-	socket := fmt.Sprintf("bay-test-%d", time.Now().UnixNano())
+	socket := fmt.Sprintf("bay-%s-%d", sanitizeSocketName(t.Name()), time.Now().UnixNano())
 	s := &integrationServer{socket: socket, t: t}
 	t.Cleanup(s.killServer)
 	return s
+}
+
+// sanitizeSocketName replaces characters tmux's `-L` doesn't accept in a
+// socket name (slashes, colons) with underscores.
+func sanitizeSocketName(name string) string {
+	return strings.NewReplacer("/", "_", ":", "_").Replace(name)
+}
+
+// setupSession is the shared prologue for the integration tests below:
+// starts a private tmux server, creates a session, and returns the
+// initial window ID and root pane ID.
+func setupSession(t *testing.T) (s *integrationServer, winID, rootPaneID string) {
+	t.Helper()
+	s = startTmux(t)
+	s.newDetachedSession("test")
+	winID = s.firstWindowID("test")
+	rootPaneID = s.listPaneIDs(winID)[0]
+	return
 }
 
 func (s *integrationServer) tmuxCmd(args ...string) (string, error) {
@@ -94,6 +115,12 @@ func (s *integrationServer) split(target, dir string, before bool) string {
 	return s.mustCmd(args...)
 }
 
+// killPane kills a pane by ID. Mirror of the SplitWindow helper for
+// callsite symmetry — keeps tmux command details out of test bodies.
+func (s *integrationServer) killPane(paneID string) {
+	s.mustCmd("kill-pane", "-t", paneID)
+}
+
 // paneGeometry returns (left, top, width, height) for a pane.
 func (s *integrationServer) paneGeometry(paneID string) (left, top, width, height int) {
 	out := s.mustCmd("display-message", "-t", paneID, "-p",
@@ -104,35 +131,19 @@ func (s *integrationServer) paneGeometry(paneID string) (left, top, width, heigh
 	return
 }
 
-func equalSlices(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 // --- Tests ---
 
 // TestIntegration_SplitNestsBinaryTree mirrors TestMockLayout_SplitNestsBinaryTree.
 // Two successive splits against the previous pane should yield three panes
 // in their creation order in real tmux too.
 func TestIntegration_SplitNestsBinaryTree(t *testing.T) {
-	s := startTmux(t)
-	s.newDetachedSession("test")
-	win := s.firstWindowID("test")
-	root := s.listPaneIDs(win)[0]
-
+	s, win, root := setupSession(t)
 	a := s.split(root, "v", false)
 	b := s.split(a, "v", false)
 
 	got := s.listPaneIDs(win)
 	want := []string{root, a, b}
-	if !equalSlices(got, want) {
+	if !slices.Equal(got, want) {
 		t.Errorf("pane order = %v, want %v", got, want)
 	}
 }
@@ -141,17 +152,13 @@ func TestIntegration_SplitNestsBinaryTree(t *testing.T) {
 // `split-window -fb` should insert the new pane at the top/left of the
 // window, ahead of any existing panes.
 func TestIntegration_SplitBeforeWrapsRoot(t *testing.T) {
-	s := startTmux(t)
-	s.newDetachedSession("test")
-	win := s.firstWindowID("test")
-	root := s.listPaneIDs(win)[0]
-
+	s, win, root := setupSession(t)
 	b := s.split(root, "v", false)
 	prepended := s.split(root, "v", true)
 
 	got := s.listPaneIDs(win)
 	want := []string{prepended, root, b}
-	if !equalSlices(got, want) {
+	if !slices.Equal(got, want) {
 		t.Errorf("pane order = %v, want %v", got, want)
 	}
 
@@ -168,17 +175,13 @@ func TestIntegration_SplitBeforeWrapsRoot(t *testing.T) {
 // sibling panes, the survivor should be the only pane left in the window
 // (tmux's binary-split tree collapses).
 func TestIntegration_KillPaneCollapsesBinarySplit(t *testing.T) {
-	s := startTmux(t)
-	s.newDetachedSession("test")
-	win := s.firstWindowID("test")
-	root := s.listPaneIDs(win)[0]
-
+	s, win, root := setupSession(t)
 	other := s.split(root, "v", false)
-	s.mustCmd("kill-pane", "-t", other)
+	s.killPane(other)
 
 	got := s.listPaneIDs(win)
 	want := []string{root}
-	if !equalSlices(got, want) {
+	if !slices.Equal(got, want) {
 		t.Errorf("after kill, pane order = %v, want %v", got, want)
 	}
 }
@@ -187,18 +190,13 @@ func TestIntegration_KillPaneCollapsesBinarySplit(t *testing.T) {
 // TestSurfaceRestore_LayoutMixedAxisStaysIntact: a horizontal split on the
 // outer axis with a vertical split inside the right half.
 func TestIntegration_MixedAxisLayout(t *testing.T) {
-	s := startTmux(t)
-	s.newDetachedSession("test")
-	win := s.firstWindowID("test")
-	root := s.listPaneIDs(win)[0]
-
+	s, win, root := setupSession(t)
 	right := s.split(root, "h", false)
 	rightBottom := s.split(right, "v", false)
 
-	// Depth-first traversal: root, right, rightBottom.
 	got := s.listPaneIDs(win)
 	want := []string{root, right, rightBottom}
-	if !equalSlices(got, want) {
+	if !slices.Equal(got, want) {
 		t.Errorf("pane order = %v, want %v", got, want)
 	}
 
@@ -230,32 +228,28 @@ func TestIntegration_MixedAxisLayout(t *testing.T) {
 // against middle (matching SurfaceAdd's `lastSurfaceInLayoutGroup` behavior),
 // and verify the new pane lands at the visual end.
 func TestIntegration_StackedCloseRestoreSequence(t *testing.T) {
-	s := startTmux(t)
-	s.newDetachedSession("test")
-	win := s.firstWindowID("test")
-	root := s.listPaneIDs(win)[0]
-
+	s, win, root := setupSession(t)
 	middle := s.split(root, "v", false)
 	bottom := s.split(middle, "v", false)
 
 	got := s.listPaneIDs(win)
 	want := []string{root, middle, bottom}
-	if !equalSlices(got, want) {
+	if !slices.Equal(got, want) {
 		t.Fatalf("initial pane order = %v, want %v", got, want)
 	}
 
 	// Close the last pane, then re-add by splitting against the now-last
 	// surviving sibling — this is what bay's restore does.
-	s.mustCmd("kill-pane", "-t", bottom)
+	s.killPane(bottom)
 	got = s.listPaneIDs(win)
-	if !equalSlices(got, []string{root, middle}) {
+	if !slices.Equal(got, []string{root, middle}) {
 		t.Fatalf("after kill, pane order = %v, want %v", got, []string{root, middle})
 	}
 
 	restored := s.split(middle, "v", false)
 	got = s.listPaneIDs(win)
 	want = []string{root, middle, restored}
-	if !equalSlices(got, want) {
+	if !slices.Equal(got, want) {
 		t.Errorf("after restore, pane order = %v, want %v", got, want)
 	}
 }

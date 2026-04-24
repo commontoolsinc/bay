@@ -71,4 +71,8 @@ jobs:
           tmux -V
 
       - name: Tmux integration tests
-        run: go test -tags=integration ./internal/tmux/ -race -run TestIntegration_
+        # No -race here: the tests fork+exec tmux serially with no
+        # goroutines touching shared state. Race overhead would be
+        # pure cost; the production code paths are already covered
+        # under -race in the main `test` job above.
+        run: go test -tags=integration ./internal/tmux/ -run TestIntegration_
