@@ -17,36 +17,51 @@ package tmux
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
-	"time"
 )
 
-// integrationServer wraps a tmux server running on a unique socket, so
-// the test's commands can't touch the user's regular tmux state.
+// integrationServer wraps a tmux server running on a private socket
+// path, so the test's commands can't touch the user's regular tmux
+// state.
 type integrationServer struct {
-	socket string
-	t      *testing.T
+	socketPath string
+	t          *testing.T
 }
 
-// startTmux starts a new tmux server on a unique socket and registers a
-// cleanup hook that kills it when the test ends, even on failure. The
-// socket name embeds t.Name() so concurrent tests (under -parallel)
-// can't collide.
+// startTmux starts a new tmux server on a private socket and registers
+// a cleanup hook that kills the server and removes the socket dir when
+// the test ends.
+//
+// The socket dir lives directly under /tmp rather than t.TempDir()
+// because tmux enforces a ~104-character limit on socket paths
+// (sockaddr_un.sun_path) and t.TempDir on macOS returns long
+// /var/folders/.../T/TestName.../001 paths that overflow it. /tmp is
+// available on every Unix host bay supports.
+//
+// Using `-S <path>` (vs `-L <name>`) lets us control the socket
+// location, which sidesteps the dead-socket leak that happens with
+// `-L`: tmux's kill-server drops the server but does not unlink the
+// socket file, so socket files would accumulate in $TMUX_TMPDIR.
 func startTmux(t *testing.T) *integrationServer {
 	t.Helper()
-	socket := fmt.Sprintf("bay-%s-%d", sanitizeSocketName(t.Name()), time.Now().UnixNano())
-	s := &integrationServer{socket: socket, t: t}
-	t.Cleanup(s.killServer)
+	dir, err := os.MkdirTemp("/tmp", "bayit-")
+	if err != nil {
+		t.Fatalf("mkdir tmp: %v", err)
+	}
+	s := &integrationServer{
+		socketPath: filepath.Join(dir, "s"),
+		t:          t,
+	}
+	t.Cleanup(func() {
+		s.killServer()
+		_ = os.RemoveAll(dir)
+	})
 	return s
-}
-
-// sanitizeSocketName replaces characters tmux's `-L` doesn't accept in a
-// socket name (slashes, colons) with underscores.
-func sanitizeSocketName(name string) string {
-	return strings.NewReplacer("/", "_", ":", "_").Replace(name)
 }
 
 // setupSession is the shared prologue for the integration tests below:
@@ -62,7 +77,7 @@ func setupSession(t *testing.T) (s *integrationServer, winID, rootPaneID string)
 }
 
 func (s *integrationServer) tmuxCmd(args ...string) (string, error) {
-	full := append([]string{"-L", s.socket}, args...)
+	full := append([]string{"-S", s.socketPath}, args...)
 	out, err := exec.Command("tmux", full...).CombinedOutput()
 	if err != nil {
 		return strings.TrimSpace(string(out)), fmt.Errorf("tmux %s: %w (%s)",
@@ -81,7 +96,7 @@ func (s *integrationServer) mustCmd(args ...string) string {
 }
 
 func (s *integrationServer) killServer() {
-	_ = exec.Command("tmux", "-L", s.socket, "kill-server").Run()
+	_ = exec.Command("tmux", "-S", s.socketPath, "kill-server").Run()
 }
 
 func (s *integrationServer) newDetachedSession(name string) {
