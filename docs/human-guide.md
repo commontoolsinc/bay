@@ -671,8 +671,8 @@ right-hand column, so the palette doubles as a cheat-sheet.
   command as slot 1 (for `M-p, Enter = redo last`), followed by the
   most frequently used commands from the last ~20 invocations.
 - **Mode toggle**: entries that create a surface respect the Mode
-  shown in the footer. The palette starts in **window** mode (new tmux
-  window); press `Tab` to flip to **pane** mode (split the current
+  shown in the footer. The palette starts in **pane** mode (split the
+  current window); press `Tab` to flip to **window** mode (new tmux
   window).
 - **Parametric entries** end in `...`: they chain to a sub-picker
   (e.g., "New agent..." → pick agent type) or a text prompt

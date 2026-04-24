@@ -468,6 +468,31 @@ bind-key -n M-e run-shell 'bay edit --dock || true'
 			t.Errorf("mismatchedBindings() = %+v; want empty (both pinned)", got)
 		}
 	})
+
+	t.Run("old palette binding is drift from pane default", func(t *testing.T) {
+		paletteKbs := []bayKeybinding{
+			{key: "M-p", cmd: "bay palette --split pane", previousCmds: []string{"bay palette"}, tmuxVerb: "display-popup -w 80% -h 80% -E"},
+		}
+		block := `# Bay keybindings
+bind-key -n M-p display-popup -w 80% -h 80% -E 'bay palette || true'
+`
+		got := mismatchedBindings(block, paletteKbs)
+		if len(got) != 1 || got[0].canonical.key != "M-p" {
+			t.Fatalf("mismatchedBindings() = %+v; want M-p mismatch", got)
+		}
+	})
+
+	t.Run("custom palette window binding is not previous default drift", func(t *testing.T) {
+		paletteKbs := []bayKeybinding{
+			{key: "M-p", cmd: "bay palette --split pane", previousCmds: []string{"bay palette"}, tmuxVerb: "display-popup -w 80% -h 80% -E"},
+		}
+		block := `# Bay keybindings
+bind-key -n M-p display-popup -w 80% -h 80% -E 'bay palette --split window || true'
+`
+		if got := mismatchedBindings(block, paletteKbs); len(got) != 0 {
+			t.Fatalf("mismatchedBindings() = %+v; want empty for custom palette binding", got)
+		}
+	})
 }
 
 func TestReplaceBindingInBlock(t *testing.T) {

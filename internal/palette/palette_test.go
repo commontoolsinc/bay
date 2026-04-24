@@ -3,6 +3,7 @@ package palette
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -249,6 +250,130 @@ func TestRun_BindsReturnedParamInRecents(t *testing.T) {
 	}
 	if rec.Recent[0].Param != "codex" {
 		t.Errorf("recents[0].Param=%q; want codex", rec.Recent[0].Param)
+	}
+}
+
+func TestRun_BoundRecentInvokesActionWithParam(t *testing.T) {
+	dir := t.TempDir()
+	rec := LoadRecents(filepath.Join(dir, "recents.json"))
+	rec.Record("new-agent-pick", "codex")
+
+	calls := []string{}
+	entries := []Entry{
+		{
+			ID:      "new-agent-pick",
+			Title:   "New agent...",
+			Section: SectionCreateSurface,
+			Needs:   ScopeAnywhere,
+			Action: func() (string, error) {
+				calls = append(calls, "prompt")
+				return "", nil
+			},
+			ActionWithParam: func(param string) (string, error) {
+				calls = append(calls, "bound:"+param)
+				return param, nil
+			},
+			TitleWithParam: func(param string) string {
+				return "New agent (" + param + ")"
+			},
+		},
+	}
+	in := feedKeys(t, "\r")
+	out := devNull(t)
+	defer in.Close()
+	defer out.Close()
+
+	if err := Run(RunOptions{
+		Scope:   ScopeAnywhere,
+		Mode:    ModeWindow,
+		Entries: func(Mode) []Entry { return entries },
+		Recents: rec,
+		In:      in,
+		Out:     out,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(calls) != 1 || calls[0] != "bound:codex" {
+		t.Fatalf("calls=%v; want [bound:codex]", calls)
+	}
+	if rec.Recent[0].ID != "new-agent-pick" || rec.Recent[0].Param != "codex" {
+		t.Fatalf("latest recent=(%q,%q); want (new-agent-pick,codex)", rec.Recent[0].ID, rec.Recent[0].Param)
+	}
+}
+
+func TestRun_RendersDistinctBoundRecentsForSameEntry(t *testing.T) {
+	rec := &Recents{}
+	rec.recordAt("new-agent-pick", "claude", 1)
+	rec.recordAt("new-agent-pick", "codex", 2)
+
+	entries := []Entry{
+		{
+			ID:      "new-agent-pick",
+			Title:   "New agent...",
+			Section: SectionCreateSurface,
+			Needs:   ScopeAnywhere,
+			Action:  func() (string, error) { return "", nil },
+			TitleWithParam: func(param string) string {
+				return "New agent (" + param + ")"
+			},
+		},
+	}
+	state := newRunState(RunOptions{
+		Scope:   ScopeAnywhere,
+		Mode:    ModeWindow,
+		Entries: func(Mode) []Entry { return entries },
+		Recents: rec,
+	})
+	_, _ = state.render(80)
+
+	got := []string{}
+	for _, row := range state.rendered {
+		if row.entryIdx >= 0 && row.param != "" {
+			got = append(got, row.param)
+		}
+	}
+	want := []string{"codex", "claude"}
+	if len(got) != len(want) {
+		t.Fatalf("bound recent params=%v; want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("bound recent params=%v; want %v", got, want)
+		}
+	}
+}
+
+func TestRun_FiltersStaleBoundRecents(t *testing.T) {
+	rec := &Recents{}
+	rec.Record("new-agent-pick", "retired")
+
+	entries := []Entry{
+		{
+			ID:      "new-agent-pick",
+			Title:   "New agent...",
+			Section: SectionCreateSurface,
+			Needs:   ScopeAnywhere,
+			Action:  func() (string, error) { return "", nil },
+			ParamValid: func(param string) bool {
+				return param == "codex"
+			},
+			TitleWithParam: func(param string) string {
+				return "New agent (" + param + ")"
+			},
+		},
+	}
+	state := newRunState(RunOptions{
+		Scope:   ScopeAnywhere,
+		Mode:    ModeWindow,
+		Entries: func(Mode) []Entry { return entries },
+		Recents: rec,
+	})
+	_, _ = state.render(80)
+
+	for _, row := range state.rendered {
+		if strings.Contains(row.text, "retired") || row.param == "retired" {
+			t.Fatalf("rendered stale bound recent row: %+v", row)
+		}
 	}
 }
 

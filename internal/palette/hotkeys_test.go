@@ -3,8 +3,7 @@ package palette
 import "testing"
 
 func TestParseHotkeys_CurrentSyntax(t *testing.T) {
-	out := `bind-key -T root M-p display-popup -w 60 -h 20 -E 'bay palette || true'
-bind-key -T root M-P display-popup -w 60 -h 20 -E 'bay palette --split pane || true'
+	out := `bind-key -T root M-p display-popup -w 80% -h 80% -E 'bay palette --split pane || true'
 bind-key -T root M-s run-shell 'bay shell --window || true'
 bind-key -T root M-S run-shell 'bay shell --pane || true'
 bind-key -T root C-b send-prefix
@@ -14,8 +13,7 @@ bind-key -T root C-b send-prefix
 		sig  string
 		want string
 	}{
-		{"bay palette", "M-p"},
-		{"bay palette --split pane", "M-P"},
+		{"bay palette --split pane", "M-p"},
 		{"bay shell --window", "M-s"},
 		{"bay shell --pane", "M-S"},
 	}
