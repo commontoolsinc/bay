@@ -34,6 +34,20 @@ go test ./... -race     # with race detector (CI uses this)
 go test ./internal/engine/ -run TestName  # single test
 ```
 
+### Tmux integration tests
+
+A small suite under `internal/tmux/integration_test.go` exercises real
+tmux to pin the mock's behavior to ground truth. They're behind a build
+tag so they don't run by default.
+
+```
+go test -tags=integration ./internal/tmux/ -run TestIntegration_
+```
+
+Requires tmux on PATH. The tests start a private tmux server on a unique
+socket — they don't touch your running tmux. CI runs them automatically
+in the `integration` job.
+
 ## Code style
 
 - `gofmt` is enforced — CI rejects unformatted code

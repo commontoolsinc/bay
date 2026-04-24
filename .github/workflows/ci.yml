@@ -53,3 +53,26 @@ jobs:
 
       - name: Test
         run: go test ./... -race
+
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Install tmux
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq tmux
+          tmux -V
+
+      - name: Tmux integration tests
+        # No -race here: the tests fork+exec tmux serially with no
+        # goroutines touching shared state. Race overhead would be
+        # pure cost; the production code paths are already covered
+        # under -race in the main `test` job above.
+        run: go test -tags=integration ./internal/tmux/ -run TestIntegration_
