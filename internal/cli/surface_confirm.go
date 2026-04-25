@@ -14,6 +14,17 @@ import (
 // enough to forgive a moment of hesitation.
 const closeConfirmWindow = 1500 * time.Millisecond
 
+// shouldConfirmLastSurfaceClose scopes the double-tap guard to non-interactive
+// invocations, which covers tmux run-shell keybindings such as Option+w.
+// Interactive CLI invocations are already deliberate enough to close the last
+// surface on the first command.
+//
+// Package-level var so tests can exercise both paths without depending on the
+// test runner's stdin.
+var shouldConfirmLastSurfaceClose = func() bool {
+	return !stdinIsTTY()
+}
+
 // flashFunc displays a transient status-line message. Mirrors
 // tmux.Interface.DisplayMessage but narrowed so confirmLastSurfaceClose
 // doesn't need the rest of the tmux surface.
