@@ -41,19 +41,7 @@ func CollectEntries(m *manifest.Manifest, tc tmux.Interface) []Entry {
 			continue
 		}
 
-		// Two sources of "waiting" state:
-		// 1. @bay-waiting — set by the monitor via regex pattern matching
-		//    (generic, works for any agent). May be removed if all agents
-		//    adopt bell-based signaling.
-		// 2. window_bell_flag — set by agents that send a terminal bell
-		//    (codex natively, claude via PermissionRequest hook).
-		// Both are merged so Option-R finds either.
-		waitingWindows, _ := tc.WaitingWindowIDs(dockName)
-		if bellWindows, err := tc.BellWindowIDs(dockName); err == nil {
-			for id := range bellWindows {
-				waitingWindows[id] = true
-			}
-		}
+		waitingWindows, _ := tc.WaitingOrBellWindowIDs(dockName)
 
 		for i := range dock.Workspaces {
 			ws := &dock.Workspaces[i]
@@ -172,8 +160,8 @@ type SurfaceEntry struct {
 }
 
 // CollectSurfaces builds a list of surface entries for a workspace.
-// waitingWindows is a pre-computed set of window IDs with @bay-waiting=1,
-// obtained from a single tc.WaitingWindowIDs call by the caller.
+// waitingWindows is a pre-computed set of window IDs waiting by either
+// @bay-waiting or tmux's native bell flag.
 func CollectSurfaces(ws *manifest.Workspace, currentPaneID string, waitingWindows map[string]bool) []SurfaceEntry {
 	var entries []SurfaceEntry
 	for _, s := range ws.Surfaces {

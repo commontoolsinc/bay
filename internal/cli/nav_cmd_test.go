@@ -268,6 +268,40 @@ func TestSurfaceGo_QueryFilter(t *testing.T) {
 	}
 }
 
+func TestSurfaceGo_NextWaitingIncludesBellWindow(t *testing.T) {
+	eng, mockTmux, _, _ := testNavEngine(t)
+
+	ws, _ := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
+	os.MkdirAll(ws.Path, 0o755)
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "codex"}); err != nil {
+		t.Fatalf("SurfaceAdd: %v", err)
+	}
+	ws, _ = eng.WsShow("labs", "w1")
+	shell := ws.Surfaces[0]
+	agent := ws.Surfaces[1]
+
+	mockTmux.SetCurrentWindowID(shell.Tmux.WindowID)
+	mockTmux.SetCurrentPaneID(shell.Tmux.PaneID)
+	if err := mockTmux.SetWindowOption(agent.Tmux.WindowID, "@bay-bell", "1"); err != nil {
+		t.Fatalf("SetWindowOption: %v", err)
+	}
+
+	mockTmux.Calls = nil
+	if err := surfaceGo(eng, nil, true); err != nil {
+		t.Fatalf("surfaceGo: %v", err)
+	}
+
+	foundSelect := false
+	for _, call := range mockTmux.Calls {
+		if call.Method == "SelectWindow" && call.Args[0] == agent.Tmux.WindowID {
+			foundSelect = true
+		}
+	}
+	if !foundSelect {
+		t.Fatalf("expected SelectWindow for bell-waiting agent, calls: %#v", mockTmux.Calls)
+	}
+}
+
 // --- formatSurfaceItems ---
 
 func TestFormatSurfaceItems(t *testing.T) {

@@ -254,6 +254,7 @@ func (e *Engine) List() ([]DockInfo, error) {
 			Agent: agent,
 			Repo:  dock.Repo,
 		}
+		waitingWindows, _ := e.Tmux.WaitingOrBellWindowIDs(dock.Name)
 
 		for _, s := range dock.Surfaces {
 			sInfo := SurfaceInfo{
@@ -270,7 +271,7 @@ func (e *Engine) List() ([]DockInfo, error) {
 		}
 		for j := range dock.Workspaces {
 			ws := &dock.Workspaces[j]
-			info.Workspaces = append(info.Workspaces, e.buildWorkspaceInfo(ws, agent))
+			info.Workspaces = append(info.Workspaces, e.buildWorkspaceInfo(ws, agent, waitingWindows))
 		}
 		docks = append(docks, info)
 	}
@@ -279,7 +280,7 @@ func (e *Engine) List() ([]DockInfo, error) {
 
 // buildWorkspaceInfo constructs a WorkspaceInfo from a manifest workspace,
 // checking path existence and tmux liveness for each surface.
-func (e *Engine) buildWorkspaceInfo(ws *manifest.Workspace, agent string) WorkspaceInfo {
+func (e *Engine) buildWorkspaceInfo(ws *manifest.Workspace, agent string, waitingWindows map[string]bool) WorkspaceInfo {
 	wsPath := config.ExpandPath(ws.Path)
 	_, statErr := os.Stat(wsPath)
 
@@ -335,11 +336,8 @@ func (e *Engine) buildWorkspaceInfo(ws *manifest.Workspace, agent string) Worksp
 			if !exists {
 				sInfo.Status = manifest.SyncStatusStale
 				wsInfo.Stale = true
-			} else {
-				val, err := e.Tmux.GetWindowOption(s.Tmux.WindowID, "@bay-waiting")
-				if err == nil && val == "1" {
-					wsInfo.Waiting = true
-				}
+			} else if waitingWindows[s.Tmux.WindowID] {
+				wsInfo.Waiting = true
 			}
 		}
 
@@ -373,6 +371,7 @@ func (e *Engine) WorkspaceInfoByName(dockName, wsName string) (*WorkspaceInfo, e
 		return nil, fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
 	}
 	agent := e.resolvedDockAgent(dockName, m)
-	info := e.buildWorkspaceInfo(ws, agent)
+	waitingWindows, _ := e.Tmux.WaitingOrBellWindowIDs(dockName)
+	info := e.buildWorkspaceInfo(ws, agent, waitingWindows)
 	return &info, nil
 }
