@@ -267,9 +267,14 @@ func newTopCloseCmd() *cobra.Command {
   bay close self                 close the current pane's surface
   bay rm shell-2                 same thing with the rm alias
 
+When invoked non-interactively, as from the Option+w tmux keybinding,
+closing the last surface in a workspace requires a quick second close
+attempt. Interactive command-line invocations close the last surface on
+the first command.
+
 Closing an agent surface prompts for confirmation when stdin is a
 terminal — agents carry valuable conversation context. Use --force to
-skip the prompt.`,
+skip close confirmations.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -282,7 +287,7 @@ skip the prompt.`,
 
 	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (disambiguates with --dock)")
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (only valid with --ws or a workspace prefix)")
-	cmd.Flags().BoolVarP(&force, "force", "f", false, "skip the confirmation prompt for agent surfaces")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "skip close confirmations")
 
 	return cmd
 }

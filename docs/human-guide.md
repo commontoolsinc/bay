@@ -270,13 +270,15 @@ those are explicit user actions and close immediately.
 
 ### Last-surface close confirmation
 
-Closing the only surface in a workspace requires a second close attempt
-to keep a stray `Option+W` from tearing down the visible pane. The first
-attempt flashes a status-line message ("press again to close last surface
-in …") and leaves the surface intact; the message stays on screen for
-exactly as long as the second tap is accepted, so when it disappears the
-window has closed too. A second `Option+W` (or repeated `bay sf close …`)
-while the message is still up proceeds normally.
+Closing the only surface in a workspace from a non-interactive
+invocation, such as the `Option+W` keybinding, requires a second close
+attempt to keep a stray keypress from tearing down the visible pane.
+The first attempt flashes a status-line message ("press again to close
+last surface in …") and leaves the surface intact; the message stays
+on screen for exactly as long as the second tap is accepted, so when it
+disappears the confirmation window has expired. A second `Option+W`
+while the message is still up proceeds normally. Interactive
+command-line invocations close the last surface on the first command.
 
 Closes that aren't the last surface in a workspace are unaffected, and
 `--force` skips the double-tap entirely.
@@ -492,7 +494,7 @@ bay surface new shell [name] --pane        # split into current window
 bay surface new shell [name] --split h     # horizontal split
 bay surface new shell [name] --ws <w>      # target a different workspace
 bay surface close <name>                   # close a surface (prompts on agents)
-bay surface close <name> --force           # skip the agent confirmation prompt
+bay surface close <name> --force           # skip close confirmations
 bay surface restore                        # restore the most recently closed surface
 bay surface restore --list                 # show the undo-close queue
 bay surface show [name]                    # show details (defaults to current)
@@ -641,7 +643,7 @@ prefix required — just press the key combo directly.
 
 | Key | Action |
 |-----|--------|
-| `Option+w` | Close current pane/surface (press twice for the last surface in a workspace) |
+| `Option+w` | Close current pane/surface (press twice when it is the last surface in a workspace) |
 | `Option+z` | Restore most recently closed surface (undo-close) |
 | `Option+/` | Flash current workspace (name — first-line description — branch — #PR) |
 | `Option+?` | Popup with full workspace description (including body) |

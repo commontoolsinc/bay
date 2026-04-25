@@ -148,9 +148,14 @@ func newSurfaceCloseCmd() *cobra.Command {
   bay sf close self                 close the current pane's surface
   bay sf rm shell-2                 same thing with the rm alias
 
+When invoked non-interactively, as from the Option+w tmux keybinding,
+closing the last surface in a workspace requires a quick second close
+attempt. Interactive command-line invocations close the last surface on
+the first command.
+
 Closing an agent surface prompts for confirmation when stdin is a
 terminal — agents carry valuable conversation context. Use --force to
-skip the prompt.`,
+skip close confirmations.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -163,7 +168,7 @@ skip the prompt.`,
 
 	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (disambiguates with --dock)")
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (only valid with --ws or a workspace prefix)")
-	cmd.Flags().BoolVarP(&force, "force", "f", false, "skip the confirmation prompt for agent surfaces")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "skip close confirmations")
 
 	return cmd
 }
@@ -173,8 +178,10 @@ skip the prompt.`,
 // and we don't want a bare invocation to silently close the current pane.
 // Use `bay close self` to target the current surface.
 //
-// Agent surfaces prompt for confirmation when stdin is a TTY (unless force
-// is true). Other surface types close without prompting.
+// Non-interactive last-surface closes require a quick second invocation to
+// protect keybinding users from accidental workspace teardown. Agent surfaces
+// prompt for confirmation when stdin is a TTY (unless force is true). Other
+// surface types close without prompting.
 func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string, force bool) error {
 	if len(args) == 0 {
 		if wsFlag != "" || dockFlag != "" {
@@ -203,10 +210,12 @@ func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string,
 	}
 
 	// Two protections, neither of which fires with --force:
-	//   - last-surface double-tap: closing the only surface in a workspace
+	//   - last-surface double-tap: for non-interactive invocations (tmux
+	//     run-shell keybindings), closing the only surface in a workspace
 	//     tears down the visible pane (and triggers the orphan grace timer).
 	//     Easy to fat-finger via M-w; require a second close attempt within
-	//     a short window to confirm.
+	//     a short window to confirm. Interactive CLI closes are allowed on the
+	//     first command.
 	//   - agent y/N: agent surfaces carry conversation context worth
 	//     protecting on its own. Skipped when the last-surface check has
 	//     already fired — one confirmation is enough.
@@ -218,7 +227,7 @@ func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string,
 		switch s := ws.FindSurface(sName); {
 		case s == nil:
 			// Surface not in manifest; let SurfaceClose surface the error.
-		case len(ws.Surfaces) == 1:
+		case len(ws.Surfaces) == 1 && shouldConfirmLastSurfaceClose():
 			if !confirmLastSurfaceClose(eng.Tmux.DisplayMessage, dockName, wsName) {
 				return nil
 			}

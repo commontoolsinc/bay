@@ -79,11 +79,14 @@ func withConfirmStubs(t *testing.T, lastSurface, agent func(name string) bool) (
 
 	origLast := confirmLastSurfaceClose
 	origAgent := confirmAgentClose
+	origShould := shouldConfirmLastSurfaceClose
 	t.Cleanup(func() {
 		confirmLastSurfaceClose = origLast
 		confirmAgentClose = origAgent
+		shouldConfirmLastSurfaceClose = origShould
 	})
 
+	shouldConfirmLastSurfaceClose = func() bool { return true }
 	confirmLastSurfaceClose = func(_ flashFunc, dock, ws string) bool {
 		lc = append(lc, dock+":"+ws)
 		if lastSurface == nil {
@@ -101,7 +104,7 @@ func withConfirmStubs(t *testing.T, lastSurface, agent func(name string) bool) (
 	return &lc, &ac
 }
 
-func TestRunSurfaceClose_LastSurface_FiresDoubleTap(t *testing.T) {
+func TestRunSurfaceClose_LastSurface_NonInteractiveFiresDoubleTap(t *testing.T) {
 	last, agent := withConfirmStubs(t, func(string) bool { return false }, nil)
 
 	eng, _, _, _ := testNavEngine(t)
@@ -128,7 +131,7 @@ func TestRunSurfaceClose_LastSurface_FiresDoubleTap(t *testing.T) {
 	}
 }
 
-func TestRunSurfaceClose_LastSurface_AcceptedCloses(t *testing.T) {
+func TestRunSurfaceClose_LastSurface_NonInteractiveAcceptedCloses(t *testing.T) {
 	withConfirmStubs(t, func(string) bool { return true }, nil)
 
 	eng, _, _, _ := testNavEngine(t)
@@ -143,6 +146,38 @@ func TestRunSurfaceClose_LastSurface_AcceptedCloses(t *testing.T) {
 	ws, _ := eng.WsShow("labs", "w1")
 	if len(ws.Surfaces) != 0 {
 		t.Errorf("accepted confirmation should close surface, got %d surfaces", len(ws.Surfaces))
+	}
+}
+
+func TestRunSurfaceClose_LastSurface_InteractiveSkipsDoubleTap(t *testing.T) {
+	last, agent := withConfirmStubs(t,
+		func(string) bool {
+			t.Fatalf("last-surface confirm should not fire for interactive CLI close")
+			return false
+		},
+		nil,
+	)
+	shouldConfirmLastSurfaceClose = func() bool { return false }
+
+	eng, _, _, _ := testNavEngine(t)
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+
+	if err := runSurfaceClose(eng, []string{"w1:shell"}, "", "", false); err != nil {
+		t.Fatalf("runSurfaceClose: %v", err)
+	}
+
+	if len(*last) != 0 {
+		t.Errorf("last-surface confirm should not fire for interactive close, got %v", *last)
+	}
+	if len(*agent) != 0 {
+		t.Errorf("agent prompt should not fire for shell surface, got %v", *agent)
+	}
+
+	ws, _ := eng.WsShow("labs", "w1")
+	if len(ws.Surfaces) != 0 {
+		t.Errorf("interactive last-surface close should close surface, got %d surfaces", len(ws.Surfaces))
 	}
 }
 
@@ -192,7 +227,7 @@ func TestRunSurfaceClose_LastSurface_ForceBypassesBoth(t *testing.T) {
 	}
 }
 
-func TestRunSurfaceClose_LastSurfaceAgent_OnlyDoubleTap(t *testing.T) {
+func TestRunSurfaceClose_LastSurfaceAgent_NonInteractiveOnlyDoubleTap(t *testing.T) {
 	// When the last surface is an agent, the double-tap supersedes the
 	// agent y/N prompt — one confirmation, not two.
 	last, agent := withConfirmStubs(t, func(string) bool { return true }, nil)
@@ -221,6 +256,39 @@ func TestRunSurfaceClose_LastSurfaceAgent_OnlyDoubleTap(t *testing.T) {
 	}
 	if len(*agent) != 0 {
 		t.Errorf("agent confirm should be suppressed when last-surface fires, got %v", *agent)
+	}
+}
+
+func TestRunSurfaceClose_LastSurfaceAgent_InteractivePromptsAgent(t *testing.T) {
+	last, agent := withConfirmStubs(t,
+		func(string) bool {
+			t.Fatalf("last-surface confirm should not fire for interactive CLI close")
+			return false
+		},
+		func(string) bool { return true },
+	)
+	shouldConfirmLastSurfaceClose = func() bool { return false }
+
+	eng, _, _, _ := testNavEngine(t)
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "claude", Agent: "claude", SplitDir: "v"}); err != nil {
+		t.Fatalf("SurfaceAdd agent: %v", err)
+	}
+	if err := eng.SurfaceClose("labs", "w1", "shell", true); err != nil {
+		t.Fatalf("seed close shell: %v", err)
+	}
+
+	if err := runSurfaceClose(eng, []string{"w1:claude"}, "", "", false); err != nil {
+		t.Fatalf("runSurfaceClose: %v", err)
+	}
+
+	if len(*last) != 0 {
+		t.Errorf("last-surface confirm should not fire for interactive close, got %v", *last)
+	}
+	if len(*agent) != 1 || (*agent)[0] != "claude" {
+		t.Errorf("interactive last-agent close should prompt once, got %v", *agent)
 	}
 }
 
