@@ -428,33 +428,18 @@ func (m *Mock) GetWindowOption(windowID string, option string) (string, error) {
 	return val, nil
 }
 
-func (m *Mock) WaitingWindowIDs(session string) (map[string]bool, error) {
-	m.record("WaitingWindowIDs", session)
+func (m *Mock) WaitingOrBellWindowIDs(session string) (map[string]bool, error) {
+	m.record("WaitingOrBellWindowIDs", session)
 	if !m.sessions[session] {
 		return nil, fmt.Errorf("session %q not found", session)
 	}
 	result := make(map[string]bool)
 	for id, w := range m.windows {
-		if w.session == session {
-			if val, ok := w.options["@bay-waiting"]; ok && val == "1" {
-				result[id] = true
-			}
+		if w.session != session {
+			continue
 		}
-	}
-	return result, nil
-}
-
-func (m *Mock) BellWindowIDs(session string) (map[string]bool, error) {
-	m.record("BellWindowIDs", session)
-	if !m.sessions[session] {
-		return nil, fmt.Errorf("session %q not found", session)
-	}
-	result := make(map[string]bool)
-	for id, w := range m.windows {
-		if w.session == session {
-			if val, ok := w.options["@bay-bell"]; ok && val == "1" {
-				result[id] = true
-			}
+		if w.options["@bay-waiting"] == "1" || w.options["@bay-bell"] == "1" {
+			result[id] = true
 		}
 	}
 	return result, nil

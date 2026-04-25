@@ -121,38 +121,19 @@ func (r *Real) GetWindowOption(windowID string, option string) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
-func (r *Real) WaitingWindowIDs(session string) (map[string]bool, error) {
-	out, err := run("list-windows", "-t", exactSession(session), "-F", "#{window_id}\t#{@bay-waiting}")
+func (r *Real) WaitingOrBellWindowIDs(session string) (map[string]bool, error) {
+	out, err := run("list-windows", "-t", exactSession(session), "-F", "#{window_id}\t#{@bay-waiting}\t#{window_bell_flag}")
 	if err != nil {
 		return nil, err
 	}
 	result := make(map[string]bool)
 	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
+		line = strings.TrimRight(line, "\r")
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, "\t", 2)
-		if len(parts) == 2 && parts[1] == "1" {
-			result[parts[0]] = true
-		}
-	}
-	return result, nil
-}
-
-func (r *Real) BellWindowIDs(session string) (map[string]bool, error) {
-	out, err := run("list-windows", "-t", exactSession(session), "-F", "#{window_id}\t#{window_bell_flag}")
-	if err != nil {
-		return nil, err
-	}
-	result := make(map[string]bool)
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		parts := strings.SplitN(line, "\t", 2)
-		if len(parts) == 2 && parts[1] == "1" {
+		parts := strings.SplitN(line, "\t", 3)
+		if len(parts) == 3 && (parts[1] == "1" || parts[2] == "1") {
 			result[parts[0]] = true
 		}
 	}

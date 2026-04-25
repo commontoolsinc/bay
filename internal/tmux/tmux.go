@@ -45,9 +45,13 @@ type Interface interface {
 	CurrentWindowID() (string, error)
 	CurrentPaneID() (string, error)
 
-	// Batch queries
-	WaitingWindowIDs(session string) (map[string]bool, error) // windows with @bay-waiting=1
-	BellWindowIDs(session string) (map[string]bool, error)    // windows with bell flag set
+	// WaitingOrBellWindowIDs returns windows in the session that are waiting
+	// for user attention. Two signals are merged because different agents
+	// surface readiness differently: Codex rings the terminal bell natively;
+	// Claude can bell via Bay's PermissionRequest hook and is also covered
+	// by regex prompt patterns; other prompt-driven agents rely on
+	// @bay-waiting from the generic regex monitor.
+	WaitingOrBellWindowIDs(session string) (map[string]bool, error)
 
 	MoveWindow(windowID string, targetIndex int) error
 	MoveWindowAfter(windowID string, afterWindowID string) error

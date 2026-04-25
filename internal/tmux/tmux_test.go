@@ -9,6 +9,37 @@ import (
 var _ Interface = (*Mock)(nil)
 var _ Interface = (*Real)(nil)
 
+func TestWaitingOrBellWindowIDsMergesSources(t *testing.T) {
+	m := NewMock()
+	if err := m.NewSession("work"); err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	waitingID, err := m.NewWindow("work", "waiting", "/tmp")
+	if err != nil {
+		t.Fatalf("NewWindow waiting: %v", err)
+	}
+	bellID, err := m.NewWindow("work", "bell", "/tmp")
+	if err != nil {
+		t.Fatalf("NewWindow bell: %v", err)
+	}
+	if err := m.SetWindowOption(waitingID, "@bay-waiting", "1"); err != nil {
+		t.Fatalf("SetWindowOption waiting: %v", err)
+	}
+	if err := m.SetWindowOption(bellID, "@bay-bell", "1"); err != nil {
+		t.Fatalf("SetWindowOption bell: %v", err)
+	}
+
+	got, err := m.WaitingOrBellWindowIDs("work")
+	if err != nil {
+		t.Fatalf("WaitingOrBellWindowIDs: %v", err)
+	}
+	for _, id := range []string{waitingID, bellID} {
+		if !got[id] {
+			t.Fatalf("missing waiting window %s in %#v", id, got)
+		}
+	}
+}
+
 func TestVisibleWidth(t *testing.T) {
 	tests := []struct {
 		name string

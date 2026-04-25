@@ -2074,6 +2074,31 @@ func TestList_UsesDockDefaultAgentForShellWorkspace(t *testing.T) {
 	}
 }
 
+func TestList_MarksBellWindowsWaiting(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Agent: "codex"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if err := mockTmux.SetWindowOption(ws.Surfaces[0].Tmux.WindowID, "@bay-bell", "1"); err != nil {
+		t.Fatalf("SetWindowOption: %v", err)
+	}
+
+	docks, err := eng.List()
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+
+	if len(docks) != 1 || len(docks[0].Workspaces) != 1 {
+		t.Fatalf("unexpected dock/workspace count: %#v", docks)
+	}
+	if !docks[0].Workspaces[0].Waiting {
+		t.Fatalf("workspace should be waiting from bell flag: %#v", docks[0].Workspaces[0])
+	}
+}
+
 func TestList_PreservesWorkspaceAgentOverride(t *testing.T) {
 	// Verify that creating a workspace with a non-default agent
 	// shows that agent in the List output.
