@@ -239,7 +239,7 @@ apply. The sync-finalize refuse case is covered separately below.
 **Refuse-to-close notification:** included in v1. When the
 orphan-hygiene sync-finalize path attempts `WsClose(force=false)`
 on a workspace whose surfaces died and the close is refused
-(dirty or unpushed), `PendingCloseAt` is cleared and the
+(dirty or unlanded), `PendingCloseAt` is cleared and the
 workspace lingers as a permanent orphan. Pre-undo-close, this
 fails silently: the user's Option+W looked like it worked, the
 workspace quietly stayed around.
@@ -249,7 +249,7 @@ addressed to the dock's tmux session:
 
 ```
 foo: workspace kept (uncommitted changes).
-foo: workspace kept (unpushed commits).
+foo: workspace kept (unlanded commits).
 ```
 
 The toast fires from the sync goroutine, which has no TTY, so

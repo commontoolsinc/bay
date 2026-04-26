@@ -349,10 +349,11 @@ bay ws new auth-fix --description "Login flow fixes"
 #### `bay ws close [name] [--force] [--done] [--clean] [--dry-run]`
 
 Close a workspace and all its surfaces. For worktree workspaces,
-checks for uncommitted changes and unpushed commits. Refuses if dirty
-unless `--force` is used. If the branch has been pushed, bay deletes
-the local branch on close — no stale branches left behind. Pass
-`self` to close the current workspace.
+checks for uncommitted changes and unlanded commits. Refuses if dirty
+unless `--force` is used. If the branch has been pushed, or its patches
+are already on the default branch after a squash merge or cherry-pick,
+bay deletes the local branch on close — no stale branches left behind.
+Pass `self` to close the current workspace.
 
 Batch flags (without a name):
 - `--done`: close workspaces that are not dirty and not pending (have
@@ -376,8 +377,8 @@ the workspace for auto-close after a 60-second grace window
 (`Workspace.PendingCloseAt` in the manifest). The user (or an
 agent) can cancel by re-adding a surface; `SurfaceAdd` clears
 `PendingCloseAt` unconditionally. If the grace expires with no
-surfaces, sync runs `WsClose(force=false)` — clean + pushed
-finalizes the teardown; dirty or unpushed clears `PendingCloseAt`
+surfaces, sync runs `WsClose(force=false)` — clean + landed
+finalizes the teardown; dirty or unlanded clears `PendingCloseAt`
 to stop retries and leaves a permanent orphan for the user to
 resolve manually.
 

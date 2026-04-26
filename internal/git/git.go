@@ -18,6 +18,9 @@ type Interface interface {
 
 	// State checks
 	IsDirty(path string) (bool, error)
+	// HasUnpushedCommits reports whether closing the worktree would discard
+	// committed work. The real implementation treats pushed remote branches
+	// and patch-equivalent commits on the default branch as safe.
 	HasUnpushedCommits(path string) (bool, error)
 	CurrentBranch(path string) (string, error)
 

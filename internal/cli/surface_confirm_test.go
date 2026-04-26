@@ -175,7 +175,7 @@ func TestRunSurfaceClose_LastSurface_DirtyShowsRefusalInsteadOfDoubleTap(t *test
 func TestRunSurfaceClose_LastSurface_UnpushedShowsRefusalInsteadOfDoubleTap(t *testing.T) {
 	last, agent := withConfirmStubs(t,
 		func(string) bool {
-			t.Fatalf("last-surface confirm should not fire when workspace has unpushed commits")
+			t.Fatalf("last-surface confirm should not fire when workspace has unlanded commits")
 			return false
 		},
 		nil,
@@ -201,13 +201,13 @@ func TestRunSurfaceClose_LastSurface_UnpushedShowsRefusalInsteadOfDoubleTap(t *t
 	if len(*agent) != 0 {
 		t.Errorf("agent prompt should not fire for shell surface, got %v", *agent)
 	}
-	if msgs := mockTmux.DisplayMessages(); len(msgs) != 1 || !strings.Contains(msgs[0], "workspace kept (unpushed commits)") {
-		t.Fatalf("expected unpushed refusal toast, got %v", msgs)
+	if msgs := mockTmux.DisplayMessages(); len(msgs) != 1 || !strings.Contains(msgs[0], "workspace kept (unlanded commits)") {
+		t.Fatalf("expected unlanded refusal toast, got %v", msgs)
 	}
 
 	got, _ := eng.WsShow("labs", "w1")
 	if len(got.Surfaces) != 1 {
-		t.Errorf("unpushed refusal should leave surface intact, got %d surfaces", len(got.Surfaces))
+		t.Errorf("unlanded refusal should leave surface intact, got %d surfaces", len(got.Surfaces))
 	}
 }
 

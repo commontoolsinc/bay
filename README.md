@@ -19,7 +19,7 @@ bay recover                     # reconstruct everything after reboot
 
 ## What it does
 
-- **Worktree lifecycle** — create, close, rename workspaces backed by git worktrees or external directories. Safety checks on close (dirty files, unpushed commits). Each workspace is an isolated checkout.
+- **Worktree lifecycle** — create, close, rename workspaces backed by git worktrees or external directories. Safety checks on close (dirty files, unlanded commits). Each workspace is an isolated checkout.
 - **Surface model** — each workspace contains one or more **surfaces** (agent panes, shell panes, command panes, GUI editors). Bay tracks them all and recovers them after reboot.
 - **Editor integration** — `bay edit` opens your workspace in cursor, VS Code, zed, nvim, or vim. `bay edit --all` for multi-root.
 - **Agent support** — optionally launch AI agents (Claude Code, Codex, Gemini). Agent surfaces resume on restart via configured `resume_args`. Closing an agent surface prompts for confirmation.
