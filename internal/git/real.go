@@ -138,6 +138,11 @@ func (r *Real) hasPatchUniqueCommitsAboveDefault(path string) (bool, error) {
 	if _, err := revParse(path, remoteDefault); err != nil {
 		return false, fmt.Errorf("cannot resolve %s: %w", remoteDefault, err)
 	}
+	if hasMerge, err := hasMergeCommitsAbove(path, remoteDefault); err != nil {
+		return false, err
+	} else if hasMerge {
+		return true, nil
+	}
 
 	cmd := exec.Command("git", "-C", path, "cherry", remoteDefault, "HEAD")
 	out, err := cmd.Output()
@@ -150,6 +155,15 @@ func (r *Real) hasPatchUniqueCommitsAboveDefault(path string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+func hasMergeCommitsAbove(path, upstream string) (bool, error) {
+	cmd := exec.Command("git", "-C", path, "rev-list", "--merges", "--max-count=1", upstream+"..HEAD")
+	out, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("git rev-list --merges %s..HEAD: %w", upstream, err)
+	}
+	return strings.TrimSpace(string(out)) != "", nil
 }
 
 func (r *Real) CurrentBranch(path string) (string, error) {

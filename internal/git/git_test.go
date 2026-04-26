@@ -201,6 +201,35 @@ func TestReal_HasUnpushedCommits_SquashMergedPatchIsSafe(t *testing.T) {
 	}
 }
 
+func TestReal_HasUnpushedCommits_UnpushedMergeCommitIsUnsafe(t *testing.T) {
+	repo := newRealGitRepo(t)
+	runGit(t, repo, "checkout", "-b", "feature")
+	writeRepoFile(t, repo, "feature.txt", "feature\n")
+	runGit(t, repo, "add", "feature.txt")
+	runGit(t, repo, "commit", "-m", "feature")
+	runGit(t, repo, "push", "-u", "origin", "feature")
+	runGit(t, repo, "push", "origin", "--delete", "feature")
+
+	runGit(t, repo, "checkout", "main")
+	runGit(t, repo, "cherry-pick", "--no-commit", "feature")
+	runGit(t, repo, "commit", "-m", "squash feature")
+	runGit(t, repo, "push", "origin", "main")
+
+	runGit(t, repo, "checkout", "feature")
+	runGit(t, repo, "merge", "--no-ff", "--no-commit", "main")
+	writeRepoFile(t, repo, "feature.txt", "feature\nmanual merge edit\n")
+	runGit(t, repo, "add", "feature.txt")
+	runGit(t, repo, "commit", "-m", "manual merge")
+
+	unpushed, err := NewReal().HasUnpushedCommits(repo)
+	if err != nil {
+		t.Fatalf("HasUnpushedCommits failed: %v", err)
+	}
+	if !unpushed {
+		t.Fatal("unpushed merge commit should be unsafe")
+	}
+}
+
 func TestMock_CurrentBranch(t *testing.T) {
 	m := NewMock()
 	m.SetBranch("/repo", "feature-x")
