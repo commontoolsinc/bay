@@ -350,10 +350,11 @@ bay ws new auth-fix --description "Login flow fixes"
 
 Close a workspace and all its surfaces. For worktree workspaces,
 checks for uncommitted changes and unlanded commits. Refuses if dirty
-unless `--force` is used. If the branch has been pushed, or its patches
-are already on the default branch after a squash merge or cherry-pick,
-bay deletes the local branch on close — no stale branches left behind.
-Pass `self` to close the current workspace.
+unless `--force` is used. If the branch has been pushed, its HEAD is
+included in a merged PR, or its patches are already on the default
+branch after a squash merge or cherry-pick, bay deletes the local branch
+on close — no stale branches left behind. Pass `self` to close the
+current workspace.
 
 Batch flags (without a name):
 - `--done`: close workspaces that are not dirty and not pending (have

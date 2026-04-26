@@ -1022,10 +1022,11 @@ and recreates tmux state on demand. Your worktrees and code are on disk.
 
 **"bay ws close refuses and I just want it gone."**
 Safety checks prevent losing work. Bay treats pushed branches and
-squash-merged/cherry-picked patches on the default branch as safe. If
-you're sure despite a refusal, use `--force`. Or use `bay ws close --done`
-to batch-close all finished workspaces, or `--clean` for anything
-non-dirty. Add `--dry-run` to preview first.
+commits included in a merged PR as safe, including multi-commit squash
+merges. It also accepts squash-merged/cherry-picked patches on the
+default branch. If you're sure despite a refusal, use `--force`. Or use
+`bay ws close --done` to batch-close all finished workspaces, or
+`--clean` for anything non-dirty. Add `--dry-run` to preview first.
 
 **"The waiting indicator isn't working."**
 For bell-based detection: ensure `monitor-bell` is on in tmux (it is by

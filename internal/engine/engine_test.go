@@ -731,6 +731,65 @@ func TestWsClose_KeepsBranchWhenUnpushed(t *testing.T) {
 	}
 }
 
+func TestWsClose_AllowsMergedPRHeadWhenPatchCheckSaysUnlanded(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Branch: "fix/squash"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	if err := eng.withManifest(func(m *manifest.Manifest) error {
+		got := m.FindDock("labs").FindWorkspace(ws.Name)
+		got.Worktree.PR = "123"
+		return nil
+	}); err != nil {
+		t.Fatalf("set PR: %v", err)
+	}
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetUnpushed(ws.Path, true)
+	mockGit.SetLocalHeadInMergedPR(ws.Path, "123", true)
+
+	if err := eng.WsClose("labs", ws.Name, false); err != nil {
+		t.Fatalf("WsClose: %v", err)
+	}
+	if deleted := mockGit.DeletedBranches(); len(deleted) != 1 {
+		t.Fatalf("expected branch delete after merged PR close, got %v", deleted)
+	}
+}
+
+func TestWsClose_RefusesCommitsAfterMergedPR(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Branch: "fix/continued"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	if err := eng.withManifest(func(m *manifest.Manifest) error {
+		got := m.FindDock("labs").FindWorkspace(ws.Name)
+		got.Worktree.PR = "123"
+		return nil
+	}); err != nil {
+		t.Fatalf("set PR: %v", err)
+	}
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetUnpushed(ws.Path, true)
+	mockGit.SetLocalHeadInMergedPR(ws.Path, "123", false)
+
+	err = eng.WsClose("labs", ws.Name, false)
+	if err == nil || !strings.Contains(err.Error(), "unlanded commits") {
+		t.Fatalf("expected unlanded refusal, got %v", err)
+	}
+	if deleted := mockGit.DeletedBranches(); len(deleted) != 0 {
+		t.Fatalf("branch should not be deleted after refusal, got %v", deleted)
+	}
+}
+
 func TestWsClose_DeletesPushedBranchOnForce(t *testing.T) {
 	eng, _ := testEngine(t)
 
@@ -3070,6 +3129,44 @@ func TestWsCloseClean_SkipsDirtyWorkspaces(t *testing.T) {
 	}
 	if dock.FindWorkspace("w2") != nil {
 		t.Error("w2 (clean) should be closed")
+	}
+}
+
+func TestWsCloseDone_ClosesMergedPRHead(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Branch: "fix/squash"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	if err := eng.withManifest(func(m *manifest.Manifest) error {
+		got := m.FindDock("labs").FindWorkspace(ws.Name)
+		got.Worktree.PR = "123"
+		return nil
+	}); err != nil {
+		t.Fatalf("set PR: %v", err)
+	}
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetUnpushed(ws.Path, true)
+	mockGit.SetLocalHeadInMergedPR(ws.Path, "123", true)
+
+	closed, skipped, err := eng.WsCloseDone("labs", false, false)
+	if err != nil {
+		t.Fatalf("WsCloseDone failed: %v", err)
+	}
+	if len(skipped) != 0 {
+		t.Fatalf("expected no skipped workspaces, got %v", skipped)
+	}
+	if len(closed) != 1 {
+		t.Fatalf("expected 1 closed workspace, got %v", closed)
+	}
+
+	m, _ := eng.LoadManifest()
+	if got := m.FindDock("labs").FindWorkspace(ws.Name); got != nil {
+		t.Fatalf("workspace should be closed, still present: %#v", got)
 	}
 }
 

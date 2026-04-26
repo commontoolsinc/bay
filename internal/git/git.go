@@ -22,6 +22,11 @@ type Interface interface {
 	// committed work. The real implementation treats pushed remote branches
 	// and patch-equivalent commits on the default branch as safe.
 	HasUnpushedCommits(path string) (bool, error)
+	// LocalHeadInMergedPR reports whether the current HEAD is included in the
+	// head commit of a merged PR. It is used as an additional close-safety
+	// signal for squash-merged multi-commit PRs, where patch comparison
+	// against the default branch can be inconclusive.
+	LocalHeadInMergedPR(path string, pr string) (bool, error)
 	CurrentBranch(path string) (string, error)
 
 	// Gitignore

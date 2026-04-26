@@ -20,6 +20,7 @@ type repoState struct {
 	ignored       map[string]bool
 	worktrees     map[string]bool
 	prs           map[string]string // branch → PR number
+	mergedPRs     map[string]bool   // PR number → local HEAD is contained in merged PR
 	merged        map[string]bool   // branch → merged
 	branchExists  map[string]bool   // branch → exists (local or remote)
 	repoRoot      string
@@ -68,6 +69,7 @@ func (m *Mock) repo(path string) *repoState {
 			ignored:        make(map[string]bool),
 			worktrees:      make(map[string]bool),
 			prs:            make(map[string]string),
+			mergedPRs:      make(map[string]bool),
 			merged:         make(map[string]bool),
 			branchExists:   make(map[string]bool),
 			excludeMatches: make(map[string]excludeMatch),
@@ -222,6 +224,11 @@ func (m *Mock) HasUnpushedCommits(path string) (bool, error) {
 	return m.repo(path).unpushed, nil
 }
 
+func (m *Mock) LocalHeadInMergedPR(path string, pr string) (bool, error) {
+	m.record("LocalHeadInMergedPR", path, pr)
+	return m.repo(path).mergedPRs[pr], nil
+}
+
 func (m *Mock) CurrentBranch(path string) (string, error) {
 	m.record("CurrentBranch", path)
 	return m.repo(path).branch, nil
@@ -277,6 +284,12 @@ func (m *Mock) PRForBranch(path, branch string) (string, error) {
 // SetPR configures the PR number for a branch in a repo.
 func (m *Mock) SetPR(path, branch, pr string) {
 	m.repo(path).prs[branch] = pr
+}
+
+// SetLocalHeadInMergedPR configures whether the current HEAD is contained in
+// the merged PR head for a repo path.
+func (m *Mock) SetLocalHeadInMergedPR(path, pr string, landed bool) {
+	m.repo(path).mergedPRs[pr] = landed
 }
 
 func (m *Mock) Fetch(path string) error {
