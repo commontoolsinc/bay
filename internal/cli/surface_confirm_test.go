@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -128,6 +130,84 @@ func TestRunSurfaceClose_LastSurface_NonInteractiveFiresDoubleTap(t *testing.T) 
 	ws, _ := eng.WsShow("labs", "w1")
 	if len(ws.Surfaces) != 1 {
 		t.Errorf("declined confirmation should leave surface intact, got %d surfaces", len(ws.Surfaces))
+	}
+}
+
+func TestRunSurfaceClose_LastSurface_DirtyShowsRefusalInsteadOfDoubleTap(t *testing.T) {
+	last, agent := withConfirmStubs(t,
+		func(string) bool {
+			t.Fatalf("last-surface confirm should not fire when workspace is dirty")
+			return false
+		},
+		nil,
+	)
+
+	eng, mockTmux, mockGit, _ := testNavEngine(t)
+	ws, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	if err := os.MkdirAll(ws.Path, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	mockGit.SetDirty(ws.Path, true)
+
+	if err := runSurfaceClose(eng, []string{"w1:shell"}, "", "", false); err != nil {
+		t.Fatalf("runSurfaceClose: %v", err)
+	}
+
+	if len(*last) != 0 {
+		t.Errorf("last-surface confirm should not fire, got %v", *last)
+	}
+	if len(*agent) != 0 {
+		t.Errorf("agent prompt should not fire for shell surface, got %v", *agent)
+	}
+	if msgs := mockTmux.DisplayMessages(); len(msgs) != 1 || !strings.Contains(msgs[0], "workspace kept (uncommitted changes)") {
+		t.Fatalf("expected dirty refusal toast, got %v", msgs)
+	}
+
+	got, _ := eng.WsShow("labs", "w1")
+	if len(got.Surfaces) != 1 {
+		t.Errorf("dirty refusal should leave surface intact, got %d surfaces", len(got.Surfaces))
+	}
+}
+
+func TestRunSurfaceClose_LastSurface_UnpushedShowsRefusalInsteadOfDoubleTap(t *testing.T) {
+	last, agent := withConfirmStubs(t,
+		func(string) bool {
+			t.Fatalf("last-surface confirm should not fire when workspace has unpushed commits")
+			return false
+		},
+		nil,
+	)
+
+	eng, mockTmux, mockGit, _ := testNavEngine(t)
+	ws, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	if err := os.MkdirAll(ws.Path, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	mockGit.SetUnpushed(ws.Path, true)
+
+	if err := runSurfaceClose(eng, []string{"w1:shell"}, "", "", false); err != nil {
+		t.Fatalf("runSurfaceClose: %v", err)
+	}
+
+	if len(*last) != 0 {
+		t.Errorf("last-surface confirm should not fire, got %v", *last)
+	}
+	if len(*agent) != 0 {
+		t.Errorf("agent prompt should not fire for shell surface, got %v", *agent)
+	}
+	if msgs := mockTmux.DisplayMessages(); len(msgs) != 1 || !strings.Contains(msgs[0], "workspace kept (unpushed commits)") {
+		t.Fatalf("expected unpushed refusal toast, got %v", msgs)
+	}
+
+	got, _ := eng.WsShow("labs", "w1")
+	if len(got.Surfaces) != 1 {
+		t.Errorf("unpushed refusal should leave surface intact, got %d surfaces", len(got.Surfaces))
 	}
 }
 

@@ -228,6 +228,12 @@ func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string,
 		case s == nil:
 			// Surface not in manifest; let SurfaceClose surface the error.
 		case len(ws.Surfaces) == 1 && shouldConfirmLastSurfaceClose():
+			if msg, err := lastSurfaceCloseRefusal(eng, ws); err != nil {
+				return err
+			} else if msg != "" {
+				notify(eng, msg)
+				return nil
+			}
 			if !confirmLastSurfaceClose(eng.Tmux.DisplayMessage, dockName, wsName) {
 				return nil
 			}
@@ -240,6 +246,32 @@ func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string,
 	}
 
 	return eng.SurfaceClose(dockName, wsName, sName, force)
+}
+
+func lastSurfaceCloseRefusal(eng *engine.Engine, ws *manifest.Workspace) (string, error) {
+	if ws.Type != manifest.WorkspaceTypeWorktree || ws.Path == "" {
+		return "", nil
+	}
+	if _, statErr := os.Stat(ws.Path); statErr != nil {
+		return "", nil
+	}
+
+	dirty, err := eng.Git.IsDirty(ws.Path)
+	if err != nil {
+		return "", fmt.Errorf("checking workspace state: %w", err)
+	}
+	if dirty {
+		return fmt.Sprintf("%s: workspace kept (uncommitted changes).", ws.Name), nil
+	}
+
+	unpushed, err := eng.Git.HasUnpushedCommits(ws.Path)
+	if err != nil {
+		return "", fmt.Errorf("workspace %q: could not verify push status: %w (use --force to override)", ws.Name, err)
+	}
+	if unpushed {
+		return fmt.Sprintf("%s: workspace kept (unpushed commits).", ws.Name), nil
+	}
+	return "", nil
 }
 
 func newSurfaceRestoreCmd() *cobra.Command {
