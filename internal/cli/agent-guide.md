@@ -521,20 +521,21 @@ Cycle to the next or previous workspace within the current dock.
 
 ### Surface commands
 
-#### `bay surface new <kind> [args] [--ws WS] [--dock DOCK] [--pane|--split h|v]`
+#### `bay surface new <kind> [args] [--ws WS] [--dock DOCK] [--window|--split h|v]`
 
 Add a surface to a workspace. `<kind>` is one of `shell`, `agent`,
 `cmd`, or `edit`. `--ws` selects which workspace (default: current).
-Defaults to a new tmux window. Use `--pane` for a split pane.
+Defaults to a vertical split in the current tmux window. Use
+`--window` for a new tmux window.
 
 Alias: `bay sf new`. Same subcommands as `bay new`.
 
 ```
-bay surface new shell                       # shell in new window
+bay surface new shell                       # shell as split pane
 bay surface new shell tests                 # surface named "tests"
-bay surface new agent codex                 # agent in new window
+bay surface new agent codex                 # agent as split pane
 bay surface new cmd "npm test" tests        # named cmd surface
-bay surface new shell --pane                # split into current window
+bay surface new shell --window              # shell in new tmux window
 bay surface new shell --ws auth-fix         # in a different workspace
 bay sf new edit                             # editor surface
 ```
@@ -591,8 +592,8 @@ Rename a surface. With one arg, renames the current surface.
 
 ```
 bay go [query]         → bay surface go [query]
-bay shell [name]       → shell in new window (--pane for split)
-bay agent [type]       → agent in new window (--pane for split)
+bay shell [name]       → shell as split pane (--window for new window)
+bay agent [type]       → agent as split pane (--window for new window)
 bay edit [workspace]   → workspace editor (--dock for all workspaces)
 bay restore            → bay surface restore (undo-close)
 bay ls                 → list everything
@@ -600,15 +601,16 @@ bay pwd                → show current bay context
 bay recover            → reconstruct state after reboot
 ```
 
-#### `bay edit [workspace] [--dock|--ws] [--editor CMD] [--pane|--split h|v]`
+#### `bay edit [workspace] [--dock|--ws] [--editor CMD] [--window|--split h|v]`
 
 Open the workspace's root directory in an editor. Use the editor's
 file browser to navigate within the project. To edit individual files,
 open a shell instead.
 
-Terminal editors (nvim, vim) create a tracked surface in their own
-tmux window (or pane with `--pane`). The surface is cleaned up when
-the editor exits. GUI editors (Cursor, VS Code, Zed) launch and
+Terminal editors (nvim, vim) create a tracked surface, splitting the
+current window by default. Use `--window` for a new tmux window. The
+surface is cleaned up when the editor exits. GUI editors (Cursor, VS
+Code, Zed) launch and
 return — running `bay edit` again focuses the existing window.
 
 Editor resolution: `--editor` flag > `default_editor` in config >
@@ -619,7 +621,7 @@ bay edit                    # open current workspace (default)
 bay edit auth-fix           # open specific workspace
 bay edit --editor vim       # use a specific editor this time
 bay edit --dock             # dock editor (all workspaces)
-bay edit --pane             # split into current window
+bay edit --window           # terminal editor in new window
 ```
 
 For editor configuration, see `bay config editor` below.
@@ -640,15 +642,15 @@ bay config editor cursor        # set the default editor
 The `editor` subcommand replaces the old `bay edit --set` and
 `bay edit --show` flags.
 
-#### `bay shell [name] [--ws WS] [--dock DOCK] [--pane|--split h|v]`
+#### `bay shell [name] [--ws WS] [--dock DOCK] [--window|--split h|v]`
 
-Open a shell surface in a workspace. Defaults to a new tmux window.
-Use `--pane` for a split pane.
+Open a shell surface in a workspace. Defaults to a vertical split in
+the current tmux window. Use `--window` for a new tmux window.
 
 ```
-bay shell                   # shell in new window
+bay shell                   # shell as split pane
 bay shell logs              # named "logs"
-bay shell --pane            # split into current window
+bay shell --window          # shell in new window
 bay shell logs --ws auth-fix # in a different workspace
 ```
 
@@ -760,10 +762,10 @@ it.
 bay shell
 ```
 
-Opens in its own window. For a split pane alongside the agent:
+Opens as a split pane alongside the agent. For a separate tmux window:
 
 ```
-bay shell --pane
+bay shell --window
 ```
 
 ### Open an editor for the workspace

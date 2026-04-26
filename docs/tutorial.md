@@ -198,7 +198,8 @@ bay agent
 ```
 
 This launches your default agent (bay auto-detects Claude Code, Codex,
-or Gemini on your PATH) in its own window. You can also create a
+or Gemini on your PATH) as a split pane. Use `bay agent --window` if
+you want a separate tmux window. You can also create a
 workspace with an agent as the first surface: `bay ws new --agent`.
 
 Add a shell alongside it
