@@ -365,7 +365,7 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 // clearPendingClose resets PendingCloseAt on a workspace to 0. Used
 // after a finalize attempt fails so the orphan doesn't get retried
 // on every sync pass; the user must resolve the underlying issue
-// (dirty, unpushed) and close manually.
+// (dirty, unlanded) and close manually.
 func (e *Engine) clearPendingClose(dockName, wsName string) {
 	_ = e.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)

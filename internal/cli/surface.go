@@ -271,7 +271,7 @@ func lastSurfaceCloseRefusal(eng *engine.Engine, ws *manifest.Workspace) (string
 		return "", fmt.Errorf("workspace %q: could not verify push status: %w (use --force to override)", ws.Name, err)
 	}
 	if unpushed {
-		return fmt.Sprintf("%s: workspace kept (unpushed commits).", ws.Name), nil
+		return fmt.Sprintf("%s: workspace kept (unlanded commits).", ws.Name), nil
 	}
 	return "", nil
 }

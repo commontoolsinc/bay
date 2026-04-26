@@ -22,7 +22,7 @@ Bay's auto-close cascade today only fires when bay *itself*
 closes the last surface (`surface.go:282-289`). The sync-detect
 path deliberately doesn't cascade, on the historical reasoning of
 "don't nuke work the user might want to keep." That caution makes
-sense for dirty / unpushed workspaces, but for clean workspaces
+sense for dirty / unlanded workspaces, but for clean workspaces
 it just leaves clutter.
 
 ## The fix
@@ -40,7 +40,7 @@ Two-step cascade with a grace window between strip and finalize:
      to do.
    - If `PendingCloseAt <= now` and surfaces are still empty:
      attempt `WsClose(force=false)`. On success the workspace is
-     gone. On refusal (dirty or unpushed) clear `PendingCloseAt`
+     gone. On refusal (dirty or unlanded) clear `PendingCloseAt`
      so the workspace isn't re-tried every sync — it becomes a
      permanent orphan for the user to resolve.
 
@@ -53,8 +53,8 @@ workspace shouldn't live, 60s passes and it cleans up.
 The existing `WsClose(force=false)` gates on both `IsDirty` and
 `HasUnpushedCommits` (`workspace.go:357-371`):
 
-- Clean + pushed → close succeeds; workspace and branch cleaned up.
-- Dirty or unpushed → close refuses; `PendingCloseAt` gets cleared
+- Clean + landed → close succeeds; workspace and branch cleaned up.
+- Dirty or unlanded → close refuses; `PendingCloseAt` gets cleared
   so we stop retrying. Workspace stays as a permanent orphan.
 
 We reuse those gates as-is. No new policy beyond the grace window.
@@ -77,7 +77,7 @@ close immediately.
 
 - **In scope:** newly-emptied workspaces in this sync pass (at
   least one surface was just stripped, result is empty, workspace
-  is clean + pushed).
+  is clean + landed).
 - **Not in scope:** pre-existing orphans from before this change
   shipped. They persist until the user closes them manually. No
   retroactive sweep — keeps the behavior predictable and avoids

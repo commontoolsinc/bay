@@ -360,9 +360,11 @@ func (e *Engine) closeWorkspaceState(dockName, wsName string, force bool) ([]str
 
 	// Safety checks for worktree workspaces + determine if the branch
 	// is safe to delete after the worktree is removed. The gate is
-	// HasUnpushedCommits, not git's merge-into-default check — a
-	// pushed-but-unmerged PR branch is safe to delete locally because
-	// the work exists on the remote.
+	// HasUnpushedCommits, not git's merge-into-default check: a
+	// pushed-but-unmerged PR branch is safe because the work exists on
+	// the remote, and squash-merged/cherry-picked patches are safe
+	// because HasUnpushedCommits treats patch-equivalent commits on the
+	// default branch as landed.
 	branchSafeToDelete := false
 	if ws.Type == manifest.WorkspaceTypeWorktree && !force {
 		if _, statErr := os.Stat(ws.Path); statErr == nil {
@@ -379,9 +381,9 @@ func (e *Engine) closeWorkspaceState(dockName, wsName string, force bool) ([]str
 				return nil, fmt.Errorf("workspace %q: could not verify push status: %w (use --force to override)", wsName, err)
 			}
 			if unpushed {
-				return nil, fmt.Errorf("workspace %q has unpushed commits (use --force to override)", wsName)
+				return nil, fmt.Errorf("workspace %q has unlanded commits (use --force to override)", wsName)
 			}
-			// Safety checks passed → branch is pushed.
+			// Safety checks passed → branch work exists remotely or has landed.
 			if ws.Worktree != nil && ws.Worktree.Branch != "" {
 				branchSafeToDelete = true
 			}
@@ -487,7 +489,7 @@ func (e *Engine) WsClose(dockName, wsName string, force bool) error {
 // non-empty reason string to skip the workspace, or "" to include it.
 type wsSkipFunc func(ws *manifest.Workspace, dockName string) string
 
-// WsCloseClean closes all clean (non-dirty, no unpushed commits) workspaces.
+// WsCloseClean closes all clean (non-dirty, no unlanded commits) workspaces.
 func (e *Engine) WsCloseClean(dockName string, force, dryRun bool, exclude ...string) ([]string, []string, error) {
 	return e.wsCloseBatch(dockName, force, dryRun, nil, exclude...)
 }
@@ -556,7 +558,7 @@ func (e *Engine) wsCloseBatch(dockName string, force, dryRun bool, skip wsSkipFu
 	}
 
 	if dryRun {
-		// Dry-run: check dirty/unpushed status but don't mutate anything.
+		// Dry-run: check dirty/unlanded status but don't mutate anything.
 		for _, t := range targets {
 			label := t.dock + ":" + t.name
 			ws := m.FindDock(t.dock).FindWorkspace(t.name)
@@ -566,7 +568,7 @@ func (e *Engine) wsCloseBatch(dockName string, force, dryRun bool, skip wsSkipFu
 					continue
 				}
 				if unpushed, err := e.Git.HasUnpushedCommits(ws.Path); err == nil && unpushed {
-					skipped = append(skipped, label+" (unpushed)")
+					skipped = append(skipped, label+" (unlanded)")
 					continue
 				}
 			}
@@ -576,7 +578,7 @@ func (e *Engine) wsCloseBatch(dockName string, force, dryRun bool, skip wsSkipFu
 	}
 
 	// First pass: do all manifest mutations, collecting window IDs to kill.
-	// closeWorkspaceState performs the dirty/unpushed safety checks, so
+	// closeWorkspaceState performs the dirty/unlanded safety checks, so
 	// dirty workspaces are naturally skipped (added to skipped list).
 	type pendingKill struct {
 		dock      string

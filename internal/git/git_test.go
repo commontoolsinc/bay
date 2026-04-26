@@ -1,6 +1,9 @@
 package git
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -124,6 +127,109 @@ func TestMock_HasUnpushedCommits(t *testing.T) {
 	}
 }
 
+func TestReal_HasUnpushedCommits_PushedBranchIsSafe(t *testing.T) {
+	repo := newRealGitRepo(t)
+	runGit(t, repo, "checkout", "-b", "feature")
+	writeRepoFile(t, repo, "feature.txt", "feature\n")
+	runGit(t, repo, "add", "feature.txt")
+	runGit(t, repo, "commit", "-m", "feature")
+	runGit(t, repo, "push", "-u", "origin", "feature")
+
+	unpushed, err := NewReal().HasUnpushedCommits(repo)
+	if err != nil {
+		t.Fatalf("HasUnpushedCommits failed: %v", err)
+	}
+	if unpushed {
+		t.Fatal("pushed branch should be safe")
+	}
+}
+
+func TestReal_HasUnpushedCommits_PushedBranchWithoutUpstreamIsSafe(t *testing.T) {
+	repo := newRealGitRepo(t)
+	runGit(t, repo, "checkout", "-b", "feature")
+	writeRepoFile(t, repo, "feature.txt", "feature\n")
+	runGit(t, repo, "add", "feature.txt")
+	runGit(t, repo, "commit", "-m", "feature")
+	runGit(t, repo, "push", "origin", "feature")
+
+	unpushed, err := NewReal().HasUnpushedCommits(repo)
+	if err != nil {
+		t.Fatalf("HasUnpushedCommits failed: %v", err)
+	}
+	if unpushed {
+		t.Fatal("branch pushed without upstream should be safe")
+	}
+}
+
+func TestReal_HasUnpushedCommits_LocalOnlyPatchIsUnsafe(t *testing.T) {
+	repo := newRealGitRepo(t)
+	runGit(t, repo, "checkout", "-b", "feature")
+	writeRepoFile(t, repo, "feature.txt", "feature\n")
+	runGit(t, repo, "add", "feature.txt")
+	runGit(t, repo, "commit", "-m", "feature")
+
+	unpushed, err := NewReal().HasUnpushedCommits(repo)
+	if err != nil {
+		t.Fatalf("HasUnpushedCommits failed: %v", err)
+	}
+	if !unpushed {
+		t.Fatal("local-only patch should be unsafe")
+	}
+}
+
+func TestReal_HasUnpushedCommits_SquashMergedPatchIsSafe(t *testing.T) {
+	repo := newRealGitRepo(t)
+	runGit(t, repo, "checkout", "-b", "feature")
+	writeRepoFile(t, repo, "feature.txt", "feature\n")
+	runGit(t, repo, "add", "feature.txt")
+	runGit(t, repo, "commit", "-m", "feature")
+	runGit(t, repo, "push", "-u", "origin", "feature")
+	runGit(t, repo, "push", "origin", "--delete", "feature")
+
+	runGit(t, repo, "checkout", "main")
+	runGit(t, repo, "cherry-pick", "--no-commit", "feature")
+	runGit(t, repo, "commit", "-m", "squash feature")
+	runGit(t, repo, "push", "origin", "main")
+	runGit(t, repo, "checkout", "feature")
+
+	unpushed, err := NewReal().HasUnpushedCommits(repo)
+	if err != nil {
+		t.Fatalf("HasUnpushedCommits failed: %v", err)
+	}
+	if unpushed {
+		t.Fatal("squash-merged patch should be safe")
+	}
+}
+
+func TestReal_HasUnpushedCommits_UnpushedMergeCommitIsUnsafe(t *testing.T) {
+	repo := newRealGitRepo(t)
+	runGit(t, repo, "checkout", "-b", "feature")
+	writeRepoFile(t, repo, "feature.txt", "feature\n")
+	runGit(t, repo, "add", "feature.txt")
+	runGit(t, repo, "commit", "-m", "feature")
+	runGit(t, repo, "push", "-u", "origin", "feature")
+	runGit(t, repo, "push", "origin", "--delete", "feature")
+
+	runGit(t, repo, "checkout", "main")
+	runGit(t, repo, "cherry-pick", "--no-commit", "feature")
+	runGit(t, repo, "commit", "-m", "squash feature")
+	runGit(t, repo, "push", "origin", "main")
+
+	runGit(t, repo, "checkout", "feature")
+	runGit(t, repo, "merge", "--no-ff", "--no-commit", "main")
+	writeRepoFile(t, repo, "feature.txt", "feature\nmanual merge edit\n")
+	runGit(t, repo, "add", "feature.txt")
+	runGit(t, repo, "commit", "-m", "manual merge")
+
+	unpushed, err := NewReal().HasUnpushedCommits(repo)
+	if err != nil {
+		t.Fatalf("HasUnpushedCommits failed: %v", err)
+	}
+	if !unpushed {
+		t.Fatal("unpushed merge commit should be unsafe")
+	}
+}
+
 func TestMock_CurrentBranch(t *testing.T) {
 	m := NewMock()
 	m.SetBranch("/repo", "feature-x")
@@ -164,6 +270,47 @@ func TestMock_IsIgnored(t *testing.T) {
 	}
 	if ignored {
 		t.Error("expected main.go to not be ignored")
+	}
+}
+
+func newRealGitRepo(t *testing.T) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+
+	root := t.TempDir()
+	remote := filepath.Join(root, "remote.git")
+	repo := filepath.Join(root, "repo")
+
+	runGit(t, "", "init", "--bare", remote)
+	runGit(t, "", "clone", remote, repo)
+	runGit(t, repo, "config", "user.email", "bay@example.test")
+	runGit(t, repo, "config", "user.name", "Bay Tests")
+	runGit(t, repo, "checkout", "-b", "main")
+	writeRepoFile(t, repo, "README.md", "initial\n")
+	runGit(t, repo, "add", "README.md")
+	runGit(t, repo, "commit", "-m", "initial")
+	runGit(t, repo, "push", "-u", "origin", "main")
+	return repo
+}
+
+func writeRepoFile(t *testing.T, repo, name, contents string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(repo, name), []byte(contents), 0o644); err != nil {
+		t.Fatalf("write %s: %v", name, err)
+	}
+}
+
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %s: %v", strings.Join(args, " "), strings.TrimSpace(string(out)), err)
 	}
 }
 

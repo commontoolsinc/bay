@@ -89,30 +89,81 @@ func (r *Real) IsDirty(path string) (bool, error) {
 func (r *Real) HasUnpushedCommits(path string) (bool, error) {
 	cmd := exec.Command("git", "-C", path, "log", "@{upstream}..", "--oneline")
 	out, err := cmd.Output()
-	if err != nil {
-		// No upstream tracking branch. Compare HEAD against the default
-		// branch to detect commits the user made. This covers both:
-		// - Detached HEAD (bay's default worktree state) with new commits
-		// - Named branches with no upstream tracking
-		return r.hasCommitsAboveDefault(path)
-	}
-	return strings.TrimSpace(string(out)) != "", nil
-}
-
-// hasCommitsAboveDefault checks if HEAD has commits beyond the default branch.
-// Uses origin/<default> so a stale local ref doesn't produce false positives.
-func (r *Real) hasCommitsAboveDefault(path string) (bool, error) {
-	defaultBranch, err := r.DefaultBranch(path)
-	if err != nil {
-		// Can't determine default branch — fail safe
-		return false, fmt.Errorf("cannot determine default branch: %w", err)
-	}
-	logCmd := exec.Command("git", "-C", path, "log", "origin/"+defaultBranch+"..HEAD", "--oneline")
-	logOut, logErr := logCmd.Output()
-	if logErr != nil {
+	if err == nil && strings.TrimSpace(string(out)) == "" {
 		return false, nil
 	}
-	return strings.TrimSpace(string(logOut)) != "", nil
+
+	// If HEAD is ahead of its upstream, or the upstream is missing/deleted,
+	// do a patch-equivalence check against the remote default branch before
+	// refusing close. This lets bay close squash-merged or cherry-picked
+	// branches whose exact local commits are not on a remote ref anymore.
+	if pushed, pushErr := r.headExistsOnRemoteBranch(path); pushErr == nil && pushed {
+		return false, nil
+	}
+	return r.hasPatchUniqueCommitsAboveDefault(path)
+}
+
+// headExistsOnRemoteBranch reports whether the current named branch's
+// origin/<branch> ref contains HEAD, even when upstream tracking is missing.
+func (r *Real) headExistsOnRemoteBranch(path string) (bool, error) {
+	branch, err := r.CurrentBranch(path)
+	if err != nil || branch == "" {
+		return false, err
+	}
+	remoteBranch := "origin/" + branch
+	if _, err := revParse(path, remoteBranch); err != nil {
+		return false, nil
+	}
+	cmd := exec.Command("git", "-C", path, "merge-base", "--is-ancestor", "HEAD", remoteBranch)
+	err = cmd.Run()
+	if err == nil {
+		return true, nil
+	}
+	if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+		return false, nil
+	}
+	return false, fmt.Errorf("git merge-base: %w", err)
+}
+
+// hasPatchUniqueCommitsAboveDefault checks whether HEAD contains any commits
+// whose patches are not present on origin/<default>. This is intentionally
+// broader than object identity: squash merges and cherry-picks produce new
+// commit IDs, but the work is already landed and safe for bay to clean up.
+func (r *Real) hasPatchUniqueCommitsAboveDefault(path string) (bool, error) {
+	defaultBranch, err := r.DefaultBranch(path)
+	if err != nil {
+		return false, fmt.Errorf("cannot determine default branch: %w", err)
+	}
+	remoteDefault := "origin/" + defaultBranch
+	if _, err := revParse(path, remoteDefault); err != nil {
+		return false, fmt.Errorf("cannot resolve %s: %w", remoteDefault, err)
+	}
+	if hasMerge, err := hasMergeCommitsAbove(path, remoteDefault); err != nil {
+		return false, err
+	} else if hasMerge {
+		return true, nil
+	}
+
+	cmd := exec.Command("git", "-C", path, "cherry", remoteDefault, "HEAD")
+	out, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("git cherry %s HEAD: %w", remoteDefault, err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "+") {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func hasMergeCommitsAbove(path, upstream string) (bool, error) {
+	cmd := exec.Command("git", "-C", path, "rev-list", "--merges", "--max-count=1", upstream+"..HEAD")
+	out, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("git rev-list --merges %s..HEAD: %w", upstream, err)
+	}
+	return strings.TrimSpace(string(out)) != "", nil
 }
 
 func (r *Real) CurrentBranch(path string) (string, error) {

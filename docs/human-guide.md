@@ -263,8 +263,9 @@ If a workspace's last pane disappears — via tmux-native kill
 60-second grace window. You can rescue it during that window by
 adding a surface back (`bay sf new --ws <name>`); the pending close
 cancels. If you don't act, bay runs `bay ws close` with the normal
-safety gates: clean and pushed workspaces get cleaned up, dirty or
-unpushed ones stay in place.
+safety gates: clean workspaces whose commits are pushed or already
+landed on the default branch get cleaned up; dirty workspaces or
+workspaces with unlanded commits stay in place.
 
 `bay sf close --force` and direct `bay ws close` are unaffected —
 those are explicit user actions and close immediately.
@@ -461,7 +462,7 @@ bay ws new [name] --dir <path>              # external workspace
 bay ws new [name] --description "<text>"    # set description at creation time
 bay ws new [name] -q                        # suppress output (scripting)
 bay ws close [name]                         # close + delete pushed branch ('self' for current)
-bay ws close [name] --force                 # skip safety checks (keeps unpushed branches)
+bay ws close [name] --force                 # skip safety checks (keeps unlanded branches)
 bay ws close --done                         # close workspaces not dirty or pending
 bay ws close --clean                        # close all non-dirty workspaces
 bay ws close --done --dry-run               # preview what --done would close
@@ -1020,10 +1021,11 @@ It's not gone. Run `bay recover`. Bay stores everything in the manifest
 and recreates tmux state on demand. Your worktrees and code are on disk.
 
 **"bay ws close refuses and I just want it gone."**
-Safety checks prevent losing work. If you're sure (e.g., the PR was
-merged), use `--force`. Or use `bay ws close --done` to batch-close all
-finished workspaces, or `--clean` for anything non-dirty. Add `--dry-run`
-to preview first.
+Safety checks prevent losing work. Bay treats pushed branches and
+squash-merged/cherry-picked patches on the default branch as safe. If
+you're sure despite a refusal, use `--force`. Or use `bay ws close --done`
+to batch-close all finished workspaces, or `--clean` for anything
+non-dirty. Add `--dry-run` to preview first.
 
 **"The waiting indicator isn't working."**
 For bell-based detection: ensure `monitor-bell` is on in tmux (it is by
