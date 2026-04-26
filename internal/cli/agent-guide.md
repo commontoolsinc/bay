@@ -294,16 +294,20 @@ flags or, when omitted, inherited from the current tmux session.
 | Command | Default target when omitted |
 |---------|-----------------------------|
 | `bay ws new [name]` | current dock from tmux session, or auto-bootstrap from CWD |
+| `bay ws ls` | workspaces in current dock (errors outside a dock) |
 | `bay ws show [name]` | current workspace |
 | `bay ws close [name]` | required (no default; use `--done`/`--clean` for batch) |
 | `bay ws close --done` | workspaces not dirty or pending in current dock |
 | `bay ws close --clean` | all non-dirty workspaces in current dock |
 | `bay pwd` | current bay context |
 | `bay surface new <kind> [name]` | current workspace |
+| `bay surface ls` | surfaces in current workspace |
 | `bay surface close <name>` | required (use `self` for current pane) |
 | `bay surface show [name]` | current pane's surface |
 | `bay surface tree` (none) | n/a — surfaces are leaves; use `bay surface show` |
+| `bay dock ls [name]` | current dock from tmux session, or all docks |
 | `bay dock tree [name]` | current dock from tmux session |
+| `bay repo tree [name]` | repo at current CWD |
 | `bay go [query]` | surfaces in current workspace |
 | `bay ws go [query]` | workspaces in current dock |
 | `bay edit [workspace]` | current workspace |
@@ -710,7 +714,7 @@ is needed.
 
 ```
 bay dock new <name> [--repo NAME] [--agent TYPE] [--terminal APP]
-bay dock ls
+bay dock ls [name] [--json] [--rows]
 bay dock show <name>
 bay dock close <name> [--force]
 bay dock recover <name>
@@ -719,7 +723,8 @@ bay dock recover <name>
 ### Repo management
 
 ```
-bay repo ls
+bay repo ls [--json]
+bay repo tree [name]
 bay repo show <name>
 bay repo add <name> <path>
 bay repo remove <name> [--force]

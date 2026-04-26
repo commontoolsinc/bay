@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -447,7 +448,10 @@ func newSurfacePrevCmd() *cobra.Command {
 }
 
 func newSurfaceLsCmd() *cobra.Command {
-	return &cobra.Command{
+	var jsonOutput bool
+	var shortOutput bool
+
+	cmd := &cobra.Command{
 		Use:     "ls",
 		Aliases: []string{"list"},
 		Short:   "List surfaces in the current workspace",
@@ -462,30 +466,51 @@ func newSurfaceLsCmd() *cobra.Command {
 				return fmt.Errorf("not in a bay workspace")
 			}
 
-			eng.SyncAll()
-			ws, err := eng.WsShow(dockName, wsName)
+			docks, err := eng.List()
 			if err != nil {
 				return err
 			}
+			var surfaces []engine.SurfaceInfo
+			for _, d := range docks {
+				if d.Name != dockName {
+					continue
+				}
+				for _, ws := range d.Workspaces {
+					if ws.Name == wsName {
+						surfaces = ws.Surfaces
+						break
+					}
+				}
+				break
+			}
 
-			if len(ws.Surfaces) == 0 {
+			if jsonOutput {
+				data, err := json.MarshalIndent(surfaces, "", "  ")
+				if err != nil {
+					return err
+				}
+				fmt.Println(string(data))
+				return nil
+			}
+
+			if len(surfaces) == 0 {
 				fmt.Println("No surfaces in this workspace.")
 				return nil
 			}
 
-			for _, s := range ws.Surfaces {
-				line := fmt.Sprintf("%-12s %s", s.Name, string(s.Type))
-				if s.Agent != nil && *s.Agent != "" {
-					line += fmt.Sprintf("  agent=%s", *s.Agent)
-				}
-				if s.Command != nil && *s.Command != "" {
-					line += fmt.Sprintf("  cmd=%s", *s.Command)
-				}
-				fmt.Println(line)
+			currentSurface := ""
+			if ctx, err := eng.CurrentContext(); err == nil && ctx.Dock == dockName && ctx.Workspace == wsName {
+				currentSurface = ctx.Surface
 			}
+			fmt.Print(FormatSurfaceList(surfaces, currentSurface, shortOutput))
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON")
+	cmd.Flags().BoolVarP(&shortOutput, "short", "s", false, "compact output without labels or key names")
+
+	return cmd
 }
 
 func newSurfaceShowCmd() *cobra.Command {

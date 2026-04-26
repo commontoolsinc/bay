@@ -860,6 +860,8 @@ func resolveTarget(eng *engine.Engine, target string) (string, string, error) {
 }
 
 func newWsLsCmd() *cobra.Command {
+	var jsonOutput bool
+	var rowsOutput bool
 	var shortOutput bool
 
 	cmd := &cobra.Command{
@@ -888,11 +890,17 @@ func newWsLsCmd() *cobra.Command {
 			})
 			view.SetCurrentContext(eng)
 
+			if jsonOutput {
+				return printListViewJSON(view, rowsOutput)
+			}
+
 			fmt.Print(FormatListView(view, false, shortOutput))
 			return nil
 		},
 	}
 
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON")
+	cmd.Flags().BoolVar(&rowsOutput, "rows", false, "output JSON as denormalized rows")
 	cmd.Flags().BoolVarP(&shortOutput, "short", "s", false, "compact output without labels or key names")
 
 	return cmd

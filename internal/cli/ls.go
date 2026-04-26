@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/commontoolsinc/bay/internal/config"
@@ -21,7 +20,7 @@ func newLsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "ls",
 		Aliases: []string{"list"},
-		Short:   "Browse the Bay hierarchy",
+		Short:   "Browse the Bay hierarchy from your current scope (use -R for full descent)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
@@ -56,16 +55,7 @@ func newLsCmd() *cobra.Command {
 			view.SetCurrentContext(eng)
 
 			if jsonOutput {
-				var payload interface{} = view
-				if rowsOutput {
-					payload = ListRows(view)
-				}
-				data, err := json.MarshalIndent(payload, "", "  ")
-				if err != nil {
-					return err
-				}
-				fmt.Println(string(data))
-				return nil
+				return printListViewJSON(view, rowsOutput)
 			}
 
 			fmt.Print(FormatListView(view, longOutput, shortOutput))

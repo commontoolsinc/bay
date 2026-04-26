@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,6 +22,7 @@ func newRepoCmd() *cobra.Command {
 	cmd.AddCommand(
 		newRepoAddCmd(),
 		newRepoLsCmd(),
+		newRepoTreeCmd(),
 		newRepoShowCmd(),
 		newRepoRemoveCmd(),
 		newRepoInitCmd(),
@@ -73,7 +75,9 @@ Use --force to add a directory that is not a git repo.`,
 }
 
 func newRepoLsCmd() *cobra.Command {
-	return &cobra.Command{
+	var jsonOutput bool
+
+	cmd := &cobra.Command{
 		Use:     "ls",
 		Aliases: []string{"list"},
 		Short:   "List configured repos",
@@ -86,23 +90,99 @@ func newRepoLsCmd() *cobra.Command {
 			if repoErr != nil {
 				return repoErr
 			}
+			docks, err := eng.List()
+			if err != nil {
+				return err
+			}
+
+			repoInfos := make([]engine.RepoInfo, len(repos))
+			for i, r := range repos {
+				repoInfos[i] = engine.RepoInfo{
+					Name:        r.Name,
+					Path:        r.Path,
+					WorktreeDir: r.EffectiveWorktreeDir(),
+				}
+			}
+
+			if jsonOutput {
+				entries := make([]RepoListEntry, len(repoInfos))
+				for i, r := range repoInfos {
+					entries[i] = RepoListEntry{Name: r.Name, Path: r.Path, WorktreeDir: r.WorktreeDir}
+					for _, d := range docks {
+						if d.Repo == r.Name {
+							entries[i].Docks = append(entries[i].Docks, d.Name)
+						}
+					}
+				}
+				data, jsonErr := json.MarshalIndent(entries, "", "  ")
+				if jsonErr != nil {
+					return jsonErr
+				}
+				fmt.Println(string(data))
+				return nil
+			}
+
 			if len(repos) == 0 {
 				fmt.Println("No repos configured.")
 				return nil
 			}
-			var repoInfos []engine.RepoInfo
-			for _, r := range repos {
-				repoInfos = append(repoInfos, engine.RepoInfo{
-					Name:        r.Name,
-					Path:        r.Path,
-					WorktreeDir: r.EffectiveWorktreeDir(),
-				})
-			}
-			docks, _ := eng.List()
+
 			fmt.Print(FormatRepoTree(repoInfos, docks))
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON")
+
+	return cmd
+}
+
+func newRepoTreeCmd() *cobra.Command {
+	var longOutput bool
+	var shortOutput bool
+
+	cmd := &cobra.Command{
+		Use:   "tree [name]",
+		Short: "Tree view of a repo's docks, workspaces, and surfaces (default: current)",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine()
+			if err != nil {
+				return err
+			}
+			name, err := inferRepoName(eng, args)
+			if err != nil {
+				return err
+			}
+
+			docks, err := eng.List()
+			if err != nil {
+				return err
+			}
+
+			view := BuildListView(docks, ListViewOptions{
+				Focus:     ListFocus{Kind: FocusRepo, Repo: name},
+				Recursive: true,
+			})
+			view.SetCurrentContext(eng)
+
+			fmt.Print(FormatListView(view, longOutput, shortOutput))
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVarP(&longOutput, "long", "l", false, "show extended details such as tmux IDs")
+	cmd.Flags().BoolVarP(&shortOutput, "short", "s", false, "compact output without labels or key names")
+
+	return cmd
+}
+
+// RepoListEntry is a repo summary plus its dock names, returned by `bay rp ls --json`.
+type RepoListEntry struct {
+	Name        string   `json:"name"`
+	Path        string   `json:"path"`
+	WorktreeDir string   `json:"worktree_dir"`
+	Docks       []string `json:"docks,omitempty"`
 }
 
 func newRepoShowCmd() *cobra.Command {
