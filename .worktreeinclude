@@ -1,0 +1,3 @@
+# Repo-root paths to copy into new worktrees.
+# Example: .env
+CLAUDE.local.md

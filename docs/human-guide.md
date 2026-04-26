@@ -683,6 +683,42 @@ non-canonical bay command and prompts to update them. Opt out per-key
 by adding `# bay-keep: M-s` to the bay block — bay will stop asking
 about that key, and `bay doctor` will stop reporting it as missing.
 
+### Optional: personal agent launcher
+
+If you regularly switch between specific agents, add a personal tmux
+key table outside the managed `# Bay keybindings` block. This keeps
+Bay's default keymap focused on generic actions while giving you
+deterministic shortcuts for your own agent workflow.
+
+This example uses `Option+o` as an agent namespace; choose another
+unused key if you already bind it. Lowercase opens a split pane,
+uppercase opens a new tmux window, and `w` switches to workspace
+creation:
+
+```tmux
+# BEGIN bay-personal-agent-bindings
+# Personal Bay agent launcher. Keep outside the "# Bay keybindings" block.
+bind-key -n M-o display-message "agent: c Claude, x Codex, g Gemini | Shift=window | w=workspace" \; switch-client -T bay-agent
+
+bind-key -T bay-agent c run-shell 'bay agent claude --pane || true'
+bind-key -T bay-agent C run-shell 'bay agent claude --window || true'
+bind-key -T bay-agent x run-shell 'bay agent codex --pane || true'
+bind-key -T bay-agent X run-shell 'bay agent codex --window || true'
+bind-key -T bay-agent g run-shell 'bay agent gemini --pane || true'
+bind-key -T bay-agent G run-shell 'bay agent gemini --window || true'
+
+bind-key -T bay-agent w display-message "workspace: c Claude, x Codex, g Gemini" \; switch-client -T bay-agent-workspace
+bind-key -T bay-agent-workspace c run-shell 'bay ws new -q --agent claude || true'
+bind-key -T bay-agent-workspace x run-shell 'bay ws new -q --agent codex || true'
+bind-key -T bay-agent-workspace g run-shell 'bay ws new -q --agent gemini || true'
+# END bay-personal-agent-bindings
+```
+
+After editing `~/.tmux.conf`, reload it with `prefix + r` if you use
+the recommended reload binding, or run `tmux source-file ~/.tmux.conf`.
+Delete the rows for agents you do not use, or replace the built-in
+agent names with custom agents from your Bay config.
+
 ## Command palette
 
 `Option+p` opens the command palette in a tmux popup: a
