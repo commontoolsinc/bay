@@ -145,6 +145,7 @@ A **repo** is a local git checkout that bay creates worktrees from.
 ```
 bay repo add myproject ~/projects/myproject
 bay repo add myproject ~/projects/myproject --url git@github.com:org/repo.git
+bay repo add myproject ~/projects/myproject --worktree-dir ~/wt/myproject
 bay repo ls
 bay repo show myproject
 bay repo remove myproject
@@ -458,6 +459,7 @@ bay ws new [name] --branch <b>              # checkout or create branch
 bay ws new [name] --repo <r>                # override dock's repo
 bay ws new [name] --dir <path>              # external workspace
 bay ws new [name] --description "<text>"    # set description at creation time
+bay ws new [name] -q                        # suppress output (scripting)
 bay ws close [name]                         # close + delete pushed branch ('self' for current)
 bay ws close [name] --force                 # skip safety checks (keeps unpushed branches)
 bay ws close --done                         # close workspaces not dirty or pending
@@ -465,6 +467,8 @@ bay ws close --clean                        # close all non-dirty workspaces
 bay ws close --done --dry-run               # preview what --done would close
 bay ws show [name]                          # detailed view (default: current)
 bay ws show [name] --json                   # machine-readable
+bay ws show [name] --short                  # one-line summary (name — desc — branch — #PR)
+bay ws show [name] --short --plain          # same, no ANSI (for tmux display-message etc.)
 bay ws show [name] --flash                  # first-line flash in status bar (Option+/)
 bay ws show [name] --popup                  # full description in popup (Option+?)
 bay ws rename [name] <new-name>             # rename (defaults to current workspace)
