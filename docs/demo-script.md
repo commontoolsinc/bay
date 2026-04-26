@@ -18,7 +18,9 @@ Have a dock (e.g., `labs`) with 3-4 workspaces ready:
 - tmux status line configured
 - A branch `fix/rate-limit` exists in the repo with no workspace
   attached (for the cold-open tab-complete)
-- Start focused on a shell in the dock (not inside a workspace)
+- Start focused on a shell in the demo dock (not inside a workspace)
+  — the demo dock must be the *current* dock so `bay dk tree` defaults
+  to it
 
 ---
 
@@ -44,7 +46,7 @@ bay ws new --branch fix/rate-limit
 
 ```
 bay agent
-bay tree
+bay dk tree
 ```
 
 > Agent running. There it is in the tree.
@@ -53,7 +55,7 @@ bay tree
 
 ```
 bay ws close rate-limit
-bay tree
+bay dk tree
 ```
 
 > Gone. Branch, worktree, window, agent — all cleaned up.
@@ -83,7 +85,7 @@ bay tree
 
 ## 3. At Scale — The Dashboard (60s)
 
-**Do:** Run `bay tree`
+**Do:** Run `bay dk tree`
 
 > This is my actual working state. I've got four things going on.
 > Bay shows me all of them — workspace name, branch, PR number,
@@ -140,7 +142,7 @@ bay tree
 **Do:** Hit `Option+C` three times in quick succession. Let each one
 create with default names.
 
-**Do:** Run `bay tree`
+**Do:** Run `bay dk tree`
 
 > Four new workspaces, just like that. Each one has its own worktree,
 > its own branch, its own tmux window. That's real keybindings, not
@@ -155,10 +157,11 @@ create with default names.
 
 > Gone. Worktree deleted, branch deleted, tmux window closed.
 
-**Do:** Hit `Option+W` three times to close the three burst-created
-workspaces.
+**Do:** Close the three burst-created workspaces with `Option+W`. Each
+is a single-surface workspace, so it takes two taps per workspace —
+the first triggers the last-surface confirmation, the second confirms.
 
-**Do:** Run `bay tree`
+**Do:** Run `bay dk tree`
 
 > All gone. No stale worktrees, no orphaned branches, no leftover
 > windows. It's that lightweight — create when you need it, throw
