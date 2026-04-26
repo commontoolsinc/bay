@@ -22,13 +22,16 @@ func newEditCmd() *cobra.Command {
 		Use:   "edit [workspace]",
 		Short: "Open editor on workspace or dock",
 		Long: `Open your editor. Default is workspace-scoped (current workspace).
+Terminal editors split the current tmux window by default; use --window
+for a new tmux window.
 
-  bay edit                    workspace editor (current workspace)
-  bay edit auth-fix           specific workspace
+  bay edit                    workspace editor as a split pane
+  bay edit auth-fix           specific workspace as a split pane
   bay edit --dock             dock editor (all workspaces)
   bay edit --dock src/main.go focus dock editor on a file
   bay edit --dock .           focus dock editor on cwd
   bay edit --editor vim       use a specific editor this time
+  bay edit --window           terminal editor in a new tmux window
 
 Editor resolution order:
   1. --editor flag (this invocation only)
@@ -64,15 +67,15 @@ Editor resolution order:
 	cmd.Flags().BoolVar(&wsScope, "ws", false, "workspace-scoped editor (default)")
 	cmd.Flags().StringVar(&editorFlag, "editor", "", "editor command (overrides config for this invocation)")
 	cmd.Flags().StringVar(&splitDir, "split", "", "split direction (h or v)")
-	cmd.Flags().BoolVar(&pane, "pane", false, "split into current window (shorthand for --split v)")
+	cmd.Flags().BoolVar(&pane, "pane", false, "split into current window (default; shorthand for --split v)")
 	cmd.Flags().BoolVar(&window, "window", false, "open as a new tmux window")
 
 	return cmd
 }
 
-// resolveSplit resolves the split direction. Default is a new window
-// (empty string). --pane forces a vertical split. --split overrides
-// the direction explicitly.
+// resolveSplit resolves the split direction. Default is a vertical split.
+// --window opts into a new tmux window. --split overrides the direction
+// explicitly.
 func resolveSplit(splitDir string, window, pane bool) string {
 	if splitDir != "" {
 		return splitDir
@@ -80,7 +83,10 @@ func resolveSplit(splitDir string, window, pane bool) string {
 	if pane {
 		return "v"
 	}
-	return "" // window (default)
+	if window {
+		return ""
+	}
+	return "v"
 }
 
 // runEditDock launches or focuses a dock-level editor that covers all

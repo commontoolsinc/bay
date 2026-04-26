@@ -207,6 +207,29 @@ func TestEditTargetFromArgs(t *testing.T) {
 	}
 }
 
+func TestResolveSplit_DefaultsToPane(t *testing.T) {
+	cases := []struct {
+		name     string
+		splitDir string
+		window   bool
+		pane     bool
+		want     string
+	}{
+		{name: "default", want: "v"},
+		{name: "window flag", window: true, want: ""},
+		{name: "pane flag", pane: true, want: "v"},
+		{name: "split h", splitDir: "h", want: "h"},
+		{name: "split overrides window", splitDir: "h", window: true, want: "h"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := resolveSplit(c.splitDir, c.window, c.pane); got != c.want {
+				t.Errorf("resolveSplit() = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
 // --- runSurfaceClose ---
 
 func TestRunSurfaceClose_ByName(t *testing.T) {

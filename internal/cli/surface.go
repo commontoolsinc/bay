@@ -64,6 +64,7 @@ func newSurfaceNewCmd() *cobra.Command {
 // surfaceNewOpts collects the options accepted by all surface-creation
 // commands (sf new + the top-level bay new). Type is required; Name defaults
 // to a per-type label. SplitDir is "h", "v", or "" (new tmux window).
+// CLI callers default this to "v" unless --window is passed.
 type surfaceNewOpts struct {
 	Type     manifest.SurfaceType
 	Agent    string // for SurfaceTypeAgent

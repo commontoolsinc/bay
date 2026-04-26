@@ -89,9 +89,9 @@ bay ws new auth-fix         # with a display name
 bay ws new --branch fix-it  # checkout or create a branch
 bay ws new --agent          # agent workspace (dock default, no shell)
 bay ws new --agent codex    # agent workspace with specific agent
-bay agent                   # launch default agent (own window)
-bay agent claude            # launch a specific agent
-bay shell                   # open a shell (own window)
+bay agent                   # launch default agent as a split pane
+bay agent claude            # launch a specific agent as a split pane
+bay shell                   # open a shell as a split pane
 bay edit                    # open the editor
 ```
 
@@ -486,11 +486,11 @@ bay ws prev                                 # prev workspace in dock
 `bay surface new` (or `bay sf new`) has subcommands for each surface type:
 
 ```
-bay surface new shell [name]               # shell in new window (default)
-bay surface new agent [type] [name]        # agent in new window
-bay surface new cmd "<command>" [name]     # command in new window
-bay surface new edit [workspace]           # editor surface
-bay surface new shell [name] --pane        # split into current window
+bay surface new shell [name]               # shell as split pane (default)
+bay surface new agent [type] [name]        # agent as split pane
+bay surface new cmd "<command>" [name]     # command as split pane
+bay surface new edit [workspace]           # editor surface as split pane
+bay surface new shell [name] --window      # shell in a new tmux window
 bay surface new shell [name] --split h     # horizontal split
 bay surface new shell [name] --ws <w>      # target a different workspace
 bay surface close <name>                   # close a surface (prompts on agents)
@@ -516,17 +516,17 @@ bay sf close shell-2
 `bay new` mirrors `bay surface new`:
 
 ```
-bay new shell [name]            # shell in new window
-bay new agent [type] [name]     # agent in new window
-bay new cmd "<command>" [name]  # command in new window
-bay new edit [workspace]        # open the editor
-bay shell [name]                # shell in new window (default)
-bay shell [name] --pane         # shell as split pane
-bay agent [type]                # agent in new window
-bay agent --pane                # agent as split pane
+bay new shell [name]            # shell as split pane
+bay new agent [type] [name]     # agent as split pane
+bay new cmd "<command>" [name]  # command as split pane
+bay new edit [workspace]        # open the editor as split pane
+bay shell [name]                # shell as split pane (default)
+bay shell [name] --window       # shell in new window
+bay agent [type]                # agent as split pane
+bay agent --window              # agent in new window
 bay edit [workspace]            # open workspace in editor (default)
 bay edit --editor vim           # use a specific editor this time
-bay edit --pane                 # editor as split pane
+bay edit --window               # editor in new window
 bay edit --dock                 # dock editor (all workspaces)
 bay close <name>                # alias for bay surface close (prompts on agents)
 bay restore                     # alias for bay surface restore (undo-close)
@@ -710,7 +710,7 @@ bay edit                    # current workspace (default)
 bay edit auth-fix           # specific workspace
 bay edit --editor vim       # use a specific editor this time
 bay edit --dock             # dock editor (all workspaces)
-bay edit --pane             # split pane instead of new window
+bay edit --window           # new window instead of split pane
 ```
 
 **GUI editors** (Cursor, VS Code, Zed) launch and return — bay does
@@ -718,9 +718,10 @@ not track the editor window. Running `bay edit` again focuses the
 existing window (these editors reuse the window for an already-open
 directory), so `Option+e` works as both "launch" and "switch to."
 
-**Terminal editors** (nvim, vim) run in their own tmux window (or
-pane with `--pane`) as a tracked surface. When you quit the editor,
-the pane closes and the surface is cleaned up automatically.
+**Terminal editors** (nvim, vim) run as tracked tmux surfaces,
+splitting the current window by default. Use `--window` for a new tmux
+window. When you quit the editor, the pane closes and the surface is
+cleaned up automatically.
 
 Editor resolution order: `--editor` flag, `default_editor` in config,
 `$VISUAL`, `$EDITOR`, then probing for cursor/code/zed/nvim/vim.

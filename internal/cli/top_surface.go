@@ -84,8 +84,8 @@ func newTopNewSurfaceCmd(spec topNewCmdSpec) *cobra.Command {
 	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (defaults to current)")
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (with --ws to disambiguate)")
 	cmd.Flags().StringVar(&splitDir, "split", "", "split direction (h or v)")
-	cmd.Flags().BoolVar(&pane, "pane", false, "split into current window (shorthand for --split v)")
-	cmd.Flags().BoolVar(&window, "window", false, "open as a new tmux window (default)")
+	cmd.Flags().BoolVar(&pane, "pane", false, "split into current window (default; shorthand for --split v)")
+	cmd.Flags().BoolVar(&window, "window", false, "open as a new tmux window")
 
 	return cmd
 }
@@ -118,11 +118,11 @@ func newTopNewAgentCmd() *cobra.Command {
 		long: `Create an agent surface. The agent type is optional — if omitted,
 uses the dock's default agent.
 
-  bay new agent                        dock's default agent
+  bay new agent                        dock's default agent as a split pane
   bay new agent claude                 specific agent
   bay new agent codex codex-debug      specific agent with custom name
   bay new agent --ws auth-fix          in another workspace
-  bay new agent --split v              as a vertical split instead of a window`,
+  bay new agent --window               as a new tmux window`,
 		args: cobra.MaximumNArgs(2),
 		buildOpts: func(args []string, splitDir string, window, pane bool) (surfaceNewOpts, error) {
 			opts := surfaceNewOpts{
@@ -185,7 +185,7 @@ use 'bay edit' instead.
   bay new edit auth-fix              specific workspace
   bay new edit --ws auth-fix         same thing with a flag
   bay new edit --editor vim          use a specific editor this time
-  bay new edit --pane                open as a split pane`,
+  bay new edit --window              open as a new tmux window`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -204,8 +204,8 @@ use 'bay edit' instead.
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (with --ws to disambiguate)")
 	cmd.Flags().StringVar(&editorFlag, "editor", "", "editor command (overrides config for this invocation)")
 	cmd.Flags().StringVar(&splitDir, "split", "", "split direction (h or v)")
-	cmd.Flags().BoolVar(&pane, "pane", false, "split into current window (shorthand for --split v)")
-	cmd.Flags().BoolVar(&window, "window", false, "open as a new tmux window (default)")
+	cmd.Flags().BoolVar(&pane, "pane", false, "split into current window (default; shorthand for --split v)")
+	cmd.Flags().BoolVar(&window, "window", false, "open as a new tmux window")
 
 	return cmd
 }
