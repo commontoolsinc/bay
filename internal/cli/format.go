@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -221,6 +222,20 @@ func trimWorkspace(ws engine.WorkspaceInfo, recursive bool) engine.WorkspaceInfo
 	}
 	ws.Surfaces = nil
 	return ws
+}
+
+// printListViewJSON marshals a ListView (or its denormalized rows) to stdout.
+func printListViewJSON(view ListView, rows bool) error {
+	var payload interface{} = view
+	if rows {
+		payload = ListRows(view)
+	}
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
+	return nil
 }
 
 func ListRows(view ListView) []ListRow {
@@ -827,6 +842,35 @@ func FormatWorkspaceShow(repoName, dockName string, ws *engine.WorkspaceInfo, lo
 	sfColWidths := alignColumnWidths(sfRows)
 	for _, sr := range sfRows {
 		writeAlignedLine(&b, sr.prefix, sr.prefixWidth, sr.metaCols, sfAlign, sfColWidths)
+	}
+	return b.String()
+}
+
+// FormatSurfaceList renders a flat list of surfaces using the shared
+// surfaceMetaCols / aligned-row machinery. currentSurface is highlighted
+// with " *" when non-empty.
+func FormatSurfaceList(surfaces []engine.SurfaceInfo, currentSurface string, short bool) string {
+	if len(surfaces) == 0 {
+		return ""
+	}
+	rows := make([]alignedRow, len(surfaces))
+	for i, s := range surfaces {
+		name := s.Name
+		if s.Name == currentSurface {
+			name += " *"
+		}
+		p, w := indentedPrefix(0, "sf", name, short)
+		rows[i] = alignedRow{
+			prefix:      p,
+			prefixWidth: w,
+			metaCols:    surfaceMetaCols(s, false, short),
+		}
+	}
+	align := alignWidth(rows)
+	colWidths := alignColumnWidths(rows)
+	var b strings.Builder
+	for _, r := range rows {
+		writeAlignedLine(&b, r.prefix, r.prefixWidth, r.metaCols, align, colWidths)
 	}
 	return b.String()
 }

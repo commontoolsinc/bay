@@ -473,7 +473,9 @@ bay ws describe [name] [<text>]             # set (first line + optional blank-l
 bay ws describe --edit                      # open $EDITOR for multi-line editing
 bay ws describe --clear                     # clear description
 bay describe [name] [<text>]                # top-level shortcut for the above
-bay ws tree                                 # tree of current dock
+bay ws ls                                   # list workspaces in current dock
+bay ws ls --json                            # machine-readable workspace list
+bay ws tree                                 # tree of current dock (workspaces + surfaces)
 bay ws go [query]                           # workspace picker (intra-dock)
 bay ws go --waiting                         # filter to waiting workspaces
 bay ws go --next-waiting                    # cycle to next waiting workspace
@@ -497,6 +499,8 @@ bay surface close <name>                   # close a surface (prompts on agents)
 bay surface close <name> --force           # skip close confirmations
 bay surface restore                        # restore the most recently closed surface
 bay surface restore --list                 # show the undo-close queue
+bay surface ls                             # list surfaces in current workspace
+bay surface ls --json                      # machine-readable surface list
 bay surface show [name]                    # show details (defaults to current)
 bay surface rename [old] <new>             # rename (defaults to current surface)
 bay surface go [query]                     # surface picker (intra-workspace)
@@ -565,6 +569,8 @@ bay repo add <name> <path>                  # register existing local repo
 bay repo add <name> <path> --url <git-url>  # clone then register
 bay repo add <name> <path> --force          # skip git repo check
 bay repo ls                                 # list repos and their docks
+bay repo ls --json                          # machine-readable repo list
+bay repo tree [name]                        # full tree for a repo (default: current)
 bay repo show <name>                        # detailed repo info
 bay repo remove <name>                      # remove (shows what --force would delete)
 bay repo remove <name> --force              # remove repo + all its docks
@@ -579,7 +585,8 @@ bay repo init [name]                        # set up bay awareness (idempotent)
 bay dock new <name> --repo <r>              # create dock + tmux session
 bay dock new <name> --repo <r> --agent <a>  # with default agent
 bay dock new <name> --terminal <t>          # with host terminal
-bay dock ls                                 # list docks (scoped if inside one)
+bay dock ls [name]                          # list dock contents (default: current)
+bay dock ls --json                          # machine-readable dock view
 bay dock show <name>                        # detailed dock info
 bay dock rename [old] <new>                 # rename (defaults to current dock)
 bay dock close <name>                       # close all workspaces + kill session
@@ -592,7 +599,7 @@ bay dock recover <name>                     # recover a single dock
 ### Listing and context
 
 ```
-bay ls                                      # context-sensitive tree view
+bay ls                                      # browse from your current scope
 bay ls -R                                   # recurse fully from current focus
 bay ls -l                                   # show tmux IDs and extended detail
 bay ls -s                                   # compact output (no labels or key names)

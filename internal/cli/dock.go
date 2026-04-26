@@ -56,10 +56,15 @@ func newDockNewCmd() *cobra.Command {
 }
 
 func newDockLsCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:     "ls",
+	var jsonOutput bool
+	var rowsOutput bool
+	var shortOutput bool
+
+	cmd := &cobra.Command{
+		Use:     "ls [name]",
 		Aliases: []string{"list"},
-		Short:   "List docks and their workspaces",
+		Short:   "List docks and their workspaces (defaults to current dock)",
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
@@ -70,22 +75,45 @@ func newDockLsCmd() *cobra.Command {
 				return err
 			}
 
-			// If inside a dock, show only that dock
-			currentSession, sessionErr := eng.Tmux.CurrentSession()
-			if sessionErr == nil {
-				for _, d := range docks {
-					if d.Name == currentSession {
-						fmt.Print(FormatDockTree([]engine.DockInfo{d}))
-						return nil
-					}
+			focus := ListFocus{Kind: FocusAll}
+			if len(args) > 0 {
+				dock := findDock(docks, args[0])
+				if dock == nil {
+					return fmt.Errorf("dock %q not found", args[0])
+				}
+				focus = ListFocus{Kind: FocusDock, Repo: dock.Repo, Dock: dock.Name}
+			} else if sess, sessionErr := eng.Tmux.CurrentSession(); sessionErr == nil {
+				if dock := findDock(docks, sess); dock != nil {
+					focus = ListFocus{Kind: FocusDock, Repo: dock.Repo, Dock: dock.Name}
 				}
 			}
 
-			// Otherwise show all docks
-			fmt.Print(FormatDockTree(docks))
+			view := BuildListView(docks, ListViewOptions{Focus: focus})
+			view.SetCurrentContext(eng)
+
+			if jsonOutput {
+				return printListViewJSON(view, rowsOutput)
+			}
+
+			fmt.Print(FormatListView(view, false, shortOutput))
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON")
+	cmd.Flags().BoolVar(&rowsOutput, "rows", false, "output JSON as denormalized rows")
+	cmd.Flags().BoolVarP(&shortOutput, "short", "s", false, "compact output without labels or key names")
+
+	return cmd
+}
+
+func findDock(docks []engine.DockInfo, name string) *engine.DockInfo {
+	for i := range docks {
+		if docks[i].Name == name {
+			return &docks[i]
+		}
+	}
+	return nil
 }
 
 func newDockShowCmd() *cobra.Command {
