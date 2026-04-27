@@ -110,7 +110,7 @@ func TestRunSurfaceClose_LastSurface_NonInteractiveFiresDoubleTap(t *testing.T) 
 	last, agent := withConfirmStubs(t, func(string) bool { return false }, nil)
 
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 
@@ -143,7 +143,7 @@ func TestRunSurfaceClose_LastSurface_DirtyShowsRefusalInsteadOfDoubleTap(t *test
 	)
 
 	eng, mockTmux, mockGit, _ := testNavEngine(t)
-	ws, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
+	ws, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true})
 	if err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestRunSurfaceClose_LastSurface_UnpushedShowsRefusalInsteadOfDoubleTap(t *t
 	)
 
 	eng, mockTmux, mockGit, _ := testNavEngine(t)
-	ws, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
+	ws, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true})
 	if err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestRunSurfaceClose_LastSurface_NonInteractiveAcceptedCloses(t *testing.T) 
 	withConfirmStubs(t, func(string) bool { return true }, nil)
 
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 
@@ -240,7 +240,7 @@ func TestRunSurfaceClose_LastSurface_InteractiveSkipsDoubleTap(t *testing.T) {
 	shouldConfirmLastSurfaceClose = func() bool { return false }
 
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 
@@ -265,7 +265,7 @@ func TestRunSurfaceClose_NotLastSurface_SkipsDoubleTap(t *testing.T) {
 	last, _ := withConfirmStubs(t, nil, nil)
 
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "extra", SplitDir: "v"}); err != nil {
@@ -295,7 +295,7 @@ func TestRunSurfaceClose_LastSurface_ForceBypassesBoth(t *testing.T) {
 	)
 
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 
@@ -313,7 +313,7 @@ func TestRunSurfaceClose_LastSurfaceAgent_NonInteractiveOnlyDoubleTap(t *testing
 	last, agent := withConfirmStubs(t, func(string) bool { return true }, nil)
 
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	// Add an agent surface alongside the default shell, then drop the
@@ -350,7 +350,7 @@ func TestRunSurfaceClose_LastSurfaceAgent_InteractivePromptsAgent(t *testing.T) 
 	shouldConfirmLastSurfaceClose = func() bool { return false }
 
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "claude", Agent: "claude", SplitDir: "v"}); err != nil {

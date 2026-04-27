@@ -119,6 +119,21 @@ func ValidateName(name string) error {
 	return nil
 }
 
+// ValidateWorkspaceName extends ValidateName by reserving the canonical
+// workspace ID pattern (^w[1-9]\d*$). Workspace IDs and Names share the
+// same identifier namespace (both can be passed to commands), so allowing
+// a Name to look like an ID would create ambiguous CLI references.
+// Names like w1 / w42 are rejected; w0, w01, my-w1, ws1, W1 are fine.
+func ValidateWorkspaceName(name string) error {
+	if err := ValidateName(name); err != nil {
+		return err
+	}
+	if manifest.IsWorkspaceID(name) {
+		return fmt.Errorf("invalid workspace name %q: matches the reserved workspace ID pattern (^w[1-9]\\d*$); pick a different name", name)
+	}
+	return nil
+}
+
 // MaxDescriptionFirstLineLen caps the first line of a workspace description.
 // The first line is the glanceable label — shown in picker, ls/tree, and the
 // M-/ flash — and competes with other metadata for terminal width.
@@ -171,14 +186,15 @@ func uniqueWorkspaceName(dock *manifest.Dock, current *manifest.Workspace, base 
 }
 
 // isPlaceholderName reports whether a workspace's Name is a placeholder
-// (empty or matching the canonical ID pattern). Sync's auto-rename treats
-// these as fillable; non-placeholder Names are sticky.
+// — empty, meaning Name has never been set. Sync's auto-rename fills
+// from the branch only when Name is a placeholder; user-set Names are
+// sticky.
 //
-// During the migration period (before Phase 6 ValidateName reservation),
-// new worktree workspaces still default Name to the path basename
-// (w1, w2, ...), which collides with the ID pattern. Treating those as
-// placeholders preserves the pre-design "first branch checkout renames
-// the tab" behavior without breaking sticky semantics for user-set Names.
+// We also treat ID-shaped names (^w[1-9]\d*$) as placeholders so that
+// any pre-Phase-6 manifest still in the wild (where unbranched workspaces
+// got w<N> Names from the old path-basename default) gets its Name filled
+// from the branch on next sync, rather than carrying a stale ID-shaped
+// label that ValidateWorkspaceName would now reject for new entries.
 func isPlaceholderName(name string) bool {
 	return name == "" || manifest.IsWorkspaceID(name)
 }
@@ -214,6 +230,13 @@ func abbreviateBranch(branch string) string {
 	result = strings.Trim(result, "-")
 	if result == "" {
 		return branch // fallback to raw branch if sanitization empties it
+	}
+	// Names that match the reserved workspace ID pattern (^w[1-9]\d*$) are
+	// rejected by ValidateWorkspaceName, so a branch like fix/w1 would
+	// otherwise produce an unnameable workspace. Prefix with "br-" so the
+	// result is always a legal Name.
+	if manifest.IsWorkspaceID(result) {
+		result = "br-" + result
 	}
 	return result
 }

@@ -54,7 +54,7 @@ func setupThreePaneWindow(t *testing.T) threePaneFixture {
 	eng, _ := testEngine(t)
 	mock := eng.Tmux.(*tmux.Mock)
 
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	wsView, _ := eng.WsShow("labs", "w1")
@@ -168,7 +168,7 @@ func TestSurfaceRestore_LayoutMixedAxisStaysIntact(t *testing.T) {
 	eng, _ := testEngine(t)
 	mock := eng.Tmux.(*tmux.Mock)
 
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	wsView, _ := eng.WsShow("labs", "w1")
