@@ -87,7 +87,7 @@ type Dock struct {
 
 // Workspace represents a unit of work — typically one branch/PR.
 type Workspace struct {
-	ID             string         `json:"id"`                         // stable handle (^w\d+$); set at creation, never changes; unique within dock
+	ID             string         `json:"id"`                         // stable handle (^w[1-9]\d*$); set at creation, never changes; unique within dock
 	Name           string         `json:"name"`                       // user-facing display label, renameable; not a CLI key
 	Type           WorkspaceType  `json:"type"`                       // "worktree" or "external"
 	Path           string         `json:"path,omitempty"`             // absolute path to the working directory
