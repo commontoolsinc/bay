@@ -17,7 +17,7 @@ func (e *Engine) Edit(dockName, wsName string) (string, error) {
 		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws := dock.FindWorkspace(wsName)
+		ws := dock.FindWorkspaceByID(wsName)
 		if ws == nil {
 			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
 		}

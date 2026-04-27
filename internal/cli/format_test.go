@@ -15,6 +15,7 @@ func testDocks() []engine.DockInfo {
 			Repo: "bay",
 			Workspaces: []engine.WorkspaceInfo{
 				{
+					ID:           "w1",
 					Name:         "auth-fix",
 					Type:         "worktree",
 					Path:         "~/projects/bay-wt/auth-fix",
@@ -267,7 +268,7 @@ func TestBuildListView_DockFocusStopsAtWorkspacesByDefault(t *testing.T) {
 
 func TestBuildListView_WorkspaceFocusShowsFullTree(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
-		Focus: ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "auth-fix"},
+		Focus: ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "w1"},
 	})
 	out := stripANSI(FormatListView(view, false, false))
 
@@ -288,7 +289,7 @@ func TestBuildListView_WorkspaceFocusShowsFullTree(t *testing.T) {
 
 func TestBuildListView_WorkspaceFocusRestrictsToDock(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
-		Focus: ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "auth-fix"},
+		Focus: ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "w1"},
 	})
 	out := stripANSI(FormatListView(view, false, false))
 
@@ -411,7 +412,7 @@ func TestLabelValueFormatsHumanReadableLabels(t *testing.T) {
 
 func TestFormatListRows_DenormalizesSurfaceRows(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
-		Focus:     ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "auth-fix"},
+		Focus:     ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "w1"},
 		Recursive: true,
 	})
 	rows := ListRows(view)
@@ -463,7 +464,7 @@ func TestFormatListView_HighlightsCurrentContext(t *testing.T) {
 		Focus: ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
 	})
 	view.CurrentDock = "api"
-	view.CurrentWs = "auth-fix"
+	view.CurrentWsID = "w1"
 
 	out := stripANSI(FormatListView(view, false, false))
 

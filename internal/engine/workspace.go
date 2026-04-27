@@ -135,19 +135,10 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		}
 	}
 
-	// If no explicit name and no branch, default to the path basename
-	// (e.g., "w4"). This produces a Name that matches the reserved ID
-	// pattern (^w[1-9]\d*$) — bypassing ValidateWorkspaceName — but
-	// isPlaceholderName treats such Names as fillable, so sync replaces
-	// them on first branch detection. Phase 7's resolver hard-cut will
-	// revisit this default and likely drop it.
-	if displayName == "" {
-		base := filepath.Base(wsPath)
-		displayName = uniqueWorkspaceName(dock, nil, base)
-		if err := ValidateName(displayName); err != nil {
-			return nil, err
-		}
-	}
+	// No explicit name and no branch → leave displayName empty. The
+	// workspace's ID is the stable handle (set after AddWorkspace);
+	// updateWindowNames falls back to the ID for the tab label, and
+	// sync fills Name from the branch on first detection.
 
 	// Resolve agent args.
 	agentArgs := e.resolvedAgentArgs(dockName, agentName, m)
@@ -251,7 +242,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 			return fmt.Errorf("workspace at %q not found after creation", wsPath)
 		}
 		if _, err := addedWs.AddSurface(surface); err != nil {
-			_ = dock.RemoveWorkspace(finalName)
+			_ = dock.RemoveWorkspace(addedWs.ID)
 			return err
 		}
 		return nil
@@ -355,7 +346,7 @@ func (e *Engine) closeWorkspaceState(dockName, wsName string, force bool) ([]str
 	if dock == nil {
 		return nil, fmt.Errorf("unknown dock %q", dockName)
 	}
-	ws := dock.FindWorkspace(wsName)
+	ws := dock.FindWorkspaceByID(wsName)
 	if ws == nil {
 		return nil, fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
 	}
@@ -560,7 +551,8 @@ func (e *Engine) wsCloseBatch(dockName string, force, dryRun bool, skip wsSkipFu
 
 	type target struct {
 		dock string
-		name string
+		id   string
+		name string // for error/skip labels only
 	}
 	var targets []target
 
@@ -571,16 +563,16 @@ func (e *Engine) wsCloseBatch(dockName string, force, dryRun bool, skip wsSkipFu
 		}
 		for j := range d.Workspaces {
 			ws := &d.Workspaces[j]
-			if excludeSet[ws.Name] {
+			if excludeSet[ws.ID] {
 				continue
 			}
 			if skip != nil {
 				if reason := skip(ws, d.Name); reason != "" {
-					skipped = append(skipped, d.Name+":"+ws.Name+" ("+reason+")")
+					skipped = append(skipped, d.Name+":"+ws.ID+" ("+reason+")")
 					continue
 				}
 			}
-			targets = append(targets, target{dock: d.Name, name: ws.Name})
+			targets = append(targets, target{dock: d.Name, id: ws.ID, name: ws.Name})
 		}
 	}
 
@@ -594,8 +586,8 @@ func (e *Engine) wsCloseBatch(dockName string, force, dryRun bool, skip wsSkipFu
 	if dryRun {
 		// Dry-run: check dirty/unlanded status but don't mutate anything.
 		for _, t := range targets {
-			label := t.dock + ":" + t.name
-			ws := m.FindDock(t.dock).FindWorkspace(t.name)
+			label := t.dock + ":" + t.id
+			ws := m.FindDock(t.dock).FindWorkspaceByID(t.id)
 			if ws != nil && ws.Path != "" && !force {
 				if dirty, err := e.Git.IsDirty(ws.Path); err == nil && dirty {
 					skipped = append(skipped, label+" (dirty)")
@@ -620,8 +612,8 @@ func (e *Engine) wsCloseBatch(dockName string, force, dryRun bool, skip wsSkipFu
 	}
 	var pending []pendingKill
 	for _, t := range targets {
-		label := t.dock + ":" + t.name
-		ids, closeErr := e.closeWorkspaceState(t.dock, t.name, force)
+		label := t.dock + ":" + t.id
+		ids, closeErr := e.closeWorkspaceState(t.dock, t.id, force)
 		if closeErr != nil {
 			skipped = append(skipped, label+" ("+closeErr.Error()+")")
 			continue
@@ -648,7 +640,7 @@ func (e *Engine) WsUpdate(dockName, wsName string, branch, pr *string) error {
 		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws := dock.FindWorkspace(wsName)
+		ws := dock.FindWorkspaceByID(wsName)
 		if ws == nil {
 			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
 		}
@@ -688,7 +680,7 @@ func (e *Engine) WsDescribe(dockName, wsName, desc string) error {
 		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws := dock.FindWorkspace(wsName)
+		ws := dock.FindWorkspaceByID(wsName)
 		if ws == nil {
 			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
 		}
@@ -709,7 +701,7 @@ func (e *Engine) WsRename(dockName, wsName, newName string) error {
 		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws := dock.FindWorkspace(wsName)
+		ws := dock.FindWorkspaceByID(wsName)
 		if ws == nil {
 			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
 		}
@@ -741,7 +733,7 @@ func (e *Engine) WsShow(dockName, wsName string) (*manifest.Workspace, error) {
 	if dock == nil {
 		return nil, fmt.Errorf("unknown dock %q", dockName)
 	}
-	ws := dock.FindWorkspace(wsName)
+	ws := dock.FindWorkspaceByID(wsName)
 	if ws == nil {
 		return nil, fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
 	}
@@ -762,7 +754,7 @@ func (e *Engine) MarkPRCheckStale(dockName, wsName string) error {
 		if dock == nil {
 			return false, nil
 		}
-		ws := dock.FindWorkspace(wsName)
+		ws := dock.FindWorkspaceByID(wsName)
 		if ws == nil || ws.Worktree == nil {
 			return false, nil
 		}
@@ -777,8 +769,10 @@ func (e *Engine) MarkPRCheckStale(dockName, wsName string) error {
 	})
 }
 
-// ResolveWorkspace resolves a workspace query to (dockName, wsName).
-// Accepts: "dock:name" or bare display name.
+// ResolveWorkspace resolves a workspace query to (dockName, wsID).
+// Accepts: "dock:id" or bare ID. Names are not accepted; if the query
+// matches a Name, the returned error includes a "did you mean" hint
+// at the canonical ID.
 func (e *Engine) ResolveWorkspace(query string) (string, string, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
@@ -788,7 +782,7 @@ func (e *Engine) ResolveWorkspace(query string) (string, string, error) {
 	if resolveErr != nil {
 		return "", "", resolveErr
 	}
-	return dock.Name, ws.Name, nil
+	return dock.Name, ws.ID, nil
 }
 
 // ResolveSelf resolves the current workspace from CWD and tmux context.
@@ -807,7 +801,7 @@ func (e *Engine) ResolveSelf() (string, string, error) {
 			for j := range dock.Workspaces {
 				ws := &dock.Workspaces[j]
 				if config.IsPathUnder(cwd, ws.Path) {
-					return dock.Name, ws.Name, nil
+					return dock.Name, ws.ID, nil
 				}
 			}
 		}
@@ -822,7 +816,7 @@ func (e *Engine) ResolveSelf() (string, string, error) {
 				ws := &dock.Workspaces[j]
 				for _, s := range ws.Surfaces {
 					if s.Tmux != nil && s.Tmux.WindowID == winID {
-						return dock.Name, ws.Name, nil
+						return dock.Name, ws.ID, nil
 					}
 				}
 			}
@@ -833,7 +827,7 @@ func (e *Engine) ResolveSelf() (string, string, error) {
 }
 
 // ResolveByWindowID finds the workspace that owns the given tmux window ID.
-func (e *Engine) ResolveByWindowID(tmuxWindowID string) (dockName, wsName string, ws *manifest.Workspace, err error) {
+func (e *Engine) ResolveByWindowID(tmuxWindowID string) (dockName, wsID string, ws *manifest.Workspace, err error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return "", "", nil, err
@@ -844,7 +838,7 @@ func (e *Engine) ResolveByWindowID(tmuxWindowID string) (dockName, wsName string
 			w := &dock.Workspaces[j]
 			for _, s := range w.Surfaces {
 				if s.Tmux != nil && s.Tmux.WindowID == tmuxWindowID {
-					return dock.Name, w.Name, w, nil
+					return dock.Name, w.ID, w, nil
 				}
 			}
 		}
@@ -1007,7 +1001,7 @@ func (e *Engine) SetLastFocused(dockName, wsName string, surfaceID int) error {
 		if dock == nil {
 			return false, fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws := dock.FindWorkspace(wsName)
+		ws := dock.FindWorkspaceByID(wsName)
 		if ws == nil {
 			return false, fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
 		}
@@ -1192,7 +1186,7 @@ func lastWindowIDBeforeWorkspace(dock *manifest.Dock, wsName string) string {
 // lastWindowIDInWorkspace returns the last tmux window ID among the surfaces
 // of the given workspace. Returns "" if the workspace has no windows.
 func lastWindowIDInWorkspace(dock *manifest.Dock, wsName string) string {
-	ws := dock.FindWorkspace(wsName)
+	ws := dock.FindWorkspaceByID(wsName)
 	if ws == nil {
 		return ""
 	}

@@ -139,8 +139,8 @@ func inferListFocus(eng *engine.Engine) ListFocus {
 		return ListFocus{Kind: FocusAll}
 	}
 	switch {
-	case ctx.Workspace != "":
-		return ListFocus{Kind: FocusWorkspace, Repo: ctx.Repo, Dock: ctx.Dock, WorkspaceID: ctx.Workspace}
+	case ctx.WorkspaceID != "":
+		return ListFocus{Kind: FocusWorkspace, Repo: ctx.Repo, Dock: ctx.Dock, WorkspaceID: ctx.WorkspaceID}
 	case ctx.Dock != "":
 		return ListFocus{Kind: FocusDock, Repo: ctx.Repo, Dock: ctx.Dock}
 	case ctx.Repo != "":

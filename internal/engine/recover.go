@@ -474,6 +474,9 @@ func findWorkspaceForRecoveryMerge(dock *manifest.Dock, src *manifest.Workspace)
 			return &dock.Workspaces[i]
 		}
 	}
+	if ws := dock.FindWorkspaceByID(src.ID); ws != nil {
+		return ws
+	}
 	if src.Name == "" {
 		return nil
 	}

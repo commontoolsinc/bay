@@ -52,7 +52,7 @@ func TestSyncAll_PopulatesPRWhenFound(t *testing.T) {
 	eng.SyncAll()
 
 	m, _ := eng.LoadManifest()
-	ws := m.FindDock("labs").FindWorkspace("w1")
+	ws := m.FindDock("labs").FindWorkspaceByID("w1")
 	if ws.Worktree.PR != "42" {
 		t.Errorf("PR = %q, want 42", ws.Worktree.PR)
 	}
@@ -69,7 +69,7 @@ func TestSyncAll_MarksCheckedWhenNoPRFound(t *testing.T) {
 	eng.SyncAll()
 
 	m, _ := eng.LoadManifest()
-	ws := m.FindDock("labs").FindWorkspace("w1")
+	ws := m.FindDock("labs").FindWorkspaceByID("w1")
 	if ws.Worktree.PR != "" {
 		t.Errorf("PR = %q, want empty", ws.Worktree.PR)
 	}
@@ -102,7 +102,7 @@ func TestSyncAll_DoesNotRecheckWorkspaceWithPRSet(t *testing.T) {
 
 	// Pre-set PR on the workspace (simulates an existing manifest).
 	_ = eng.withManifest(func(m *manifest.Manifest) error {
-		ws := m.FindDock("labs").FindWorkspace("w1")
+		ws := m.FindDock("labs").FindWorkspaceByID("w1")
 		ws.Worktree.PR = "99"
 		return nil
 	})
@@ -118,7 +118,7 @@ func TestSyncAll_DoesNotRecheckWorkspaceWithPRSet(t *testing.T) {
 	}
 
 	m, _ := eng.LoadManifest()
-	ws := m.FindDock("labs").FindWorkspace("w1")
+	ws := m.FindDock("labs").FindWorkspaceByID("w1")
 	if ws.Worktree.PR != "99" {
 		t.Errorf("PR = %q, want 99 (cached value should stick)", ws.Worktree.PR)
 	}
@@ -135,7 +135,7 @@ func TestSyncAll_RechecksAfterTTLExpires(t *testing.T) {
 	eng.SyncAll()
 
 	m, _ := eng.LoadManifest()
-	ws := m.FindDock("labs").FindWorkspace("w1")
+	ws := m.FindDock("labs").FindWorkspaceByID("w1")
 	if ws.Worktree.PR != "" {
 		t.Fatalf("PR = %q, want empty after first sync", ws.Worktree.PR)
 	}
@@ -147,7 +147,7 @@ func TestSyncAll_RechecksAfterTTLExpires(t *testing.T) {
 	mockGit := eng.Git.(*git.Mock)
 	mockGit.SetPR(wsPath, "feature/late-pr", "501")
 	_ = eng.withManifest(func(m *manifest.Manifest) error {
-		ws := m.FindDock("labs").FindWorkspace("w1")
+		ws := m.FindDock("labs").FindWorkspaceByID("w1")
 		ws.Worktree.PRCheckedAt = 1 // ancient
 		return nil
 	})
@@ -155,7 +155,7 @@ func TestSyncAll_RechecksAfterTTLExpires(t *testing.T) {
 	eng.SyncAll()
 
 	m, _ = eng.LoadManifest()
-	ws = m.FindDock("labs").FindWorkspace("w1")
+	ws = m.FindDock("labs").FindWorkspaceByID("w1")
 	if ws.Worktree.PR != "501" {
 		t.Errorf("PR = %q, want 501 after TTL expiry + re-sync", ws.Worktree.PR)
 	}
@@ -175,7 +175,7 @@ func TestSyncAll_BranchChangeInvalidatesCachedPR(t *testing.T) {
 	// First sync — caches PR=100 for the old branch.
 	eng.SyncAll()
 	m, _ := eng.LoadManifest()
-	ws := m.FindDock("labs").FindWorkspace("w1")
+	ws := m.FindDock("labs").FindWorkspaceByID("w1")
 	if ws.Worktree.PR != "100" {
 		t.Fatalf("first sync: PR = %q, want 100", ws.Worktree.PR)
 	}
@@ -282,7 +282,7 @@ func TestSyncAll_SetsMergedOnMergedBranch(t *testing.T) {
 	eng.SyncAll()
 
 	m, _ := eng.LoadManifest()
-	ws := m.FindDock("labs").FindWorkspace("w1")
+	ws := m.FindDock("labs").FindWorkspaceByID("w1")
 	if ws.Worktree == nil || !ws.Worktree.Merged {
 		t.Errorf("Merged = %v, want true", ws.Worktree != nil && ws.Worktree.Merged)
 	}
@@ -299,7 +299,7 @@ func TestSyncAll_DoesNotSetMergedForUnmergedBranch(t *testing.T) {
 	eng.SyncAll()
 
 	m, _ := eng.LoadManifest()
-	ws := m.FindDock("labs").FindWorkspace("w1")
+	ws := m.FindDock("labs").FindWorkspaceByID("w1")
 	if ws.Worktree != nil && ws.Worktree.Merged {
 		t.Errorf("Merged = true, want false")
 	}
@@ -309,7 +309,7 @@ func TestSyncAll_SkipsMergeCheckForAlreadyMerged(t *testing.T) {
 	eng, _ := testEngine(t)
 	wsPath := seedWorktreeWorkspace(t, eng, "labs", "w1", "feature/login")
 	_ = eng.withManifest(func(m *manifest.Manifest) error {
-		ws := m.FindDock("labs").FindWorkspace("w1")
+		ws := m.FindDock("labs").FindWorkspaceByID("w1")
 		ws.Worktree.Merged = true
 		return nil
 	})
@@ -341,7 +341,7 @@ func TestSyncAll_BranchChangeClearsStaleMergedFlag(t *testing.T) {
 	// First sync marks feature/old as merged.
 	eng.SyncAll()
 	m, _ := eng.LoadManifest()
-	ws := m.FindDock("labs").FindWorkspace("w1")
+	ws := m.FindDock("labs").FindWorkspaceByID("w1")
 	if ws.Worktree == nil || !ws.Worktree.Merged {
 		t.Fatalf("precondition: expected Merged=true after first sync")
 	}
@@ -455,7 +455,7 @@ func TestMarkPRCheckStale_ClearsCheckedAtWhenPRMissing(t *testing.T) {
 	// First sync records "no PR found" with PRCheckedAt set to now.
 	eng.SyncAll()
 	m, _ := eng.LoadManifest()
-	ws := m.FindDock("labs").FindWorkspace("w1")
+	ws := m.FindDock("labs").FindWorkspaceByID("w1")
 	if ws.Worktree.PRCheckedAt == 0 {
 		t.Fatalf("precondition: PRCheckedAt should be set after first sync")
 	}
@@ -465,7 +465,7 @@ func TestMarkPRCheckStale_ClearsCheckedAtWhenPRMissing(t *testing.T) {
 	}
 
 	m, _ = eng.LoadManifest()
-	ws = m.FindDock("labs").FindWorkspace("w1")
+	ws = m.FindDock("labs").FindWorkspaceByID("w1")
 	if ws.Worktree.PRCheckedAt != 0 {
 		t.Errorf("PRCheckedAt = %d, want 0 after MarkPRCheckStale", ws.Worktree.PRCheckedAt)
 	}
@@ -482,7 +482,7 @@ func TestMarkPRCheckStale_NoOpWhenPRAlreadyCached(t *testing.T) {
 
 	eng.SyncAll()
 	m, _ := eng.LoadManifest()
-	ws := m.FindDock("labs").FindWorkspace("w1")
+	ws := m.FindDock("labs").FindWorkspaceByID("w1")
 	beforeCheckedAt := ws.Worktree.PRCheckedAt
 	if ws.Worktree.PR != "42" {
 		t.Fatalf("precondition: PR should be 42, got %q", ws.Worktree.PR)
@@ -493,7 +493,7 @@ func TestMarkPRCheckStale_NoOpWhenPRAlreadyCached(t *testing.T) {
 	}
 
 	m, _ = eng.LoadManifest()
-	ws = m.FindDock("labs").FindWorkspace("w1")
+	ws = m.FindDock("labs").FindWorkspaceByID("w1")
 	if ws.Worktree.PRCheckedAt != beforeCheckedAt {
 		t.Errorf("PRCheckedAt changed (%d → %d); must be a no-op when PR is cached",
 			beforeCheckedAt, ws.Worktree.PRCheckedAt)
@@ -526,7 +526,7 @@ func TestMarkPRCheckStale_TriggersReQueryOnNextSync(t *testing.T) {
 	}
 
 	m, _ := eng.LoadManifest()
-	ws := m.FindDock("labs").FindWorkspace("w1")
+	ws := m.FindDock("labs").FindWorkspaceByID("w1")
 	if ws.Worktree.PR != "200" {
 		t.Errorf("PR = %q, want 200 (re-query after stale mark should have populated it)", ws.Worktree.PR)
 	}

@@ -320,7 +320,7 @@ func TestWsNew_Worktree(t *testing.T) {
 	if ws.Type != manifest.WorkspaceTypeWorktree {
 		t.Errorf("type = %q, want worktree", ws.Type)
 	}
-	if ws.Name != "w1" {
+	if ws.ID != "w1" {
 		t.Errorf("name = %q, want w1", ws.Name)
 	}
 	if len(ws.Surfaces) != 1 {
@@ -342,7 +342,7 @@ func TestWsNew_Worktree(t *testing.T) {
 	// Verify manifest persisted
 	m, _ := eng.LoadManifest()
 	dock := m.FindDock("labs")
-	if dock == nil || dock.FindWorkspace("w1") == nil {
+	if dock == nil || dock.FindWorkspaceByID("w1") == nil {
 		t.Error("workspace not in manifest")
 	}
 
@@ -351,7 +351,7 @@ func TestWsNew_Worktree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second WsNew failed: %v", err)
 	}
-	if ws2.Name != "w2" {
+	if ws2.ID != "w2" {
 		t.Errorf("second workspace name = %q, want w2", ws2.Name)
 	}
 }
@@ -417,7 +417,7 @@ func TestWsNew_ShellIgnoresInvalidDefaultAgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
-	if ws.Name != "w1" {
+	if ws.ID != "w1" {
 		t.Fatalf("name = %q, want w1", ws.Name)
 	}
 	if len(ws.Surfaces) != 1 || ws.Surfaces[0].Type != manifest.SurfaceTypeShell {
@@ -514,7 +514,7 @@ func TestWsNew_SequentialDefaultNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first WsNew: %v", err)
 	}
-	if ws1.Name != "w1" {
+	if ws1.ID != "w1" {
 		t.Errorf("first workspace name = %q, want w1", ws1.Name)
 	}
 
@@ -522,7 +522,7 @@ func TestWsNew_SequentialDefaultNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second WsNew: %v", err)
 	}
-	if ws2.Name != "w2" {
+	if ws2.ID != "w2" {
 		t.Errorf("second workspace name = %q, want w2", ws2.Name)
 	}
 
@@ -532,7 +532,7 @@ func TestWsNew_SequentialDefaultNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("third WsNew: %v", err)
 	}
-	if ws3.Name != "w1" {
+	if ws3.ID != "w1" {
 		t.Errorf("third workspace name = %q, want w1 (reuse after close)", ws3.Name)
 	}
 }
@@ -720,7 +720,7 @@ func TestWsClose_Worktree(t *testing.T) {
 	// Verify removed from manifest
 	m, _ := eng.LoadManifest()
 	dock := m.FindDock("labs")
-	if dock != nil && dock.FindWorkspace("w1") != nil {
+	if dock != nil && dock.FindWorkspaceByID("w1") != nil {
 		t.Error("workspace should be removed from manifest")
 	}
 
@@ -736,7 +736,7 @@ func TestWsClose_Worktree(t *testing.T) {
 		t.Fatalf("loading archive: %v", err)
 	}
 	archiveDock := archive.FindDock("labs")
-	if archiveDock == nil || archiveDock.FindWorkspace("w1") == nil {
+	if archiveDock == nil || archiveDock.FindWorkspaceByID("w1") == nil {
 		t.Error("workspace should be in archive")
 	}
 }
@@ -752,7 +752,7 @@ func TestWsClose_DeletesPushedBranch(t *testing.T) {
 	os.MkdirAll(ws.Path, 0o755)
 
 	// Branch is pushed (HasUnpushedCommits returns false — the default).
-	if err := eng.WsClose("labs", ws.Name, false); err != nil {
+	if err := eng.WsClose("labs", ws.ID, false); err != nil {
 		t.Fatalf("WsClose: %v", err)
 	}
 
@@ -780,7 +780,7 @@ func TestWsClose_KeepsBranchWhenUnpushed(t *testing.T) {
 	mockGit.SetUnpushed(ws.Path, true)
 
 	// Force close (non-force would refuse due to unpushed commits).
-	if err := eng.WsClose("labs", ws.Name, true); err != nil {
+	if err := eng.WsClose("labs", ws.ID, true); err != nil {
 		t.Fatalf("WsClose --force: %v", err)
 	}
 
@@ -800,7 +800,7 @@ func TestWsClose_AllowsMergedPRHeadWhenPatchCheckSaysUnlanded(t *testing.T) {
 	os.MkdirAll(ws.Path, 0o755)
 
 	if err := eng.withManifest(func(m *manifest.Manifest) error {
-		got := m.FindDock("labs").FindWorkspace(ws.Name)
+		got := m.FindDock("labs").FindWorkspaceByID(ws.ID)
 		got.Worktree.PR = "123"
 		return nil
 	}); err != nil {
@@ -811,7 +811,7 @@ func TestWsClose_AllowsMergedPRHeadWhenPatchCheckSaysUnlanded(t *testing.T) {
 	mockGit.SetUnpushed(ws.Path, true)
 	mockGit.SetLocalHeadInMergedPR(ws.Path, "123", true)
 
-	if err := eng.WsClose("labs", ws.Name, false); err != nil {
+	if err := eng.WsClose("labs", ws.ID, false); err != nil {
 		t.Fatalf("WsClose: %v", err)
 	}
 	if deleted := mockGit.DeletedBranches(); len(deleted) != 1 {
@@ -829,7 +829,7 @@ func TestWsClose_RefusesCommitsAfterMergedPR(t *testing.T) {
 	os.MkdirAll(ws.Path, 0o755)
 
 	if err := eng.withManifest(func(m *manifest.Manifest) error {
-		got := m.FindDock("labs").FindWorkspace(ws.Name)
+		got := m.FindDock("labs").FindWorkspaceByID(ws.ID)
 		got.Worktree.PR = "123"
 		return nil
 	}); err != nil {
@@ -840,7 +840,7 @@ func TestWsClose_RefusesCommitsAfterMergedPR(t *testing.T) {
 	mockGit.SetUnpushed(ws.Path, true)
 	mockGit.SetLocalHeadInMergedPR(ws.Path, "123", false)
 
-	err = eng.WsClose("labs", ws.Name, false)
+	err = eng.WsClose("labs", ws.ID, false)
 	if err == nil || !strings.Contains(err.Error(), "unlanded commits") {
 		t.Fatalf("expected unlanded refusal, got %v", err)
 	}
@@ -859,7 +859,7 @@ func TestWsClose_DeletesPushedBranchOnForce(t *testing.T) {
 	os.MkdirAll(ws.Path, 0o755)
 
 	// Branch is pushed (default mock behavior).
-	if err := eng.WsClose("labs", ws.Name, true); err != nil {
+	if err := eng.WsClose("labs", ws.ID, true); err != nil {
 		t.Fatalf("WsClose --force: %v", err)
 	}
 
@@ -929,7 +929,8 @@ func TestWsRename(t *testing.T) {
 		t.Fatalf("WsRename failed: %v", err)
 	}
 
-	ws, _ := eng.WsShow("labs", "my-ws")
+	// WsShow looks up by ID; the workspace's ID is unchanged by rename.
+	ws, _ := eng.WsShow("labs", "w1")
 	if ws.Name != "my-ws" {
 		t.Errorf("name = %q, want my-ws", ws.Name)
 	}
@@ -1127,7 +1128,7 @@ func TestSurfaceClose_PersistsManifestBeforeKill(t *testing.T) {
 			t.Errorf("loading manifest in kill hook: %v", err)
 			return
 		}
-		ws := m.FindDock("labs").FindWorkspace("w1")
+		ws := m.FindDock("labs").FindWorkspaceByID("w1")
 		if ws == nil {
 			t.Errorf("workspace gone from manifest at kill time (unexpected)")
 			return
@@ -1156,7 +1157,7 @@ func TestWsClose_PersistsManifestBeforeKill(t *testing.T) {
 			return
 		}
 		dock := m.FindDock("labs")
-		if dock != nil && dock.FindWorkspace("w1") != nil {
+		if dock != nil && dock.FindWorkspaceByID("w1") != nil {
 			t.Errorf("manifest still references workspace 'w1' at the moment of %s(%s) — kill happened before manifest update", method, target)
 		}
 	}
@@ -1210,7 +1211,7 @@ func TestDockClose_NonForceFailure_KillsAlreadyRemovedWorkspaceWindows(t *testin
 	// Capture w1's tmux window ID before close (so we can verify it
 	// gets killed even though the loop bails out on w2).
 	pre, _ := eng.LoadManifest()
-	w1 := pre.FindDock("labs").FindWorkspace("w1")
+	w1 := pre.FindDock("labs").FindWorkspaceByID("w1")
 	if w1 == nil || len(w1.Surfaces) == 0 || w1.Surfaces[0].Tmux == nil {
 		t.Fatalf("w1 missing tmux surface")
 	}
@@ -1219,7 +1220,7 @@ func TestDockClose_NonForceFailure_KillsAlreadyRemovedWorkspaceWindows(t *testin
 	// Make w2 fail the safety check: the worktree dir must exist on
 	// disk (closeWorkspaceState skips dirty checks if !exists), and
 	// the git mock must report it dirty.
-	w2 := pre.FindDock("labs").FindWorkspace("w2")
+	w2 := pre.FindDock("labs").FindWorkspaceByID("w2")
 	if w2 == nil {
 		t.Fatalf("w2 missing")
 	}
@@ -1239,10 +1240,10 @@ func TestDockClose_NonForceFailure_KillsAlreadyRemovedWorkspaceWindows(t *testin
 	if dock == nil {
 		t.Fatalf("dock 'labs' unexpectedly removed on non-force failure")
 	}
-	if dock.FindWorkspace("w1") != nil {
+	if dock.FindWorkspaceByID("w1") != nil {
 		t.Errorf("w1 still in manifest; expected it to be removed before w2 failed")
 	}
-	if dock.FindWorkspace("w2") == nil {
+	if dock.FindWorkspaceByID("w2") == nil {
 		t.Errorf("w2 missing from manifest; expected it to remain after its failed close")
 	}
 
@@ -1320,10 +1321,10 @@ func TestWsCloseClean_PersistsAllManifestsBeforeAnyKill(t *testing.T) {
 		if dock == nil {
 			return
 		}
-		if dock.FindWorkspace("w1") != nil {
+		if dock.FindWorkspaceByID("w1") != nil {
 			t.Errorf("manifest still references w1 at the moment of %s(%s)", method, target)
 		}
-		if dock.FindWorkspace("w2") != nil {
+		if dock.FindWorkspaceByID("w2") != nil {
 			t.Errorf("manifest still references w2 at the moment of %s(%s)", method, target)
 		}
 	}
@@ -1460,7 +1461,7 @@ func TestSyncWorkspaceGitState_RenamesTmuxWindow(t *testing.T) {
 	// Simulate a branch change on disk (the worktree's actual current branch).
 	mockGit := eng.Git.(*git.Mock)
 	m, _ := eng.LoadManifest()
-	wsPath := m.FindDock("labs").FindWorkspace("w1").Path
+	wsPath := m.FindDock("labs").FindWorkspaceByID("w1").Path
 	os.MkdirAll(wsPath, 0o755)
 	mockGit.SetBranch(wsPath, "feature/new-thing")
 
@@ -1632,7 +1633,7 @@ func TestRecoverUsesPerSurfaceAgent(t *testing.T) {
 	// Verify the surface recorded "codex"
 	m, _ := eng.LoadManifest()
 	dock := m.FindDock("labs")
-	storedWs := dock.FindWorkspace("w1")
+	storedWs := dock.FindWorkspaceByID("w1")
 	if storedWs.Surfaces[0].Agent == nil || *storedWs.Surfaces[0].Agent != "codex" {
 		t.Fatalf("surface agent = %v, want codex", storedWs.Surfaces[0].Agent)
 	}
@@ -2423,8 +2424,11 @@ func TestSyncWorkspaceGitState_UpdatesBranch(t *testing.T) {
 	// SyncAll should pick up the branch
 	eng.SyncAll()
 
-	// SyncAll renames workspace from w1 to "sync-test" (abbreviated branch)
-	ws, _ = eng.WsShow("labs", "sync-test")
+	// SyncAll fills Name from the abbreviated branch; ID is unchanged.
+	ws, _ = eng.WsShow("labs", ws.ID)
+	if ws.Name != "sync-test" {
+		t.Errorf("Name = %q, want sync-test", ws.Name)
+	}
 	if ws.Worktree == nil || ws.Worktree.Branch != "feature/sync-test" {
 		t.Errorf("branch = %v, want feature/sync-test", ws.Worktree)
 	}
@@ -2446,7 +2450,7 @@ func TestSyncWorkspaceGitState_BranchChangeUpdatesNameAndStatus(t *testing.T) {
 
 	eng.SyncAll()
 
-	ws, _ = eng.WsShow("labs", "my-feature")
+	ws, _ = eng.WsShow("labs", ws.ID)
 	if ws.Name != "my-feature" {
 		t.Errorf("name = %q, want my-feature", ws.Name)
 	}
@@ -2470,7 +2474,7 @@ func TestWsUpdate_BranchCollisionGetsUniqueName(t *testing.T) {
 		t.Fatalf("WsUpdate: %v", err)
 	}
 
-	ws, err := eng.WsShow("labs", "existing-2")
+	ws, err := eng.WsShow("labs", "w2")
 	if err != nil {
 		t.Fatalf("WsShow: %v", err)
 	}
@@ -2500,7 +2504,7 @@ func TestSyncWorkspaceGitState_BranchCollisionGetsUniqueName(t *testing.T) {
 
 	eng.SyncAll()
 
-	ws, err = eng.WsShow("labs", "existing-2")
+	ws, err = eng.WsShow("labs", ws.ID)
 	if err != nil {
 		t.Fatalf("WsShow: %v", err)
 	}
@@ -2526,9 +2530,9 @@ func TestSyncWorkspaceGitState_DetachKeepsName(t *testing.T) {
 	mockGit.SetBranch(ws.Path, "feature/existing")
 	eng.SyncAll()
 
-	ws, _ = eng.WsShow("labs", "existing")
-	if ws == nil {
-		t.Fatal("workspace should be renamed to 'existing'")
+	ws, _ = eng.WsShow("labs", ws.ID)
+	if ws == nil || ws.Name != "existing" {
+		t.Fatalf("workspace should be renamed to 'existing'; got Name=%q", ws.Name)
 	}
 
 	// Detach the branch.
@@ -2536,9 +2540,9 @@ func TestSyncWorkspaceGitState_DetachKeepsName(t *testing.T) {
 	eng.SyncAll()
 
 	// Name is sticky — still "existing" — but branch metadata is cleared.
-	ws, _ = eng.WsShow("labs", "existing")
-	if ws == nil {
-		t.Fatal("workspace name should remain 'existing' after detach (sticky)")
+	ws, _ = eng.WsShow("labs", ws.ID)
+	if ws == nil || ws.Name != "existing" {
+		t.Fatalf("workspace name should remain 'existing' after detach (sticky); got Name=%q", ws.Name)
 	}
 	if ws.Worktree.Branch != "" {
 		t.Errorf("branch = %q, want empty after detach", ws.Worktree.Branch)
@@ -2563,9 +2567,9 @@ func TestSyncWorkspaceGitState_NameOverriddenNotChanged(t *testing.T) {
 
 	eng.SyncAll()
 
-	ws, _ = eng.WsShow("labs", "custom-name")
+	ws, _ = eng.WsShow("labs", ws.ID)
 	if ws.Name != "custom-name" {
-		t.Errorf("name = %q, want custom-name (NameOverridden should prevent change)", ws.Name)
+		t.Errorf("name = %q, want custom-name (sticky should prevent change)", ws.Name)
 	}
 	// Branch should still be updated even if name is overridden
 	if ws.Worktree.Branch != "feature/something-else" {
@@ -2605,7 +2609,7 @@ func TestCurrentContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CurrentContext failed: %v", err)
 	}
-	if ctx.Repo != "labs" || ctx.Dock != "labs" || ctx.Workspace != "w1" {
+	if ctx.Repo != "labs" || ctx.Dock != "labs" || ctx.WorkspaceID != "w1" {
 		t.Fatalf("unexpected context: %#v", ctx)
 	}
 	if ctx.Surface != "agent" {
@@ -2637,7 +2641,7 @@ func TestCurrentContext_OutsideTmuxStillResolvesRepoAndWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CurrentContext failed: %v", err)
 	}
-	if ctx.Repo != "labs" || ctx.Workspace != "w1" {
+	if ctx.Repo != "labs" || ctx.WorkspaceID != "w1" {
 		t.Fatalf("unexpected context: %#v", ctx)
 	}
 	if ctx.Surface != "" || ctx.SurfaceID != 0 {
@@ -2835,7 +2839,7 @@ func TestSyncAll_KeepsOrphanedDirtyWorkspace(t *testing.T) {
 	eng.SyncAll()
 
 	m, _ := eng.LoadManifest()
-	got := m.FindDock("labs").FindWorkspace(ws.Name)
+	got := m.FindDock("labs").FindWorkspaceByID(ws.ID)
 	if got == nil {
 		t.Fatalf("dirty orphan workspace %q was auto-closed; expected it to persist", ws.Name)
 	}
@@ -2869,7 +2873,7 @@ func TestSyncAll_KeepsOrphanedUnpushedWorkspace(t *testing.T) {
 	eng.SyncAll()
 
 	m, _ := eng.LoadManifest()
-	got := m.FindDock("labs").FindWorkspace(ws.Name)
+	got := m.FindDock("labs").FindWorkspaceByID(ws.ID)
 	if got == nil {
 		t.Fatalf("unpushed orphan workspace %q was auto-closed; expected it to persist", ws.Name)
 	}
@@ -2931,19 +2935,19 @@ func TestSyncAll_SurfaceAddCancelsPendingClose(t *testing.T) {
 
 	// Verify PendingCloseAt is set.
 	m, _ := eng.LoadManifest()
-	got := m.FindDock("labs").FindWorkspace(ws.Name)
+	got := m.FindDock("labs").FindWorkspaceByID(ws.ID)
 	if got == nil || got.PendingCloseAt == 0 {
 		t.Fatalf("expected PendingCloseAt to be set, got %+v", got)
 	}
 
 	// User re-adds a surface (rescues the workspace).
-	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: ws.Name, Type: manifest.SurfaceTypeShell, Name: "saved"}); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: ws.ID, Type: manifest.SurfaceTypeShell, Name: "saved"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 
 	// PendingCloseAt should be cleared immediately (SurfaceAdd does it).
 	m, _ = eng.LoadManifest()
-	got = m.FindDock("labs").FindWorkspace(ws.Name)
+	got = m.FindDock("labs").FindWorkspaceByID(ws.ID)
 	if got.PendingCloseAt != 0 {
 		t.Errorf("expected PendingCloseAt to be cleared after SurfaceAdd, got %d", got.PendingCloseAt)
 	}
@@ -2953,7 +2957,7 @@ func TestSyncAll_SurfaceAddCancelsPendingClose(t *testing.T) {
 	defer func() { orphanGraceSeconds = 60 }()
 	eng.SyncAll()
 	m, _ = eng.LoadManifest()
-	if m.FindDock("labs").FindWorkspace(ws.Name) == nil {
+	if m.FindDock("labs").FindWorkspaceByID(ws.ID) == nil {
 		t.Error("rescued workspace disappeared on next sync")
 	}
 }
@@ -2975,7 +2979,7 @@ func TestSyncAll_PendingCloseRespectsGraceWindow(t *testing.T) {
 	eng.SyncAll()
 
 	m, _ := eng.LoadManifest()
-	got := m.FindDock("labs").FindWorkspace(ws.Name)
+	got := m.FindDock("labs").FindWorkspaceByID(ws.ID)
 	if got == nil {
 		t.Fatal("workspace was closed during grace window; expected it to persist")
 	}
@@ -3146,10 +3150,10 @@ func TestWsCloseClean_ClosesCleanWorkspaces(t *testing.T) {
 
 	m, _ := eng.LoadManifest()
 	dock := m.FindDock("labs")
-	if dock.FindWorkspace("w1") != nil {
+	if dock.FindWorkspaceByID("w1") != nil {
 		t.Error("w1 should be closed")
 	}
-	if dock.FindWorkspace("w2") != nil {
+	if dock.FindWorkspaceByID("w2") != nil {
 		t.Error("w2 should be closed")
 	}
 }
@@ -3163,7 +3167,7 @@ func TestWsCloseClean_SkipsDirtyWorkspaces(t *testing.T) {
 	// Make w1 dirty via mock. The directory must exist on disk for
 	// closeWorkspaceState to run the dirty check at all.
 	m, _ := eng.LoadManifest()
-	w1Path := m.FindDock("labs").FindWorkspace("w1").Path
+	w1Path := m.FindDock("labs").FindWorkspaceByID("w1").Path
 	os.MkdirAll(w1Path, 0o755)
 	mockGit := eng.Git.(*git.Mock)
 	mockGit.SetDirty(w1Path, true)
@@ -3183,10 +3187,10 @@ func TestWsCloseClean_SkipsDirtyWorkspaces(t *testing.T) {
 
 	m, _ = eng.LoadManifest()
 	dock := m.FindDock("labs")
-	if dock.FindWorkspace("w1") == nil {
+	if dock.FindWorkspaceByID("w1") == nil {
 		t.Error("w1 (dirty) should still exist")
 	}
-	if dock.FindWorkspace("w2") != nil {
+	if dock.FindWorkspaceByID("w2") != nil {
 		t.Error("w2 (clean) should be closed")
 	}
 }
@@ -3201,7 +3205,7 @@ func TestWsCloseDone_ClosesMergedPRHead(t *testing.T) {
 	os.MkdirAll(ws.Path, 0o755)
 
 	if err := eng.withManifest(func(m *manifest.Manifest) error {
-		got := m.FindDock("labs").FindWorkspace(ws.Name)
+		got := m.FindDock("labs").FindWorkspaceByID(ws.ID)
 		got.Worktree.PR = "123"
 		return nil
 	}); err != nil {
@@ -3224,7 +3228,7 @@ func TestWsCloseDone_ClosesMergedPRHead(t *testing.T) {
 	}
 
 	m, _ := eng.LoadManifest()
-	if got := m.FindDock("labs").FindWorkspace(ws.Name); got != nil {
+	if got := m.FindDock("labs").FindWorkspaceByID(ws.ID); got != nil {
 		t.Fatalf("workspace should be closed, still present: %#v", got)
 	}
 }
@@ -3248,13 +3252,13 @@ func TestWsCloseClean_SkipsExcludedWorkspace(t *testing.T) {
 
 	m, _ := eng.LoadManifest()
 	dock := m.FindDock("labs")
-	if dock.FindWorkspace("w1") != nil {
+	if dock.FindWorkspaceByID("w1") != nil {
 		t.Error("w1 should be closed")
 	}
-	if dock.FindWorkspace("w2") == nil {
+	if dock.FindWorkspaceByID("w2") == nil {
 		t.Error("w2 (excluded) should still exist")
 	}
-	if dock.FindWorkspace("w3") != nil {
+	if dock.FindWorkspaceByID("w3") != nil {
 		t.Error("w3 should be closed")
 	}
 }
@@ -3383,7 +3387,7 @@ func TestWsClose_RemoveWorktreeFailurePreservesWorkspaceState(t *testing.T) {
 		t.Fatalf("LoadManifest failed: %v", loadErr)
 	}
 	dock := m.FindDock("labs")
-	if dock == nil || dock.FindWorkspace("w1") == nil {
+	if dock == nil || dock.FindWorkspaceByID("w1") == nil {
 		t.Fatal("workspace should remain in manifest after failed close")
 	}
 }
@@ -3715,7 +3719,7 @@ func TestSyncRename_StickyOnceUserSet(t *testing.T) {
 	mockGit.SetBranch(ws.Path, "feature/something-completely-different")
 	eng.SyncAll()
 
-	got, err := eng.WsShow("labs", "auth-fix")
+	got, err := eng.WsShow("labs", ws.ID)
 	if err != nil {
 		t.Fatalf("WsShow: %v", err)
 	}
@@ -3765,8 +3769,8 @@ func TestSyncRename_ReplacesPlaceholder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
-	if !manifest.IsWorkspaceID(ws.Name) {
-		t.Fatalf("expected placeholder ID-shaped Name from auto-naming, got %q", ws.Name)
+	if ws.Name != "" {
+		t.Fatalf("expected empty Name from new workspace (no --branch / --name), got %q", ws.Name)
 	}
 	os.MkdirAll(ws.Path, 0o755)
 
@@ -3774,7 +3778,7 @@ func TestSyncRename_ReplacesPlaceholder(t *testing.T) {
 	mockGit.SetBranch(ws.Path, "feature/cache-ttl")
 	eng.SyncAll()
 
-	got, err := eng.WsShow("labs", "cache-ttl")
+	got, err := eng.WsShow("labs", ws.ID)
 	if err != nil {
 		t.Fatalf("WsShow: %v", err)
 	}

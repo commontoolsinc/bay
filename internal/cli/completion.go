@@ -235,24 +235,20 @@ func addQualifiedCandidate(completions *[]string, seen map[string]bool, dock, va
 	addCandidate(completions, seen, dock+":"+val, qualifiedDesc)
 }
 
-// workspaceCandidates returns workspace identifier candidates: each workspace
-// in four forms — ID, dock:ID, Name, dock:Name — plus the "self" keyword.
+// workspaceCandidates returns workspace identifier candidates: each
+// workspace as ID and dock:ID, plus the "self" keyword.
 //
-// Both ID and Name are emitted so the user can complete from either prefix
-// (e.g., `w1<TAB>` finds the ID; `auth<TAB>` finds the Name). Descriptions
-// cross-reference the other identifier so the user can see, for example,
-// that `auth-fix` is `w1`. The shell filters by the user's typed prefix,
-// so the user only sees candidates matching what they've started typing.
-//
-// When ID == Name (typical for auto-named workspaces), the Name candidate
-// is deduped via the seen map; only one entry is emitted.
+// Names are strictly not CLI keys under the strict resolver, so they
+// aren't emitted as candidate values — but the friendly Name is woven
+// into each ID candidate's description so the user can see, for
+// example, that `w1` is "auth-fix".
 func workspaceCandidates(m *manifest.Manifest) []string {
 	seen := make(map[string]bool)
 	var completions []string
 	for _, ref := range manifest.AllWorkspaces(m) {
 		ws := ref.Workspace
 
-		// Common branch/PR fragment used in both ID and Name descriptions.
+		// Branch/PR fragment for the description.
 		extras := ""
 		if ws.Worktree != nil {
 			if ws.Worktree.Branch != "" {
@@ -263,25 +259,16 @@ func workspaceCandidates(m *manifest.Manifest) []string {
 			}
 		}
 
-		// ID candidates lead with the friendly Name (when distinct) so the
-		// description tells the user what each ID maps to. The bare form
-		// includes the dock; the qualified form drops it (the candidate
-		// already shows it).
 		nameSuffix := ""
-		if ws.Name != "" && ws.Name != ws.ID {
+		if ws.Name != "" {
 			nameSuffix = " " + ws.Name
 		}
+		// Bare form's description names the dock so the user can tell
+		// which dock owns this ID; the qualified form drops the dock
+		// since the candidate text already shows it.
 		addQualifiedCandidate(&completions, seen, ref.Dock, ws.ID,
 			ref.Dock+nameSuffix+extras,
 			strings.TrimSpace(nameSuffix+extras))
-
-		// Name candidates cross-reference the ID so users learn the canonical
-		// handle while completing from a familiar label.
-		if ws.Name != "" {
-			addQualifiedCandidate(&completions, seen, ref.Dock, ws.Name,
-				ref.Dock+" ("+ws.ID+")"+extras,
-				"("+ws.ID+")"+extras)
-		}
 	}
 	addCandidate(&completions, seen, "self", "current workspace")
 	return completions

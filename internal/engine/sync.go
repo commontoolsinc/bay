@@ -24,6 +24,7 @@ var orphanGraceSeconds int64 = 60
 
 type workspaceSyncUpdate struct {
 	dockName           string
+	originalID         string
 	originalName       string
 	path               string
 	branch             string
@@ -150,7 +151,7 @@ func (e *Engine) SyncAll() {
 					continue
 				}
 				if ws.PendingCloseAt <= now {
-					toFinalize = append(toFinalize, orphanCandidate{dock.Name, ws.Name})
+					toFinalize = append(toFinalize, orphanCandidate{dock.Name, ws.ID})
 				}
 			}
 		}
@@ -186,6 +187,7 @@ func (e *Engine) SyncAll() {
 func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace) (workspaceSyncUpdate, bool) {
 	update := workspaceSyncUpdate{
 		dockName:     dock.Name,
+		originalID:   ws.ID,
 		originalName: ws.Name,
 		path:         ws.Path,
 	}
@@ -263,7 +265,7 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 
 	ws := findWorkspaceByPath(dock, update.path)
 	if ws == nil {
-		ws = dock.FindWorkspace(update.originalName)
+		ws = dock.FindWorkspaceByID(update.originalID)
 	}
 	if ws == nil {
 		return false
@@ -371,7 +373,7 @@ func (e *Engine) clearPendingClose(dockName, wsName string) {
 		if dock == nil {
 			return nil
 		}
-		ws := dock.FindWorkspace(wsName)
+		ws := dock.FindWorkspaceByID(wsName)
 		if ws == nil {
 			return nil
 		}
@@ -392,7 +394,7 @@ func (e *Engine) workspaceIsEmpty(dockName, wsName string) (bool, error) {
 	if dock == nil {
 		return false, nil
 	}
-	ws := dock.FindWorkspace(wsName)
+	ws := dock.FindWorkspaceByID(wsName)
 	if ws == nil {
 		return false, nil
 	}

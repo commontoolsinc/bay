@@ -415,9 +415,17 @@ func TestWorkspaceCompletions(t *testing.T) {
 		return false
 	}
 
-	for _, expected := range []string{"mem-refactor", "w2", "self", "labs:mem-refactor"} {
+	// Strict resolver: only IDs (and dock:ID) are completion values;
+	// Names appear only in descriptions.
+	for _, expected := range []string{"w1", "w2", "self", "labs:w1", "labs:w2"} {
 		if !hasValue(expected) {
 			t.Errorf("completions missing %q, got: %v", expected, completions)
+		}
+	}
+	// Names like "mem-refactor" must NOT be candidate values.
+	for _, notExpected := range []string{"mem-refactor\t", "labs:mem-refactor"} {
+		if hasValue(notExpected) {
+			t.Errorf("Name %q should not be a candidate value under strict resolution; got: %v", notExpected, completions)
 		}
 	}
 
@@ -494,11 +502,11 @@ func TestWorkspaceCandidates_EmitsIDAndName(t *testing.T) {
 
 	got := workspaceCandidates(m)
 
+	// Under strict resolution, only IDs (and dock:IDs) are candidate
+	// values. The friendly Name is woven into descriptions.
 	want := map[string]string{
-		"w1":            "labs auth-fix fix/auth",
-		"labs:w1":       "auth-fix fix/auth",
-		"auth-fix":      "labs (w1) fix/auth",
-		"labs:auth-fix": "(w1) fix/auth",
+		"w1":      "labs auth-fix fix/auth",
+		"labs:w1": "auth-fix fix/auth",
 	}
 	gotMap := map[string]string{}
 	for _, c := range got {
@@ -508,6 +516,12 @@ func TestWorkspaceCandidates_EmitsIDAndName(t *testing.T) {
 	for val, desc := range want {
 		if gotMap[val] != desc {
 			t.Errorf("candidate %q: desc = %q, want %q", val, gotMap[val], desc)
+		}
+	}
+	// Names should not appear as candidate values.
+	for _, name := range []string{"auth-fix", "labs:auth-fix"} {
+		if _, present := gotMap[name]; present {
+			t.Errorf("Name %q should not be emitted as a candidate value", name)
 		}
 	}
 }

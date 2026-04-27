@@ -278,16 +278,16 @@ func TestRunSurfaceClose_NoArgsErrors(t *testing.T) {
 func TestRunSurfaceClose_CrossWorkspace(t *testing.T) {
 	eng := surfaceArgFixture(t)
 
-	// "labs:solo:agent" is a uniquely-named cross-workspace surface from the
-	// fixture. Close it via the helper using bare ws:surface form.
-	if err := runSurfaceClose(eng, []string{"solo:agent"}, "", "", true); err != nil {
+	// labs:w2 (the "solo" workspace) has a uniquely-addressable bare ID.
+	// Close its agent surface via the helper using bare ws:surface form.
+	if err := runSurfaceClose(eng, []string{"w2:agent"}, "", "", true); err != nil {
 		t.Fatalf("runSurfaceClose: %v", err)
 	}
 
-	ws, _ := eng.WsShow("labs", "solo")
+	ws, _ := eng.WsShow("labs", "w2")
 	for _, s := range ws.Surfaces {
 		if s.Name == "agent" {
-			t.Errorf("agent should have been closed in labs:solo")
+			t.Errorf("agent should have been closed in labs:w2")
 		}
 	}
 }
@@ -447,12 +447,13 @@ func TestResolveSurfaceWorkspace_NoFlagsUsesSelf(t *testing.T) {
 func TestResolveSurfaceWorkspace_WsFlag(t *testing.T) {
 	eng := wsArgFixture(t)
 
-	dock, wsName, err := resolveSurfaceWorkspace(eng, "solo", "")
+	// solo's ID is w2 (second labs workspace).
+	dock, wsName, err := resolveSurfaceWorkspace(eng, "w2", "")
 	if err != nil {
 		t.Fatalf("resolveSurfaceWorkspace: %v", err)
 	}
-	if dock != "labs" || wsName != "solo" {
-		t.Errorf("got (%q,%q), want (labs,solo)", dock, wsName)
+	if dock != "labs" || wsName != "w2" {
+		t.Errorf("got (%q,%q), want (labs,w2)", dock, wsName)
 	}
 }
 

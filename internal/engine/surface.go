@@ -122,7 +122,7 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 	if dock == nil {
 		return fmt.Errorf("unknown dock %q", dockName)
 	}
-	ws := dock.FindWorkspace(wsName)
+	ws := dock.FindWorkspaceByID(wsName)
 	if ws == nil {
 		return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
 	}
@@ -236,7 +236,7 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 			rollbackSurface()
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws := dock.FindWorkspace(wsName)
+		ws := dock.FindWorkspaceByID(wsName)
 		if ws == nil {
 			rollbackSurface()
 			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
@@ -315,7 +315,7 @@ func (e *Engine) SurfaceClose(dockName, wsName, surfaceName string, force bool) 
 		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws := dock.FindWorkspace(wsName)
+		ws := dock.FindWorkspaceByID(wsName)
 		if ws == nil {
 			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
 		}
@@ -398,7 +398,7 @@ func (e *Engine) SurfaceClose(dockName, wsName, surfaceName string, force bool) 
 			if dock == nil {
 				return nil
 			}
-			ws := dock.FindWorkspace(wsName)
+			ws := dock.FindWorkspaceByID(wsName)
 			if ws == nil {
 				return nil
 			}
@@ -469,7 +469,7 @@ func (e *Engine) SurfaceRestore(dockName string) (*manifest.ClosedEntry, error) 
 			return pruned, nil
 		}
 		if entry.Kind == manifest.ClosedKindSurface && entry.Surface != nil &&
-			dock.FindWorkspace(entry.Surface.Workspace) == nil {
+			dock.FindWorkspaceByID(entry.Surface.Workspace) == nil {
 			nothingToRestore = true
 			dock.RemoveClosedEntryAt(entry.ClosedAt)
 			return true, nil
@@ -555,7 +555,7 @@ func (e *Engine) SurfaceRename(dockName, wsName, oldName, newName string) error 
 		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws := dock.FindWorkspace(wsName)
+		ws := dock.FindWorkspaceByID(wsName)
 		if ws == nil {
 			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
 		}

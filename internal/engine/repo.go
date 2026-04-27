@@ -123,12 +123,12 @@ func (e *Engine) RepoRemove(name string, force bool) error {
 		if dock == nil {
 			continue
 		}
-		var wsNames []string
+		var wsIDs []string
 		for _, ws := range dock.Workspaces {
-			wsNames = append(wsNames, ws.Name)
+			wsIDs = append(wsIDs, ws.ID)
 		}
-		for _, wsName := range wsNames {
-			_, _ = e.closeWorkspaceState(dockName, wsName, true)
+		for _, wsID := range wsIDs {
+			_, _ = e.closeWorkspaceState(dockName, wsID, true)
 		}
 	}
 
