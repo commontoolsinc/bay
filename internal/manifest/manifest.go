@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -15,7 +16,7 @@ import (
 )
 
 // CurrentVersion is the manifest schema version.
-const CurrentVersion = 3
+const CurrentVersion = 4
 
 // WorkspaceType constants.
 const (
@@ -86,7 +87,8 @@ type Dock struct {
 
 // Workspace represents a unit of work — typically one branch/PR.
 type Workspace struct {
-	Name           string         `json:"name"`                       // unique within dock; user-facing, renameable
+	ID             string         `json:"id"`                         // stable handle (^w\d+$); set at creation, never changes; unique within dock
+	Name           string         `json:"name"`                       // user-facing display label, renameable; not a CLI key
 	Type           WorkspaceType  `json:"type"`                       // "worktree" or "external"
 	Path           string         `json:"path,omitempty"`             // absolute path to the working directory
 	Description    string         `json:"description,omitempty"`      // short free-form label shown in picker/ls/tree
@@ -114,6 +116,83 @@ type WorktreeAttrs struct {
 // IsMerged reports whether this workspace's branch has been merged into the default branch.
 func (ws *Workspace) IsMerged() bool {
 	return ws.Worktree != nil && ws.Worktree.Merged
+}
+
+// IsWorkspaceID reports whether s matches the canonical workspace ID
+// pattern: lowercase 'w' followed by a positive integer with no leading
+// zeros. The pattern is reserved — workspace Names cannot match it,
+// which keeps the ID and Name namespaces disjoint.
+func IsWorkspaceID(s string) bool {
+	_, ok := parseWorkspaceIDNum(s)
+	return ok
+}
+
+// parseWorkspaceIDNum extracts the integer suffix from a workspace ID.
+// Returns (n, true) for valid IDs (n >= 1), (0, false) otherwise.
+func parseWorkspaceIDNum(s string) (int, bool) {
+	if len(s) < 2 || s[0] != 'w' {
+		return 0, false
+	}
+	rest := s[1:]
+	if len(rest) > 1 && rest[0] == '0' { // reject leading zeros (canonical)
+		return 0, false
+	}
+	n, err := strconv.Atoi(rest)
+	if err != nil || n < 1 {
+		return 0, false
+	}
+	return n, true
+}
+
+// assignWorkspaceIDs fills in IDs for any workspace in the dock whose ID
+// is currently empty. Two passes:
+//
+//  1. Claim the path basename as ID if it matches the canonical pattern
+//     and isn't already taken in this dock. This preserves continuity
+//     for legacy manifests where path basenames are already w1/w2/...
+//  2. Assign next-sequential w<N> for any workspace still without an ID,
+//     where N is one above the highest used in the dock.
+//
+// Idempotent: a workspace with a non-empty ID is left alone.
+func assignWorkspaceIDs(dock *Dock) {
+	used := map[string]bool{}
+	maxN := 0
+	for i := range dock.Workspaces {
+		id := dock.Workspaces[i].ID
+		if id == "" {
+			continue
+		}
+		used[id] = true
+		if n, ok := parseWorkspaceIDNum(id); ok && n > maxN {
+			maxN = n
+		}
+	}
+	// Pass 1: claim path basename when w<N>-shaped and unused.
+	for i := range dock.Workspaces {
+		ws := &dock.Workspaces[i]
+		if ws.ID != "" || ws.Path == "" {
+			continue
+		}
+		base := filepath.Base(ws.Path)
+		if !IsWorkspaceID(base) || used[base] {
+			continue
+		}
+		ws.ID = base
+		used[base] = true
+		if n, _ := parseWorkspaceIDNum(base); n > maxN {
+			maxN = n
+		}
+	}
+	// Pass 2: assign next-sequential for the remainder.
+	for i := range dock.Workspaces {
+		ws := &dock.Workspaces[i]
+		if ws.ID != "" {
+			continue
+		}
+		maxN++
+		ws.ID = fmt.Sprintf("w%d", maxN)
+		used[ws.ID] = true
+	}
 }
 
 // PRCheckTTL is how long a "no PR found" answer stays valid before we re-query
@@ -307,6 +386,19 @@ func Parse(data []byte) (*Manifest, error) {
 				ws.DeprecatedStatus = ""
 			}
 		}
+		m.Version = CurrentVersion
+	}
+
+	// Fill in workspace IDs. Runs unconditionally:
+	//   - For pre-v4 manifests, workspaces have no ID field set.
+	//   - Defensive: if any workspace was created without an ID (e.g.,
+	//     during the rollout window before engine wires up ID assignment
+	//     at creation), Parse fills it in here so callers can rely on
+	//     ws.ID being non-empty.
+	for i := range m.Docks {
+		assignWorkspaceIDs(&m.Docks[i])
+	}
+	if m.Version < 4 {
 		m.Version = CurrentVersion
 	}
 

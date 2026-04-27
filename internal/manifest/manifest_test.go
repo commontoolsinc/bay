@@ -996,6 +996,202 @@ func TestParse_MigratesV2StatusDoneToMerged(t *testing.T) {
 	}
 }
 
+func TestIsWorkspaceID(t *testing.T) {
+	cases := []struct {
+		s    string
+		want bool
+	}{
+		{"w1", true},
+		{"w42", true},
+		{"w999", true},
+		{"", false},
+		{"w", false},
+		{"w0", false},  // n must be >= 1
+		{"w01", false}, // leading zero rejected
+		{"W1", false},  // case-sensitive
+		{"w1a", false}, // trailing non-digit
+		{"v1", false},  // wrong prefix
+		{"auth-fix", false},
+		{"w-1", false},
+		{"w1.5", false},
+	}
+	for _, c := range cases {
+		if got := IsWorkspaceID(c.s); got != c.want {
+			t.Errorf("IsWorkspaceID(%q) = %v, want %v", c.s, got, c.want)
+		}
+	}
+}
+
+// TestParse_FillsMissingIDsFromPathBasename covers the common legacy
+// case: a v3 manifest where every workspace's path is already w<N>-shaped
+// (because bay's worktree dirs have always been). Each workspace's ID
+// should equal its path basename — no renumbering, no surprises.
+func TestParse_FillsMissingIDsFromPathBasename(t *testing.T) {
+	data := []byte(`{
+		"version": 3,
+		"repos": [],
+		"docks": [
+			{
+				"name": "labs",
+				"workspaces": [
+					{"name": "auth-fix", "type": "worktree", "path": "/repo-worktrees/w1", "surfaces": []},
+					{"name": "cache-ttl", "type": "worktree", "path": "/repo-worktrees/w2", "surfaces": []},
+					{"name": "api-log",  "type": "worktree", "path": "/repo-worktrees/w5", "surfaces": []}
+				]
+			}
+		]
+	}`)
+	m, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := []string{}
+	for _, ws := range m.Docks[0].Workspaces {
+		got = append(got, ws.ID)
+	}
+	want := []string{"w1", "w2", "w5"}
+	if !equalStrings(got, want) {
+		t.Errorf("IDs = %v, want %v", got, want)
+	}
+}
+
+// TestParse_AssignsSequentialIDsForUnusablePaths covers external
+// workspaces (or any with non-w<N> path basenames): they fall through
+// to pass 2 and get the next available sequential ID, picking up after
+// the highest-claimed worktree ID.
+func TestParse_AssignsSequentialIDsForUnusablePaths(t *testing.T) {
+	data := []byte(`{
+		"version": 3,
+		"repos": [],
+		"docks": [
+			{
+				"name": "mixed",
+				"workspaces": [
+					{"name": "wt", "type": "worktree", "path": "/repo-worktrees/w3", "surfaces": []},
+					{"name": "ext1", "type": "external", "path": "/Users/me/projects/foo", "surfaces": []},
+					{"name": "ext2", "type": "external", "path": "/Users/me/projects/bar", "surfaces": []}
+				]
+			}
+		]
+	}`)
+	m, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// wt claims w3 from its path; externals get w4, w5 (continuing from max).
+	got := []string{}
+	for _, ws := range m.Docks[0].Workspaces {
+		got = append(got, ws.ID)
+	}
+	want := []string{"w3", "w4", "w5"}
+	if !equalStrings(got, want) {
+		t.Errorf("IDs = %v, want %v", got, want)
+	}
+}
+
+// TestParse_HandlesIDCollisions covers the pathological case where two
+// workspaces claim the same w<N> path basename (shouldn't normally
+// happen, but guard against it). First one to be processed wins; the
+// second falls through to sequential assignment.
+func TestParse_HandlesIDCollisions(t *testing.T) {
+	data := []byte(`{
+		"version": 3,
+		"repos": [],
+		"docks": [
+			{
+				"name": "labs",
+				"workspaces": [
+					{"name": "a", "type": "worktree", "path": "/x/w1", "surfaces": []},
+					{"name": "b", "type": "worktree", "path": "/x/w1", "surfaces": []}
+				]
+			}
+		]
+	}`)
+	m, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Docks[0].Workspaces[0].ID != "w1" {
+		t.Errorf("workspace[0].ID = %q, want w1", m.Docks[0].Workspaces[0].ID)
+	}
+	if m.Docks[0].Workspaces[1].ID != "w2" {
+		t.Errorf("workspace[1].ID = %q, want w2 (collision fallback)", m.Docks[0].Workspaces[1].ID)
+	}
+}
+
+// TestParse_PreservesExistingIDs ensures Parse never overwrites an ID
+// already present in the manifest. Migration is fill-only, idempotent.
+func TestParse_PreservesExistingIDs(t *testing.T) {
+	data := []byte(`{
+		"version": 4,
+		"repos": [],
+		"docks": [
+			{
+				"name": "labs",
+				"workspaces": [
+					{"id": "w7", "name": "a", "type": "worktree", "path": "/x/w1", "surfaces": []}
+				]
+			}
+		]
+	}`)
+	m, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Docks[0].Workspaces[0].ID != "w7" {
+		t.Errorf("ID = %q, want w7 (preserved)", m.Docks[0].Workspaces[0].ID)
+	}
+}
+
+// TestParse_BumpsToV4 confirms a v3 manifest is upgraded to the current
+// version after the ID-fill migration runs.
+func TestParse_BumpsToV4(t *testing.T) {
+	data := []byte(`{"version": 3, "repos": [], "docks": []}`)
+	m, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Version != CurrentVersion {
+		t.Errorf("version = %d, want %d", m.Version, CurrentVersion)
+	}
+}
+
+// TestSaveAndLoad_PreservesID confirms IDs round-trip through the
+// JSON encoder/decoder without modification.
+func TestSaveAndLoad_PreservesID(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "manifest.json")
+	original := New()
+	original.Docks = append(original.Docks, Dock{
+		Name: "test",
+		Workspaces: []Workspace{
+			{ID: "w3", Name: "alpha", Type: WorkspaceTypeWorktree, Path: "/repo-worktrees/w3"},
+		},
+	})
+	if err := Save(path, original); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Docks[0].Workspaces[0].ID != "w3" {
+		t.Errorf("ID after round-trip = %q, want w3", loaded.Docks[0].Workspaces[0].ID)
+	}
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestRepoEffectiveWorktreeDir(t *testing.T) {
 	// Explicit worktree_dir
 	r := Repo{Name: "labs", Path: "/projects/labs", WorktreeDir: "/custom/worktrees"}
