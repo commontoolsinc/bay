@@ -40,7 +40,7 @@ func staleWorkspace(t *testing.T, eng *Engine, dockName, wsName string) {
 
 func TestSurfaceAdd_BumpsLastActive(t *testing.T) {
 	eng, _ := testEngine(t)
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	staleWorkspace(t, eng, "labs", "w1")
@@ -57,7 +57,7 @@ func TestSurfaceAdd_BumpsLastActive(t *testing.T) {
 
 func TestSurfaceClose_BumpsLastActive(t *testing.T) {
 	eng, _ := testEngine(t)
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"}); err != nil {
@@ -77,7 +77,7 @@ func TestSurfaceClose_BumpsLastActive(t *testing.T) {
 
 func TestSurfaceRename_BumpsLastActive(t *testing.T) {
 	eng, _ := testEngine(t)
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	staleWorkspace(t, eng, "labs", "w1")
@@ -94,7 +94,7 @@ func TestSurfaceRename_BumpsLastActive(t *testing.T) {
 
 func TestEdit_BumpsLastActive(t *testing.T) {
 	eng, _ := testEngine(t)
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	staleWorkspace(t, eng, "labs", "w1")
@@ -111,7 +111,7 @@ func TestEdit_BumpsLastActive(t *testing.T) {
 
 func TestWsRename_BumpsLastActive(t *testing.T) {
 	eng, _ := testEngine(t)
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	staleWorkspace(t, eng, "labs", "w1")
@@ -130,7 +130,7 @@ func TestSetLastFocused_BumpsLastActive(t *testing.T) {
 	// SetLastFocused is the original LastActive bumper from #94. Verify
 	// it still works alongside the new bumps in this PR.
 	eng, _ := testEngine(t)
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	ws, _ := eng.WsShow("labs", "w1")

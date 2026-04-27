@@ -75,6 +75,65 @@ func TestValidateName(t *testing.T) {
 	}
 }
 
+// TestValidateWorkspaceName verifies the additional reservation: names
+// matching the canonical workspace ID pattern (^w[1-9]\d*$) are rejected
+// so user-set Names can't shadow IDs at the CLI.
+func TestValidateWorkspaceName(t *testing.T) {
+	tests := []struct {
+		name    string
+		wantErr bool
+	}{
+		// Reserved — rejected.
+		{"w1", true},
+		{"w42", true},
+		{"w999", true},
+
+		// Looks ID-shaped but isn't canonical — accepted (also accepted
+		// by ValidateName).
+		{"w0", false},     // n must be >= 1 to be a valid ID
+		{"w01", false},    // leading zeros aren't canonical IDs
+		{"W1", false},     // case-sensitive: capital W is not a workspace ID
+		{"ws1", false},    // different prefix
+		{"my-w1", false},  // not a pure w<N>
+		{"w1-bug", false}, // trailing chars
+
+		// Names that fail the base ValidateName too.
+		{"has space", true},
+		{"", true},
+
+		// Friendly names — accepted.
+		{"auth-fix", false},
+		{"cache_ttl", false},
+	}
+	for _, tt := range tests {
+		err := ValidateWorkspaceName(tt.name)
+		if (err != nil) != tt.wantErr {
+			t.Errorf("ValidateWorkspaceName(%q) error=%v, wantErr=%v", tt.name, err, tt.wantErr)
+		}
+	}
+}
+
+// TestAbbreviateBranch_AvoidsReservedPattern guards the case where a
+// branch like fix/w1 would otherwise produce a Name matching the
+// reserved ID pattern; abbreviateBranch must prefix it so the result
+// stays a legal Name.
+func TestAbbreviateBranch_AvoidsReservedPattern(t *testing.T) {
+	tests := []struct {
+		branch string
+		want   string
+	}{
+		{"fix/w1", branchAbbrevReservedPrefix + "w1"},
+		{"feature/w42", branchAbbrevReservedPrefix + "w42"},
+		{"w3", branchAbbrevReservedPrefix + "w3"},
+		{"fix/auth", "auth"}, // unaffected
+	}
+	for _, tt := range tests {
+		if got := abbreviateBranch(tt.branch); got != tt.want {
+			t.Errorf("abbreviateBranch(%q) = %q, want %q", tt.branch, got, tt.want)
+		}
+	}
+}
+
 func TestAbbreviateBranch(t *testing.T) {
 	tests := []struct {
 		branch string
@@ -253,7 +312,7 @@ func TestRecover_HostTerminalFailureIsWarning(t *testing.T) {
 func TestWsNew_Worktree(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -288,7 +347,7 @@ func TestWsNew_Worktree(t *testing.T) {
 	}
 
 	// Second workspace gets w2
-	ws2, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"})
+	ws2, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("second WsNew failed: %v", err)
 	}
@@ -354,7 +413,7 @@ func TestWsNew_ShellIgnoresInvalidDefaultAgent(t *testing.T) {
 	eng, _ := testEngine(t)
 	eng.Config.Docks["labs"] = config.DockConfig{Agent: "ghostwriter"}
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -379,7 +438,7 @@ func TestWsNew_CopiesWorktreeincludeFiles(t *testing.T) {
 	mockGit := eng.Git.(*git.Mock)
 	mockGit.SetExcludeMatches(repoDir, ".worktreeinclude", nil, []string{"local.env"})
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
@@ -397,7 +456,7 @@ func TestWsNew_SkipsWorktreeincludeIfMissing(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	// No .worktreeinclude file — should not error.
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
@@ -416,7 +475,7 @@ func TestWsNew_RefusesWorktreeincludeTrackedFile(t *testing.T) {
 	mockGit.SetExcludeMatches(repoDir, ".worktreeinclude",
 		[]string{"config.toml"}, []string{"local.env"})
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew should not error on refusal; got: %v", err)
 	}
@@ -439,7 +498,7 @@ func TestWsNew_RefusesWorktreeincludeNonIgnoredFile(t *testing.T) {
 	mockGit.SetGlobalIgnored(false) // notes.txt is NOT covered by .gitignore
 	mockGit.SetExcludeMatches(repoDir, ".worktreeinclude", nil, []string{"notes.txt"})
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew should not error on refusal; got: %v", err)
 	}
@@ -481,7 +540,7 @@ func TestWsNew_SequentialDefaultNames(t *testing.T) {
 func TestSurfaceAdd_PersistsTmuxPaneID(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -505,7 +564,7 @@ func TestSurfaceAdd_PersistsTmuxPaneID(t *testing.T) {
 func TestSurfaceAdd_UnknownAgentFailsWithoutPersistingSurface(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
 
@@ -526,7 +585,7 @@ func TestSurfaceAdd_UnknownAgentFailsWithoutPersistingSurface(t *testing.T) {
 func TestSurfaceAdd_PrefersCurrentPaneAsSplitParent(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
 	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"}); err != nil {
@@ -560,7 +619,7 @@ func TestSurfaceAdd_PrefersCurrentPaneAsSplitParent(t *testing.T) {
 func TestSurfaceAdd_FallsBackToLastFocusedSurface(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
 	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"}); err != nil {
@@ -624,7 +683,7 @@ func TestWsNew_External(t *testing.T) {
 func TestWsNew_Shell(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true})
 	if err != nil {
 		t.Fatalf("WsNew shell failed: %v", err)
 	}
@@ -647,7 +706,7 @@ func TestWsClose_Worktree(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	// Create workspace
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -832,7 +891,7 @@ func TestWsClose_NoBranchNoDelete(t *testing.T) {
 func TestWsClose_Dirty(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -860,7 +919,7 @@ func TestWsClose_Dirty(t *testing.T) {
 func TestWsRename(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -879,7 +938,7 @@ func TestWsRename(t *testing.T) {
 func TestWsDescribe(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Description: "initial description"})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Description: "initial description"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -959,7 +1018,7 @@ func TestDescriptionFirstLine(t *testing.T) {
 func TestSurfaceAdd_NewLayoutGroup(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -986,7 +1045,7 @@ func TestSurfaceAdd_NewLayoutGroup(t *testing.T) {
 func TestSurfaceClose(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -1013,7 +1072,7 @@ func TestSurfaceClose_LastSurfaceClosesWorkspace(t *testing.T) {
 	defer withZeroGrace()()
 	eng, _ := testEngine(t)
 
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
@@ -1054,7 +1113,7 @@ func withZeroGrace() func() {
 
 func TestSurfaceClose_PersistsManifestBeforeKill(t *testing.T) {
 	eng, _ := testEngine(t)
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"}); err != nil {
@@ -1085,7 +1144,7 @@ func TestSurfaceClose_PersistsManifestBeforeKill(t *testing.T) {
 
 func TestWsClose_PersistsManifestBeforeKill(t *testing.T) {
 	eng, _ := testEngine(t)
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 
@@ -1109,10 +1168,10 @@ func TestWsClose_PersistsManifestBeforeKill(t *testing.T) {
 
 func TestDockClose_PersistsManifestBeforeKill(t *testing.T) {
 	eng, _ := testEngine(t)
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 
@@ -1141,10 +1200,10 @@ func TestDockClose_PersistsManifestBeforeKill(t *testing.T) {
 // session that no manifest entry refers to.
 func TestDockClose_NonForceFailure_KillsAlreadyRemovedWorkspaceWindows(t *testing.T) {
 	eng, _ := testEngine(t)
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("WsNew w1: %v", err)
 	}
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("WsNew w2: %v", err)
 	}
 
@@ -1212,7 +1271,7 @@ func TestDockClose_NonForceFailure_KillsAlreadyRemovedWorkspaceWindows(t *testin
 
 func TestRepoRemove_PersistsManifestBeforeKill(t *testing.T) {
 	eng, _ := testEngine(t)
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 
@@ -1239,10 +1298,10 @@ func TestRepoRemove_PersistsManifestBeforeKill(t *testing.T) {
 func TestWsCloseClean_PersistsAllManifestsBeforeAnyKill(t *testing.T) {
 	eng, _ := testEngine(t)
 	// Two clean workspaces (new, no changes).
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 
@@ -1281,7 +1340,7 @@ func TestWsCloseClean_PersistsAllManifestsBeforeAnyKill(t *testing.T) {
 func TestSurfaceAdd_Split(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -1313,8 +1372,8 @@ func TestDockClose(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	// Create two workspaces
-	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
-	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"})
+	eng.WsNew(WsNewOptions{Dock: "labs"})
+	eng.WsNew(WsNewOptions{Dock: "labs"})
 
 	err := eng.DockClose("labs", false)
 	if err != nil {
@@ -1359,7 +1418,7 @@ func TestRecover(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	// Create a workspace
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -1425,7 +1484,7 @@ func TestWsRename_TmuxWindowRenamed(t *testing.T) {
 	// Regression: WsRename should rename tmux windows
 	eng, _ := testEngine(t)
 
-	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	eng.WsNew(WsNewOptions{Dock: "labs"})
 
 	eng.WsRename("labs", "w1", "renamed")
 
@@ -1464,7 +1523,7 @@ func TestWsClose_DeletedWorktree(t *testing.T) {
 	// Regression: safety checks failed on non-existent worktree paths
 	eng, _ := testEngine(t)
 
-	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	eng.WsNew(WsNewOptions{Dock: "labs"})
 	// Don't create the directory — simulates externally deleted worktree
 
 	// Should succeed without force since path doesn't exist
@@ -1496,7 +1555,7 @@ func TestWsClose_UnpushedCheckError_Refuses(t *testing.T) {
 	// allowing worktree removal without verifying push status.
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -1517,7 +1576,7 @@ func TestWsNew_RollbackOnManifestFailure(t *testing.T) {
 	eng, dir := testEngine(t)
 
 	// Create first workspace successfully so manifest has dock state
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("first WsNew failed: %v", err)
 	}
@@ -1540,7 +1599,7 @@ func TestWsNew_RollbackOnManifestFailure(t *testing.T) {
 	mockTmux := eng.Tmux.(*tmux.Mock)
 	callsBefore := len(mockTmux.Calls)
 
-	_, err = eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"})
+	_, err = eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err == nil {
 		t.Fatal("expected error from WsNew with unwritable manifest dir")
 	}
@@ -1564,7 +1623,7 @@ func TestRecoverUsesPerSurfaceAgent(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	// Create workspace with codex agent override
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Agent: "codex"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Agent: "codex"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -1606,7 +1665,7 @@ func TestCmdSurfacePersistsCommand(t *testing.T) {
 	// Regression: command surfaces had no Command field, recovery couldn't restore them.
 	eng, _ := testEngine(t)
 
-	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	eng.WsNew(WsNewOptions{Dock: "labs"})
 
 	// Add a cmd surface in a new layout group
 	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeCmd, Name: "tail", Command: "tail -f /var/log/syslog"})
@@ -1626,7 +1685,7 @@ func TestCmdSurfacePersistsCommand(t *testing.T) {
 
 func TestSurfaceAddPersistsCommand(t *testing.T) {
 	eng, _ := testEngine(t)
-	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	eng.WsNew(WsNewOptions{Dock: "labs"})
 
 	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeCmd, Name: "watch", Command: "watch df -h", SplitDir: "h"})
 
@@ -1641,7 +1700,7 @@ func TestRecoverCmdSurface(t *testing.T) {
 	// Regression: recovery fell back to plain shell for cmd surfaces.
 	eng, _ := testEngine(t)
 
-	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	eng.WsNew(WsNewOptions{Dock: "labs"})
 	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeCmd, Name: "htop", Command: "htop"})
 
 	ws, _ := eng.WsShow("labs", "w1")
@@ -1666,7 +1725,7 @@ func TestRecover_ReportsSurfaceLaunchErrors(t *testing.T) {
 
 	// Create a workspace with a custom agent, then break it.
 	eng.Config.Agents["broken"] = config.AgentConfig{Command: "broken-cmd"}
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Agent: "broken"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Agent: "broken"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -1689,7 +1748,7 @@ func TestRecoverReconcilesSurfacesInExistingWindow(t *testing.T) {
 	// Regression: recovery skipped surface repair for existing windows.
 	eng, _ := testEngine(t)
 
-	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	eng.WsNew(WsNewOptions{Dock: "labs"})
 	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell", SplitDir: "h"})
 
 	ws, _ := eng.WsShow("labs", "w1")
@@ -1723,7 +1782,7 @@ func TestRecoverReconcilesSurfacesInExistingWindow(t *testing.T) {
 func TestRecover_UsesRecordedSplitParentAsSplitTarget(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
 	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"}); err != nil {
@@ -2096,7 +2155,7 @@ func TestWsClose_CleansEmptyWorktreeDir(t *testing.T) {
 	wsDir := filepath.Join(wtDir, "w1")
 	os.MkdirAll(wsDir, 0o755)
 
-	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	eng.WsNew(WsNewOptions{Dock: "labs"})
 	eng.WsClose("labs", "w1", true)
 
 	// The worktree parent dir should be removed if empty
@@ -2115,7 +2174,7 @@ func TestWsClose_CleansEmptyWorktreeDir(t *testing.T) {
 func TestList_UsesDockDefaultAgentForShellWorkspace(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -2136,7 +2195,7 @@ func TestList_UsesDockDefaultAgentForShellWorkspace(t *testing.T) {
 func TestList_MarksBellWindowsWaiting(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Agent: "codex"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Agent: "codex"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -2163,7 +2222,7 @@ func TestList_PreservesWorkspaceAgentOverride(t *testing.T) {
 	// shows that agent in the List output.
 	eng, _ := testEngine(t)
 
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Agent: "codex"})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Agent: "codex"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -2193,8 +2252,8 @@ func TestWsClose_KeepsNonEmptyWorktreeDir(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	// Create two workspaces
-	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
-	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"})
+	eng.WsNew(WsNewOptions{Dock: "labs"})
+	eng.WsNew(WsNewOptions{Dock: "labs"})
 
 	// Create the worktree parent dir with a subdirectory to simulate w2 still there
 	m, _ := eng.LoadManifest()
@@ -2215,7 +2274,7 @@ func TestPlaceholder_CleanedOnWsNew(t *testing.T) {
 	// Creating a workspace should clean it up.
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -2237,7 +2296,7 @@ func TestPlaceholder_CreatedOnLastWsClose(t *testing.T) {
 	// Closing the last workspace should leave a placeholder.
 	eng, _ := testEngine(t)
 
-	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	eng.WsNew(WsNewOptions{Dock: "labs"})
 
 	err := eng.WsClose("labs", "w1", true)
 	if err != nil {
@@ -2288,7 +2347,7 @@ func TestPlaceholder_NotCleanedIfUsed(t *testing.T) {
 	}
 
 	// Create a workspace — should NOT clean the used placeholder
-	eng.WsNew(WsNewOptions{Dock: "research", Name: "w1"})
+	eng.WsNew(WsNewOptions{Dock: "research"})
 
 	windows, _ = mockTmux.ListWindows("research")
 	foundUsedPlaceholder := false
@@ -2306,7 +2365,7 @@ func TestPlaceholder_NotCleanedIfUsed(t *testing.T) {
 func TestPlaceholder_CleanedOnRecovery(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, _ := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	ws, _ := eng.WsNew(WsNewOptions{Dock: "labs"})
 	os.MkdirAll(ws.Path, 0o755)
 
 	mockTmux := eng.Tmux.(*tmux.Mock)
@@ -2330,7 +2389,7 @@ func TestPlaceholder_CleanedOnRecovery(t *testing.T) {
 func TestSetLastFocused(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
+	eng.WsNew(WsNewOptions{Dock: "labs", Shell: true})
 	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"})
 	ws, _ := eng.WsShow("labs", "w1")
 
@@ -2489,7 +2548,7 @@ func TestSyncWorkspaceGitState_DetachKeepsName(t *testing.T) {
 func TestSyncWorkspaceGitState_NameOverriddenNotChanged(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -2517,7 +2576,7 @@ func TestSyncWorkspaceGitState_NameOverriddenNotChanged(t *testing.T) {
 func TestCurrentContext(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -2560,7 +2619,7 @@ func TestCurrentContext(t *testing.T) {
 func TestCurrentContext_OutsideTmuxStillResolvesRepoAndWorkspace(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -2593,7 +2652,7 @@ func TestSyncAll_RemovesStaleSurfaces(t *testing.T) {
 	// whose tmux windows no longer exist.
 	eng, _ := testEngine(t)
 
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -2629,7 +2688,7 @@ func TestList_AutoClosesOrphanAfterWindowKill(t *testing.T) {
 	defer withZeroGrace()()
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -2653,7 +2712,7 @@ func TestSyncAll_RemovesDeadPaneSurface(t *testing.T) {
 	// even if the window still exists.
 	eng, _ := testEngine(t)
 
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -2726,7 +2785,7 @@ func TestSyncAll_AutoClosesOrphanedCleanWorkspace(t *testing.T) {
 	defer withZeroGrace()()
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
@@ -2761,7 +2820,7 @@ func TestSyncAll_KeepsOrphanedDirtyWorkspace(t *testing.T) {
 	defer withZeroGrace()()
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
@@ -2795,7 +2854,7 @@ func TestSyncAll_KeepsOrphanedUnpushedWorkspace(t *testing.T) {
 	defer withZeroGrace()()
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
@@ -2824,7 +2883,7 @@ func TestSyncAll_KeepsOrphanedUnpushedWorkspace(t *testing.T) {
 func TestSyncAll_DoesNotAutoCloseWorkspaceWithSurvivingSurfaces(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
@@ -2858,7 +2917,7 @@ func TestSyncAll_DoesNotAutoCloseWorkspaceWithSurvivingSurfaces(t *testing.T) {
 func TestSyncAll_SurfaceAddCancelsPendingClose(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
@@ -2903,7 +2962,7 @@ func TestSyncAll_SurfaceAddCancelsPendingClose(t *testing.T) {
 func TestSyncAll_PendingCloseRespectsGraceWindow(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
@@ -2933,7 +2992,7 @@ func TestSyncAll_PendingCloseRespectsGraceWindow(t *testing.T) {
 func TestSurfaceClose_ForceOnLastSurfaceClosesImmediately(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	_, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	_, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
@@ -2998,7 +3057,7 @@ func TestResolveSelf_SymlinkedPath(t *testing.T) {
 func TestResolveSelf_TmuxWindowIDFallback(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -3031,7 +3090,7 @@ func TestResolveSelf_TmuxWindowIDFallback(t *testing.T) {
 func TestResolveByWindowID_Found(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -3069,8 +3128,8 @@ func TestResolveByWindowID_NotFound(t *testing.T) {
 func TestWsCloseClean_ClosesCleanWorkspaces(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
-	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"})
+	eng.WsNew(WsNewOptions{Dock: "labs"})
+	eng.WsNew(WsNewOptions{Dock: "labs"})
 
 	// Both workspaces are clean (new, no changes) — both should close.
 	closed, skipped, err := eng.WsCloseClean("labs", true, false)
@@ -3098,8 +3157,8 @@ func TestWsCloseClean_ClosesCleanWorkspaces(t *testing.T) {
 func TestWsCloseClean_SkipsDirtyWorkspaces(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
-	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"})
+	eng.WsNew(WsNewOptions{Dock: "labs"})
+	eng.WsNew(WsNewOptions{Dock: "labs"})
 
 	// Make w1 dirty via mock. The directory must exist on disk for
 	// closeWorkspaceState to run the dirty check at all.
@@ -3173,9 +3232,9 @@ func TestWsCloseDone_ClosesMergedPRHead(t *testing.T) {
 func TestWsCloseClean_SkipsExcludedWorkspace(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
-	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w2"})
-	eng.WsNew(WsNewOptions{Dock: "labs", Name: "w3"})
+	eng.WsNew(WsNewOptions{Dock: "labs"})
+	eng.WsNew(WsNewOptions{Dock: "labs"})
+	eng.WsNew(WsNewOptions{Dock: "labs"})
 
 	// All clean, but exclude w2 (simulating "self").
 	closed, _, err := eng.WsCloseClean("labs", true, false, "w2")
@@ -3297,7 +3356,7 @@ func TestWsNew_ExplicitNameAlsoBlocksBranchSyncRename(t *testing.T) {
 func TestWsClose_RemoveWorktreeFailurePreservesWorkspaceState(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -3336,7 +3395,7 @@ func TestRepoRemove_ForceRemovesManifestDock(t *testing.T) {
 		t.Fatalf("saving config: %v", err)
 	}
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
@@ -3368,7 +3427,7 @@ func TestRepoRemove_ForceRemovesManifestDock(t *testing.T) {
 func TestRecover_FindWindowByNameRefreshesSurfaceIDs(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}

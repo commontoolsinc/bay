@@ -90,7 +90,7 @@ func surfaceArgFixture(t *testing.T) *engine.Engine {
 	eng := twoDockFixture(t)
 
 	// labs:w1 with default shell + extra agent surface
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew labs:w1: %v", err)
 	}
 	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
@@ -98,7 +98,7 @@ func surfaceArgFixture(t *testing.T) *engine.Engine {
 	}
 
 	// labs2:w1 with the same surface — bare ws name "w1" is now ambiguous.
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs2", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs2", Shell: true}); err != nil {
 		t.Fatalf("WsNew labs2:w1: %v", err)
 	}
 	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs2", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
@@ -223,10 +223,10 @@ func wsArgFixture(t *testing.T) *engine.Engine {
 	eng := twoDockFixture(t)
 
 	// Ambiguous bare ws name.
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew labs:w1: %v", err)
 	}
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs2", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs2", Shell: true}); err != nil {
 		t.Fatalf("WsNew labs2:w1: %v", err)
 	}
 
@@ -376,7 +376,7 @@ func selfFixture(t *testing.T) *engine.Engine {
 	t.Helper()
 	eng, mockTmux, _, _ := testNavEngine(t)
 
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "second", SplitDir: "v"}); err != nil {

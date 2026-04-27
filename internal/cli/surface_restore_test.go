@@ -40,7 +40,7 @@ func TestRunSurfaceRestore_SuccessEmitsNoToast(t *testing.T) {
 	mockTmux.SetCurrentSession("labs")
 	t.Setenv("TMUX", "/tmp/tmux-501/default,12345,0")
 
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{

@@ -152,7 +152,7 @@ func TestFocusSurface_SkipsEmptyIDs(t *testing.T) {
 func TestSurfaceCycle_Forward(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 
-	ws, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
+	ws, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true})
 	if err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestSurfaceCycle_Forward(t *testing.T) {
 func TestSurfaceCycle_Backward(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 
-	ws, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
+	ws, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true})
 	if err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestSurfaceCycle_Backward(t *testing.T) {
 func TestSurfaceCycle_NoFlashOnSingleSurface(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 
-	ws, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
+	ws, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true})
 	if err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
@@ -243,7 +243,7 @@ func TestSurfaceCycle_NoFlashOnSingleSurface(t *testing.T) {
 func TestSurfaceGo_QueryFilter(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 
-	ws, _ := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
+	ws, _ := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true})
 	os.MkdirAll(ws.Path, 0o755)
 	eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"})
 	ws, _ = eng.WsShow("labs", "w1")
@@ -271,7 +271,7 @@ func TestSurfaceGo_QueryFilter(t *testing.T) {
 func TestSurfaceGo_NextWaitingIncludesBellWindow(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 
-	ws, _ := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
+	ws, _ := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true})
 	os.MkdirAll(ws.Path, 0o755)
 	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "codex"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
@@ -341,8 +341,8 @@ func findSubstring(s, sub string) bool {
 func TestWsCycle_Forward(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 
-	eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1"})
-	eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w2"})
+	eng.WsNew(engine.WsNewOptions{Dock: "labs"})
+	eng.WsNew(engine.WsNewOptions{Dock: "labs"})
 
 	// Set tmux context to first workspace's window.
 	ws1, _ := eng.WsShow("labs", "w1")
@@ -370,8 +370,8 @@ func TestWsCycle_Forward(t *testing.T) {
 func TestWsCycle_Backward(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 
-	eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1"})
-	eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w2"})
+	eng.WsNew(engine.WsNewOptions{Dock: "labs"})
+	eng.WsNew(engine.WsNewOptions{Dock: "labs"})
 
 	// Current = w2. Prev should go to w1.
 	ws1, _ := eng.WsShow("labs", "w1")
@@ -398,7 +398,7 @@ func TestWsCycle_Backward(t *testing.T) {
 func TestWsCycle_NoFlashOnSingleWorkspace(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 
-	eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1"})
+	eng.WsNew(engine.WsNewOptions{Dock: "labs"})
 
 	ws1, _ := eng.WsShow("labs", "w1")
 	mockTmux.SetCurrentSession("labs")

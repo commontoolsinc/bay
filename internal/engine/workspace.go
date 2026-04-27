@@ -54,10 +54,10 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	if displayName == "" && opts.Branch != "" {
 		displayName = uniqueWorkspaceName(dock, nil, abbreviateBranch(opts.Branch))
 	}
-	// Validate explicit/branch-derived name early. Default-from-dirname is
-	// validated below after we know wsPath.
+	// Validate explicit/branch-derived name early. Names matching the
+	// reserved ID pattern (^w[1-9]\d*$) are rejected here.
 	if displayName != "" {
-		if err := ValidateName(displayName); err != nil {
+		if err := ValidateWorkspaceName(displayName); err != nil {
 			return nil, err
 		}
 	}
@@ -135,16 +135,12 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		}
 	}
 
-	// If no explicit name and no branch, default to the path basename.
-	// For worktree workspaces this matches the sequential dir (e.g., "w4")
-	// — keeping name and dir aligned by default avoids confusion like
-	// "workspace w1 lives in dir w4". For external workspaces this picks
-	// up the directory's basename, also a sensible default.
-	//
-	// TODO: under the new identity/display model, Name eventually shouldn't
-	// match the reserved ID pattern (^w[1-9]\d*$). Phase 6 (ValidateName
-	// reservation) will surface this conflict; for now the default Name
-	// happens to coincide with the assigned ID.
+	// If no explicit name and no branch, default to the path basename
+	// (e.g., "w4"). This produces a Name that matches the reserved ID
+	// pattern (^w[1-9]\d*$) — bypassing ValidateWorkspaceName — but
+	// isPlaceholderName treats such Names as fillable, so sync replaces
+	// them on first branch detection. Phase 7's resolver hard-cut will
+	// revisit this default and likely drop it.
 	if displayName == "" {
 		base := filepath.Base(wsPath)
 		displayName = uniqueWorkspaceName(dock, nil, base)
@@ -704,7 +700,7 @@ func (e *Engine) WsDescribe(dockName, wsName, desc string) error {
 
 // WsRename renames a workspace.
 func (e *Engine) WsRename(dockName, wsName, newName string) error {
-	if err := ValidateName(newName); err != nil {
+	if err := ValidateWorkspaceName(newName); err != nil {
 		return err
 	}
 

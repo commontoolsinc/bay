@@ -12,7 +12,7 @@ import (
 
 func TestRunSurfaceNew_Shell(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 
@@ -42,7 +42,7 @@ func TestRunSurfaceNew_Shell(t *testing.T) {
 
 func TestRunSurfaceNew_Agent(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 
@@ -70,7 +70,7 @@ func TestRunSurfaceNew_Agent(t *testing.T) {
 
 func TestRunSurfaceNew_Cmd(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 
@@ -102,7 +102,7 @@ func TestRunSurfaceNew_Cmd(t *testing.T) {
 
 func TestRunSurfaceNew_AgentDefaultName(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 
@@ -131,7 +131,7 @@ func TestRunSurfaceNew_AgentDefaultName(t *testing.T) {
 
 func TestRunSurfaceNew_CmdDefaultName(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 
@@ -160,7 +160,7 @@ func TestRunSurfaceNew_CmdDefaultName(t *testing.T) {
 
 func TestRunSurfaceNew_NameWithColonIsRejected(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 
@@ -234,7 +234,7 @@ func TestResolveSplit_DefaultsToPane(t *testing.T) {
 
 func TestRunSurfaceClose_ByName(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
@@ -375,7 +375,7 @@ func TestRunSurfaceRename_Self(t *testing.T) {
 
 func TestRunSurfaceShow_FoundAndNotFound(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
@@ -398,7 +398,7 @@ func TestRunSurfaceShow_FoundAndNotFound(t *testing.T) {
 
 func TestRunSurfaceRename(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true}); err != nil {
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
@@ -431,7 +431,7 @@ func TestRunSurfaceRename(t *testing.T) {
 
 func TestResolveSurfaceWorkspace_NoFlagsUsesSelf(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
-	ws, _ := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "w1", Shell: true})
+	ws, _ := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true})
 	mockTmux.SetCurrentWindowID(ws.Surfaces[0].Tmux.WindowID)
 	mockTmux.SetCurrentPaneID(ws.Surfaces[0].Tmux.PaneID)
 

@@ -12,7 +12,7 @@ import (
 func TestSurfaceClose_PushesUndoEntry(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(SurfaceAddOptions{
@@ -55,7 +55,7 @@ func TestSurfaceClose_PushesUndoEntry(t *testing.T) {
 func TestSurfaceRestore_RoundTripsSurface(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(SurfaceAddOptions{
@@ -106,7 +106,7 @@ func TestSurfaceRestore_RoundTripsSurface(t *testing.T) {
 func TestSurfaceRestore_EmptyQueueReturnsNothingToRestore(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 
@@ -126,7 +126,7 @@ func TestSurfaceRestore_DropsStaleEntryWhenWorkspaceGone(t *testing.T) {
 	defer withZeroGrace()()
 	eng, _ := testEngine(t)
 
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	ws, _ := eng.WsShow("labs", "w1")
@@ -157,7 +157,7 @@ func TestSurfaceRestore_RestoreWithinGraceCancelsPendingClose(t *testing.T) {
 	// restores the surface, and SurfaceAdd's cancel path clears the timer.
 	eng, _ := testEngine(t)
 
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	ws, _ := eng.WsShow("labs", "w1")
@@ -192,7 +192,7 @@ func TestSurfaceRestore_PreservesQueueOnAddFailure(t *testing.T) {
 	// fails in validateAgentName.
 	eng, _ := testEngine(t)
 
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 
@@ -239,7 +239,7 @@ func TestSurfaceRestore_RootPaneRejoinsWindow(t *testing.T) {
 	eng, _ := testEngine(t)
 	mockTmux := eng.Tmux.(*tmux.Mock)
 
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	// WsNew's initial surface is the root (SplitDir=""). Add two split
@@ -308,7 +308,7 @@ func TestSurfaceRestore_SplitChildRejoinsWindow(t *testing.T) {
 	eng, _ := testEngine(t)
 	mockTmux := eng.Tmux.(*tmux.Mock)
 
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(SurfaceAddOptions{
@@ -366,7 +366,7 @@ func TestSurfaceRestore_SplitChildRejoinsWindow(t *testing.T) {
 func TestSurfaceRestore_StackedRestoreRejoinsOriginalWindow(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(SurfaceAddOptions{
@@ -424,7 +424,7 @@ func TestSurfaceRestore_FallsBackToNewWindowWhenLayoutGroupGone(t *testing.T) {
 	eng, _ := testEngine(t)
 	mockTmux := eng.Tmux.(*tmux.Mock)
 
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "w1"}); err != nil {
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	// Add a surface in a new tmux window so the workspace has a second
