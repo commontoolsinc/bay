@@ -153,8 +153,23 @@ func parseWorkspaceIDNum(s string) (int, bool) {
 //  2. Assign next-sequential w<N> for any workspace still without an ID,
 //     where N is one above the highest used in the dock.
 //
-// Idempotent: a workspace with a non-empty ID is left alone.
+// Sequential IDs (pass 2) always fall above claimed-basename IDs (pass 1),
+// which keeps externals from stealing low IDs out from under worktrees
+// when dock ordering is mixed. Idempotent: a workspace with a non-empty
+// ID is left alone, and the function returns immediately when no fill
+// is needed.
 func assignWorkspaceIDs(dock *Dock) {
+	needsFill := false
+	for i := range dock.Workspaces {
+		if dock.Workspaces[i].ID == "" {
+			needsFill = true
+			break
+		}
+	}
+	if !needsFill {
+		return
+	}
+
 	used := map[string]bool{}
 	maxN := 0
 	for i := range dock.Workspaces {
@@ -167,23 +182,22 @@ func assignWorkspaceIDs(dock *Dock) {
 			maxN = n
 		}
 	}
-	// Pass 1: claim path basename when w<N>-shaped and unused.
 	for i := range dock.Workspaces {
 		ws := &dock.Workspaces[i]
 		if ws.ID != "" || ws.Path == "" {
 			continue
 		}
 		base := filepath.Base(ws.Path)
-		if !IsWorkspaceID(base) || used[base] {
+		n, ok := parseWorkspaceIDNum(base)
+		if !ok || used[base] {
 			continue
 		}
 		ws.ID = base
 		used[base] = true
-		if n, _ := parseWorkspaceIDNum(base); n > maxN {
+		if n > maxN {
 			maxN = n
 		}
 	}
-	// Pass 2: assign next-sequential for the remainder.
 	for i := range dock.Workspaces {
 		ws := &dock.Workspaces[i]
 		if ws.ID != "" {

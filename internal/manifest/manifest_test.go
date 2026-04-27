@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -1050,7 +1051,7 @@ func TestParse_FillsMissingIDsFromPathBasename(t *testing.T) {
 		got = append(got, ws.ID)
 	}
 	want := []string{"w1", "w2", "w5"}
-	if !equalStrings(got, want) {
+	if !slices.Equal(got, want) {
 		t.Errorf("IDs = %v, want %v", got, want)
 	}
 }
@@ -1084,7 +1085,7 @@ func TestParse_AssignsSequentialIDsForUnusablePaths(t *testing.T) {
 		got = append(got, ws.ID)
 	}
 	want := []string{"w3", "w4", "w5"}
-	if !equalStrings(got, want) {
+	if !slices.Equal(got, want) {
 		t.Errorf("IDs = %v, want %v", got, want)
 	}
 }
@@ -1178,18 +1179,6 @@ func TestSaveAndLoad_PreservesID(t *testing.T) {
 	if loaded.Docks[0].Workspaces[0].ID != "w3" {
 		t.Errorf("ID after round-trip = %q, want w3", loaded.Docks[0].Workspaces[0].ID)
 	}
-}
-
-func equalStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func TestRepoEffectiveWorktreeDir(t *testing.T) {
