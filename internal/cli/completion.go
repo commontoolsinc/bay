@@ -227,23 +227,50 @@ func addCandidate(completions *[]string, seen map[string]bool, val, desc string)
 }
 
 // workspaceCandidates returns workspace identifier candidates: each workspace
-// in two forms (bare name and dock:name), plus the "self" keyword.
+// in four forms — ID, dock:ID, Name, dock:Name — plus the "self" keyword.
+//
+// Both ID and Name are emitted so the user can complete from either prefix
+// (e.g., `w1<TAB>` finds the ID; `auth<TAB>` finds the Name). Descriptions
+// cross-reference the other identifier so the user can see, for example,
+// that `auth-fix` is `w1`. The shell filters by the user's typed prefix,
+// so the user only sees candidates matching what they've started typing.
+//
+// When ID == Name (typical for auto-named workspaces), the Name candidate
+// is deduped via the seen map; only one entry is emitted.
 func workspaceCandidates(m *manifest.Manifest) []string {
 	seen := make(map[string]bool)
 	var completions []string
 	for _, ref := range manifest.AllWorkspaces(m) {
 		ws := ref.Workspace
-		desc := ref.Dock
+
+		// Common branch/PR fragment used in both ID and Name descriptions.
+		extras := ""
 		if ws.Worktree != nil {
 			if ws.Worktree.Branch != "" {
-				desc += " " + ws.Worktree.Branch
+				extras += " " + ws.Worktree.Branch
 			}
 			if ws.Worktree.PR != "" {
-				desc += " #" + ws.Worktree.PR
+				extras += " #" + ws.Worktree.PR
 			}
 		}
-		addCandidate(&completions, seen, ws.Name, desc)
-		addCandidate(&completions, seen, ref.Dock+":"+ws.Name, ws.Name)
+
+		// ID candidates lead with the friendly Name (when distinct) so the
+		// description tells the user what each ID maps to.
+		idDesc := ref.Dock
+		if ws.Name != "" && ws.Name != ws.ID {
+			idDesc += " " + ws.Name
+		}
+		idDesc += extras
+		addCandidate(&completions, seen, ws.ID, idDesc)
+		addCandidate(&completions, seen, ref.Dock+":"+ws.ID, idDesc)
+
+		// Name candidates cross-reference the ID so users learn the canonical
+		// handle while completing from a familiar label.
+		if ws.Name != "" {
+			nameDesc := ref.Dock + " (" + ws.ID + ")" + extras
+			addCandidate(&completions, seen, ws.Name, nameDesc)
+			addCandidate(&completions, seen, ref.Dock+":"+ws.Name, ws.ID)
+		}
 	}
 	addCandidate(&completions, seen, "self", "current workspace")
 	return completions
