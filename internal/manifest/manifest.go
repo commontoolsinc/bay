@@ -134,6 +134,11 @@ func parseWorkspaceIDNum(s string) (int, bool) {
 		return 0, false
 	}
 	rest := s[1:]
+	// Reject any non-digit lead — strconv.Atoi accepts +/- prefixes,
+	// but those aren't canonical workspace IDs.
+	if rest[0] < '0' || rest[0] > '9' {
+		return 0, false
+	}
 	if len(rest) > 1 && rest[0] == '0' { // reject leading zeros (canonical)
 		return 0, false
 	}
@@ -145,7 +150,7 @@ func parseWorkspaceIDNum(s string) (int, bool) {
 }
 
 // assignWorkspaceIDs fills in IDs for any workspace in the dock whose ID
-// is currently empty. Two passes:
+// is currently empty. Two passes after an initial scan:
 //
 //  1. Claim the path basename as ID if it matches the canonical pattern
 //     and isn't already taken in this dock. This preserves continuity
@@ -155,9 +160,19 @@ func parseWorkspaceIDNum(s string) (int, bool) {
 //
 // Sequential IDs (pass 2) always fall above claimed-basename IDs (pass 1),
 // which keeps externals from stealing low IDs out from under worktrees
-// when dock ordering is mixed. Idempotent: a workspace with a non-empty
-// ID is left alone, and the function returns immediately when no fill
-// is needed.
+// when dock ordering is mixed. The three-pass structure (scan → claim →
+// sequential) is required to preserve that invariant: merging scan into
+// claim risks one workspace claiming an ID a later workspace already
+// holds explicitly, and merging claim into sequential lets a sequential
+// fill grab a low ID before another workspace's basename can claim it.
+//
+// On collisions in pass 1 (two workspaces sharing the same w<N> path
+// basename), the workspace appearing first in dock.Workspaces wins; the
+// second falls through to pass 2. Iteration order is the manifest's
+// stored order, so the result is deterministic across runs.
+//
+// Idempotent: a workspace with a non-empty ID is left alone, and the
+// function returns immediately when no fill is needed.
 func assignWorkspaceIDs(dock *Dock) {
 	needsFill := false
 	for i := range dock.Workspaces {

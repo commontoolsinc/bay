@@ -121,6 +121,11 @@ func TestParse_FullManifest(t *testing.T) {
 	if ws.Name != "auth-fix" {
 		t.Errorf("workspace name = %q, want %q", ws.Name, "auth-fix")
 	}
+	// Path basename "ws1" is non-canonical, so pass 1 skips it and pass 2
+	// assigns the first sequential ID.
+	if ws.ID != "w1" {
+		t.Errorf("workspace ID = %q, want %q", ws.ID, "w1")
+	}
 	if ws.Type != WorkspaceTypeWorktree {
 		t.Errorf("workspace type = %q, want %q", ws.Type, WorkspaceTypeWorktree)
 	}
@@ -1014,6 +1019,7 @@ func TestIsWorkspaceID(t *testing.T) {
 		{"v1", false},  // wrong prefix
 		{"auth-fix", false},
 		{"w-1", false},
+		{"w+1", false}, // strconv.Atoi accepts +/- prefixes; we don't
 		{"w1.5", false},
 	}
 	for _, c := range cases {

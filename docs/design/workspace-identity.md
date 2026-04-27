@@ -46,9 +46,11 @@ with Name for the tab).
 
 ### Reserved ID pattern
 
-IDs match `^w\d+$`. Names are forbidden from matching that pattern
-(rejected by `ValidateName`). With disjoint namespaces, no token a
-user types is ever ambiguous between the two.
+IDs match `^w[1-9]\d*$` — lowercase `w` followed by a positive
+integer with no leading zeros. (`w0` and `w01` are rejected so the
+canonical form is unambiguous.) Names are forbidden from matching
+that pattern (rejected by `ValidateName`). With disjoint namespaces,
+no token a user types is ever ambiguous between the two.
 
 ### Resolution: strict ID-only
 
@@ -118,7 +120,7 @@ already (often from auto-rename); those values stay.
 - `resolveWorkspaceArg` (and friends) becomes ID-only. Lookup by
   Name is removed. Error messages suggest the right ID.
 - `bay rename` validates the new Name against the reserved
-  `^w\d+$` pattern.
+  `^w[1-9]\d*$` pattern.
 - `bay ls`/`bay tree` formats: ID column, Name column, branch,
   PR, status. When Name is empty, the Name column shows the ID
   dimmed (matching what the tab shows).
