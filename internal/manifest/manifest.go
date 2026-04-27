@@ -892,9 +892,9 @@ func workspaceNotFoundError(query, dockName string, hints []nameHint) error {
 	default:
 		parts := make([]string, len(hints))
 		for i, h := range hints {
-			parts[i] = fmt.Sprintf("%s (in %s)", h.id, h.dock)
+			parts[i] = fmt.Sprintf("%q (%s)", h.id, h.dock)
 		}
-		return fmt.Errorf("%s; Names matching %q live at: %s — use the ID", base, query, strings.Join(parts, ", "))
+		return fmt.Errorf("%s; did you mean one of: %s? (Names are not CLI keys; use the ID)", base, strings.Join(parts, ", "))
 	}
 }
 

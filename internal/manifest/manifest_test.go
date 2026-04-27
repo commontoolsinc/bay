@@ -1262,7 +1262,10 @@ func TestResolveWorkspace_NameHintMultipleDocks(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for multi-dock Name lookup")
 	}
-	if !strings.Contains(err.Error(), `Names matching "shared"`) {
-		t.Errorf("expected multi-dock hint, got %v", err)
+	msg := err.Error()
+	if !strings.Contains(msg, `did you mean one of`) ||
+		!strings.Contains(msg, `"w1" (labs)`) ||
+		!strings.Contains(msg, `"w1" (labs2)`) {
+		t.Errorf("expected multi-dock hint listing both candidates, got %v", err)
 	}
 }
