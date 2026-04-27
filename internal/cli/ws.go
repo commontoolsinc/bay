@@ -126,7 +126,7 @@ func newWsNewCmd() *cobra.Command {
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (defaults to current tmux session)")
 	cmd.Flags().StringVar(&opts.Repo, "repo", "", "repo name")
 	cmd.Flags().StringVar(&opts.Dir, "dir", "", "external directory (creates external workspace)")
-	cmd.Flags().StringVar(&opts.Agent, "agent", "", "agent type (bare --agent uses dock default)")
+	cmd.Flags().StringVar(&opts.Agent, "agent", "", "agent type (bare --agent uses dock default; use --agent=TYPE for a specific type)")
 	cmd.Flags().BoolVar(&shell, "shell", false, "open shell instead of agent")
 	cmd.Flags().StringVar(&opts.Branch, "branch", "", "git branch to checkout (creates it if new)")
 	cmd.Flags().StringVar(&opts.Description, "description", "", "short description shown in picker/ls/tree (~40 chars)")

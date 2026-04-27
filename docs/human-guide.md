@@ -88,7 +88,7 @@ bay ws new                  # shell workspace (default)
 bay ws new auth-fix         # with a display name
 bay ws new --branch fix-it  # checkout or create a branch
 bay ws new --agent          # agent workspace (dock default, no shell)
-bay ws new --agent codex    # agent workspace with specific agent
+bay ws new --agent=codex    # agent workspace with specific agent
 bay agent                   # launch default agent as a split pane
 bay agent claude            # launch a specific agent as a split pane
 bay shell                   # open a shell as a split pane
@@ -454,7 +454,7 @@ or, when omitted, inherited from the current tmux session.
 ```
 bay ws new [name]                           # new workspace (shell default)
 bay ws new [name] --agent                   # first surface is agent, not shell
-bay ws new [name] --agent codex             # specific agent type
+bay ws new [name] --agent=codex             # specific agent type
 bay ws new [name] --dock <d>                # target a specific dock
 bay ws new [name] --branch <b>              # checkout or create branch
 bay ws new [name] --repo <r>                # override dock's repo
@@ -709,9 +709,9 @@ bind-key -T bay-agent g run-shell 'bay agent gemini --pane || true'
 bind-key -T bay-agent G run-shell 'bay agent gemini --window || true'
 
 bind-key -T bay-agent w display-message "workspace: c Claude, x Codex, g Gemini" \; switch-client -T bay-agent-workspace
-bind-key -T bay-agent-workspace c run-shell 'bay ws new -q --agent claude || true'
-bind-key -T bay-agent-workspace x run-shell 'bay ws new -q --agent codex || true'
-bind-key -T bay-agent-workspace g run-shell 'bay ws new -q --agent gemini || true'
+bind-key -T bay-agent-workspace c run-shell 'bay ws new -q --agent=claude || true'
+bind-key -T bay-agent-workspace x run-shell 'bay ws new -q --agent=codex || true'
+bind-key -T bay-agent-workspace g run-shell 'bay ws new -q --agent=gemini || true'
 # END bay-personal-agent-bindings
 ```
 
