@@ -1,10 +1,144 @@
 package cli
 
 import (
+	"bufio"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 )
+
+func TestHasUserStatusRight(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{name: "empty config", content: "", want: false},
+		{name: "set -g status-right", content: "set -g status-right '#H'\n", want: true},
+		{name: "set-option -g status-right", content: "set-option -g status-right '#H'\n", want: true},
+		{name: "set without -g", content: "set status-right '#H'\n", want: true},
+		{name: "status-right-length only is not status-right", content: "set -g status-right-length 40\n", want: false},
+		{name: "status-right-style is not status-right", content: "set -g status-right-style 'bg=blue'\n", want: false},
+		{name: "commented status-right is not status-right", content: "# set -g status-right '#H'\n", want: false},
+		{name: "indented commented is still skipped", content: "    # set -g status-right '#H'\n", want: false},
+		{name: "status-left is not status-right", content: "set -g status-left '#S'\n", want: false},
+		{name: "unrelated set", content: "set -g mouse on\n", want: false},
+		{name: "mixed config with non-bay status-right", content: "# Some comment\nset -g mouse on\nset -g status-right '#(date)'\n", want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hasUserStatusRight(tt.content); got != tt.want {
+				t.Errorf("hasUserStatusRight(%q) = %v, want %v", tt.content, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInstallStatusRight_FreshInstall(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	confPath := filepath.Join(home, ".tmux.conf")
+	// Pre-create empty file so the installer's read returns ""
+	_ = os.WriteFile(confPath, []byte("set -g mouse on\n"), 0o644)
+
+	reader := bufio.NewReader(strings.NewReader("\n")) // accept default [Y/n]
+	installStatusRight(reader)
+
+	got, err := os.ReadFile(confPath)
+	if err != nil {
+		t.Fatalf("read tmux.conf: %v", err)
+	}
+	for _, want := range bayStatusLineBlock {
+		if !strings.Contains(string(got), want) {
+			t.Errorf("after install, %s missing %q\nfull contents:\n%s", confPath, want, got)
+		}
+	}
+}
+
+func TestInstallStatusRight_AlreadyMarkedSkipsBlock(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	confPath := filepath.Join(home, ".tmux.conf")
+	original := "# Bay status line\nset -g status-right 'something custom'\n"
+	_ = os.WriteFile(confPath, []byte(original), 0o644)
+
+	reader := bufio.NewReader(strings.NewReader("\n"))
+	installStatusRight(reader)
+
+	got, _ := os.ReadFile(confPath)
+	if string(got) != original {
+		t.Errorf("file changed after no-op install:\nbefore: %q\nafter:  %q", original, got)
+	}
+}
+
+func TestInstallStatusRight_RespectsUserStatusRight(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	confPath := filepath.Join(home, ".tmux.conf")
+	original := "set -g status-right '#(date)'\n"
+	_ = os.WriteFile(confPath, []byte(original), 0o644)
+
+	reader := bufio.NewReader(strings.NewReader("\n"))
+	installStatusRight(reader)
+
+	got, _ := os.ReadFile(confPath)
+	if string(got) != original {
+		t.Errorf("user's status-right should not be modified:\nbefore: %q\nafter:  %q", original, got)
+	}
+}
+
+func TestInstallStatusRight_NoConfigFileCreatesOne(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	confPath := filepath.Join(home, ".tmux.conf")
+	if _, err := os.Stat(confPath); !os.IsNotExist(err) {
+		t.Fatalf("expected no tmux.conf at start; got err=%v", err)
+	}
+
+	reader := bufio.NewReader(strings.NewReader("\n"))
+	installStatusRight(reader)
+
+	got, err := os.ReadFile(confPath)
+	if err != nil {
+		t.Fatalf("expected installer to create tmux.conf: %v", err)
+	}
+	if !strings.Contains(string(got), bayStatusLineMarker) {
+		t.Errorf("created tmux.conf missing bay marker:\n%s", got)
+	}
+}
+
+func TestInstallStatusRight_DeclineLeavesFileUntouched(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	confPath := filepath.Join(home, ".tmux.conf")
+	original := "set -g mouse on\n"
+	_ = os.WriteFile(confPath, []byte(original), 0o644)
+
+	reader := bufio.NewReader(strings.NewReader("n\n"))
+	installStatusRight(reader)
+
+	got, _ := os.ReadFile(confPath)
+	if string(got) != original {
+		t.Errorf("declining the prompt should leave the file unchanged:\nbefore: %q\nafter:  %q", original, got)
+	}
+}
+
+func TestHasMarkerLine_IgnoresMarkerInCommentText(t *testing.T) {
+	// strings.Contains would have matched this — the line-aware check
+	// must not, since the marker appears inside a longer comment.
+	content := "# I tried the # Bay status line block once but reverted.\nset -g mouse on\n"
+	if hasMarkerLine(content, bayStatusLineMarker) {
+		t.Error("hasMarkerLine should require the marker on its own line")
+	}
+	// Same string on its own line (with surrounding whitespace) does match.
+	content2 := "set -g mouse on\n   # Bay status line   \nset -g status-right 'x'\n"
+	if !hasMarkerLine(content2, bayStatusLineMarker) {
+		t.Error("hasMarkerLine should match a marker on its own (trimmed) line")
+	}
+}
 
 func TestExtractBayBlock(t *testing.T) {
 	tests := []struct {

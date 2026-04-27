@@ -90,6 +90,9 @@ Do you want to proceed
 			// Install tmux keybindings
 			installKeybindings(reader)
 
+			// Install tmux status-line snippet
+			installStatusRight(reader)
+
 			// Configure defaults
 			configureAgent(reader, configPath)
 			configureEditor(reader, configPath)
@@ -234,6 +237,16 @@ var bayKeybindings = []bayKeybinding{
 }
 
 const bayKeybindingsMarker = "# Bay keybindings"
+
+// bayStatusLineMarker tags the tmux status-right block bay installs.
+const bayStatusLineMarker = "# Bay status line"
+
+// bayStatusLineBlock is the canonical content bay appends to .tmux.conf.
+var bayStatusLineBlock = []string{
+	bayStatusLineMarker,
+	"set -g status-right-length 40",
+	"set -g status-right '#(bay status-line full --window #{window_id} --width #{status-right-length})'",
+}
 
 // canonicalLine returns the literal line bay would write for this binding.
 func (kb bayKeybinding) canonicalLine() string {
@@ -678,14 +691,33 @@ func promptMismatchedBindings(reader *bufio.Reader, tmuxConf, content string, mi
 	}
 }
 
+// loadTmuxConf returns the user's ~/.tmux.conf path and current contents.
+// Missing files are reported as empty content with no error so callers can
+// initialize a fresh file by writing.
+func loadTmuxConf() (path, content string) {
+	home, _ := os.UserHomeDir()
+	path = filepath.Join(home, ".tmux.conf")
+	existing, _ := os.ReadFile(path)
+	return path, string(existing)
+}
+
+// hasMarkerLine reports whether content contains a line whose trimmed text
+// equals marker exactly. Used by the bay block installers as an
+// idempotency guard that ignores incidental marker text inside comments
+// or strings elsewhere in the file.
+func hasMarkerLine(content, marker string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		if strings.TrimSpace(line) == marker {
+			return true
+		}
+	}
+	return false
+}
+
 func installKeybindings(reader *bufio.Reader) {
 	fmt.Println()
 
-	home, _ := os.UserHomeDir()
-	tmuxConf := filepath.Join(home, ".tmux.conf")
-
-	existing, _ := os.ReadFile(tmuxConf)
-	content := string(existing)
+	tmuxConf, content := loadTmuxConf()
 
 	// If a "# Bay keybindings" block already exists, keep the user's
 	// customizations but offer to reconcile drift. Two passes: missing
@@ -698,8 +730,7 @@ func installKeybindings(reader *bufio.Reader) {
 
 		if missing := missingBindings(block, bayKeybindings); len(missing) > 0 {
 			promptMissingBindings(reader, tmuxConf, content, missing)
-			existing, _ = os.ReadFile(tmuxConf)
-			content = string(existing)
+			_, content = loadTmuxConf()
 			block, _ = extractBayBlock(content)
 		}
 
@@ -749,6 +780,87 @@ func installKeybindings(reader *bufio.Reader) {
 		return
 	}
 
+	fmt.Println("Added.")
+}
+
+// hasUserStatusRight reports whether content contains an active
+// (non-commented) `status-right` setter — distinct from `status-right-length`
+// or `status-right-style`. Used to avoid clobbering the user's existing
+// status line config.
+func hasUserStatusRight(content string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		fields := strings.Fields(trimmed)
+		if len(fields) < 2 {
+			continue
+		}
+		switch fields[0] {
+		case "set", "set-option", "setw", "set-window-option":
+		default:
+			continue
+		}
+		// First non-flag token after the setter is the option name.
+		for _, f := range fields[1:] {
+			if strings.HasPrefix(f, "-") {
+				continue
+			}
+			if f == "status-right" {
+				return true
+			}
+			break
+		}
+	}
+	return false
+}
+
+// installStatusRight offers to add bay's status-line config to the user's
+// .tmux.conf. The format string passes #{window_id} so each tmux window
+// gets its own #() cache entry (avoids stale status across window
+// switches), and #{status-right-length} so bay can adapt the rendered
+// text to whatever space is available.
+//
+// Idempotent — if the bay block marker is already present on its own
+// line, the function returns without prompting. If a user-defined
+// status-right already exists (no bay marker), the function prints the
+// suggested lines and skips, letting the user merge manually.
+func installStatusRight(reader *bufio.Reader) {
+	fmt.Println()
+
+	tmuxConf, content := loadTmuxConf()
+
+	if hasMarkerLine(content, bayStatusLineMarker) {
+		fmt.Printf("Bay status line already configured in %s.\n", tmuxConf)
+		return
+	}
+
+	if hasUserStatusRight(content) {
+		fmt.Printf("Note: %s already sets status-right; bay won't overwrite it.\n", tmuxConf)
+		fmt.Println("To use bay's status line, replace your existing status-right with:")
+		for _, line := range bayStatusLineBlock[1:] {
+			fmt.Printf("  %s\n", line)
+		}
+		return
+	}
+
+	fmt.Printf("These tmux status-line settings will be added to %s:\n\n", tmuxConf)
+	for _, line := range bayStatusLineBlock {
+		fmt.Printf("  %s\n", line)
+	}
+	fmt.Println()
+	fmt.Print("Add these settings? [Y/n] ")
+	answer, _ := reader.ReadString('\n')
+	if strings.TrimSpace(strings.ToLower(answer)) == "n" {
+		return
+	}
+
+	newBlock := "\n" + strings.Join(bayStatusLineBlock, "\n") + "\n"
+	if err := os.WriteFile(tmuxConf, []byte(content+newBlock), 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not write %s: %v\n", tmuxConf, err)
+		return
+	}
 	fmt.Println("Added.")
 }
 
