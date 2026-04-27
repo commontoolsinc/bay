@@ -122,9 +122,9 @@ func TestAbbreviateBranch_AvoidsReservedPattern(t *testing.T) {
 		branch string
 		want   string
 	}{
-		{"fix/w1", "br-w1"},
-		{"feature/w42", "br-w42"},
-		{"w3", "br-w3"},
+		{"fix/w1", branchAbbrevReservedPrefix + "w1"},
+		{"feature/w42", branchAbbrevReservedPrefix + "w42"},
+		{"w3", branchAbbrevReservedPrefix + "w3"},
 		{"fix/auth", "auth"}, // unaffected
 	}
 	for _, tt := range tests {

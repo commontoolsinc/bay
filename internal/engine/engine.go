@@ -233,13 +233,18 @@ func abbreviateBranch(branch string) string {
 	}
 	// Names that match the reserved workspace ID pattern (^w[1-9]\d*$) are
 	// rejected by ValidateWorkspaceName, so a branch like fix/w1 would
-	// otherwise produce an unnameable workspace. Prefix with "br-" so the
-	// result is always a legal Name.
+	// otherwise produce an unnameable workspace. Prefix so the result is
+	// always a legal Name.
 	if manifest.IsWorkspaceID(result) {
-		result = "br-" + result
+		result = branchAbbrevReservedPrefix + result
 	}
 	return result
 }
+
+// branchAbbrevReservedPrefix is prepended to abbreviateBranch results that
+// would otherwise collide with the reserved workspace ID pattern. "br-"
+// reads as a hint that the Name was branch-derived.
+const branchAbbrevReservedPrefix = "br-"
 
 // launchSurfaceInTmux launches the appropriate command in a tmux pane
 // based on the surface type and returns a populated Surface.
