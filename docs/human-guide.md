@@ -450,6 +450,20 @@ return to a workspace after working elsewhere.
 Run `bay agent-guide` for the full reference.
 ```
 
+`bay describe` only writes workspace metadata, so it's safe to allowlist
+and skip the permission prompt. For Claude Code, add to
+`~/.claude/settings.json`:
+
+```json
+{ "permissions": { "allow": ["Bash(bay describe:*)"] } }
+```
+
+For Codex, add to `~/.codex/rules/default.rules`:
+
+```
+prefix_rule(pattern=["bay", "describe"], decision="allow")
+```
+
 ### Session resumption
 
 Built-in agents have resume args (e.g., `--continue` for Claude Code).
