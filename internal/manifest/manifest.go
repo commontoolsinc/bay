@@ -649,7 +649,6 @@ func (m *Manifest) RemoveDock(name string) error {
 
 // --- Workspace operations ---
 
-// FindWorkspace returns a pointer to the workspace with the given name, or nil.
 // FindWorkspace returns the first workspace with a matching non-empty Name.
 // Empty Names always return nil — multiple workspaces may legitimately have
 // no Name set (display falls back to ID), so an empty-string lookup is not
