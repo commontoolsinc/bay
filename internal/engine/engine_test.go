@@ -2450,36 +2450,36 @@ func TestSyncWorkspaceGitState_BranchCollisionGetsUniqueName(t *testing.T) {
 	}
 }
 
-func TestSyncWorkspaceGitState_DetachRenamesBack(t *testing.T) {
+func TestSyncWorkspaceGitState_DetachKeepsName(t *testing.T) {
+	// Sticky-once-set: after a Name has been filled from a branch, detaching
+	// the branch leaves the Name in place. Live branch state is shown via
+	// right-status; the tab label is meant to be stable.
 	eng, _ := testEngine(t)
 
-	// No explicit Name → bay auto-names to w1, NameOverridden=false,
-	// so the first SyncAll's branch-rename can fire.
 	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("WsNew failed: %v", err)
 	}
 	os.MkdirAll(ws.Path, 0o755)
 
-	// First sync: mock has the real branch — picks it up and abbreviates name.
+	// First sync: branch picked up; placeholder name "w1" gets replaced.
 	mockGit := eng.Git.(*git.Mock)
 	mockGit.SetBranch(ws.Path, "feature/existing")
 	eng.SyncAll()
 
-	// Verify workspace was renamed to branch-derived name.
 	ws, _ = eng.WsShow("labs", "existing")
 	if ws == nil {
 		t.Fatal("workspace should be renamed to 'existing'")
 	}
 
-	// Now mock returns empty branch (detached HEAD).
+	// Detach the branch.
 	mockGit.SetBranch(ws.Path, "")
 	eng.SyncAll()
 
-	// Workspace should be renamed back to sequential name and branch cleared.
-	ws, _ = eng.WsShow("labs", "w1")
+	// Name is sticky — still "existing" — but branch metadata is cleared.
+	ws, _ = eng.WsShow("labs", "existing")
 	if ws == nil {
-		t.Fatal("workspace should be renamed back to 'w1' after detach")
+		t.Fatal("workspace name should remain 'existing' after detach (sticky)")
 	}
 	if ws.Worktree.Branch != "" {
 		t.Errorf("branch = %q, want empty after detach", ws.Worktree.Branch)
@@ -3252,15 +3252,15 @@ func TestWsNew_ExplicitNameWithBranchKeepsExplicitName(t *testing.T) {
 	if ws.Worktree == nil || ws.Worktree.Branch != "feature/some-other-name" {
 		t.Errorf("branch wasn't set; ws.Worktree = %+v", ws.Worktree)
 	}
-	if !ws.NameOverridden {
-		t.Error("explicit name should set NameOverridden=true so future syncs don't auto-rename it")
-	}
+	// Name is non-empty (explicitly set), so future syncs leave it alone —
+	// sticky-once-set semantics replace the old NameOverridden flag.
 }
 
-// TestWsNew_ExplicitNameAlsoBlocksBranchSyncRename verifies the
-// NameOverridden flag set by an explicit name also prevents the
-// background SyncAll loop from auto-renaming the workspace later when
-// it detects a branch change.
+// TestWsNew_ExplicitNameAlsoBlocksBranchSyncRename verifies that an
+// explicitly-set Name prevents the background SyncAll loop from
+// auto-renaming the workspace later when it detects a branch change.
+// Sticky-once-set: any non-empty Name (user-set or otherwise) blocks
+// further automatic renames.
 func TestWsNew_ExplicitNameAlsoBlocksBranchSyncRename(t *testing.T) {
 	eng, _ := testEngine(t)
 
@@ -3611,5 +3611,115 @@ func TestSyncDetach_KeepsBranchWhenUnpushed(t *testing.T) {
 	// Branch should NOT have been deleted.
 	if len(mockGit.DeletedBranches()) != 0 {
 		t.Errorf("branch should not be deleted when unpushed; got %v", mockGit.DeletedBranches())
+	}
+}
+
+// --- Workspace identity (Phase 2) ---
+
+// TestWsNew_AssignsID confirms every new workspace gets a canonical ID.
+// IDs are assigned per-dock by manifest.AssignWorkspaceIDs after
+// AddWorkspace, so the engine doesn't need its own counter.
+func TestWsNew_AssignsID(t *testing.T) {
+	eng, _ := testEngine(t)
+	ws1, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew #1: %v", err)
+	}
+	if !manifest.IsWorkspaceID(ws1.ID) {
+		t.Errorf("ws1.ID = %q, want canonical w<N>", ws1.ID)
+	}
+
+	ws2, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew #2: %v", err)
+	}
+	if !manifest.IsWorkspaceID(ws2.ID) {
+		t.Errorf("ws2.ID = %q, want canonical w<N>", ws2.ID)
+	}
+	if ws1.ID == ws2.ID {
+		t.Errorf("IDs collide: ws1=%s ws2=%s", ws1.ID, ws2.ID)
+	}
+}
+
+// TestSyncRename_StickyOnceUserSet covers the headline sticky behavior:
+// a user-chosen Name (anything not matching the placeholder ID pattern)
+// is left alone by sync's branch-driven rename block.
+func TestSyncRename_StickyOnceUserSet(t *testing.T) {
+	eng, _ := testEngine(t)
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Name: "auth-fix"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetBranch(ws.Path, "feature/something-completely-different")
+	eng.SyncAll()
+
+	got, err := eng.WsShow("labs", "auth-fix")
+	if err != nil {
+		t.Fatalf("WsShow: %v", err)
+	}
+	if got.Name != "auth-fix" {
+		t.Errorf("Name = %q, want auth-fix (sticky after explicit set)", got.Name)
+	}
+	if got.Worktree == nil || got.Worktree.Branch != "feature/something-completely-different" {
+		t.Errorf("branch wasn't recorded; Worktree = %+v", got.Worktree)
+	}
+}
+
+// TestUpdateWindowNames_FallsBackToID locks in the contract that an
+// empty wsName argument resolves to the workspace's ID, so tabs always
+// have a stable label even before Name is set. Once Phase 7 makes empty
+// Names a normal state, this is the load-bearing path.
+func TestUpdateWindowNames_FallsBackToID(t *testing.T) {
+	eng, _ := testEngine(t)
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.Calls = nil
+
+	ws := &manifest.Workspace{
+		ID: "w7",
+		Surfaces: []manifest.Surface{
+			{
+				Name:    "agent",
+				Tmux:    &manifest.TmuxAttrs{WindowID: "@42", LayoutGroup: 1},
+				Backend: manifest.SurfaceBackendTmux,
+			},
+		},
+	}
+	eng.updateWindowNames(ws, "")
+
+	for _, c := range mockTmux.Calls {
+		if c.Method == "RenameWindow" && len(c.Args) == 2 && c.Args[0] == "@42" && c.Args[1] == "w7" {
+			return
+		}
+	}
+	t.Errorf("expected RenameWindow(@42, w7) (ID fallback); got calls: %v", mockTmux.Calls)
+}
+
+// TestSyncRename_ReplacesPlaceholder covers the placeholder fill: an
+// auto-assigned w<N> Name (or empty) is treated as fillable so the first
+// branch detection still produces a meaningful tab label.
+func TestSyncRename_ReplacesPlaceholder(t *testing.T) {
+	eng, _ := testEngine(t)
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	if !manifest.IsWorkspaceID(ws.Name) {
+		t.Fatalf("expected placeholder ID-shaped Name from auto-naming, got %q", ws.Name)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetBranch(ws.Path, "feature/cache-ttl")
+	eng.SyncAll()
+
+	got, err := eng.WsShow("labs", "cache-ttl")
+	if err != nil {
+		t.Fatalf("WsShow: %v", err)
+	}
+	if got.Name != "cache-ttl" {
+		t.Errorf("Name = %q, want cache-ttl (placeholder filled)", got.Name)
 	}
 }

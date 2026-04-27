@@ -170,6 +170,19 @@ func uniqueWorkspaceName(dock *manifest.Dock, current *manifest.Workspace, base 
 	}
 }
 
+// isPlaceholderName reports whether a workspace's Name is a placeholder
+// (empty or matching the canonical ID pattern). Sync's auto-rename treats
+// these as fillable; non-placeholder Names are sticky.
+//
+// During the migration period (before Phase 6 ValidateName reservation),
+// new worktree workspaces still default Name to the path basename
+// (w1, w2, ...), which collides with the ID pattern. Treating those as
+// placeholders preserves the pre-design "first branch checkout renames
+// the tab" behavior without breaking sticky semantics for user-set Names.
+func isPlaceholderName(name string) bool {
+	return name == "" || manifest.IsWorkspaceID(name)
+}
+
 // abbreviateBranch strips common prefixes from branch names for display.
 // The result is sanitized to be a valid display name.
 func abbreviateBranch(branch string) string {

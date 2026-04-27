@@ -88,11 +88,10 @@ type Dock struct {
 // Workspace represents a unit of work — typically one branch/PR.
 type Workspace struct {
 	ID             string         `json:"id"`                         // stable handle (^w[1-9]\d*$); set at creation, never changes; unique within dock
-	Name           string         `json:"name"`                       // user-facing display label, renameable; not a CLI key
+	Name           string         `json:"name"`                       // user-facing display label, renameable; not a CLI key. Empty until set explicitly or filled from a branch.
 	Type           WorkspaceType  `json:"type"`                       // "worktree" or "external"
 	Path           string         `json:"path,omitempty"`             // absolute path to the working directory
 	Description    string         `json:"description,omitempty"`      // short free-form label shown in picker/ls/tree
-	NameOverridden bool           `json:"name_overridden,omitempty"`  // true if user explicitly renamed
 	LastFocused    int            `json:"last_focused,omitempty"`     // surface ID; 0 = none yet
 	LastActive     int64          `json:"last_active,omitempty"`      // unix timestamp; updated by bay commands
 	PendingCloseAt int64          `json:"pending_close_at,omitempty"` // unix ts; non-zero = scheduled for auto-close at this time unless a surface is re-added first
@@ -149,7 +148,7 @@ func parseWorkspaceIDNum(s string) (int, bool) {
 	return n, true
 }
 
-// assignWorkspaceIDs fills in IDs for any workspace in the dock whose ID
+// AssignWorkspaceIDs fills in IDs for any workspace in the dock whose ID
 // is currently empty. Two passes after an initial scan:
 //
 //  1. Claim the path basename as ID if it matches the canonical pattern
@@ -173,7 +172,7 @@ func parseWorkspaceIDNum(s string) (int, bool) {
 //
 // Idempotent: a workspace with a non-empty ID is left alone, and the
 // function returns immediately when no fill is needed.
-func assignWorkspaceIDs(dock *Dock) {
+func AssignWorkspaceIDs(dock *Dock) {
 	needsFill := false
 	for i := range dock.Workspaces {
 		if dock.Workspaces[i].ID == "" {
@@ -425,7 +424,7 @@ func Parse(data []byte) (*Manifest, error) {
 	//     at creation), Parse fills it in here so callers can rely on
 	//     ws.ID being non-empty.
 	for i := range m.Docks {
-		assignWorkspaceIDs(&m.Docks[i])
+		AssignWorkspaceIDs(&m.Docks[i])
 	}
 	if m.Version < 4 {
 		m.Version = CurrentVersion
@@ -650,8 +649,14 @@ func (m *Manifest) RemoveDock(name string) error {
 
 // --- Workspace operations ---
 
-// FindWorkspace returns a pointer to the workspace with the given name, or nil.
+// FindWorkspace returns the first workspace with a matching non-empty Name.
+// Empty Names always return nil — multiple workspaces may legitimately have
+// no Name set (display falls back to ID), so an empty-string lookup is not
+// a useful identification query.
 func (d *Dock) FindWorkspace(name string) *Workspace {
+	if name == "" {
+		return nil
+	}
 	for i := range d.Workspaces {
 		if d.Workspaces[i].Name == name {
 			return &d.Workspaces[i]
@@ -660,9 +665,26 @@ func (d *Dock) FindWorkspace(name string) *Workspace {
 	return nil
 }
 
-// AddWorkspace adds a workspace. Returns an error if the name is taken.
+// FindWorkspaceByID returns the workspace with the matching ID, or nil.
+// IDs are unique within a dock and never reused, so this is the canonical
+// lookup once the resolver moves off Name.
+func (d *Dock) FindWorkspaceByID(id string) *Workspace {
+	if id == "" {
+		return nil
+	}
+	for i := range d.Workspaces {
+		if d.Workspaces[i].ID == id {
+			return &d.Workspaces[i]
+		}
+	}
+	return nil
+}
+
+// AddWorkspace adds a workspace. Returns an error if the workspace's Name
+// is non-empty and already taken in the dock. Empty-Name workspaces are
+// always allowed; they'll display via their ID until a Name is set.
 func (d *Dock) AddWorkspace(ws Workspace) error {
-	if d.FindWorkspace(ws.Name) != nil {
+	if ws.Name != "" && d.FindWorkspace(ws.Name) != nil {
 		return fmt.Errorf("workspace %q already exists in dock %q", ws.Name, d.Name)
 	}
 	if ws.Surfaces == nil {
