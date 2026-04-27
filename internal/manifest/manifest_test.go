@@ -1163,6 +1163,33 @@ func TestParse_BumpsToV4(t *testing.T) {
 	}
 }
 
+// TestFindWorkspaceByID confirms ID lookups: empty input always returns
+// nil, a hit returns a pointer into the dock's slice, a miss returns nil.
+func TestFindWorkspaceByID(t *testing.T) {
+	dock := &Dock{
+		Name: "labs",
+		Workspaces: []Workspace{
+			{ID: "w1", Name: "auth-fix"},
+			{ID: "w3", Name: "cache-ttl"},
+		},
+	}
+	if dock.FindWorkspaceByID("") != nil {
+		t.Error("FindWorkspaceByID(\"\") should return nil")
+	}
+	if dock.FindWorkspaceByID("w99") != nil {
+		t.Error("FindWorkspaceByID for missing ID should return nil")
+	}
+	hit := dock.FindWorkspaceByID("w3")
+	if hit == nil || hit.Name != "cache-ttl" {
+		t.Errorf("FindWorkspaceByID(\"w3\"): got %+v, want workspace with Name cache-ttl", hit)
+	}
+	// Confirm the returned pointer aliases the slice element.
+	hit.Description = "touched"
+	if dock.Workspaces[1].Description != "touched" {
+		t.Error("FindWorkspaceByID should return a pointer into the slice, not a copy")
+	}
+}
+
 // TestSaveAndLoad_PreservesID confirms IDs round-trip through the
 // JSON encoder/decoder without modification.
 func TestSaveAndLoad_PreservesID(t *testing.T) {

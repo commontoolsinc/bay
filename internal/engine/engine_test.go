@@ -3668,6 +3668,35 @@ func TestSyncRename_StickyOnceUserSet(t *testing.T) {
 	}
 }
 
+// TestUpdateWindowNames_FallsBackToID locks in the contract that an
+// empty wsName argument resolves to the workspace's ID, so tabs always
+// have a stable label even before Name is set. Once Phase 7 makes empty
+// Names a normal state, this is the load-bearing path.
+func TestUpdateWindowNames_FallsBackToID(t *testing.T) {
+	eng, _ := testEngine(t)
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.Calls = nil
+
+	ws := &manifest.Workspace{
+		ID: "w7",
+		Surfaces: []manifest.Surface{
+			{
+				Name:    "agent",
+				Tmux:    &manifest.TmuxAttrs{WindowID: "@42", LayoutGroup: 1},
+				Backend: manifest.SurfaceBackendTmux,
+			},
+		},
+	}
+	eng.updateWindowNames(ws, "")
+
+	for _, c := range mockTmux.Calls {
+		if c.Method == "RenameWindow" && len(c.Args) == 2 && c.Args[0] == "@42" && c.Args[1] == "w7" {
+			return
+		}
+	}
+	t.Errorf("expected RenameWindow(@42, w7) (ID fallback); got calls: %v", mockTmux.Calls)
+}
+
 // TestSyncRename_ReplacesPlaceholder covers the placeholder fill: an
 // auto-assigned w<N> Name (or empty) is treated as fillable so the first
 // branch detection still produces a meaningful tab label.
