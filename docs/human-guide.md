@@ -908,12 +908,19 @@ bay ws show auth-fix --json | jq '.branch'
 
 ## Status line
 
-Use `bay status-line` in your tmux config to show workspace info:
+`bay setup` offers to install bay's tmux status line automatically — it
+appends a `# Bay status line` block to your `~/.tmux.conf` if no
+`status-right` is already configured. The block looks like this:
 
 ```tmux
+# Bay status line
 set -g status-right-length 40
 set -g status-right '#(bay status-line full --window #{window_id} --width #{status-right-length})'
 ```
+
+You can also add it manually if you skipped the prompt. If your
+`.tmux.conf` already has a `status-right` setting, bay won't overwrite
+it; setup prints the recommended lines so you can merge them yourself.
 
 The `full` field outputs `repo:branch #PR | status` (e.g.
 `bay:fix/login #42 | dirty`). The `--width` flag enables adaptive
