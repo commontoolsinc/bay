@@ -477,6 +477,94 @@ func TestSplitCompletions(t *testing.T) {
 	}
 }
 
+// TestWorkspaceCandidates_EmitsIDAndName covers the Phase 4 behavior: each
+// workspace contributes both ID and Name forms (plus dock-qualified versions),
+// so users can complete from either prefix. Descriptions cross-reference the
+// other identifier.
+func TestWorkspaceCandidates_EmitsIDAndName(t *testing.T) {
+	m := manifest.New()
+	m.Docks = []manifest.Dock{{
+		Name: "labs",
+		Workspaces: []manifest.Workspace{{
+			ID:       "w1",
+			Name:     "auth-fix",
+			Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "fix/auth"},
+		}},
+	}}
+
+	got := workspaceCandidates(m)
+
+	want := map[string]string{
+		"w1":            "labs auth-fix fix/auth",
+		"labs:w1":       "auth-fix fix/auth",
+		"auth-fix":      "labs (w1) fix/auth",
+		"labs:auth-fix": "(w1) fix/auth",
+	}
+	gotMap := map[string]string{}
+	for _, c := range got {
+		val, desc, _ := strings.Cut(c, "\t")
+		gotMap[val] = desc
+	}
+	for val, desc := range want {
+		if gotMap[val] != desc {
+			t.Errorf("candidate %q: desc = %q, want %q", val, gotMap[val], desc)
+		}
+	}
+}
+
+// TestWorkspaceCandidates_DedupesWhenIDMatchesName covers the auto-named case
+// where the workspace's ID and Name are identical (e.g. w1) — only one
+// candidate per form should appear, not two duplicates.
+func TestWorkspaceCandidates_DedupesWhenIDMatchesName(t *testing.T) {
+	m := manifest.New()
+	m.Docks = []manifest.Dock{{
+		Name: "labs",
+		Workspaces: []manifest.Workspace{{
+			ID:   "w1",
+			Name: "w1",
+		}},
+	}}
+	got := workspaceCandidates(m)
+	count := 0
+	for _, c := range got {
+		val, _, _ := strings.Cut(c, "\t")
+		if val == "w1" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected exactly one w1 candidate (deduped); got %d in %v", count, got)
+	}
+}
+
+// TestWorkspaceCandidates_HandlesEmptyName covers workspaces without a Name
+// (sticky-once-set hasn't fired yet): only ID candidates are emitted, no
+// empty-string Name candidates.
+func TestWorkspaceCandidates_HandlesEmptyName(t *testing.T) {
+	m := manifest.New()
+	m.Docks = []manifest.Dock{{
+		Name: "labs",
+		Workspaces: []manifest.Workspace{{
+			ID:   "w7",
+			Name: "",
+		}},
+	}}
+	got := workspaceCandidates(m)
+	hasID := false
+	for _, c := range got {
+		val, _, _ := strings.Cut(c, "\t")
+		if val == "w7" {
+			hasID = true
+		}
+		if val == "" {
+			t.Errorf("empty-Name workspace should not produce empty candidate; got %v", got)
+		}
+	}
+	if !hasID {
+		t.Errorf("expected w7 candidate from empty-Name workspace; got %v", got)
+	}
+}
+
 func TestWorkspaceCompletions_SecondArgReturnsNone(t *testing.T) {
 	fn := workspaceCompletions()
 	completions, _ := fn(nil, []string{"w1"}, "")
