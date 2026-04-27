@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -1003,8 +1004,8 @@ const agentReadyCommand = `[ -n "$TMUX" ] && tmux set-window-option -t "$TMUX_PA
 // agentHookSpec describes how to install a turn-complete hook for one
 // supported agent. Keyed by agent name (matches config.KnownAgents).
 type agentHookSpec struct {
-	label      string // human-readable label for the prompt
-	relPath    []string
+	label      string
+	relPath    string
 	configured func(path string) bool
 	write      func(path string) error
 }
@@ -1016,19 +1017,19 @@ type agentHookSpec struct {
 var agentHookSpecs = map[string]agentHookSpec{
 	"claude": {
 		label:      "Claude Stop hook",
-		relPath:    []string{".claude", "settings.json"},
+		relPath:    ".claude/settings.json",
 		configured: func(p string) bool { return claudeStyleHookConfigured(p, "Stop") },
 		write:      func(p string) error { return writeClaudeStyleHook(p, "Stop", agentReadyCommand) },
 	},
 	"gemini": {
 		label:      "Gemini AfterAgent hook",
-		relPath:    []string{".gemini", "settings.json"},
+		relPath:    ".gemini/settings.json",
 		configured: func(p string) bool { return claudeStyleHookConfigured(p, "AfterAgent") },
 		write:      func(p string) error { return writeClaudeStyleHook(p, "AfterAgent", agentReadyCommand) },
 	},
 	"codex": {
 		label:      "Codex notify entry",
-		relPath:    []string{".codex", "config.toml"},
+		relPath:    ".codex/config.toml",
 		configured: codexNotifyConfigured,
 		write:      writeCodexNotify,
 	},
@@ -1051,17 +1052,22 @@ func installReadySignaling(reader *bufio.Reader) {
 	}
 	var pending []item
 
-	// Claude (Stop) and Gemini (AfterAgent) share the same settings.json
-	// hook schema, so a single writer handles both.
-	for name, info := range config.KnownAgents {
+	// Iterate KnownAgents in sorted order so the prompt's bullet list is
+	// stable across runs (Go map iteration is non-deterministic).
+	names := make([]string, 0, len(config.KnownAgents))
+	for name := range config.KnownAgents {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
 		spec, ok := agentHookSpecs[name]
 		if !ok {
 			continue
 		}
-		if _, err := exec.LookPath(info.Command); err != nil {
+		if _, err := exec.LookPath(config.KnownAgents[name].Command); err != nil {
 			continue
 		}
-		path := filepath.Join(append([]string{home}, spec.relPath...)...)
+		path := filepath.Join(home, spec.relPath)
 		if spec.configured(path) {
 			continue
 		}
@@ -1075,7 +1081,7 @@ func installReadySignaling(reader *bufio.Reader) {
 	if !hasMarkerLine(tmuxContent, bayHooksMarker) {
 		pending = append(pending, item{
 			label: "tmux auto-clear hook → " + tmuxPath,
-			write: func() error { return writeTmuxClearHook(tmuxPath) },
+			write: writeTmuxClearHook,
 		})
 	}
 
@@ -1190,13 +1196,13 @@ func writeCodexNotify(configPath string) error {
 	return os.WriteFile(configPath, []byte(newContent), 0o644)
 }
 
-func writeTmuxClearHook(tmuxConf string) error {
-	_, content := loadTmuxConf()
+func writeTmuxClearHook() error {
+	path, content := loadTmuxConf()
 	// Blank line ahead of the marker so extractBayBlock (keybindings)
 	// won't slurp these lines if hooks land adjacent to the keybindings
 	// block.
 	block := "\n" + bayHooksMarker + "\n" + bayClearWaitingHook + "\n"
-	return os.WriteFile(tmuxConf, []byte(content+block), 0o644)
+	return os.WriteFile(path, []byte(content+block), 0o644)
 }
 
 func installBaySkill() {
