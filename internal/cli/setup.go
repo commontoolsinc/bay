@@ -1000,6 +1000,40 @@ func installClaudeHooks(reader *bufio.Reader) {
 // the flag on focus.
 const agentReadyCommand = `[ -n "$TMUX" ] && tmux set-window-option -t "$TMUX_PANE" @bay-waiting 1 2>/dev/null`
 
+// agentHookSpec describes how to install a turn-complete hook for one
+// supported agent. Keyed by agent name (matches config.KnownAgents).
+type agentHookSpec struct {
+	label      string // human-readable label for the prompt
+	relPath    []string
+	configured func(path string) bool
+	write      func(path string) error
+}
+
+// agentHookSpecs lists agents whose turn-complete event bay knows how
+// to wire. Iterated against config.KnownAgents — agents that aren't in
+// KnownAgents are ignored, and KnownAgents entries with no spec here
+// are silently skipped (e.g., a future agent without a hook system).
+var agentHookSpecs = map[string]agentHookSpec{
+	"claude": {
+		label:      "Claude Stop hook",
+		relPath:    []string{".claude", "settings.json"},
+		configured: func(p string) bool { return claudeStyleHookConfigured(p, "Stop") },
+		write:      func(p string) error { return writeClaudeStyleHook(p, "Stop", agentReadyCommand) },
+	},
+	"gemini": {
+		label:      "Gemini AfterAgent hook",
+		relPath:    []string{".gemini", "settings.json"},
+		configured: func(p string) bool { return claudeStyleHookConfigured(p, "AfterAgent") },
+		write:      func(p string) error { return writeClaudeStyleHook(p, "AfterAgent", agentReadyCommand) },
+	},
+	"codex": {
+		label:      "Codex notify entry",
+		relPath:    []string{".codex", "config.toml"},
+		configured: codexNotifyConfigured,
+		write:      writeCodexNotify,
+	},
+}
+
 // installReadySignaling bundles the turn-complete signal: hooks for any
 // supported agent on PATH plus the tmux auto-clear hook. One prompt,
 // all-or-nothing — the pieces only work as a unit (without auto-clear,
@@ -1018,40 +1052,30 @@ func installReadySignaling(reader *bufio.Reader) {
 	var pending []item
 
 	// Claude (Stop) and Gemini (AfterAgent) share the same settings.json
-	// hook schema, so the same writer handles both.
-	if _, err := exec.LookPath("claude"); err == nil {
-		path := filepath.Join(home, ".claude", "settings.json")
-		if !claudeStyleHookConfigured(path, "Stop") {
-			pending = append(pending, item{
-				label: "Claude Stop hook → " + path,
-				write: func() error { return writeClaudeStyleHook(path, "Stop", agentReadyCommand) },
-			})
+	// hook schema, so a single writer handles both.
+	for name, info := range config.KnownAgents {
+		spec, ok := agentHookSpecs[name]
+		if !ok {
+			continue
 		}
-	}
-	if _, err := exec.LookPath("gemini"); err == nil {
-		path := filepath.Join(home, ".gemini", "settings.json")
-		if !claudeStyleHookConfigured(path, "AfterAgent") {
-			pending = append(pending, item{
-				label: "Gemini AfterAgent hook → " + path,
-				write: func() error { return writeClaudeStyleHook(path, "AfterAgent", agentReadyCommand) },
-			})
+		if _, err := exec.LookPath(info.Command); err != nil {
+			continue
 		}
-	}
-	if _, err := exec.LookPath("codex"); err == nil {
-		path := filepath.Join(home, ".codex", "config.toml")
-		if !codexNotifyConfigured(path) {
-			pending = append(pending, item{
-				label: "Codex notify entry → " + path,
-				write: func() error { return writeCodexNotify(path) },
-			})
+		path := filepath.Join(append([]string{home}, spec.relPath...)...)
+		if spec.configured(path) {
+			continue
 		}
+		pending = append(pending, item{
+			label: spec.label + " → " + path,
+			write: func() error { return spec.write(path) },
+		})
 	}
 
-	tmuxConf := filepath.Join(home, ".tmux.conf")
-	if !tmuxClearHookInstalled(tmuxConf) {
+	tmuxPath, tmuxContent := loadTmuxConf()
+	if !hasMarkerLine(tmuxContent, bayHooksMarker) {
 		pending = append(pending, item{
-			label: "tmux auto-clear hook → " + tmuxConf,
-			write: func() error { return writeTmuxClearHook(tmuxConf) },
+			label: "tmux auto-clear hook → " + tmuxPath,
+			write: func() error { return writeTmuxClearHook(tmuxPath) },
 		})
 	}
 
@@ -1166,21 +1190,13 @@ func writeCodexNotify(configPath string) error {
 	return os.WriteFile(configPath, []byte(newContent), 0o644)
 }
 
-func tmuxClearHookInstalled(tmuxConf string) bool {
-	data, err := os.ReadFile(tmuxConf)
-	if err != nil {
-		return false
-	}
-	return strings.Contains(string(data), bayClearWaitingHook)
-}
-
 func writeTmuxClearHook(tmuxConf string) error {
-	existing, _ := os.ReadFile(tmuxConf)
+	_, content := loadTmuxConf()
 	// Blank line ahead of the marker so extractBayBlock (keybindings)
 	// won't slurp these lines if hooks land adjacent to the keybindings
 	// block.
 	block := "\n" + bayHooksMarker + "\n" + bayClearWaitingHook + "\n"
-	return os.WriteFile(tmuxConf, append(existing, []byte(block)...), 0o644)
+	return os.WriteFile(tmuxConf, []byte(content+block), 0o644)
 }
 
 func installBaySkill() {
