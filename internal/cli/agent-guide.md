@@ -8,21 +8,26 @@ orchestrating session or from within a workspace.
 ## Key concepts
 
 A **workspace** is a managed working directory with metadata (branch,
-PR, dirty/merged flags). Each workspace has:
-- A **name** — the primary identifier. Defaults to auto-abbreviated
-  branch name (stripping prefixes like `feature/`, `fix/`). Can be
-  overridden with `bay rename` (or `bay ws rename`), which sticks permanently.
-- A **full reference** — `dock:name` (e.g., `labs:auth-fix`). Bare
-  name (`auth-fix`) resolves to the current dock first; if absent
-  there, falls through to a cross-dock search (which errors on
-  ambiguity).
-- An optional **description** — commit-message-style text. The first
-  line is a short free-form label (cap 80) shown in the picker,
+PR, dirty/merged flags). Each workspace has three identity concepts:
+
+- An **ID** — the stable CLI handle. Matches `^w[1-9]\d*$` (lowercase
+  `w` + positive integer). Set at creation, never changes for the
+  workspace's lifetime, unique within a dock. The slot is released on
+  close and may later be reused by a new workspace, so don't treat
+  IDs as globally permanent across close + recreate. The ID is what
+  every command takes:
+  `bay ws close w1`, `bay sf show w1:agent`, `bay ws show w1`.
+- A **Name** — a mutable display label. Sticks once set. May be empty
+  (display falls back to ID). Filled automatically when a branch is
+  detected for the first time, or explicitly via `bay rename`. Names
+  are not CLI keys — passing a Name where bay expects an ID errors
+  with `did you mean "w1"?`.
+- An optional **description** — commit-message-style text for context
+  recall. The first line is a short label (cap 80) shown in the picker,
   `bay ls`/`bay tree`, and the `M-/` flash. Optional trailing lines
-  (separated from the first line by a blank line) are a richer body
-  for context recall — shown only in the `M-?` popup and JSON output.
-  Set with `bay ws describe` (or `bay describe`). Does not affect
-  tmux tab names.
+  (separated from the first line by a blank line) are a richer body —
+  shown only in the `M-?` popup and JSON output. Set with `bay ws
+  describe` (or `bay describe`). Does not affect tmux tab names.
 
   **Agents should keep the description current.** Update the first
   line when the workspace's purpose shifts, and update the body at
@@ -31,11 +36,17 @@ PR, dirty/merged flags). Each workspace has:
   `M-?` shows "where I left off, what's blocked, what's next" without
   re-reading the diff. The body is the whole reason the field is
   richer than a label; an unset body defeats the feature.
-- A **path** — the on-disk working directory. For worktree workspaces
-  bay assigns sequential subdirs (`w1`, `w2`, `w3`, ...) under the
-  repo's worktree dir. The path is independent of the name: renaming
-  a workspace does not move its directory. Identify workspaces by name
-  (or `dock:name`); the path basename is not a stable identifier.
+
+A **full reference** is `dock:id` (e.g., `labs:w1`). A bare ID
+(`w1`) resolves to the current dock first; if absent there, falls
+through to a cross-dock search (which errors on ambiguity).
+
+A workspace also has a **path** — the on-disk working directory. For
+worktree workspaces bay assigns sequential subdirs (`w1`, `w2`, `w3`,
+...) under the repo's worktree dir. The path is independent of the
+ID: closing and recreating a workspace can leave gaps in the directory
+sequence even while IDs continue numerically. The path basename is
+not a stable identifier.
 
 A **dock** is a named tmux session grouping related workspaces. Each
 dock has a default agent type and optionally a default repo and host
@@ -113,7 +124,7 @@ Important invariants:
 Prefer JSON output for automation:
 - `bay pwd --json`
 - `bay ls --json`
-- `bay ws show [name] --json` (defaults to current; pass `self` explicitly for the same effect)
+- `bay ws show [id] --json` (defaults to current; pass `self` explicitly for the same effect)
 
 Human-formatted output is for display only and may change between
 versions.
@@ -155,7 +166,7 @@ Returns a tree:
     "kind": "workspace",
     "repo": "labs",
     "dock": "labs",
-    "workspace_id": "auth-fix"
+    "workspace_id": "w1"
   },
   "recursive": true,
   "repos": [
@@ -205,14 +216,12 @@ Returns a tree:
 ```
 
 Field semantics:
-- `id` — workspace ID (`w<N>`, the stable handle, never reused).
+- `id` — workspace ID (`w<N>`, the stable handle for this workspace's lifetime).
 - `name` — workspace Name (display label; may be empty for unnamed
   workspaces, in which case display falls back to ID).
 - `focus` — the scope bay inferred from CWD and tmux.
-  **Legacy:** `focus.workspace_id` holds the workspace **Name**, not
-  its ID — the JSON tag predates the introduction of true workspace
-  IDs (the `id` field above is the stable handle). A future phase
-  will rename this field for clarity.
+  `focus.workspace_id` is the same ID surfaced by the per-workspace
+  `id` field; consumers can match on either.
 - `recursive` — whether surfaces are expanded in the output.
 - `sync_status` — `ok`, `stale` (tmux window missing), or `missing`
   (worktree directory gone).
@@ -243,7 +252,7 @@ Use `bay ls --json --rows` for denormalized rows (easier to filter):
 Use `bay ls -R` to force recursive output (show surfaces) regardless
 of focus scope.
 
-### JSON: `bay ws show [name] --json`
+### JSON: `bay ws show [id] --json`
 
 ```json
 {
@@ -301,12 +310,18 @@ shell|agent|cmd`) the positional names the **thing being created**.
 The container (dock, workspace) is selected via `--dock` / `--ws`
 flags or, when omitted, inherited from the current tmux session.
 
+Commands that target a workspace take the **ID** as the positional
+(e.g., `bay ws close w1`). The exception is `bay ws new [name]`, where
+the positional names the new workspace's display Name (or is left
+empty for the auto-fill-from-branch behavior). Surfaces use a
+qualified form: `id:surface-name` or `dock:id:surface-name`.
+
 | Command | Default target when omitted |
 |---------|-----------------------------|
 | `bay ws new [name]` | current dock from tmux session, or auto-bootstrap from CWD |
 | `bay ws ls` | workspaces in current dock (errors outside a dock) |
-| `bay ws show [name]` | current workspace |
-| `bay ws close [name]` | required (no default; use `--done`/`--clean` for batch) |
+| `bay ws show [id]` | current workspace |
+| `bay ws close [id]` | required (no default; use `--done`/`--clean` for batch) |
 | `bay ws close --done` | workspaces not dirty or pending in current dock |
 | `bay ws close --clean` | all non-dirty workspaces in current dock |
 | `bay pwd` | current bay context |
@@ -320,7 +335,7 @@ flags or, when omitted, inherited from the current tmux session.
 | `bay repo tree [name]` | repo at current CWD |
 | `bay go [query]` | surfaces in current workspace |
 | `bay ws go [query]` | workspaces in current dock |
-| `bay edit [workspace]` | current workspace |
+| `bay edit [id]` | current workspace |
 | `bay shell [name]` | current workspace, surface auto-named "shell" |
 
 ## Commands
@@ -356,7 +371,7 @@ bay ws new auth-fix --agent                 # with dock's default agent
 bay ws new auth-fix --description "Login flow fixes"
 ```
 
-#### `bay ws close [name] [--force] [--done] [--clean] [--dry-run]`
+#### `bay ws close [id] [--force] [--done] [--clean] [--dry-run]`
 
 Close a workspace and all its surfaces. For worktree workspaces,
 checks for uncommitted changes and unlanded commits. Refuses if dirty
@@ -366,14 +381,14 @@ branch after a squash merge or cherry-pick, bay deletes the local branch
 on close — no stale branches left behind. Pass `self` to close the
 current workspace.
 
-Batch flags (without a name):
+Batch flags (without an ID):
 - `--done`: close workspaces that are not dirty and not pending (have
   no unmerged branch). The conservative default for cleanup.
 - `--clean`: close all non-dirty workspaces regardless of merge status.
 - `--dry-run`: preview what would be closed without closing anything.
 
 ```
-bay ws close auth-fix
+bay ws close w1
 bay ws close self
 bay ws close self --force
 bay ws close --done
@@ -393,7 +408,7 @@ finalizes the teardown; dirty or unlanded clears `PendingCloseAt`
 to stop retries and leaves a permanent orphan for the user to
 resolve manually.
 
-Direct `bay ws close <name>`, `--done`, `--clean`, and
+Direct `bay ws close <id>`, `--done`, `--clean`, and
 `bay sf close --force` close immediately (no grace).
 
 **Undo-close interaction.** `bay sf close` (and `Option+W`) push a
@@ -405,7 +420,7 @@ which clears `PendingCloseAt` as part of its normal cancel path.
 Past the grace window, the workspace is gone and a `bay sf
 restore` call drops the stale entry silently.
 
-#### `bay ws show [name] [--json|--short|--flash|--popup] [--plain]`
+#### `bay ws show [id] [--json|--short|--flash|--popup] [--plain]`
 
 Show workspace details: path, branch, PR, dirty/merged, surfaces. Defaults
 to the current workspace; pass `self` explicitly for the same effect.
@@ -425,7 +440,7 @@ JSON output (`--json`) includes the full description, body and all.
 
 ```
 bay ws show
-bay ws show auth-fix
+bay ws show w1                     # by ID
 bay ws show --short                # one-line workspace summary
 bay ws show --short --plain        # same, no ANSI colors
 bay ws show --flash                # flash first line in tmux status bar (M-/)
@@ -433,18 +448,19 @@ bay ws show --popup                # full description in a tmux popup (M-?)
 bay ws show self --json
 ```
 
-#### `bay ws rename [name] <new-name>`
+#### `bay ws rename [id] <new-name>`
 
-Rename a workspace. Overrides auto-abbreviation permanently. Names
-must match `[a-zA-Z0-9_-]+`. With one arg, renames the current
-workspace.
+Rename a workspace's display label. The new Name must match
+`[a-zA-Z0-9_-]+` and cannot match the reserved ID pattern
+`^w[1-9]\d*$`. With one arg, renames the current workspace. After
+rename, the ID is unchanged — it's still the CLI key.
 
 ```
 bay ws rename mem-refactor                 # rename current workspace
-bay ws rename auth-fix mem-refactor        # rename by name
+bay ws rename w1 mem-refactor              # rename by ID
 ```
 
-#### `bay ws describe [name] [<description>]` (also: `bay describe`)
+#### `bay ws describe [id] [<description>]` (also: `bay describe`)
 
 Read or set a free-form description for a workspace. The description
 has two parts:
@@ -479,7 +495,7 @@ paused mid-rebase on origin/main
 rename conflict on helper.ts
 tests green except auth_test.go"             # set with body (actual newlines)
 bay ws describe --edit                       # open $EDITOR
-bay ws describe auth-fix "Login fixes"       # set by workspace name
+bay ws describe w1 "Login fixes"             # set by ID
 bay ws describe --clear                      # clear current workspace's description
 bay describe "Login flow fixes"              # top-level shortcut
 ```
@@ -508,13 +524,15 @@ Navigate between workspaces within the current dock. This is
 intra-dock navigation.
 
 - No args: opens a picker showing all workspaces in the dock.
-- With query: fuzzy-matches workspace name, branch, or PR number.
+- With query: fuzzy-matches ID, Name, branch, or PR number — the
+  picker is friendly here even though strict CLI args aren't.
 - `--waiting`: filter to workspaces with waiting agents.
 - `--next-waiting`: jump to next waiting workspace, cycling.
 
 ```
 bay ws go                       # pick from workspaces
-bay ws go auth-fix              # jump to workspace
+bay ws go auth-fix              # fuzzy: matches Name "auth-fix"
+bay ws go w1                    # fuzzy: matches ID "w1"
 bay ws go 347                   # match by PR number
 bay ws go --waiting             # filter to waiting
 bay ws go --next-waiting        # cycle through waiting
@@ -552,7 +570,7 @@ bay surface new shell tests                 # surface named "tests"
 bay surface new agent codex                 # agent as split pane
 bay surface new cmd "npm test" tests        # named cmd surface
 bay surface new shell --window              # shell in new tmux window
-bay surface new shell --ws auth-fix         # in a different workspace
+bay surface new shell --ws w1               # in a different workspace
 bay sf new edit                             # editor surface
 ```
 
@@ -634,7 +652,7 @@ Editor resolution: `--editor` flag > `default_editor` in config >
 
 ```
 bay edit                    # open current workspace (default)
-bay edit auth-fix           # open specific workspace
+bay edit w1                 # open specific workspace by ID
 bay edit --editor vim       # use a specific editor this time
 bay edit --dock             # dock editor (all workspaces)
 bay edit --window           # terminal editor in new window
@@ -667,7 +685,7 @@ the current tmux window. Use `--window` for a new tmux window.
 bay shell                   # shell as split pane
 bay shell logs              # named "logs"
 bay shell --window          # shell in new window
-bay shell logs --ws auth-fix # in a different workspace
+bay shell logs --ws w1       # in a different workspace
 ```
 
 ### Global commands
@@ -831,7 +849,7 @@ untouched.
 Merged is set to true automatically when bay detects a merge. Then:
 
 ```
-bay ws close auth-fix
+bay ws close w1
 ```
 
 Or batch-close finished workspaces (not dirty, not pending):

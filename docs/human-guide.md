@@ -115,7 +115,7 @@ bay pwd                     # current bay location
 ### Clean up
 
 ```
-bay ws close auth-fix       # safety checks for uncommitted work
+bay ws close w1             # by ID; safety checks for uncommitted work
 bay ws close --done         # close workspaces that are not dirty or pending
 bay ws close --clean        # close all non-dirty workspaces
 ```
@@ -184,16 +184,28 @@ A **workspace** is a working directory with metadata. Two types:
   manages tmux surfaces and recovery, but does not create or delete
   the directory.
 
-Each workspace gets a display **name** that defaults to the
-auto-abbreviated branch name (`feature/refactor-memory` becomes
-`refactor-memory`). You can rename it with `bay rename` (or `bay ws rename`).
+Each workspace has three identity concepts:
 
-For worktree workspaces, the on-disk directory is always sequential
-(`w1`, `w2`, `w3`, ...) and independent of the workspace name. The
-directory stays stable even if the workspace is renamed or repurposed
-for unrelated work — the name can drift, the path won't. Use the
-workspace name (or `bay pwd`) to identify workspaces; the directory is
-plumbing.
+- An **ID** like `w1`, `w2`, `w3` — the stable handle. Set at creation,
+  never changes, unique within a dock. Every command that targets a
+  workspace takes the ID: `bay ws close w1`, `bay ws show w1`,
+  `bay edit w1`. The ID matches the on-disk directory basename for
+  worktree workspaces (so `~/projects/myproject-worktrees/w1` is
+  workspace `w1`).
+- A **Name** like `auth-fix` — a friendly display label. Sticky once
+  set. May be empty initially; sync fills it from the branch on first
+  detection (`feature/refactor-memory` becomes `refactor-memory`).
+  You can rename with `bay rename` (or `bay ws rename`). Names are
+  not CLI keys — typing one returns `did you mean "w1"?` with the
+  canonical ID.
+- An optional **description** (see below) for richer context.
+
+An ID is stable for a workspace's lifetime, but the slot is released
+when the workspace closes — the next creation may reuse a freed
+trailing slot, while gaps in the middle of the sequence (`w1`, `w3`,
+`w7`) stay until you fill them. The picker, `bay ls`, and `bay tree`
+all show both the ID and the friendly Name; pick whichever makes
+sense for the task at hand.
 
 Workspaces can also carry a **description** — commit-message-style
 text with two parts:
@@ -298,13 +310,20 @@ workspace has since been closed (e.g. the 60s orphan-cleanup grace
 window elapsed), the entry is silently discarded — hit `Option+z`
 again to reach the next entry.
 
-### Naming and references
+### Identifiers and references
 
-Workspaces can be referenced by name (`auth-fix`), by full qualifier
-(`dev:auth-fix`), or by the keyword `self` (resolved from your tmux
-pane and working directory).
+Workspaces are referenced by **ID** in commands. Bare form is `w1`;
+fully qualified is `dev:w1`. The keyword `self` resolves to the
+workspace at your current tmux pane and working directory.
 
-Names must match `[a-zA-Z0-9_-]+`.
+A bare ID resolves to the current dock first; if absent there, falls
+through to a cross-dock search (which errors on ambiguity). Pass
+`--dock <name>` to target a different dock without changing context.
+
+Workspace **Names** must match `[a-zA-Z0-9_-]+` and cannot match the
+reserved ID pattern `^w[1-9]\d*$` — that namespace is bay's. If you
+type a Name where bay expects an ID, the error names the ID for you:
+`workspace "auth-fix" not found; did you mean "w1"?`.
 
 ## Configuration
 
@@ -452,7 +471,7 @@ thing being created. Container (dock, workspace) is selected via flags
 or, when omitted, inherited from the current tmux session.
 
 ```
-bay ws new [name]                           # new workspace (shell default)
+bay ws new [name]                           # new workspace (positional sets the display Name)
 bay ws new [name] --agent                   # first surface is agent, not shell
 bay ws new [name] --agent=codex             # specific agent type
 bay ws new [name] --dock <d>                # target a specific dock
@@ -461,23 +480,23 @@ bay ws new [name] --repo <r>                # override dock's repo
 bay ws new [name] --dir <path>              # external workspace
 bay ws new [name] --description "<text>"    # set description at creation time
 bay ws new [name] -q                        # suppress output (scripting)
-bay ws close [name]                         # close + delete pushed branch ('self' for current)
-bay ws close [name] --force                 # skip safety checks (keeps unlanded branches)
+bay ws close <id>                           # close + delete pushed branch ('self' for current)
+bay ws close <id> --force                   # skip safety checks (keeps unlanded branches)
 bay ws close --done                         # close workspaces not dirty or pending
 bay ws close --clean                        # close all non-dirty workspaces
 bay ws close --done --dry-run               # preview what --done would close
-bay ws show [name]                          # detailed view (default: current)
-bay ws show [name] --json                   # machine-readable
-bay ws show [name] --short                  # one-line summary (name — desc — branch — #PR)
-bay ws show [name] --short --plain          # same, no ANSI (for tmux display-message etc.)
-bay ws show [name] --flash                  # first-line flash in status bar (Option+/)
-bay ws show [name] --popup                  # full description in popup (Option+?)
-bay ws rename [name] <new-name>             # rename (defaults to current workspace)
+bay ws show [id]                            # detailed view (default: current)
+bay ws show [id] --json                     # machine-readable
+bay ws show [id] --short                    # one-line summary (id — name — branch — #PR)
+bay ws show [id] --short --plain            # same, no ANSI (for tmux display-message etc.)
+bay ws show [id] --flash                    # first-line flash in status bar (Option+/)
+bay ws show [id] --popup                    # full description in popup (Option+?)
+bay ws rename [id] <new-name>               # rename display Name (ID is unchanged)
 bay ws describe                             # print current description
-bay ws describe [name] [<text>]             # set (first line + optional blank-line-separated body)
+bay ws describe [id] [<text>]               # set (first line + optional blank-line-separated body)
 bay ws describe --edit                      # open $EDITOR for multi-line editing
 bay ws describe --clear                     # clear description
-bay describe [name] [<text>]                # top-level shortcut for the above
+bay describe [id] [<text>]                  # top-level shortcut for the above
 bay ws ls                                   # list workspaces in current dock
 bay ws ls --json                            # machine-readable workspace list
 bay ws tree                                 # tree of current dock (workspaces + surfaces)
@@ -900,10 +919,10 @@ Use `bay ls -s` for compact output without labels or key names.
 `bay pwd`, `bay ls`, and `bay ws show` all accept `--json`.
 
 ```
-bay pwd --json | jq '.workspace'
+bay pwd --json | jq '.workspace_id'
 bay ls --json | jq '.repos[].docks[].workspaces[] | select(.merged)'
 bay ls --json --rows | jq '.[] | select(.workspace_waiting)'
-bay ws show auth-fix --json | jq '.branch'
+bay ws show w1 --json | jq '.branch'
 ```
 
 ## Status line

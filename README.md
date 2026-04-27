@@ -27,7 +27,7 @@ bay recover                     # reconstruct everything after reboot
 - **Command palette** — `Option+p` opens a VS Code-style palette in a tmux popup: fuzzy-search every bay command, see its hotkey if it has one, and launch without leaving the keyboard.
 - **Hierarchical browsing** — `bay ls` shows the dock/workspace structure scoped to your current focus; `bay tree` (or `bay ls -R`) shows the full hierarchy including surfaces.
 - **Status line** — `bay status-line <field>` provides workspace info for tmux status bar composition.
-- **Shell completion** — tab-complete workspace names, dock names, and flag values in bash, zsh, and fish.
+- **Shell completion** — tab-complete workspace IDs, dock names, and flag values in bash, zsh, and fish.
 
 ## Install
 

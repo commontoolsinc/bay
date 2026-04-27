@@ -51,10 +51,12 @@ bay dk tree
 
 > Agent running. There it is in the tree.
 
-**Do:** Close it.
+**Do:** Close it. Workspaces are addressed by ID — `bay dk tree` shows
+the ID column when it differs from the friendly Name; here the new
+workspace's ID is the next free `w<N>`.
 
 ```
-bay ws close rate-limit
+bay ws close <id>
 bay dk tree
 ```
 
@@ -158,7 +160,8 @@ bay dk tree
 
 **Do:** Close them — `Option+w` twice on each tab (first tap triggers
 the last-surface confirmation, second confirms), or `bay ws close
-<name>`. Then close the merged one too: `bay ws close dep-update`.
+<id>`. Then close the merged dep-update workspace too — type its ID
+from the tree.
 
 ```
 bay dk tree
