@@ -202,7 +202,7 @@ func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace)
 				update.detachedBranch = ws.Worktree.Branch
 				// Check now (in the probe) so the apply phase doesn't
 				// hold the manifest lock during a shell-out.
-				if unpushed, upErr := e.Git.HasUnpushedCommits(wsPath); upErr == nil && !unpushed {
+				if unpushed, upErr := e.HasUnlandedCommits(ws); upErr == nil && !unpushed {
 					update.branchSafeToDelete = true
 				}
 			}

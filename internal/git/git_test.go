@@ -127,6 +127,27 @@ func TestMock_HasUnpushedCommits(t *testing.T) {
 	}
 }
 
+func TestMock_LocalHeadInMergedPR(t *testing.T) {
+	m := NewMock()
+	m.SetLocalHeadInMergedPR("/repo", "123", true)
+
+	landed, err := m.LocalHeadInMergedPR("/repo", "123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !landed {
+		t.Error("expected landed=true")
+	}
+
+	landed, err = m.LocalHeadInMergedPR("/repo", "124")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if landed {
+		t.Error("expected landed=false for unknown PR")
+	}
+}
+
 func TestReal_HasUnpushedCommits_PushedBranchIsSafe(t *testing.T) {
 	repo := newRealGitRepo(t)
 	runGit(t, repo, "checkout", "-b", "feature")

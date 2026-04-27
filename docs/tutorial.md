@@ -242,9 +242,10 @@ bay ws close review
 ```
 
 Bay checks for uncommitted changes and unlanded commits first. If
-everything is pushed or already present on the default branch as an
-equivalent patch, bay also deletes the local git branch — no stale
-branches left behind. Use `--force` to skip the safety checks.
+everything is pushed, included in a merged PR, or already present on
+the default branch as an equivalent patch, bay also deletes the local
+git branch — no stale branches left behind. Use `--force` to skip the
+safety checks.
 
 Closing an *individual* agent surface (`bay close agent`) prompts for
 confirmation, since agents carry valuable conversation context. Use

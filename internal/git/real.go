@@ -1,6 +1,7 @@
 package git
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -101,6 +102,57 @@ func (r *Real) HasUnpushedCommits(path string) (bool, error) {
 		return false, nil
 	}
 	return r.hasPatchUniqueCommitsAboveDefault(path)
+}
+
+func (r *Real) LocalHeadInMergedPR(path string, pr string) (bool, error) {
+	pr = strings.TrimPrefix(strings.TrimSpace(pr), "#")
+	if pr == "" {
+		return false, nil
+	}
+	if _, lookErr := exec.LookPath("gh"); lookErr != nil {
+		return false, fmt.Errorf("gh not installed")
+	}
+	cmd := exec.Command("gh", "pr", "view", pr, "--json", "state,headRefOid,mergedAt")
+	cmd.Dir = path
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return false, fmt.Errorf("gh pr view %s: %s: %w", pr, strings.TrimSpace(string(out)), err)
+	}
+
+	var view struct {
+		State      string  `json:"state"`
+		HeadRefOID string  `json:"headRefOid"`
+		MergedAt   *string `json:"mergedAt"`
+	}
+	if err := json.Unmarshal(out, &view); err != nil {
+		return false, fmt.Errorf("parse gh pr view %s: %w", pr, err)
+	}
+	if view.State != "MERGED" && view.MergedAt == nil {
+		return false, nil
+	}
+	if view.HeadRefOID == "" {
+		return false, fmt.Errorf("gh pr view %s: missing headRefOid", pr)
+	}
+
+	head, err := revParse(path, "HEAD")
+	if err != nil {
+		return false, fmt.Errorf("git rev-parse HEAD: %w", err)
+	}
+	if head == view.HeadRefOID {
+		return true, nil
+	}
+
+	// HEAD behind the merged PR head is also safe: every local commit is part
+	// of the merged PR. HEAD ahead of the PR head remains unsafe.
+	ancestor := exec.Command("git", "-C", path, "merge-base", "--is-ancestor", "HEAD", view.HeadRefOID)
+	err = ancestor.Run()
+	if err == nil {
+		return true, nil
+	}
+	if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+		return false, nil
+	}
+	return false, fmt.Errorf("git merge-base HEAD %s: %w", view.HeadRefOID, err)
 }
 
 // headExistsOnRemoteBranch reports whether the current named branch's

@@ -376,7 +376,7 @@ func (e *Engine) closeWorkspaceState(dockName, wsName string, force bool) ([]str
 				return nil, fmt.Errorf("workspace %q has uncommitted changes (use --force to override)", wsName)
 			}
 
-			unpushed, err := e.Git.HasUnpushedCommits(ws.Path)
+			unpushed, err := e.HasUnlandedCommits(ws)
 			if err != nil {
 				return nil, fmt.Errorf("workspace %q: could not verify push status: %w (use --force to override)", wsName, err)
 			}
@@ -394,7 +394,7 @@ func (e *Engine) closeWorkspaceState(dockName, wsName string, force bool) ([]str
 		// fails — just skip the branch delete.
 		if ws.Worktree != nil && ws.Worktree.Branch != "" {
 			if _, statErr := os.Stat(ws.Path); statErr == nil {
-				unpushed, err := e.Git.HasUnpushedCommits(ws.Path)
+				unpushed, err := e.HasUnlandedCommits(ws)
 				if err == nil && !unpushed {
 					branchSafeToDelete = true
 				}
@@ -467,6 +467,38 @@ func (e *Engine) closeWorkspaceState(dockName, wsName string, force bool) ([]str
 	return windowIDs, nil
 }
 
+// HasUnlandedCommits reports whether committed work in ws is not safely
+// recoverable from a remote branch, the default branch, or the workspace's
+// merged PR. The PR check handles multi-commit squash merges where per-commit
+// patch comparison cannot prove that the old local stack landed.
+func (e *Engine) HasUnlandedCommits(ws *manifest.Workspace) (bool, error) {
+	if ws == nil || ws.Worktree == nil || ws.Path == "" {
+		return false, nil
+	}
+	unpushed, err := e.Git.HasUnpushedCommits(ws.Path)
+	if err != nil {
+		if e.localHeadInMergedPR(ws) {
+			return false, nil
+		}
+		return false, err
+	}
+	if !unpushed {
+		return false, nil
+	}
+	if e.localHeadInMergedPR(ws) {
+		return false, nil
+	}
+	return true, nil
+}
+
+func (e *Engine) localHeadInMergedPR(ws *manifest.Workspace) bool {
+	if ws == nil || ws.Worktree == nil || ws.Worktree.PR == "" || ws.Path == "" {
+		return false
+	}
+	landed, err := e.Git.LocalHeadInMergedPR(ws.Path, ws.Worktree.PR)
+	return err == nil && landed
+}
+
 func (e *Engine) WsClose(dockName, wsName string, force bool) error {
 	windowIDs, err := e.closeWorkspaceState(dockName, wsName, force)
 	if err != nil {
@@ -499,7 +531,7 @@ func (e *Engine) WsCloseClean(dockName string, force, dryRun bool, exclude ...st
 // have no branch at all.
 func (e *Engine) WsCloseDone(dockName string, force, dryRun bool, exclude ...string) ([]string, []string, error) {
 	return e.wsCloseBatch(dockName, force, dryRun, func(ws *manifest.Workspace, dn string) string {
-		if ws.Worktree != nil && ws.Worktree.Branch != "" && !ws.IsMerged() {
+		if ws.Worktree != nil && ws.Worktree.Branch != "" && !ws.IsMerged() && !e.localHeadInMergedPR(ws) {
 			return "pending"
 		}
 		return ""
@@ -567,7 +599,7 @@ func (e *Engine) wsCloseBatch(dockName string, force, dryRun bool, skip wsSkipFu
 					skipped = append(skipped, label+" (dirty)")
 					continue
 				}
-				if unpushed, err := e.Git.HasUnpushedCommits(ws.Path); err == nil && unpushed {
+				if unpushed, err := e.HasUnlandedCommits(ws); err == nil && unpushed {
 					skipped = append(skipped, label+" (unlanded)")
 					continue
 				}
