@@ -140,6 +140,11 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	// — keeping name and dir aligned by default avoids confusion like
 	// "workspace w1 lives in dir w4". For external workspaces this picks
 	// up the directory's basename, also a sensible default.
+	//
+	// TODO: under the new identity/display model, Name eventually shouldn't
+	// match the reserved ID pattern (^w[1-9]\d*$). Phase 6 (ValidateName
+	// reservation) will surface this conflict; for now the default Name
+	// happens to coincide with the assigned ID.
 	if displayName == "" {
 		base := filepath.Base(wsPath)
 		displayName = uniqueWorkspaceName(dock, nil, base)
@@ -211,19 +216,17 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	surface.Tmux.WindowID = windowID
 	surface.Tmux.LayoutGroup = 1
 
-	// Build workspace. NameOverridden is set when the user passed an
-	// explicit name, so the post-branch auto-rename block below (and
-	// the SyncAll branch detector) won't silently overwrite the
-	// user's choice with a branch-derived name.
+	// Build workspace. Name may be empty here (no explicit name, no branch);
+	// sync fills it from the branch on first detection and is sticky after,
+	// matching the design's "stable yet semantic" goal.
 	ws := manifest.Workspace{
-		Name:           displayName,
-		NameOverridden: nameExplicit,
-		Type:           wsType,
-		Path:           wsPath,
-		Description:    desc,
-		LastActive:     time.Now().Unix(),
-		Worktree:       worktreeAttrs,
-		Surfaces:       []manifest.Surface{},
+		Name:        displayName,
+		Type:        wsType,
+		Path:        wsPath,
+		Description: desc,
+		LastActive:  time.Now().Unix(),
+		Worktree:    worktreeAttrs,
+		Surfaces:    []manifest.Surface{},
 	}
 
 	var finalName string
@@ -244,9 +247,12 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		if err := dock.AddWorkspace(ws); err != nil {
 			return err
 		}
-		addedWs := dock.FindWorkspace(finalName)
+		// Fill in the ID for the workspace we just added. Lookups by Name
+		// fail when finalName is empty, so resolve by path instead.
+		manifest.AssignWorkspaceIDs(dock)
+		addedWs := findWorkspaceByPath(dock, wsPath)
 		if addedWs == nil {
-			return fmt.Errorf("workspace %q not found after creation", finalName)
+			return fmt.Errorf("workspace at %q not found after creation", wsPath)
 		}
 		if _, err := addedWs.AddSurface(surface); err != nil {
 			_ = dock.RemoveWorkspace(finalName)
@@ -270,9 +276,9 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	if dock == nil {
 		return nil, fmt.Errorf("unknown dock %q", dockName)
 	}
-	addedWs := dock.FindWorkspace(finalName)
+	addedWs := findWorkspaceByPath(dock, wsPath)
 	if addedWs == nil {
-		return nil, fmt.Errorf("workspace %q not found after creation", finalName)
+		return nil, fmt.Errorf("workspace at %q not found after creation", wsPath)
 	}
 
 	// Set up git branch if requested. For existing branches the worktree
@@ -294,7 +300,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 			}
 
 			ws.Worktree.Branch = opts.Branch
-			if !ws.NameOverridden {
+			if isPlaceholderName(ws.Name) {
 				newName := uniqueWorkspaceName(dock, ws, abbreviateBranch(opts.Branch))
 				if newName != ws.Name {
 					ws.Name = newName
@@ -656,7 +662,7 @@ func (e *Engine) WsUpdate(dockName, wsName string, branch, pr *string) error {
 
 		if branch != nil && ws.Worktree != nil {
 			ws.Worktree.Branch = *branch
-			if !ws.NameOverridden {
+			if isPlaceholderName(ws.Name) {
 				ws.Name = uniqueWorkspaceName(dock, ws, abbreviateBranch(*branch))
 				nameChanged = true
 			}
@@ -718,7 +724,6 @@ func (e *Engine) WsRename(dockName, wsName, newName string) error {
 		}
 
 		ws.Name = newName
-		ws.NameOverridden = true
 		ws.LastActive = time.Now().Unix()
 		e.updateWindowNames(ws, newName)
 
@@ -854,7 +859,13 @@ func (e *Engine) ResolveByWindowID(tmuxWindowID string) (dockName, wsName string
 // updateWindowNames renames all tmux windows for a workspace's surfaces.
 // Primary windows (layout group 1) get the workspace name; secondary windows
 // get ":surfacename" where surfacename is the first surface in the group.
+//
+// When wsName is empty (no Name set yet), falls back to the workspace's ID
+// so the tab still has a stable label. Display = Name (display) → ID (handle).
 func (e *Engine) updateWindowNames(ws *manifest.Workspace, wsName string) {
+	if wsName == "" {
+		wsName = ws.ID
+	}
 	// Build a map of layout group → first surface name (by slice order).
 	firstInGroup := map[int]string{}
 	for _, s := range ws.Surfaces {
@@ -1085,18 +1096,6 @@ func copyWorktreeIncludeFiles(repoRoot, worktreePath string, files []string) err
 		}
 	}
 	return nil
-}
-
-// nextWorkspaceName returns the next sequential name (w1, w2, ...) that is
-// not used as a workspace name in the dock. Workspace names and worktree
-// directory names are independent — see nextWorkspaceDir for the latter.
-func nextWorkspaceName(dock *manifest.Dock) string {
-	for i := 1; ; i++ {
-		name := fmt.Sprintf("w%d", i)
-		if dock.FindWorkspace(name) == nil {
-			return name
-		}
-	}
 }
 
 // nextWorkspaceDir returns the next sequential directory basename (w1, w2,

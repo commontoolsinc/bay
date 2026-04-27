@@ -285,7 +285,11 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 		// workspace is recreated.
 		ws.Worktree.Merged = false
 		changed = true
-		if !ws.NameOverridden {
+		// Sticky-once-set: only fill Name from the branch when it's a
+		// placeholder (empty or auto-assigned w<N>). User-set Names are
+		// stable — live branch info is on right-status, so the tab label
+		// doesn't need to follow.
+		if isPlaceholderName(ws.Name) {
 			newName := uniqueWorkspaceName(dock, ws, abbreviateBranch(update.branch))
 			if newName != ws.Name {
 				ws.Name = newName
@@ -312,16 +316,11 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 		// doesn't resurrect when the worktree gets a new branch later.
 		ws.Worktree.Merged = false
 		changed = true
-		if !ws.NameOverridden {
-			// Branch is gone, so the existing branch-derived name no longer
-			// reflects anything. Replace with a fresh sequential name; the
-			// user can rename later if they keep working in this workspace.
-			newName := nextWorkspaceName(dock)
-			if newName != ws.Name {
-				ws.Name = newName
-				e.updateWindowNames(ws, ws.Name)
-			}
-		}
+		// Name stays sticky: a previously-set Name persists even after the
+		// branch is gone. The display may be slightly stale relative to the
+		// current worktree state, but stability matters more, and right-status
+		// shows the live branch (or its absence). The user can bay rename if
+		// they want the label to follow.
 	}
 
 	if update.prChanged && ws.Worktree != nil && ws.Worktree.Branch == update.prBranch && ws.Worktree.PR == "" {
