@@ -496,9 +496,9 @@ func TestWorkspaceCandidates_EmitsIDAndName(t *testing.T) {
 
 	want := map[string]string{
 		"w1":            "labs auth-fix fix/auth",
-		"labs:w1":       "labs auth-fix fix/auth",
+		"labs:w1":       "auth-fix fix/auth",
 		"auth-fix":      "labs (w1) fix/auth",
-		"labs:auth-fix": "w1",
+		"labs:auth-fix": "(w1) fix/auth",
 	}
 	gotMap := map[string]string{}
 	for _, c := range got {

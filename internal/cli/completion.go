@@ -226,6 +226,15 @@ func addCandidate(completions *[]string, seen map[string]bool, val, desc string)
 	}
 }
 
+// addQualifiedCandidate emits a workspace identifier in both bare and
+// dock-qualified forms. The two forms get separate descriptions because
+// the qualified form's dock prefix is already visible in the candidate
+// text, so its description doesn't need to repeat the dock name.
+func addQualifiedCandidate(completions *[]string, seen map[string]bool, dock, val, bareDesc, qualifiedDesc string) {
+	addCandidate(completions, seen, val, bareDesc)
+	addCandidate(completions, seen, dock+":"+val, qualifiedDesc)
+}
+
 // workspaceCandidates returns workspace identifier candidates: each workspace
 // in four forms — ID, dock:ID, Name, dock:Name — plus the "self" keyword.
 //
@@ -255,21 +264,23 @@ func workspaceCandidates(m *manifest.Manifest) []string {
 		}
 
 		// ID candidates lead with the friendly Name (when distinct) so the
-		// description tells the user what each ID maps to.
-		idDesc := ref.Dock
+		// description tells the user what each ID maps to. The bare form
+		// includes the dock; the qualified form drops it (the candidate
+		// already shows it).
+		nameSuffix := ""
 		if ws.Name != "" && ws.Name != ws.ID {
-			idDesc += " " + ws.Name
+			nameSuffix = " " + ws.Name
 		}
-		idDesc += extras
-		addCandidate(&completions, seen, ws.ID, idDesc)
-		addCandidate(&completions, seen, ref.Dock+":"+ws.ID, idDesc)
+		addQualifiedCandidate(&completions, seen, ref.Dock, ws.ID,
+			ref.Dock+nameSuffix+extras,
+			strings.TrimSpace(nameSuffix+extras))
 
 		// Name candidates cross-reference the ID so users learn the canonical
 		// handle while completing from a familiar label.
 		if ws.Name != "" {
-			nameDesc := ref.Dock + " (" + ws.ID + ")" + extras
-			addCandidate(&completions, seen, ws.Name, nameDesc)
-			addCandidate(&completions, seen, ref.Dock+":"+ws.Name, ws.ID)
+			addQualifiedCandidate(&completions, seen, ref.Dock, ws.Name,
+				ref.Dock+" ("+ws.ID+")"+extras,
+				"("+ws.ID+")"+extras)
 		}
 	}
 	addCandidate(&completions, seen, "self", "current workspace")
