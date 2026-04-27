@@ -57,7 +57,7 @@ type ListView struct {
 	Recursive      bool       `json:"recursive"`
 	Repos          []RepoInfo `json:"repos"`
 	CurrentDock    string     `json:"-"` // for highlighting; not serialized
-	CurrentWs      string     `json:"-"`
+	CurrentWsID    string     `json:"-"`
 	CurrentSurface string     `json:"-"`
 }
 
@@ -68,7 +68,7 @@ func (v *ListView) SetCurrentContext(eng *engine.Engine) {
 	}
 	if dock, ws, err := eng.ResolveSelf(); err == nil {
 		v.CurrentDock = dock
-		v.CurrentWs = ws
+		v.CurrentWsID = ws
 	}
 	// Resolve current surface from tmux pane.
 	if ctx, err := eng.CurrentContext(); err == nil {
@@ -152,7 +152,7 @@ func BuildListView(docks []engine.DockInfo, opts ListViewOptions) ListView {
 			filtered.Workspaces = nil
 
 			for _, ws := range dock.Workspaces {
-				if focus.Kind == FocusWorkspace && focus.WorkspaceID != "" && focus.WorkspaceID != ws.Name {
+				if focus.Kind == FocusWorkspace && focus.WorkspaceID != "" && focus.WorkspaceID != ws.ID {
 					continue
 				}
 				filtered.Workspaces = append(filtered.Workspaces, trimWorkspace(ws, recursive))
@@ -199,7 +199,7 @@ func BuildListView(docks []engine.DockInfo, opts ListViewOptions) ListView {
 		filtered := dock
 		filtered.Workspaces = nil
 		for _, ws := range dock.Workspaces {
-			if focus.Kind == FocusWorkspace && focus.WorkspaceID != "" && focus.WorkspaceID != ws.Name {
+			if focus.Kind == FocusWorkspace && focus.WorkspaceID != "" && focus.WorkspaceID != ws.ID {
 				continue
 			}
 			filtered.Workspaces = append(filtered.Workspaces, trimWorkspace(ws, recursive))
@@ -682,7 +682,7 @@ func FormatListView(view ListView, long, short bool) string {
 			wsRows := make([]alignedRow, len(dock.Workspaces))
 			var allSfRows []alignedRow
 			for i, ws := range dock.Workspaces {
-				isCurrentWs := dock.Name == view.CurrentDock && ws.Name == view.CurrentWs
+				isCurrentWs := dock.Name == view.CurrentDock && ws.ID == view.CurrentWsID
 				wsName := ws.Name
 				if isCurrentWs {
 					wsName += " *"

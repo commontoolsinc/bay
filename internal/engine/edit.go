@@ -10,16 +10,16 @@ import (
 // Edit returns the workspace path for opening in an editor and bumps
 // LastActive so the monitor's activity gate keeps fetching merge data
 // for this workspace's repo.
-func (e *Engine) Edit(dockName, wsName string) (string, error) {
+func (e *Engine) Edit(dockName, wsID string) (string, error) {
 	var path string
 	err := e.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)
 		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws := dock.FindWorkspace(wsName)
+		ws := dock.FindWorkspaceByID(wsID)
 		if ws == nil {
-			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
+			return fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
 		}
 		ws.LastActive = time.Now().Unix()
 		path = ws.Path

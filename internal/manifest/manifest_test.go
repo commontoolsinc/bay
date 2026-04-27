@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -471,11 +472,14 @@ func TestAddWorkspace_DuplicateName(t *testing.T) {
 
 func TestRemoveWorkspace(t *testing.T) {
 	d := &Dock{
-		Name:       "labs",
-		Workspaces: []Workspace{{Name: "auth-fix"}, {Name: "perf"}},
+		Name: "labs",
+		Workspaces: []Workspace{
+			{ID: "w1", Name: "auth-fix"},
+			{ID: "w2", Name: "perf"},
+		},
 	}
 
-	if err := d.RemoveWorkspace("auth-fix"); err != nil {
+	if err := d.RemoveWorkspace("w1"); err != nil {
 		t.Fatal(err)
 	}
 	if len(d.Workspaces) != 1 || d.Workspaces[0].Name != "perf" {
@@ -622,35 +626,52 @@ func TestRemoveSurface_NotFound(t *testing.T) {
 
 // --- Workspace resolution ---
 
-func TestResolveWorkspace_ByDockColonName(t *testing.T) {
+func TestResolveWorkspace_ByDockColonID(t *testing.T) {
 	m := &Manifest{
 		Docks: []Dock{
-			{Name: "labs", Workspaces: []Workspace{{Name: "auth-fix"}}},
+			{Name: "labs", Workspaces: []Workspace{{ID: "w1", Name: "auth-fix"}}},
 		},
 	}
 
-	ws, dock, err := m.ResolveWorkspace("labs:auth-fix")
+	ws, dock, err := m.ResolveWorkspace("labs:w1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ws.Name != "auth-fix" || dock.Name != "labs" {
-		t.Errorf("resolve = ws=%q dock=%q", ws.Name, dock.Name)
+	if ws.ID != "w1" || dock.Name != "labs" {
+		t.Errorf("resolve = ws=%q dock=%q", ws.ID, dock.Name)
 	}
 }
 
-func TestResolveWorkspace_ByName(t *testing.T) {
+func TestResolveWorkspace_ByID(t *testing.T) {
 	m := &Manifest{
 		Docks: []Dock{
-			{Name: "labs", Workspaces: []Workspace{{Name: "auth-fix"}}},
+			{Name: "labs", Workspaces: []Workspace{{ID: "w1", Name: "auth-fix"}}},
 		},
 	}
 
-	ws, dock, err := m.ResolveWorkspace("auth-fix")
+	ws, dock, err := m.ResolveWorkspace("w1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ws.Name != "auth-fix" || dock.Name != "labs" {
-		t.Errorf("resolve = ws=%q dock=%q", ws.Name, dock.Name)
+	if ws.ID != "w1" || dock.Name != "labs" {
+		t.Errorf("resolve = ws=%q dock=%q", ws.ID, dock.Name)
+	}
+}
+
+// TestResolveWorkspace_ByNameRedirectsToID covers the strict-resolver
+// hint: typing a Name returns an error that points at the canonical ID.
+func TestResolveWorkspace_ByNameRedirectsToID(t *testing.T) {
+	m := &Manifest{
+		Docks: []Dock{
+			{Name: "labs", Workspaces: []Workspace{{ID: "w1", Name: "auth-fix"}}},
+		},
+	}
+	_, _, err := m.ResolveWorkspace("auth-fix")
+	if err == nil {
+		t.Fatal("expected error for Name lookup under strict resolution")
+	}
+	if !strings.Contains(err.Error(), `did you mean "w1"`) {
+		t.Errorf("error missing did-you-mean hint: %v", err)
 	}
 }
 
@@ -1225,5 +1246,26 @@ func TestRepoEffectiveWorktreeDir(t *testing.T) {
 	r2 := Repo{Name: "labs", Path: "/projects/labs"}
 	if got := r2.EffectiveWorktreeDir(); got != "/projects/labs-worktrees" {
 		t.Errorf("expected /projects/labs-worktrees, got %q", got)
+	}
+}
+
+// TestResolveWorkspace_NameHintMultipleDocks covers the cross-dock
+// hint format when the same Name appears in multiple docks.
+func TestResolveWorkspace_NameHintMultipleDocks(t *testing.T) {
+	m := &Manifest{
+		Docks: []Dock{
+			{Name: "labs", Workspaces: []Workspace{{ID: "w1", Name: "shared"}}},
+			{Name: "labs2", Workspaces: []Workspace{{ID: "w1", Name: "shared"}}},
+		},
+	}
+	_, _, err := m.ResolveWorkspace("shared")
+	if err == nil {
+		t.Fatal("expected error for multi-dock Name lookup")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, `did you mean one of`) ||
+		!strings.Contains(msg, `"w1" (labs)`) ||
+		!strings.Contains(msg, `"w1" (labs2)`) {
+		t.Errorf("expected multi-dock hint listing both candidates, got %v", err)
 	}
 }

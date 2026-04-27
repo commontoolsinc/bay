@@ -8,7 +8,7 @@ import (
 )
 
 // lastActive returns the LastActive timestamp for a workspace, or 0 if missing.
-func lastActive(t *testing.T, eng *Engine, dockName, wsName string) int64 {
+func lastActive(t *testing.T, eng *Engine, dockName, wsID string) int64 {
 	t.Helper()
 	m, err := eng.LoadManifest()
 	if err != nil {
@@ -18,7 +18,7 @@ func lastActive(t *testing.T, eng *Engine, dockName, wsName string) int64 {
 	if dock == nil {
 		return 0
 	}
-	ws := dock.FindWorkspace(wsName)
+	ws := dock.FindWorkspaceByID(wsID)
 	if ws == nil {
 		return 0
 	}
@@ -27,10 +27,10 @@ func lastActive(t *testing.T, eng *Engine, dockName, wsName string) int64 {
 
 // staleWorkspace makes the workspace look "old" by zeroing its LastActive,
 // so test assertions can verify that a subsequent operation bumped it back.
-func staleWorkspace(t *testing.T, eng *Engine, dockName, wsName string) {
+func staleWorkspace(t *testing.T, eng *Engine, dockName, wsID string) {
 	t.Helper()
 	err := eng.withManifest(func(m *manifest.Manifest) error {
-		m.FindDock(dockName).FindWorkspace(wsName).LastActive = 0
+		m.FindDock(dockName).FindWorkspaceByID(wsID).LastActive = 0
 		return nil
 	})
 	if err != nil {
@@ -121,7 +121,8 @@ func TestWsRename_BumpsLastActive(t *testing.T) {
 		t.Fatalf("WsRename: %v", err)
 	}
 
-	if got := lastActive(t, eng, "labs", "renamed"); got < before {
+	// Rename changes Name, not ID; lookup by ID continues to work.
+	if got := lastActive(t, eng, "labs", "w1"); got < before {
 		t.Errorf("LastActive = %d, want >= %d (WsRename should bump)", got, before)
 	}
 }

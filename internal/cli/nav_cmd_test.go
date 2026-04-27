@@ -427,7 +427,7 @@ func TestWsRename_SelfResolution(t *testing.T) {
 		t.Fatalf("WsRename: %v", err)
 	}
 
-	ws, err := eng.WsShow("labs", "renamed-ws")
+	ws, err := eng.WsShow("labs", wsID)
 	if err != nil {
 		t.Fatalf("WsShow after rename: %v", err)
 	}

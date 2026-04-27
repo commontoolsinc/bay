@@ -311,7 +311,7 @@ type ClosedEntry struct {
 // parent workspace. Transient fields (PaneID, WindowID, ID) are deliberately
 // omitted — they're reassigned on restore.
 type ClosedSurface struct {
-	Workspace   string      `json:"workspace"`              // parent workspace name at close time
+	Workspace   string      `json:"workspace"`              // parent workspace ID at close time (the stable handle)
 	Name        string      `json:"name"`                   // user-facing surface name
 	Type        SurfaceType `json:"type"`                   // agent / shell / cmd / editor
 	Agent       string      `json:"agent,omitempty"`        // type=agent
@@ -694,15 +694,17 @@ func (d *Dock) AddWorkspace(ws Workspace) error {
 	return nil
 }
 
-// RemoveWorkspace removes a workspace by name.
-func (d *Dock) RemoveWorkspace(name string) error {
+// RemoveWorkspace removes a workspace identified by ID. (Names are no
+// longer CLI keys; the engine layer passes the ID it received from the
+// resolver.)
+func (d *Dock) RemoveWorkspace(id string) error {
 	for i := range d.Workspaces {
-		if d.Workspaces[i].Name == name {
+		if d.Workspaces[i].ID == id {
 			d.Workspaces = append(d.Workspaces[:i], d.Workspaces[i+1:]...)
 			return nil
 		}
 	}
-	return fmt.Errorf("workspace %q not found in dock %q", name, d.Name)
+	return fmt.Errorf("workspace %q not found in dock %q", id, d.Name)
 }
 
 // FindDockSurface returns a pointer to a dock-level surface by name.
@@ -798,29 +800,34 @@ func (ws *Workspace) RemoveSurface(name string) error {
 
 // --- Workspace resolution ---
 
-// ResolveWorkspace resolves a query that may be "dock:name" or a bare name.
+// ResolveWorkspace resolves a query that may be "dock:id" or a bare ID.
 // Returns pointers to the workspace and its parent dock.
+//
+// Strict resolution: only IDs are accepted as CLI keys. If the query
+// looks like a Name (i.e. it doesn't match a known ID), the error
+// message hints at the canonical ID for any workspace with a matching
+// Name, so users who type a friendly Name see a one-step fix.
 func (m *Manifest) ResolveWorkspace(query string) (*Workspace, *Dock, error) {
-	// Try "dock:name" format.
+	// Try "dock:id" format.
 	if parts := strings.SplitN(query, ":", 2); len(parts) == 2 {
 		d := m.FindDock(parts[0])
 		if d == nil {
 			return nil, nil, fmt.Errorf("dock %q not found", parts[0])
 		}
-		ws := d.FindWorkspace(parts[1])
+		ws := d.FindWorkspaceByID(parts[1])
 		if ws == nil {
-			return nil, nil, fmt.Errorf("workspace %q not found in dock %q", parts[1], parts[0])
+			return nil, nil, workspaceNotFoundError(parts[1], parts[0], dockNameHints(d, parts[1]))
 		}
 		return ws, d, nil
 	}
 
-	// Bare name: search all docks.
+	// Bare ID: search all docks.
 	var matches []struct {
 		ws   *Workspace
 		dock *Dock
 	}
 	for i := range m.Docks {
-		if ws := m.Docks[i].FindWorkspace(query); ws != nil {
+		if ws := m.Docks[i].FindWorkspaceByID(query); ws != nil {
 			matches = append(matches, struct {
 				ws   *Workspace
 				dock *Dock
@@ -830,7 +837,7 @@ func (m *Manifest) ResolveWorkspace(query string) (*Workspace, *Dock, error) {
 
 	switch len(matches) {
 	case 0:
-		return nil, nil, fmt.Errorf("workspace %q not found", query)
+		return nil, nil, workspaceNotFoundError(query, "", manifestNameHints(m, query))
 	case 1:
 		return matches[0].ws, matches[0].dock, nil
 	default:
@@ -838,7 +845,56 @@ func (m *Manifest) ResolveWorkspace(query string) (*Workspace, *Dock, error) {
 		for _, match := range matches {
 			docks = append(docks, match.dock.Name)
 		}
-		return nil, nil, fmt.Errorf("workspace %q is ambiguous; found in docks: %s", query, strings.Join(docks, ", "))
+		return nil, nil, fmt.Errorf("workspace ID %q is ambiguous; found in docks: %s", query, strings.Join(docks, ", "))
+	}
+}
+
+// nameHint pairs an ID with its parent dock for "did you mean" output.
+type nameHint struct {
+	id   string
+	dock string
+}
+
+// dockNameHints returns IDs of workspaces in d whose Name equals query.
+func dockNameHints(d *Dock, query string) []nameHint {
+	var hints []nameHint
+	for i := range d.Workspaces {
+		if d.Workspaces[i].Name == query {
+			hints = append(hints, nameHint{id: d.Workspaces[i].ID, dock: d.Name})
+		}
+	}
+	return hints
+}
+
+// manifestNameHints returns IDs of workspaces across all docks whose
+// Name equals query.
+func manifestNameHints(m *Manifest, query string) []nameHint {
+	var hints []nameHint
+	for i := range m.Docks {
+		hints = append(hints, dockNameHints(&m.Docks[i], query)...)
+	}
+	return hints
+}
+
+// workspaceNotFoundError formats a "workspace not found" error,
+// optionally adding a "did you mean" pointer at the canonical ID for
+// any workspace whose Name matched the query.
+func workspaceNotFoundError(query, dockName string, hints []nameHint) error {
+	base := fmt.Sprintf("workspace %q not found", query)
+	if dockName != "" {
+		base = fmt.Sprintf("workspace %q not found in dock %q", query, dockName)
+	}
+	switch len(hints) {
+	case 0:
+		return fmt.Errorf("%s", base)
+	case 1:
+		return fmt.Errorf("%s; did you mean %q? (Names are not CLI keys; use the ID)", base, hints[0].id)
+	default:
+		parts := make([]string, len(hints))
+		for i, h := range hints {
+			parts[i] = fmt.Sprintf("%q (%s)", h.id, h.dock)
+		}
+		return fmt.Errorf("%s; did you mean one of: %s? (Names are not CLI keys; use the ID)", base, strings.Join(parts, ", "))
 	}
 }
 

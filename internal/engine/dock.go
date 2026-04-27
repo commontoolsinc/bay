@@ -185,11 +185,11 @@ func (e *Engine) DockClose(name string, force bool) error {
 		return fmt.Errorf("unknown dock %q", name)
 	}
 
-	// Collect workspace names first to avoid modifying the slice during
-	// iteration.
-	var wsNames []string
+	// Collect workspace IDs first to avoid modifying the slice during
+	// iteration. Names may be empty; IDs are the stable handle.
+	var wsIDs []string
 	for _, ws := range dock.Workspaces {
-		wsNames = append(wsNames, ws.Name)
+		wsIDs = append(wsIDs, ws.ID)
 	}
 
 	// Manifest pass: archive + remove each workspace. On the success
@@ -199,8 +199,8 @@ func (e *Engine) DockClose(name string, force bool) error {
 	// for workspaces that *were* removed from the manifest, so we don't
 	// leave orphaned tmux windows with no manifest reference.
 	var killedWindowIDs []string
-	for _, wsName := range wsNames {
-		ids, err := e.closeWorkspaceState(name, wsName, force)
+	for _, wsID := range wsIDs {
+		ids, err := e.closeWorkspaceState(name, wsID, force)
 		if err != nil {
 			if !force {
 				// Sync tmux state with the manifest mutations we already
@@ -210,7 +210,7 @@ func (e *Engine) DockClose(name string, force bool) error {
 					e.ensurePlaceholderIfLastWindow(name, id)
 					_ = e.Tmux.KillWindow(id)
 				}
-				return fmt.Errorf("workspace %q: %w", wsName, err)
+				return fmt.Errorf("workspace %q: %w", wsID, err)
 			}
 		}
 		killedWindowIDs = append(killedWindowIDs, ids...)
@@ -359,7 +359,7 @@ func (e *Engine) buildWorkspaceInfo(ws *manifest.Workspace, agent string, waitin
 // This does NOT call List() or SyncAll — it loads the manifest and
 // builds info for just the requested workspace. Callers that display
 // data should call SyncAll first.
-func (e *Engine) WorkspaceInfoByName(dockName, wsName string) (*WorkspaceInfo, error) {
+func (e *Engine) WorkspaceInfoByName(dockName, wsID string) (*WorkspaceInfo, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return nil, err
@@ -368,9 +368,9 @@ func (e *Engine) WorkspaceInfoByName(dockName, wsName string) (*WorkspaceInfo, e
 	if dock == nil {
 		return nil, fmt.Errorf("unknown dock %q", dockName)
 	}
-	ws := dock.FindWorkspace(wsName)
+	ws := dock.FindWorkspaceByID(wsID)
 	if ws == nil {
-		return nil, fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
+		return nil, fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
 	}
 	agent := e.resolvedDockAgent(dockName, m)
 	waitingWindows, _ := e.Tmux.WaitingOrBellWindowIDs(dockName)

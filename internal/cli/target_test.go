@@ -106,11 +106,12 @@ func surfaceArgFixture(t *testing.T) *engine.Engine {
 	}
 
 	// Also create a uniquely-named workspace so bare resolution works.
+	// Workspace's ID is w2 (auto-assigned, since solo is the second labs ws).
 	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Name: "solo", Shell: true}); err != nil {
 		t.Fatalf("WsNew labs:solo: %v", err)
 	}
-	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "solo", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
-		t.Fatalf("SurfaceAdd labs:solo:agent: %v", err)
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w2", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
+		t.Fatalf("SurfaceAdd labs:w2:agent: %v", err)
 	}
 
 	return eng
@@ -131,13 +132,13 @@ func TestResolveSurfaceArg_FullyQualified(t *testing.T) {
 func TestResolveSurfaceArg_WsQualified(t *testing.T) {
 	eng := surfaceArgFixture(t)
 
-	// "solo" is uniquely named so bare ws lookup succeeds.
-	dock, ws, surface, err := resolveSurfaceArg(eng, "solo:agent", "", "")
+	// w2 is uniquely owned by labs, so bare ID lookup succeeds.
+	dock, ws, surface, err := resolveSurfaceArg(eng, "w2:agent", "", "")
 	if err != nil {
 		t.Fatalf("resolveSurfaceArg: %v", err)
 	}
-	if dock != "labs" || ws != "solo" || surface != "agent" {
-		t.Errorf("got (%q,%q,%q), want (labs,solo,agent)", dock, ws, surface)
+	if dock != "labs" || ws != "w2" || surface != "agent" {
+		t.Errorf("got (%q,%q,%q), want (labs,w2,agent)", dock, ws, surface)
 	}
 }
 
@@ -241,12 +242,13 @@ func wsArgFixture(t *testing.T) *engine.Engine {
 func TestResolveWsArg_BareUnique(t *testing.T) {
 	eng := wsArgFixture(t)
 
-	dock, ws, err := resolveWsArg(eng, "solo", "")
+	// w2 is unique to labs (labs has ID w1 and w2; labs2 has only w1).
+	dock, ws, err := resolveWsArg(eng, "w2", "")
 	if err != nil {
 		t.Fatalf("resolveWsArg: %v", err)
 	}
-	if dock != "labs" || ws != "solo" {
-		t.Errorf("got (%q,%q), want (labs,solo)", dock, ws)
+	if dock != "labs" || ws != "w2" {
+		t.Errorf("got (%q,%q), want (labs,w2)", dock, ws)
 	}
 }
 
@@ -311,10 +313,11 @@ func chdirTo(t *testing.T, eng *engine.Engine, dockName, wsName string) {
 }
 
 func TestResolveWsArg_BareAmbiguousPrefersCurrentDock(t *testing.T) {
-	// Both labs and labs2 have a workspace named "w1". From inside
-	// labs:solo, a bare `w1` should resolve to labs:w1, not error.
+	// Both labs and labs2 have a workspace with ID "w1". From inside
+	// labs:w2 (the "solo" workspace), a bare `w1` should resolve to labs:w1,
+	// not error.
 	eng := wsArgFixture(t)
-	chdirTo(t, eng, "labs", "solo")
+	chdirTo(t, eng, "labs", "w2")
 
 	dock, ws, err := resolveWsArg(eng, "w1", "")
 	if err != nil {
@@ -326,41 +329,33 @@ func TestResolveWsArg_BareAmbiguousPrefersCurrentDock(t *testing.T) {
 }
 
 func TestResolveWsArg_BareFallsThroughWhenCurrentDockLacksIt(t *testing.T) {
-	// labs2 has no "solo" workspace. From inside labs2:w1, a bare `solo`
-	// should still resolve — the current-dock shortcut just falls through
-	// to the all-dock search when it misses.
+	// labs2 has no w2. From inside labs2:w1, a bare `w2` should still
+	// resolve — the current-dock shortcut falls through to the all-dock
+	// search when it misses.
 	eng := wsArgFixture(t)
 	chdirTo(t, eng, "labs2", "w1")
 
-	dock, ws, err := resolveWsArg(eng, "solo", "")
+	dock, ws, err := resolveWsArg(eng, "w2", "")
 	if err != nil {
 		t.Fatalf("resolveWsArg: %v", err)
 	}
-	if dock != "labs" || ws != "solo" {
-		t.Errorf("got (%q,%q), want (labs,solo)", dock, ws)
+	if dock != "labs" || ws != "w2" {
+		t.Errorf("got (%q,%q), want (labs,w2)", dock, ws)
 	}
 }
 
 func TestResolveWsArg_BareAmbiguousWhenCurrentDockLacksIt(t *testing.T) {
-	// Add a third dock that contains neither copy of the ambiguous name.
-	// From inside this third dock, `w1` is truly ambiguous — no current-
-	// dock shortcut applies — and bay must report the ambiguity.
+	// Without a current-dock context (cwd is outside every workspace),
+	// a bare `w1` should fall through to the manifest-wide search and
+	// surface the cross-dock ambiguity (labs:w1 and labs2:w1).
 	eng := wsArgFixture(t)
-
+	// Make sure CurrentContext won't pick up any ambient bay workspace.
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "repos", "thirdrepo"), 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Chdir: %v", err)
 	}
-	if err := eng.RepoAdd("thirdrepo", filepath.Join(dir, "repos", "thirdrepo"), "", "", true); err != nil {
-		t.Fatalf("RepoAdd: %v", err)
-	}
-	if err := eng.DockNew("third", "thirdrepo", "claude", ""); err != nil {
-		t.Fatalf("DockNew third: %v", err)
-	}
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "third", Name: "only-here", Shell: true}); err != nil {
-		t.Fatalf("WsNew third:only-here: %v", err)
-	}
-	chdirTo(t, eng, "third", "only-here")
+	t.Cleanup(func() { _ = os.Chdir(orig) })
 
 	_, _, err := resolveWsArg(eng, "w1", "")
 	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
@@ -453,5 +448,20 @@ func TestResolveSurfaceArgOrSelf_NonSelfDelegates(t *testing.T) {
 	}
 	if dock != "labs" || ws != "w1" || surface != "second" {
 		t.Errorf("got (%q,%q,%q), want (labs,w1,second)", dock, ws, surface)
+	}
+}
+
+// TestResolveWsArg_NameRejectedWithHint covers the strict resolver's
+// user-facing behavior: typing a friendly Name produces an error that
+// names the canonical ID, so the user can copy it directly.
+func TestResolveWsArg_NameRejectedWithHint(t *testing.T) {
+	eng := wsArgFixture(t)
+	// "solo" is the Name the user might type; its ID is w2 in labs.
+	_, _, err := resolveWsArg(eng, "solo", "")
+	if err == nil {
+		t.Fatal("expected error: Name lookup should fail under strict resolver")
+	}
+	if !strings.Contains(err.Error(), `did you mean "w2"`) {
+		t.Errorf("error should hint at canonical ID; got %v", err)
 	}
 }

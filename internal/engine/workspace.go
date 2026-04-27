@@ -135,19 +135,10 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		}
 	}
 
-	// If no explicit name and no branch, default to the path basename
-	// (e.g., "w4"). This produces a Name that matches the reserved ID
-	// pattern (^w[1-9]\d*$) — bypassing ValidateWorkspaceName — but
-	// isPlaceholderName treats such Names as fillable, so sync replaces
-	// them on first branch detection. Phase 7's resolver hard-cut will
-	// revisit this default and likely drop it.
-	if displayName == "" {
-		base := filepath.Base(wsPath)
-		displayName = uniqueWorkspaceName(dock, nil, base)
-		if err := ValidateName(displayName); err != nil {
-			return nil, err
-		}
-	}
+	// No explicit name and no branch → leave displayName empty. The
+	// workspace's ID is the stable handle (set after AddWorkspace);
+	// updateWindowNames falls back to the ID for the tab label, and
+	// sync fills Name from the branch on first detection.
 
 	// Resolve agent args.
 	agentArgs := e.resolvedAgentArgs(dockName, agentName, m)
@@ -251,7 +242,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 			return fmt.Errorf("workspace at %q not found after creation", wsPath)
 		}
 		if _, err := addedWs.AddSurface(surface); err != nil {
-			_ = dock.RemoveWorkspace(finalName)
+			_ = dock.RemoveWorkspace(addedWs.ID)
 			return err
 		}
 		return nil
@@ -345,7 +336,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 // (collects across all workspaces and uses KillSession at the end),
 // RepoRemove (collects across all docks), WsCloseByStatus (collects
 // across all targets).
-func (e *Engine) closeWorkspaceState(dockName, wsName string, force bool) ([]string, error) {
+func (e *Engine) closeWorkspaceState(dockName, wsID string, force bool) ([]string, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return nil, err
@@ -355,9 +346,9 @@ func (e *Engine) closeWorkspaceState(dockName, wsName string, force bool) ([]str
 	if dock == nil {
 		return nil, fmt.Errorf("unknown dock %q", dockName)
 	}
-	ws := dock.FindWorkspace(wsName)
+	ws := dock.FindWorkspaceByID(wsID)
 	if ws == nil {
-		return nil, fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
+		return nil, fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
 	}
 
 	// Safety checks for worktree workspaces + determine if the branch
@@ -375,15 +366,15 @@ func (e *Engine) closeWorkspaceState(dockName, wsName string, force bool) ([]str
 				return nil, fmt.Errorf("checking workspace state: %w", err)
 			}
 			if dirty {
-				return nil, fmt.Errorf("workspace %q has uncommitted changes (use --force to override)", wsName)
+				return nil, fmt.Errorf("workspace %q has uncommitted changes (use --force to override)", wsID)
 			}
 
 			unpushed, err := e.HasUnlandedCommits(ws)
 			if err != nil {
-				return nil, fmt.Errorf("workspace %q: could not verify push status: %w (use --force to override)", wsName, err)
+				return nil, fmt.Errorf("workspace %q: could not verify push status: %w (use --force to override)", wsID, err)
 			}
 			if unpushed {
-				return nil, fmt.Errorf("workspace %q has unlanded commits (use --force to override)", wsName)
+				return nil, fmt.Errorf("workspace %q has unlanded commits (use --force to override)", wsID)
 			}
 			// Safety checks passed → branch work exists remotely or has landed.
 			if ws.Worktree != nil && ws.Worktree.Branch != "" {
@@ -462,7 +453,7 @@ func (e *Engine) closeWorkspaceState(dockName, wsName string, force bool) ([]str
 		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		return dock.RemoveWorkspace(wsName)
+		return dock.RemoveWorkspace(wsID)
 	}); err != nil {
 		return nil, err
 	}
@@ -501,8 +492,8 @@ func (e *Engine) localHeadInMergedPR(ws *manifest.Workspace) bool {
 	return err == nil && landed
 }
 
-func (e *Engine) WsClose(dockName, wsName string, force bool) error {
-	windowIDs, err := e.closeWorkspaceState(dockName, wsName, force)
+func (e *Engine) WsClose(dockName, wsID string, force bool) error {
+	windowIDs, err := e.closeWorkspaceState(dockName, wsID, force)
 	if err != nil {
 		return err
 	}
@@ -560,7 +551,8 @@ func (e *Engine) wsCloseBatch(dockName string, force, dryRun bool, skip wsSkipFu
 
 	type target struct {
 		dock string
-		name string
+		id   string
+		name string // for error/skip labels only
 	}
 	var targets []target
 
@@ -571,16 +563,16 @@ func (e *Engine) wsCloseBatch(dockName string, force, dryRun bool, skip wsSkipFu
 		}
 		for j := range d.Workspaces {
 			ws := &d.Workspaces[j]
-			if excludeSet[ws.Name] {
+			if excludeSet[ws.ID] {
 				continue
 			}
 			if skip != nil {
 				if reason := skip(ws, d.Name); reason != "" {
-					skipped = append(skipped, d.Name+":"+ws.Name+" ("+reason+")")
+					skipped = append(skipped, d.Name+":"+ws.ID+" ("+reason+")")
 					continue
 				}
 			}
-			targets = append(targets, target{dock: d.Name, name: ws.Name})
+			targets = append(targets, target{dock: d.Name, id: ws.ID, name: ws.Name})
 		}
 	}
 
@@ -594,8 +586,8 @@ func (e *Engine) wsCloseBatch(dockName string, force, dryRun bool, skip wsSkipFu
 	if dryRun {
 		// Dry-run: check dirty/unlanded status but don't mutate anything.
 		for _, t := range targets {
-			label := t.dock + ":" + t.name
-			ws := m.FindDock(t.dock).FindWorkspace(t.name)
+			label := t.dock + ":" + t.id
+			ws := m.FindDock(t.dock).FindWorkspaceByID(t.id)
 			if ws != nil && ws.Path != "" && !force {
 				if dirty, err := e.Git.IsDirty(ws.Path); err == nil && dirty {
 					skipped = append(skipped, label+" (dirty)")
@@ -620,8 +612,8 @@ func (e *Engine) wsCloseBatch(dockName string, force, dryRun bool, skip wsSkipFu
 	}
 	var pending []pendingKill
 	for _, t := range targets {
-		label := t.dock + ":" + t.name
-		ids, closeErr := e.closeWorkspaceState(t.dock, t.name, force)
+		label := t.dock + ":" + t.id
+		ids, closeErr := e.closeWorkspaceState(t.dock, t.id, force)
 		if closeErr != nil {
 			skipped = append(skipped, label+" ("+closeErr.Error()+")")
 			continue
@@ -642,15 +634,15 @@ func (e *Engine) wsCloseBatch(dockName string, force, dryRun bool, skip wsSkipFu
 }
 
 // WsUpdate updates workspace metadata (branch, PR).
-func (e *Engine) WsUpdate(dockName, wsName string, branch, pr *string) error {
+func (e *Engine) WsUpdate(dockName, wsID string, branch, pr *string) error {
 	return e.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)
 		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws := dock.FindWorkspace(wsName)
+		ws := dock.FindWorkspaceByID(wsID)
 		if ws == nil {
-			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
+			return fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
 		}
 
 		ws.LastActive = time.Now().Unix()
@@ -678,7 +670,7 @@ func (e *Engine) WsUpdate(dockName, wsName string, branch, pr *string) error {
 // WsDescribe sets (or clears, if desc is "") a workspace's description.
 // Descriptions appear in the workspace picker and in ls/tree output; they
 // have no effect on tmux tab names, which stay short by design.
-func (e *Engine) WsDescribe(dockName, wsName, desc string) error {
+func (e *Engine) WsDescribe(dockName, wsID, desc string) error {
 	desc = strings.TrimSpace(desc)
 	if err := ValidateDescription(desc); err != nil {
 		return err
@@ -688,9 +680,9 @@ func (e *Engine) WsDescribe(dockName, wsName, desc string) error {
 		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws := dock.FindWorkspace(wsName)
+		ws := dock.FindWorkspaceByID(wsID)
 		if ws == nil {
-			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
+			return fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
 		}
 		ws.Description = desc
 		ws.LastActive = time.Now().Unix()
@@ -699,7 +691,7 @@ func (e *Engine) WsDescribe(dockName, wsName, desc string) error {
 }
 
 // WsRename renames a workspace.
-func (e *Engine) WsRename(dockName, wsName, newName string) error {
+func (e *Engine) WsRename(dockName, wsID, newName string) error {
 	if err := ValidateWorkspaceName(newName); err != nil {
 		return err
 	}
@@ -709,9 +701,9 @@ func (e *Engine) WsRename(dockName, wsName, newName string) error {
 		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws := dock.FindWorkspace(wsName)
+		ws := dock.FindWorkspaceByID(wsID)
 		if ws == nil {
-			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
+			return fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
 		}
 
 		// Check uniqueness.
@@ -732,7 +724,7 @@ func (e *Engine) WsRename(dockName, wsName, newName string) error {
 // Callers that display data to the user (bay ws show, bay sf ls)
 // should call SyncAll first. Callers that just need workspace state
 // for an operation (navigation, close, restart) can skip the sync.
-func (e *Engine) WsShow(dockName, wsName string) (*manifest.Workspace, error) {
+func (e *Engine) WsShow(dockName, wsID string) (*manifest.Workspace, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return nil, err
@@ -741,9 +733,9 @@ func (e *Engine) WsShow(dockName, wsName string) (*manifest.Workspace, error) {
 	if dock == nil {
 		return nil, fmt.Errorf("unknown dock %q", dockName)
 	}
-	ws := dock.FindWorkspace(wsName)
+	ws := dock.FindWorkspaceByID(wsID)
 	if ws == nil {
-		return nil, fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
+		return nil, fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
 	}
 	return ws, nil
 }
@@ -756,13 +748,13 @@ func (e *Engine) WsShow(dockName, wsName string) (*manifest.Workspace, error) {
 //
 // No-op when the PR is already populated or the branch is empty — those
 // states have no useful signal to act on.
-func (e *Engine) MarkPRCheckStale(dockName, wsName string) error {
+func (e *Engine) MarkPRCheckStale(dockName, wsID string) error {
 	return e.withManifestMaybe(func(m *manifest.Manifest) (bool, error) {
 		dock := m.FindDock(dockName)
 		if dock == nil {
 			return false, nil
 		}
-		ws := dock.FindWorkspace(wsName)
+		ws := dock.FindWorkspaceByID(wsID)
 		if ws == nil || ws.Worktree == nil {
 			return false, nil
 		}
@@ -777,8 +769,10 @@ func (e *Engine) MarkPRCheckStale(dockName, wsName string) error {
 	})
 }
 
-// ResolveWorkspace resolves a workspace query to (dockName, wsName).
-// Accepts: "dock:name" or bare display name.
+// ResolveWorkspace resolves a workspace query to (dockName, wsID).
+// Accepts: "dock:id" or bare ID. Names are not accepted; if the query
+// matches a Name, the returned error includes a "did you mean" hint
+// at the canonical ID.
 func (e *Engine) ResolveWorkspace(query string) (string, string, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
@@ -788,7 +782,7 @@ func (e *Engine) ResolveWorkspace(query string) (string, string, error) {
 	if resolveErr != nil {
 		return "", "", resolveErr
 	}
-	return dock.Name, ws.Name, nil
+	return dock.Name, ws.ID, nil
 }
 
 // ResolveSelf resolves the current workspace from CWD and tmux context.
@@ -807,7 +801,7 @@ func (e *Engine) ResolveSelf() (string, string, error) {
 			for j := range dock.Workspaces {
 				ws := &dock.Workspaces[j]
 				if config.IsPathUnder(cwd, ws.Path) {
-					return dock.Name, ws.Name, nil
+					return dock.Name, ws.ID, nil
 				}
 			}
 		}
@@ -822,7 +816,7 @@ func (e *Engine) ResolveSelf() (string, string, error) {
 				ws := &dock.Workspaces[j]
 				for _, s := range ws.Surfaces {
 					if s.Tmux != nil && s.Tmux.WindowID == winID {
-						return dock.Name, ws.Name, nil
+						return dock.Name, ws.ID, nil
 					}
 				}
 			}
@@ -833,7 +827,7 @@ func (e *Engine) ResolveSelf() (string, string, error) {
 }
 
 // ResolveByWindowID finds the workspace that owns the given tmux window ID.
-func (e *Engine) ResolveByWindowID(tmuxWindowID string) (dockName, wsName string, ws *manifest.Workspace, err error) {
+func (e *Engine) ResolveByWindowID(tmuxWindowID string) (dockName, wsID string, ws *manifest.Workspace, err error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return "", "", nil, err
@@ -844,7 +838,7 @@ func (e *Engine) ResolveByWindowID(tmuxWindowID string) (dockName, wsName string
 			w := &dock.Workspaces[j]
 			for _, s := range w.Surfaces {
 				if s.Tmux != nil && s.Tmux.WindowID == tmuxWindowID {
-					return dock.Name, w.Name, w, nil
+					return dock.Name, w.ID, w, nil
 				}
 			}
 		}
@@ -856,11 +850,11 @@ func (e *Engine) ResolveByWindowID(tmuxWindowID string) (dockName, wsName string
 // Primary windows (layout group 1) get the workspace name; secondary windows
 // get ":surfacename" where surfacename is the first surface in the group.
 //
-// When wsName is empty (no Name set yet), falls back to the workspace's ID
+// When wsID is empty (no Name set yet), falls back to the workspace's ID
 // so the tab still has a stable label. Display = Name (display) → ID (handle).
-func (e *Engine) updateWindowNames(ws *manifest.Workspace, wsName string) {
-	if wsName == "" {
-		wsName = ws.ID
+func (e *Engine) updateWindowNames(ws *manifest.Workspace, wsID string) {
+	if wsID == "" {
+		wsID = ws.ID
 	}
 	// Build a map of layout group → first surface name (by slice order).
 	firstInGroup := map[int]string{}
@@ -876,7 +870,7 @@ func (e *Engine) updateWindowNames(ws *manifest.Workspace, wsName string) {
 	for _, s := range ws.Surfaces {
 		if s.Tmux != nil && s.Tmux.WindowID != "" && !seen[s.Tmux.WindowID] {
 			if s.Tmux.LayoutGroup <= 1 {
-				_ = e.Tmux.RenameWindow(s.Tmux.WindowID, wsName)
+				_ = e.Tmux.RenameWindow(s.Tmux.WindowID, wsID)
 			} else if surfName := firstInGroup[s.Tmux.LayoutGroup]; surfName != "" {
 				_ = e.Tmux.RenameWindow(s.Tmux.WindowID, ":"+surfName)
 			}
@@ -1001,15 +995,15 @@ func TruncateTabName(s string, maxLen int) string {
 // bumps LastActive. The activity bump signals to the monitor's activity gate
 // that this workspace is in active use, so its repo gets fetched on the next
 // merge-detection cycle.
-func (e *Engine) SetLastFocused(dockName, wsName string, surfaceID int) error {
+func (e *Engine) SetLastFocused(dockName, wsID string, surfaceID int) error {
 	return e.withManifestMaybe(func(m *manifest.Manifest) (bool, error) {
 		dock := m.FindDock(dockName)
 		if dock == nil {
 			return false, fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws := dock.FindWorkspace(wsName)
+		ws := dock.FindWorkspaceByID(wsID)
 		if ws == nil {
-			return false, fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
+			return false, fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
 		}
 		now := time.Now().Unix()
 		if ws.LastFocused == surfaceID && ws.LastActive == now {
@@ -1121,12 +1115,12 @@ func nextWorkspaceDir(wtDir string, dock *manifest.Dock) string {
 }
 
 // positionNewWindow moves a newly created window so that tmux tab order
-// matches manifest order. For a new workspace (wsName==""), the window goes
+// matches manifest order. For a new workspace (wsID==""), the window goes
 // after the last window of the last existing workspace. For a new surface in
 // an existing workspace, it goes after the last window of that workspace.
 // If m is nil the manifest is loaded; callers with a pre-loaded manifest
 // can pass it to avoid a second read.
-func (e *Engine) positionNewWindow(dockName, windowID, wsName string, m *manifest.Manifest) {
+func (e *Engine) positionNewWindow(dockName, windowID, wsID string, m *manifest.Manifest) {
 	if m == nil {
 		var err error
 		m, err = e.LoadManifest()
@@ -1140,7 +1134,7 @@ func (e *Engine) positionNewWindow(dockName, windowID, wsName string, m *manifes
 	}
 
 	var afterID string
-	if wsName == "" {
+	if wsID == "" {
 		// New workspace: goes after the last window of the last existing workspace.
 		for i := len(dock.Workspaces) - 1; i >= 0; i-- {
 			if id := lastWindowIDInWorkspace(dock, dock.Workspaces[i].Name); id != "" {
@@ -1151,9 +1145,9 @@ func (e *Engine) positionNewWindow(dockName, windowID, wsName string, m *manifes
 	} else {
 		// New surface: goes after the last window of this workspace,
 		// falling back to the last window of the previous workspace.
-		afterID = lastWindowIDInWorkspace(dock, wsName)
+		afterID = lastWindowIDInWorkspace(dock, wsID)
 		if afterID == "" {
-			afterID = lastWindowIDBeforeWorkspace(dock, wsName)
+			afterID = lastWindowIDBeforeWorkspace(dock, wsID)
 		}
 	}
 
@@ -1166,10 +1160,10 @@ func (e *Engine) positionNewWindow(dockName, windowID, wsName string, m *manifes
 // for the given workspace should be placed after, based on manifest order.
 // It walks backwards through workspaces (and surfaces within the target
 // workspace) to find the nearest existing window. Returns "" if none found.
-func lastWindowIDBeforeWorkspace(dock *manifest.Dock, wsName string) string {
+func lastWindowIDBeforeWorkspace(dock *manifest.Dock, wsID string) string {
 	wsIdx := -1
 	for i, ws := range dock.Workspaces {
-		if ws.Name == wsName {
+		if ws.Name == wsID {
 			wsIdx = i
 			break
 		}
@@ -1191,8 +1185,8 @@ func lastWindowIDBeforeWorkspace(dock *manifest.Dock, wsName string) string {
 
 // lastWindowIDInWorkspace returns the last tmux window ID among the surfaces
 // of the given workspace. Returns "" if the workspace has no windows.
-func lastWindowIDInWorkspace(dock *manifest.Dock, wsName string) string {
-	ws := dock.FindWorkspace(wsName)
+func lastWindowIDInWorkspace(dock *manifest.Dock, wsID string) string {
+	ws := dock.FindWorkspaceByID(wsID)
 	if ws == nil {
 		return ""
 	}
