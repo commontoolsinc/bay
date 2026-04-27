@@ -25,7 +25,6 @@ var orphanGraceSeconds int64 = 60
 type workspaceSyncUpdate struct {
 	dockName           string
 	originalID         string
-	originalName       string
 	path               string
 	branch             string
 	branchChanged      bool
@@ -186,10 +185,9 @@ func (e *Engine) SyncAll() {
 
 func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace) (workspaceSyncUpdate, bool) {
 	update := workspaceSyncUpdate{
-		dockName:     dock.Name,
-		originalID:   ws.ID,
-		originalName: ws.Name,
-		path:         ws.Path,
+		dockName:   dock.Name,
+		originalID: ws.ID,
+		path:       ws.Path,
 	}
 
 	if ws.Path != "" && ws.Worktree != nil {
@@ -367,13 +365,13 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 // after a finalize attempt fails so the orphan doesn't get retried
 // on every sync pass; the user must resolve the underlying issue
 // (dirty, unlanded) and close manually.
-func (e *Engine) clearPendingClose(dockName, wsName string) {
+func (e *Engine) clearPendingClose(dockName, wsID string) {
 	_ = e.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)
 		if dock == nil {
 			return nil
 		}
-		ws := dock.FindWorkspaceByID(wsName)
+		ws := dock.FindWorkspaceByID(wsID)
 		if ws == nil {
 			return nil
 		}
@@ -385,7 +383,7 @@ func (e *Engine) clearPendingClose(dockName, wsName string) {
 // workspaceIsEmpty returns true if the workspace exists and has zero
 // surfaces at this moment. Used by the orphan auto-close guard to
 // skip workspaces that gained a surface concurrently with sync.
-func (e *Engine) workspaceIsEmpty(dockName, wsName string) (bool, error) {
+func (e *Engine) workspaceIsEmpty(dockName, wsID string) (bool, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return false, err
@@ -394,7 +392,7 @@ func (e *Engine) workspaceIsEmpty(dockName, wsName string) (bool, error) {
 	if dock == nil {
 		return false, nil
 	}
-	ws := dock.FindWorkspaceByID(wsName)
+	ws := dock.FindWorkspaceByID(wsID)
 	if ws == nil {
 		return false, nil
 	}

@@ -107,7 +107,7 @@ type SurfaceAddOptions struct {
 // SurfaceAdd adds a new surface to a workspace.
 func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 	dockName := opts.DockName
-	wsName := opts.WsName
+	wsID := opts.WsName
 	surfaceType := opts.Type
 	name := opts.Name
 	agent := opts.Agent
@@ -122,9 +122,9 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 	if dock == nil {
 		return fmt.Errorf("unknown dock %q", dockName)
 	}
-	ws := dock.FindWorkspaceByID(wsName)
+	ws := dock.FindWorkspaceByID(wsID)
 	if ws == nil {
-		return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
+		return fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
 	}
 
 	// Determine the layout group — find an existing tmux window to split into,
@@ -192,7 +192,7 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 			return fmt.Errorf("creating tmux window: %w", err)
 		}
 		e.cleanPlaceholders(dockName)
-		e.positionNewWindow(dockName, winID, wsName, nil)
+		e.positionNewWindow(dockName, winID, wsID, nil)
 
 		tmuxWindowID = winID
 		layoutGroup = nextLayoutGroup(ws)
@@ -236,10 +236,10 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 			rollbackSurface()
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws := dock.FindWorkspaceByID(wsName)
+		ws := dock.FindWorkspaceByID(wsID)
 		if ws == nil {
 			rollbackSurface()
-			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
+			return fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
 		}
 
 		surface.Name = uniqueSurfaceName(ws, name)
@@ -306,7 +306,7 @@ func (e *Engine) DockSurfaceClose(dockName, surfaceName string) error {
 // Records an undo-close entry on the dock's queue so `bay sf restore`
 // (Option+Z) can recreate the surface. Skipped for tmux-backed surfaces
 // without a pane (nothing to restore) and gui-app surfaces (Step 2).
-func (e *Engine) SurfaceClose(dockName, wsName, surfaceName string, force bool) error {
+func (e *Engine) SurfaceClose(dockName, wsID, surfaceName string, force bool) error {
 	var windowIDToKill, paneIDToKill string
 	wsEmpty := false
 
@@ -315,13 +315,13 @@ func (e *Engine) SurfaceClose(dockName, wsName, surfaceName string, force bool) 
 		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws := dock.FindWorkspaceByID(wsName)
+		ws := dock.FindWorkspaceByID(wsID)
 		if ws == nil {
-			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
+			return fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
 		}
 		s := ws.FindSurface(surfaceName)
 		if s == nil {
-			return fmt.Errorf("surface %q not found in workspace %q", surfaceName, wsName)
+			return fmt.Errorf("surface %q not found in workspace %q", surfaceName, wsID)
 		}
 
 		// Capture what we'll kill before the surface is removed from
@@ -340,7 +340,7 @@ func (e *Engine) SurfaceClose(dockName, wsName, surfaceName string, force bool) 
 				ClosedAt: time.Now().Unix(),
 				Kind:     manifest.ClosedKindSurface,
 				Surface: &manifest.ClosedSurface{
-					Workspace: wsName,
+					Workspace: wsID,
 					Name:      s.Name,
 					Type:      s.Type,
 				},
@@ -388,8 +388,8 @@ func (e *Engine) SurfaceClose(dockName, wsName, surfaceName string, force bool) 
 	// schedule the grace-windowed auto-close (see orphan-hygiene.md).
 	if wsEmpty {
 		if force {
-			if err := e.WsClose(dockName, wsName, force); err != nil {
-				return fmt.Errorf("surface closed, but workspace %q not removed: %w", wsName, err)
+			if err := e.WsClose(dockName, wsID, force); err != nil {
+				return fmt.Errorf("surface closed, but workspace %q not removed: %w", wsID, err)
 			}
 			return nil
 		}
@@ -398,7 +398,7 @@ func (e *Engine) SurfaceClose(dockName, wsName, surfaceName string, force bool) 
 			if dock == nil {
 				return nil
 			}
-			ws := dock.FindWorkspaceByID(wsName)
+			ws := dock.FindWorkspaceByID(wsID)
 			if ws == nil {
 				return nil
 			}
@@ -545,7 +545,7 @@ func (e *Engine) restoreSurfaceEntry(dockName string, entry *manifest.ClosedEntr
 }
 
 // SurfaceRename renames a surface within a workspace.
-func (e *Engine) SurfaceRename(dockName, wsName, oldName, newName string) error {
+func (e *Engine) SurfaceRename(dockName, wsID, oldName, newName string) error {
 	if err := ValidateName(newName); err != nil {
 		return err
 	}
@@ -555,16 +555,16 @@ func (e *Engine) SurfaceRename(dockName, wsName, oldName, newName string) error 
 		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws := dock.FindWorkspaceByID(wsName)
+		ws := dock.FindWorkspaceByID(wsID)
 		if ws == nil {
-			return fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
+			return fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
 		}
 		s := ws.FindSurface(oldName)
 		if s == nil {
-			return fmt.Errorf("surface %q not found in workspace %q", oldName, wsName)
+			return fmt.Errorf("surface %q not found in workspace %q", oldName, wsID)
 		}
 		if existing := ws.FindSurface(newName); existing != nil {
-			return fmt.Errorf("surface name %q already in use in workspace %q", newName, wsName)
+			return fmt.Errorf("surface name %q already in use in workspace %q", newName, wsID)
 		}
 		s.Name = newName
 		ws.LastActive = time.Now().Unix()

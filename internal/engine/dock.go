@@ -359,7 +359,7 @@ func (e *Engine) buildWorkspaceInfo(ws *manifest.Workspace, agent string, waitin
 // This does NOT call List() or SyncAll — it loads the manifest and
 // builds info for just the requested workspace. Callers that display
 // data should call SyncAll first.
-func (e *Engine) WorkspaceInfoByName(dockName, wsName string) (*WorkspaceInfo, error) {
+func (e *Engine) WorkspaceInfoByName(dockName, wsID string) (*WorkspaceInfo, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return nil, err
@@ -368,9 +368,9 @@ func (e *Engine) WorkspaceInfoByName(dockName, wsName string) (*WorkspaceInfo, e
 	if dock == nil {
 		return nil, fmt.Errorf("unknown dock %q", dockName)
 	}
-	ws := dock.FindWorkspaceByID(wsName)
+	ws := dock.FindWorkspaceByID(wsID)
 	if ws == nil {
-		return nil, fmt.Errorf("workspace %q not found in dock %q", wsName, dockName)
+		return nil, fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
 	}
 	agent := e.resolvedDockAgent(dockName, m)
 	waitingWindows, _ := e.Tmux.WaitingOrBellWindowIDs(dockName)

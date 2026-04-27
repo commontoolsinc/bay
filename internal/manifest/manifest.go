@@ -311,7 +311,7 @@ type ClosedEntry struct {
 // parent workspace. Transient fields (PaneID, WindowID, ID) are deliberately
 // omitted — they're reassigned on restore.
 type ClosedSurface struct {
-	Workspace   string      `json:"workspace"`              // parent workspace name at close time
+	Workspace   string      `json:"workspace"`              // parent workspace ID at close time (the stable handle)
 	Name        string      `json:"name"`                   // user-facing surface name
 	Type        SurfaceType `json:"type"`                   // agent / shell / cmd / editor
 	Agent       string      `json:"agent,omitempty"`        // type=agent
