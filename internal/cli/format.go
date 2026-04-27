@@ -353,14 +353,15 @@ func truncateCommand(cmd string) string {
 
 // workspaceMetaCols returns fixed-position columns for workspace metadata.
 // Column positions: 0=description, 1=branch, 2=dir (only when different from
-// name), 3=status, 4=count, 5=sync/waiting.
+// name), 3=status, 4=count, 5=sync/waiting, 6=id (only when different from
+// name).
 //
 // Descriptions come through at full stored length; FormatListView shrinks
 // them in place (index 0) if the computed terminal budget is tighter. Only
 // the first line of the description is shown — bodies are opt-in and appear
 // in the M-? popup, not on the list row.
 func workspaceMetaCols(ws engine.WorkspaceInfo, showCounts, short bool) []metaCol {
-	cols := make([]metaCol, 6)
+	cols := make([]metaCol, 7)
 	if first := engine.DescriptionFirstLine(ws.Description); first != "" {
 		cols[0] = descField(first, engine.MaxDescriptionFirstLineLen, short)
 	}
@@ -402,6 +403,12 @@ func workspaceMetaCols(ws engine.WorkspaceInfo, showCounts, short bool) []metaCo
 	}
 	if len(parts) > 0 {
 		cols[5] = metaCol{text: strings.Join(parts, " "), width: tailWidth}
+	}
+	// Show ID only when it differs from Name (or when Name is empty). Auto-
+	// named workspaces have ID == Name and don't need the redundancy; users
+	// who renamed see their ID alongside the friendly label.
+	if ws.ID != "" && ws.ID != ws.Name {
+		cols[6] = metaField("id", ws.ID, short)
 	}
 	return cols
 }
@@ -782,6 +789,9 @@ func FormatWorkspaceShow(repoName, dockName string, ws *engine.WorkspaceInfo, lo
 
 	var rows []showRow
 	rows = append(rows, showRow{"workspace", ws.Name})
+	if ws.ID != "" && ws.ID != ws.Name {
+		rows = append(rows, showRow{"id", ws.ID})
+	}
 	if ws.Description != "" {
 		// Show the first line as the aligned "description" row; render any
 		// body as follow-on unlabeled rows so alignment stays clean.

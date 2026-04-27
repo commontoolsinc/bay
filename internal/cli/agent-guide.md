@@ -126,6 +126,7 @@ Returns the current bay context:
 {
   "repo": "labs",
   "dock": "labs",
+  "workspace_id": "w1",
   "workspace": "auth-fix",
   "surface": "agent",
   "surface_id": 1,
@@ -136,7 +137,8 @@ Returns the current bay context:
 Fields:
 - `repo` — repo config key.
 - `dock` — dock name (tmux session).
-- `workspace` — workspace name.
+- `workspace_id` — workspace ID (`w<N>`, the stable handle).
+- `workspace` — workspace Name (display label, may be empty).
 - `surface` — current surface name (resolved from tmux pane).
 - `surface_id` — current surface ID.
 - `path` — absolute working directory path.
@@ -167,6 +169,7 @@ Returns a tree:
           "agent": "claude",
           "workspaces": [
             {
+              "id": "w1",
               "name": "auth-fix",
               "type": "worktree",
               "path": "~/projects/labs-worktrees/w1",
@@ -202,8 +205,14 @@ Returns a tree:
 ```
 
 Field semantics:
+- `id` — workspace ID (`w<N>`, the stable handle, never reused).
+- `name` — workspace Name (display label; may be empty for unnamed
+  workspaces, in which case display falls back to ID).
 - `focus` — the scope bay inferred from CWD and tmux.
-  `focus.workspace_id` is the workspace **name** (not a numeric ID).
+  **Legacy:** `focus.workspace_id` holds the workspace **Name**, not
+  its ID — the JSON tag predates the introduction of true workspace
+  IDs (the `id` field above is the stable handle). A future phase
+  will rename this field for clarity.
 - `recursive` — whether surfaces are expanded in the output.
 - `sync_status` — `ok`, `stale` (tmux window missing), or `missing`
   (worktree directory gone).
@@ -238,6 +247,7 @@ of focus scope.
 
 ```json
 {
+  "id": "w1",
   "name": "auth-fix",
   "description": "Login flow fixes",
   "repo": "labs",
