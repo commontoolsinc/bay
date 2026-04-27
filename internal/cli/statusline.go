@@ -29,7 +29,7 @@ func newStatusLineCmd() *cobra.Command {
 		Long: `Output a single field for the current workspace, resolved by tmux window ID.
 Designed for use in tmux status-format strings. Outputs empty string if not in a workspace.
 
-Fields: name, branch, pr, status, dock, merged, full
+Fields: id, name, branch, pr, status, dock, merged, full
 
 The full field outputs repo:branch #PR | status. Use --width to enable
 adaptive truncation (pass #{status-right-length} from tmux). Non-numeric
@@ -99,6 +99,8 @@ window until the next status-interval tick.`,
 
 			var out string
 			switch field {
+			case "id":
+				out = ws.ID
 			case "name":
 				out = ws.Name
 			case "branch":
@@ -162,7 +164,7 @@ window until the next status-interval tick.`,
 				width, _ := strconv.Atoi(widthStr)
 				out = formatStatusLine(repo, branch, pr, status, width)
 			default:
-				return fmt.Errorf("unknown field %q; valid fields: name, branch, pr, status, dock, merged, full", field)
+				return fmt.Errorf("unknown field %q; valid fields: id, name, branch, pr, status, dock, merged, full", field)
 			}
 
 			if out != "" {

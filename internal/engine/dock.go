@@ -38,6 +38,7 @@ type SurfaceInfo struct {
 
 // WorkspaceInfo holds summary information about a workspace.
 type WorkspaceInfo struct {
+	ID           string        `json:"id"`
 	Name         string        `json:"name"`
 	Description  string        `json:"description,omitempty"`
 	Type         string        `json:"type"`
@@ -292,6 +293,7 @@ func (e *Engine) buildWorkspaceInfo(ws *manifest.Workspace, agent string, waitin
 	}
 
 	wsInfo := WorkspaceInfo{
+		ID:           ws.ID,
 		Name:         ws.Name,
 		Description:  ws.Description,
 		Type:         string(ws.Type),

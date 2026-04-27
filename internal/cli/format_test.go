@@ -364,6 +364,37 @@ func TestFormatWorkspaceShow_IncludesDefaultAgentAndSurfaces(t *testing.T) {
 	}
 }
 
+// TestWorkspaceMetaCols_ShowsIDOnlyWhenDifferent confirms the conditional
+// surfacing of the new id meta column: present when ID and Name diverge
+// (e.g., a renamed workspace), suppressed when they match (auto-named
+// workspaces would otherwise carry redundant id=w1 alongside name w1).
+func TestWorkspaceMetaCols_ShowsIDOnlyWhenDifferent(t *testing.T) {
+	same := engine.WorkspaceInfo{ID: "w1", Name: "w1", SyncStatus: "ok"}
+	if got := workspaceMetaCols(same, false, true); got[6].text != "" {
+		t.Errorf("expected no id col when ID==Name; got %q", got[6].text)
+	}
+
+	diff := engine.WorkspaceInfo{ID: "w1", Name: "auth-fix", SyncStatus: "ok"}
+	cols := workspaceMetaCols(diff, false, false)
+	if !strings.Contains(cols[6].text, "w1") {
+		t.Errorf("expected id col to contain w1 when Name differs; got %q", cols[6].text)
+	}
+}
+
+// TestFormatWorkspaceShow_IncludesIDWhenDifferent confirms bay ws show
+// surfaces the ID row only when it adds information.
+func TestFormatWorkspaceShow_IncludesIDWhenDifferent(t *testing.T) {
+	wsSame := &engine.WorkspaceInfo{ID: "w1", Name: "w1", Type: "worktree", SyncStatus: "ok"}
+	if strings.Contains(stripANSI(FormatWorkspaceShow("bay", "api", wsSame, false)), "id w1") {
+		t.Error("ID row should be omitted when ID matches Name")
+	}
+
+	wsDiff := &engine.WorkspaceInfo{ID: "w1", Name: "auth-fix", Type: "worktree", SyncStatus: "ok"}
+	if !strings.Contains(stripANSI(FormatWorkspaceShow("bay", "api", wsDiff, false)), "id w1") {
+		t.Error("ID row should appear when ID differs from Name")
+	}
+}
+
 func TestLabelValueFormatsHumanReadableLabels(t *testing.T) {
 	if got := stripANSI(labelValue("repo", "bay")); got != "repo bay" {
 		t.Fatalf("labelValue() = %q, want %q", got, "repo bay")

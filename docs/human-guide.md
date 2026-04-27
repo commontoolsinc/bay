@@ -929,7 +929,7 @@ you'll see a stale status from another window until the next tick.
 Interpolating the window ID gives each window its own cache, and bay
 uses the explicit ID instead of asking tmux which window is "current".
 
-Other fields: `name`, `branch`, `pr`, `status`, `dock`, `merged`.
+Other fields: `id`, `name`, `branch`, `pr`, `status`, `dock`, `merged`.
 
 The `merged` field shows a count of merged workspaces in the current
 dock (e.g. "2 merged"). Useful for a status bar reminder to clean up.

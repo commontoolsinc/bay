@@ -9,12 +9,13 @@ import (
 
 // Context describes the current Bay location resolved from cwd and tmux.
 type Context struct {
-	Repo      string `json:"repo,omitempty"`
-	Dock      string `json:"dock,omitempty"`
-	Workspace string `json:"workspace,omitempty"`
-	Surface   string `json:"surface,omitempty"`
-	SurfaceID int    `json:"surface_id,omitempty"`
-	Path      string `json:"path,omitempty"`
+	Repo        string `json:"repo,omitempty"`
+	Dock        string `json:"dock,omitempty"`
+	WorkspaceID string `json:"workspace_id,omitempty"`
+	Workspace   string `json:"workspace,omitempty"`
+	Surface     string `json:"surface,omitempty"`
+	SurfaceID   int    `json:"surface_id,omitempty"`
+	Path        string `json:"path,omitempty"`
 }
 
 // CurrentContext resolves the current Bay context from cwd and tmux state.
@@ -44,6 +45,7 @@ func (e *Engine) CurrentContext() (*Context, error) {
 			ws := &dock.Workspaces[j]
 			if cwd != "" && config.IsPathUnder(cwd, ws.Path) {
 				ctx.Dock = dock.Name
+				ctx.WorkspaceID = ws.ID
 				ctx.Workspace = ws.Name
 				if ws.Worktree != nil {
 					ctx.Repo = ws.Worktree.Repo
@@ -78,6 +80,7 @@ func (e *Engine) CurrentContext() (*Context, error) {
 						continue
 					}
 					ctx.Dock = dock.Name
+					ctx.WorkspaceID = ws.ID
 					ctx.Workspace = ws.Name
 					ctx.Path = config.CanonicalPath(ws.Path)
 					if ws.Worktree != nil {
