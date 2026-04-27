@@ -200,10 +200,12 @@ Each workspace has three identity concepts:
   canonical ID.
 - An optional **description** (see below) for richer context.
 
-Closing and recreating workspaces can leave gaps in the directory
-sequence (`w1`, `w3`, `w7`) — that's fine. The picker, `bay ls`, and
-`bay tree` all show both the ID and the friendly Name; pick whichever
-makes sense for the task at hand.
+An ID is stable for a workspace's lifetime, but the slot is released
+when the workspace closes — the next creation may reuse a freed
+trailing slot, while gaps in the middle of the sequence (`w1`, `w3`,
+`w7`) stay until you fill them. The picker, `bay ls`, and `bay tree`
+all show both the ID and the friendly Name; pick whichever makes
+sense for the task at hand.
 
 Workspaces can also carry a **description** — commit-message-style
 text with two parts:

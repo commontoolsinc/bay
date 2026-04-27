@@ -11,8 +11,11 @@ A **workspace** is a managed working directory with metadata (branch,
 PR, dirty/merged flags). Each workspace has three identity concepts:
 
 - An **ID** — the stable CLI handle. Matches `^w[1-9]\d*$` (lowercase
-  `w` + positive integer). Set at creation, never changes, unique
-  within a dock. The ID is what every command takes:
+  `w` + positive integer). Set at creation, never changes for the
+  workspace's lifetime, unique within a dock. The slot is released on
+  close and may later be reused by a new workspace, so don't treat
+  IDs as globally permanent across close + recreate. The ID is what
+  every command takes:
   `bay ws close w1`, `bay sf show w1:agent`, `bay ws show w1`.
 - A **Name** — a mutable display label. Sticks once set. May be empty
   (display falls back to ID). Filled automatically when a branch is
@@ -213,7 +216,7 @@ Returns a tree:
 ```
 
 Field semantics:
-- `id` — workspace ID (`w<N>`, the stable handle, never reused).
+- `id` — workspace ID (`w<N>`, the stable handle for this workspace's lifetime).
 - `name` — workspace Name (display label; may be empty for unnamed
   workspaces, in which case display falls back to ID).
 - `focus` — the scope bay inferred from CWD and tmux.
