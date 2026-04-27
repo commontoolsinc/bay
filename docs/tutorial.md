@@ -164,11 +164,15 @@ bay ls
 ```
 rp bay-tutorial
   dk bay-tutorial *
-    ws login-bug *  br=fix/login-bug
+    ws login-bug *  br=fix/login-bug  id=w1
       sf shell *    ty=shell
       sf shell-2    ty=shell
       sf monitor    ty=cmd
 ```
+
+The `id=w1` column shows the workspace's stable handle. It only
+appears when ID and Name differ; auto-numbered workspaces (no Name
+yet) display the ID directly in the `ws` column.
 
 Three surfaces, all navigable. (`bay ws ls` shows all workspaces;
 `bay ls` shows the one you're in.)
@@ -188,7 +192,7 @@ All of these work without the Option-key shortcuts too:
 
 ```
 bay go shell        # jump to the shell surface by name
-bay ws go review    # jump to the review workspace by name
+bay ws go review    # workspace picker filters by ID, Name, branch, or PR
 ```
 
 ## 5. Add an AI agent
@@ -235,10 +239,14 @@ Other useful commands:
 
 ## 7. Clean up
 
-Close a workspace when you're done with it:
+Close a workspace when you're done with it. Use the workspace **ID**
+(`w1`, `w2`, etc.) — visible in `bay ls` and `bay ws ls`. Friendly
+Names like "review" are display labels; the ID is what every command
+takes:
 
 ```
-bay ws close review
+bay ws close w1     # by ID
+bay ws close self   # close the current workspace
 ```
 
 Bay checks for uncommitted changes and unlanded commits first. If
