@@ -5,13 +5,13 @@ through a pre-built dock.
 
 ## Pre-demo setup
 
-Have a dock (e.g., `labs`) with 3-4 workspaces ready:
+Have a dock (e.g., `labs-demo`) with 3-4 workspaces ready:
 
 | Workspace      | Branch              | Status   | Surfaces        | Notes                          |
 |----------------|---------------------|----------|-----------------|--------------------------------|
 | `auth-fix`     | `fix/auth-header`   | active   | agent, shell    | Agent running, not waiting     |
 | `cache-ttl`    | `fix/cache-ttl`     | active   | agent           | Agent waiting for input (highlighted) |
-| `dep-update`   | `chore/dep-update`  | done     | shell           | PR merged, auto-detected       |
+| `dep-update`   | `chore/dep-update`  | merged   | shell           | PR merged, auto-detected       |
 | `api-logging`  | `feat/api-logging`  | active   | agent, shell    | Normal active work             |
 
 - Monitor running (`bay monitor start`)
@@ -83,33 +83,39 @@ bay dk tree
 
 ---
 
-## 3. At Scale — The Dashboard (60s)
+## 3. At Scale — The Dashboard (90s)
 
 **Do:** Run `bay dk tree`
 
-> This is my actual working state. I've got four things going on.
-> Bay shows me all of them — workspace name, branch, PR number,
-> status.
+> This is my actual working state. Four things going on. Bay shows
+> me each one — workspace name, branch, PR number, surfaces.
 
 **Walk through the output:**
 
 > `auth-fix` — active, working on an auth header bug. Has an agent
 > and a shell.
 >
-> `cache-ttl` — see that highlight? That means the agent is waiting
-> for my input. I didn't check on it. Bay has a background monitor
-> that watches all your agents and flags when one needs you.
->
-> `dep-update` — status says "done." I didn't set that either. Bay
-> noticed the PR merged and marked it automatically. These aren't
-> statuses I maintain — bay maintains them for me.
+> `cache-ttl` — see the hourglass next to it? That means the agent
+> stopped to ask me something. I didn't go check. Bay runs a
+> background monitor that watches every agent across every
+> workspace, and the moment one waits for input it gets flagged
+> here and its tab in the tmux status bar lights up. I have six
+> agents running at any given time — I don't poll them. They tell
+> me when they need me.
 >
 > `api-logging` — normal active work.
+>
+> And then `dep-update`. Look at the dock summary line — `(1 merged)`.
+> That's a fix I shipped a while back; the PR landed on main. I
+> didn't mark anything. Bay watches the merge state of every branch
+> and flips that flag the moment the commit lands upstream. These
+> aren't statuses I maintain — they're statuses bay maintains for
+> me, so I can just look and know what's safe to throw away.
 
 **Do:** Run `bay pwd`
 
-> Bay always knows where I am — which dock, which workspace, which
-> surface. No guessing.
+> And bay always knows where I am — which dock, which workspace,
+> which surface. No guessing.
 
 ---
 
@@ -128,44 +134,39 @@ bay dk tree
 > Option-g is the fuzzy picker — filter by name or description, Enter
 > to jump.
 
-**Do:** Hit `Option+R`. Pause — let the audience see it land on
+**Do:** Hit `Option+r`. Pause — let the audience see it land on
 `cache-ttl`.
 
-> This is the one I use most. Option-R jumps straight to the next
+> This is the one I use most. Option-r jumps straight to the next
 > agent that's waiting for me. I have six agents running — I don't
 > check on them. When one needs me, I hit one key and I'm there.
 
 ---
 
-## 5. Bulk Create + Cleanup (60s)
+## 5. Bulk Create + Throw Away (30s)
 
 **Do:** Hit `Option+C` three times in quick succession. Let each one
 create with default names.
 
-**Do:** Run `bay dk tree`
+```
+bay dk tree
+```
 
-> Four new workspaces, just like that. Each one has its own worktree,
-> its own branch, its own tmux window. That's real keybindings, not
-> demo tricks — Option-C is how you'd actually create workspaces day
-> to day.
+> Three new workspaces. Each has its own worktree, branch, and tab.
+> Option-C is real keybindings, not demo tricks — that's how I
+> actually create workspaces day to day.
 
-**Do:** Point at `dep-update` (done status) in the tree.
+**Do:** Close them — `Option+w` twice on each tab (first tap triggers
+the last-surface confirmation, second confirms), or `bay ws close
+<name>`. Then close the merged one too: `bay ws close dep-update`.
 
-> This one's done — the PR merged and bay caught it. Let me close it.
+```
+bay dk tree
+```
 
-**Do:** `bay ws close dep-update` (or Option+W on it).
-
-> Gone. Worktree deleted, branch deleted, tmux window closed.
-
-**Do:** Close the three burst-created workspaces with `Option+W`. Each
-is a single-surface workspace, so it takes two taps per workspace —
-the first triggers the last-surface confirmation, the second confirms.
-
-**Do:** Run `bay dk tree`
-
-> All gone. No stale worktrees, no orphaned branches, no leftover
-> windows. It's that lightweight — create when you need it, throw
-> it away when you're done.
+> All gone. Worktrees deleted, branches deleted, tabs closed. Bay's
+> light enough that I can create when I need it and throw it away
+> when I'm done.
 
 ---
 
@@ -186,15 +187,18 @@ the first triggers the last-surface confirmation, the second confirms.
 |----------------------|--------|
 | Cold Open            | 0:30   |
 | Why This Matters     | 1:15   |
-| Dashboard            | 2:15   |
-| Navigate             | 3:00   |
-| Bulk Create/Cleanup  | 4:00   |
+| Dashboard            | 2:45   |
+| Navigate             | 3:30   |
+| Bulk Create/Throw Away | 4:00 |
 | Wrap                 | 4:20   |
 
 ## Notes
 
-- `Option+R` jumps to the next waiting agent ("ready" for input).
-- `Option+C` and `Option+W` are real bay keybindings, not aliases.
+- `Option+r` jumps to the next waiting agent ("ready" for input).
+- `Option+C` (create) and `Option+w` (close current surface) are real
+  bay keybindings, not aliases. `Option+w` on the only surface in a
+  workspace tears down the workspace itself, after a one-tap-to-confirm
+  guard.
 - If someone asks about editors: "bay edit opens your workspace in
   Cursor, VS Code, nvim, whatever you use. Terminal editors get
   tracked as surfaces; GUI editors just launch."
