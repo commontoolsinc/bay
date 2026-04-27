@@ -90,6 +90,56 @@ func TestInstallStatusRight_RespectsUserStatusRight(t *testing.T) {
 	}
 }
 
+func TestInstallStatusRight_NoConfigFileCreatesOne(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	confPath := filepath.Join(home, ".tmux.conf")
+	if _, err := os.Stat(confPath); !os.IsNotExist(err) {
+		t.Fatalf("expected no tmux.conf at start; got err=%v", err)
+	}
+
+	reader := bufio.NewReader(strings.NewReader("\n"))
+	installStatusRight(reader)
+
+	got, err := os.ReadFile(confPath)
+	if err != nil {
+		t.Fatalf("expected installer to create tmux.conf: %v", err)
+	}
+	if !strings.Contains(string(got), bayStatusLineMarker) {
+		t.Errorf("created tmux.conf missing bay marker:\n%s", got)
+	}
+}
+
+func TestInstallStatusRight_DeclineLeavesFileUntouched(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	confPath := filepath.Join(home, ".tmux.conf")
+	original := "set -g mouse on\n"
+	_ = os.WriteFile(confPath, []byte(original), 0o644)
+
+	reader := bufio.NewReader(strings.NewReader("n\n"))
+	installStatusRight(reader)
+
+	got, _ := os.ReadFile(confPath)
+	if string(got) != original {
+		t.Errorf("declining the prompt should leave the file unchanged:\nbefore: %q\nafter:  %q", original, got)
+	}
+}
+
+func TestHasMarkerLine_IgnoresMarkerInCommentText(t *testing.T) {
+	// strings.Contains would have matched this — the line-aware check
+	// must not, since the marker appears inside a longer comment.
+	content := "# I tried the # Bay status line block once but reverted.\nset -g mouse on\n"
+	if hasMarkerLine(content, bayStatusLineMarker) {
+		t.Error("hasMarkerLine should require the marker on its own line")
+	}
+	// Same string on its own line (with surrounding whitespace) does match.
+	content2 := "set -g mouse on\n   # Bay status line   \nset -g status-right 'x'\n"
+	if !hasMarkerLine(content2, bayStatusLineMarker) {
+		t.Error("hasMarkerLine should match a marker on its own (trimmed) line")
+	}
+}
+
 func TestExtractBayBlock(t *testing.T) {
 	tests := []struct {
 		name      string
