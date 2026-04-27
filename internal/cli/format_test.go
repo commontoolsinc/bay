@@ -379,6 +379,14 @@ func TestWorkspaceMetaCols_ShowsIDOnlyWhenDifferent(t *testing.T) {
 	if !strings.Contains(cols[6].text, "w1") {
 		t.Errorf("expected id col to contain w1 when Name differs; got %q", cols[6].text)
 	}
+
+	// Empty Name (a state the design enables for unnamed workspaces) also
+	// surfaces the ID — the alternative would be a row with no identifier.
+	empty := engine.WorkspaceInfo{ID: "w1", Name: "", SyncStatus: "ok"}
+	cols = workspaceMetaCols(empty, false, false)
+	if !strings.Contains(cols[6].text, "w1") {
+		t.Errorf("expected id col to contain w1 when Name is empty; got %q", cols[6].text)
+	}
 }
 
 // TestFormatWorkspaceShow_IncludesIDWhenDifferent confirms bay ws show

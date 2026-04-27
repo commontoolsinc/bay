@@ -209,9 +209,10 @@ Field semantics:
 - `name` — workspace Name (display label; may be empty for unnamed
   workspaces, in which case display falls back to ID).
 - `focus` — the scope bay inferred from CWD and tmux.
-  `focus.workspace_id` is currently the workspace **name** (legacy
-  field naming; not the new `id` field above). A future phase may
-  rename this for clarity.
+  **Legacy:** `focus.workspace_id` holds the workspace **Name**, not
+  its ID — the JSON tag predates the introduction of true workspace
+  IDs (the `id` field above is the stable handle). A future phase
+  will rename this field for clarity.
 - `recursive` — whether surfaces are expanded in the output.
 - `sync_status` — `ok`, `stale` (tmux window missing), or `missing`
   (worktree directory gone).
