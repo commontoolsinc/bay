@@ -66,8 +66,9 @@ bay setup
 
 This creates your config file, installs tmux keybindings, sets up shell
 completions, and configures your default agent and editor. If Claude Code
-is installed, it also installs a bell hook so tmux highlights the tab when
-Claude needs permission — Option+R then jumps straight to it.
+or Codex is installed, it also installs hooks so tmux highlights the tab
+when an agent needs permission or finishes a turn — Option+R then jumps
+straight to it.
 
 ### Explicit repo and dock
 
@@ -819,14 +820,29 @@ Bay runs a background monitor that provides two services:
 
 ### Waiting detection
 
-Bay detects agents waiting for input using two mechanisms:
+Bay detects agents that need your attention through three mechanisms,
+all unified into the `Option+R` ("next waiting") navigation:
 
-**Bell-based (preferred).** Agents that send a terminal bell (`\a`)
-when they need attention are detected automatically via tmux's
-`window_bell_flag`. Codex does this natively. For Claude Code,
-`bay setup` installs a `PermissionRequest` hook that sends a bell
-when Claude asks for permission. No polling or configuration needed —
-tmux highlights the tab and `Option+R` jumps to it.
+**Bell-based.** Agents that send a terminal bell (`\a`) are detected via
+tmux's `window_bell_flag`. For Claude Code, `bay setup` installs a
+`PermissionRequest` hook that sends a bell when Claude asks for
+permission.
+
+**Turn-complete hooks.** When an agent finishes a response, you usually
+want to know — not because it's blocked, but so you can review and move
+on. `bay setup` installs hooks for any agent it finds on your PATH:
+
+- Claude Code: `Stop` hook in `~/.claude/settings.json`.
+- Gemini CLI: `AfterAgent` hook in `~/.gemini/settings.json`.
+- Codex: `notify` entry in `~/.codex/config.toml`.
+
+The hooks set `@bay-waiting=1` on the agent's tmux window without
+emitting a terminal bell, so they're silent on the focused window and
+visible only as a tab highlight on inactive windows. The flag clears
+automatically when you navigate to the window — `bay setup` also
+installs an `after-select-window` tmux hook in `~/.tmux.conf` that
+mirrors how `window_bell_flag` self-clears on focus. Both pieces are
+bundled behind a single setup prompt because they only work as a unit.
 
 **Pattern-based (fallback).** The monitor watches agent panes by
 capturing the last few lines of output, stripping ANSI codes, and

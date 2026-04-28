@@ -730,15 +730,21 @@ Manage the background pane monitor. Detects when agents are waiting
 for input and highlights those tmux windows. Also handles
 activity-gated merge detection.
 
-Waiting detection uses two mechanisms: bell-based (agents that send
-`\a`, like codex natively or claude via a PermissionRequest hook
-installed by `bay setup`) and pattern-based (regex matching via the
-monitor). Both feed into `--next-waiting` navigation.
+Waiting detection uses three mechanisms, all feeding into
+`--next-waiting` navigation:
 
-To add a new pattern-based detection rule, edit
-`~/.config/bay/waiting-patterns.txt` directly — one regex per line. The
-monitor reloads patterns on every cycle (default 3s), so no restart
-is needed.
+- **Bell** — `window_bell_flag` set when an agent sends `\a`. Used by
+  Claude Code's `PermissionRequest` hook (installed by `bay setup`).
+- **Turn-complete hooks** — `@bay-waiting=1` set by an agent when it
+  finishes a turn. `bay setup` installs Claude's `Stop` hook in
+  `~/.claude/settings.json`, Gemini's `AfterAgent` hook in
+  `~/.gemini/settings.json`, and Codex's `notify` entry in
+  `~/.codex/config.toml`. The flag auto-clears on window focus via the
+  `after-select-window` tmux hook (also installed by `bay setup`).
+- **Pattern-based** (fallback) — the monitor matches the last few
+  lines of each agent pane against regexes in
+  `~/.config/bay/waiting-patterns.txt`. One regex per line; the monitor
+  reloads on every cycle (default 3s), so no restart is needed.
 
 ### Dock management
 

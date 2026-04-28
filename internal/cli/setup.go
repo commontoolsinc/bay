@@ -7,8 +7,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
+	"github.com/BurntSushi/toml"
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -92,6 +94,11 @@ Do you want to proceed
 
 			// Install tmux status-line snippet
 			installStatusRight(reader)
+
+			// Bundle: turn-complete signaling for installed agents +
+			// the tmux hook that auto-clears the flag on focus. One
+			// prompt, all-or-nothing — these pieces only work as a unit.
+			installReadySignaling(reader)
 
 			// Configure defaults
 			configureAgent(reader, configPath)
@@ -237,6 +244,14 @@ var bayKeybindings = []bayKeybinding{
 }
 
 const bayKeybindingsMarker = "# Bay keybindings"
+const bayHooksMarker = "# Bay hooks"
+
+// bayClearWaitingHook clears @bay-waiting when a window is selected,
+// mirroring how tmux's native window_bell_flag self-clears on focus.
+// Stop hooks (Claude/Codex) set the flag; this is what unsets it. The
+// -a flag appends so we don't trample a user-defined after-select-window
+// hook (assuming bay's line in .tmux.conf is sourced after theirs).
+const bayClearWaitingHook = `set-hook -ag after-select-window 'set-window-option @bay-waiting 0'`
 
 // bayStatusLineMarker tags the tmux status-right block bay installs.
 const bayStatusLineMarker = "# Bay status line"
@@ -955,22 +970,11 @@ func installClaudeHooks(reader *bufio.Reader) {
 
 	settingsPath := filepath.Join(home, ".claude", "settings.json")
 
-	// The exact command the hook will run. Kept as a constant so we show
-	// the same string to the user as we write to settings.json.
 	const bellCommand = `[ -n "$TMUX" ] && printf '\a'`
 
-	// Check up front whether it's already installed — avoids showing the
-	// prompt and wasting user attention.
-	if data, err := os.ReadFile(settingsPath); err == nil {
-		var existing map[string]any
-		if err := json.Unmarshal(data, &existing); err == nil {
-			if hooks, ok := existing["hooks"].(map[string]any); ok {
-				if _, ok := hooks["PermissionRequest"]; ok {
-					fmt.Printf("Claude Code PermissionRequest hook already configured in %s\n", settingsPath)
-					return
-				}
-			}
-		}
+	if claudeStyleHookConfigured(settingsPath, "PermissionRequest") {
+		fmt.Printf("Claude Code PermissionRequest hook already configured in %s\n", settingsPath)
+		return
 	}
 
 	fmt.Println()
@@ -984,52 +988,221 @@ func installClaudeHooks(reader *bufio.Reader) {
 		return
 	}
 
-	// Load existing settings (or start fresh).
+	if err := writeClaudeStyleHook(settingsPath, "PermissionRequest", bellCommand); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+		return
+	}
+	fmt.Printf("Claude Code PermissionRequest hook installed in %s\n", settingsPath)
+}
+
+// agentReadyCommand is the shell snippet every supported agent runs at
+// turn-complete. Sets @bay-waiting on the current tmux window so Option-R
+// finds it. The after-select-window hook (also installed by setup) clears
+// the flag on focus.
+const agentReadyCommand = `[ -n "$TMUX" ] && tmux set-window-option -t "$TMUX_PANE" @bay-waiting 1 2>/dev/null`
+
+// agentHookSpec describes how to install a turn-complete hook for one
+// supported agent. Keyed by agent name (matches config.KnownAgents).
+type agentHookSpec struct {
+	label      string
+	relPath    string
+	configured func(path string) bool
+	write      func(path string) error
+}
+
+// agentHookSpecs lists agents whose turn-complete event bay knows how
+// to wire. Iterated against config.KnownAgents — agents that aren't in
+// KnownAgents are ignored, and KnownAgents entries with no spec here
+// are silently skipped (e.g., a future agent without a hook system).
+var agentHookSpecs = map[string]agentHookSpec{
+	"claude": {
+		label:      "Claude Stop hook",
+		relPath:    ".claude/settings.json",
+		configured: func(p string) bool { return claudeStyleHookConfigured(p, "Stop") },
+		write:      func(p string) error { return writeClaudeStyleHook(p, "Stop", agentReadyCommand) },
+	},
+	"gemini": {
+		label:      "Gemini AfterAgent hook",
+		relPath:    ".gemini/settings.json",
+		configured: func(p string) bool { return claudeStyleHookConfigured(p, "AfterAgent") },
+		write:      func(p string) error { return writeClaudeStyleHook(p, "AfterAgent", agentReadyCommand) },
+	},
+	"codex": {
+		label:      "Codex notify entry",
+		relPath:    ".codex/config.toml",
+		configured: codexNotifyConfigured,
+		write:      writeCodexNotify,
+	},
+}
+
+// installReadySignaling bundles the turn-complete signal: hooks for any
+// supported agent on PATH plus the tmux auto-clear hook. One prompt,
+// all-or-nothing — the pieces only work as a unit (without auto-clear,
+// flags get sticky and Option-R keeps landing on visited workspaces).
+// Each piece is independently idempotent, so repeat runs are safe.
+func installReadySignaling(reader *bufio.Reader) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+
+	type item struct {
+		label string
+		write func() error
+	}
+	var pending []item
+
+	// Iterate KnownAgents in sorted order so the prompt's bullet list is
+	// stable across runs (Go map iteration is non-deterministic).
+	names := make([]string, 0, len(config.KnownAgents))
+	for name := range config.KnownAgents {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		spec, ok := agentHookSpecs[name]
+		if !ok {
+			continue
+		}
+		if _, err := exec.LookPath(config.KnownAgents[name].Command); err != nil {
+			continue
+		}
+		path := filepath.Join(home, spec.relPath)
+		if spec.configured(path) {
+			continue
+		}
+		pending = append(pending, item{
+			label: spec.label + " → " + path,
+			write: func() error { return spec.write(path) },
+		})
+	}
+
+	tmuxPath, tmuxContent := loadTmuxConf()
+	if !hasMarkerLine(tmuxContent, bayHooksMarker) {
+		pending = append(pending, item{
+			label: "tmux auto-clear hook → " + tmuxPath,
+			write: writeTmuxClearHook,
+		})
+	}
+
+	if len(pending) == 0 {
+		return
+	}
+
+	fmt.Println()
+	fmt.Println("Install agent-ready signaling? Sets a tmux flag bay reads for Option+R when an agent finishes a turn.")
+	for _, it := range pending {
+		fmt.Printf("  - %s\n", it.label)
+	}
+	fmt.Print("Install? [Y/n] ")
+	answer, _ := reader.ReadString('\n')
+	if strings.TrimSpace(strings.ToLower(answer)) == "n" {
+		return
+	}
+
+	for _, it := range pending {
+		if err := it.write(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+		}
+	}
+	fmt.Println("Installed.")
+}
+
+// claudeStyleHookConfigured reports whether settings.json has any entry
+// under hooks[eventName]. Used by both Claude Code and Gemini CLI, which
+// share the same hook schema.
+func claudeStyleHookConfigured(settingsPath, eventName string) bool {
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		return false
+	}
+	var settings map[string]any
+	if err := json.Unmarshal(data, &settings); err != nil {
+		return false
+	}
+	hooks, ok := settings["hooks"].(map[string]any)
+	if !ok {
+		return false
+	}
+	_, ok = hooks[eventName]
+	return ok
+}
+
+// writeClaudeStyleHook merges a single hook event into settings.json,
+// preserving any existing top-level fields and other hook events. Used
+// by both Claude Code and Gemini CLI.
+func writeClaudeStyleHook(settingsPath, eventName, command string) error {
 	var settings map[string]any
 	if data, err := os.ReadFile(settingsPath); err == nil {
 		if err := json.Unmarshal(data, &settings); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not parse %s: %v\n", settingsPath, err)
-			return
+			return fmt.Errorf("parse %s: %w", settingsPath, err)
 		}
 	} else {
 		settings = make(map[string]any)
 	}
 
-	// Add the hook. Guard with $TMUX check so non-tmux users don't hear a bell.
-	bellHook := []any{
+	hookEntry := []any{
 		map[string]any{
 			"hooks": []any{
-				map[string]any{
-					"type":    "command",
-					"command": bellCommand,
-				},
+				map[string]any{"type": "command", "command": command},
 			},
 		},
 	}
-
 	hooks, ok := settings["hooks"].(map[string]any)
 	if !ok {
 		hooks = make(map[string]any)
 	}
-	hooks["PermissionRequest"] = bellHook
+	hooks[eventName] = hookEntry
 	settings["hooks"] = hooks
 
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not marshal settings: %v\n", err)
-		return
+		return err
 	}
-
 	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not create directory: %v\n", err)
-		return
+		return err
 	}
-	if err := os.WriteFile(settingsPath, append(data, '\n'), 0o644); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not write %s: %v\n", settingsPath, err)
-		return
-	}
+	return os.WriteFile(settingsPath, append(data, '\n'), 0o644)
+}
 
-	fmt.Printf("Claude Code bell hook installed in %s\n", settingsPath)
+func codexNotifyConfigured(configPath string) bool {
+	data, err := os.ReadFile(configPath)
+	if err != nil || len(data) == 0 {
+		return false
+	}
+	var parsed map[string]any
+	if _, err := toml.Decode(string(data), &parsed); err != nil {
+		return false
+	}
+	_, ok := parsed["notify"]
+	return ok
+}
+
+func writeCodexNotify(configPath string) error {
+	existing, _ := os.ReadFile(configPath)
+	notifyLine := fmt.Sprintf(`notify = ["sh", "-c", %q]`, agentReadyCommand)
+
+	// Top-level TOML keys must precede any [section] header, so prepending
+	// is always syntactically safe.
+	var newContent string
+	if len(existing) > 0 {
+		newContent = notifyLine + "\n\n" + string(existing)
+	} else {
+		newContent = notifyLine + "\n"
+	}
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(configPath, []byte(newContent), 0o644)
+}
+
+func writeTmuxClearHook() error {
+	path, content := loadTmuxConf()
+	// Blank line ahead of the marker so extractBayBlock (keybindings)
+	// won't slurp these lines if hooks land adjacent to the keybindings
+	// block.
+	block := "\n" + bayHooksMarker + "\n" + bayClearWaitingHook + "\n"
+	return os.WriteFile(path, []byte(content+block), 0o644)
 }
 
 func installBaySkill() {
