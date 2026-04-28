@@ -29,13 +29,16 @@ PR, dirty/merged flags). Each workspace has three identity concepts:
   shown only in the `M-?` popup and JSON output. Set with `bay ws
   describe` (or `bay describe`). Does not affect tmux tab names.
 
-  **Agents should keep the description current.** Update the first
-  line when the workspace's purpose shifts, and update the body at
-  natural checkpoints — pauses, context switches, end-of-task — so
-  that when the user returns to the workspace after working elsewhere,
-  `M-?` shows "where I left off, what's blocked, what's next" without
-  re-reading the diff. The body is the whole reason the field is
-  richer than a label; an unset body defeats the feature.
+  **Agents should keep the description current.** Treat it as a
+  standing brief about the workspace, not a log of recent activity —
+  git history already records what was done. The first line is the
+  workspace's stable goal or scope; the body should let the user
+  swap the workspace's overall context back into their head when
+  they open it cold. Update the body when the *situation*
+  meaningfully changes (scope shift, new blocker, approach pivot),
+  not on every pause. If the body would read the same after another
+  hour of similar work, it's at the right altitude. An unset body
+  defeats the feature.
 
 A **full reference** is `dock:id` (e.g., `labs:w1`). A bare ID
 (`w1`) resolves to the current dock first; if absent there, falls
@@ -467,11 +470,12 @@ has two parts:
 
 - **First line** — short label (cap 80) shown in the workspace picker,
   `bay ls`, `bay tree`, and the `M-/` flash. Target around 40 characters.
+  This is the workspace's goal or scope; once set, it should rarely change.
 - **Body** (optional) — trailing lines separated from the first line by
   a blank line (commit-message style). Shown in the `M-?` popup and
-  JSON output only. Good for "paused mid-rebase; conflicts on helper.ts;
-  tests green except foo_test.py" — context the user needs when stepping
-  back into the workspace.
+  JSON output only. Treat it as a standing brief — what this workspace
+  is for, where it stands now, and what the immediate next move is —
+  written for someone (often the user) opening the workspace cold.
 
 With no args and no flags, prints the current description to stdout.
 An empty string or `--clear` clears it. `--edit` opens `$EDITOR` for
@@ -482,9 +486,11 @@ shells handle newlines in quoted strings natively — no escape
 interpretation of literal `\n`.
 
 **Agents should keep both parts current:** set the first line when
-starting a task (from the prompt or PR title), and update the body at
-natural checkpoints (pauses, context switches, end-of-task) so the
-user can flash `M-?` and immediately swap context back in.
+starting a task (from the prompt or PR title), and update the body
+when the situation meaningfully changes (scope shift, new blocker,
+approach pivot) — not on every pause. Don't narrate recent tool
+calls; describe the standing context so the user can flash `M-?`
+and immediately swap the workspace's whole picture back in.
 
 ```
 bay ws describe                              # print current description

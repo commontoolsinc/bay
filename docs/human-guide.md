@@ -422,10 +422,12 @@ Bay-aware agents treat the workspace description as a context-recall
 aid, not just a label. Expect them to:
 
 - Set a first-line label on start if one isn't set.
-- Update the body at natural checkpoints — pauses, blockers,
-  end-of-task — so when you return to the workspace after working
-  elsewhere, `Option+?` shows "where I left off, what's blocked,
-  what's next" without you re-reading the diff.
+- Maintain the body as a standing brief — what this workspace is
+  for, where it stands now, what's the immediate next move — so
+  when you return after working elsewhere, `Option+?` swaps the
+  whole picture back into your head without you re-reading the
+  diff. They should update when the *situation* changes, not on
+  every pause.
 
 `bay repo init` installs the pointer to `bay agent-guide` which tells
 agents how. For a stronger nudge, paste the block below into your
@@ -435,18 +437,28 @@ user-global agent instructions (for Claude Code, `~/.claude/CLAUDE.md`):
 ## Bay workspace descriptions
 
 If this project uses bay, keep the current workspace's description
-current. It's what surfaces in the picker, `bay ls`/`bay tree`, and
-the `M-?` popup — the user's primary context-recall aid when they
-return to a workspace after working elsewhere.
+current. It's the user's primary context-recall aid when they return
+to a workspace after working elsewhere — surfaced in the picker,
+`bay ls`/`bay tree`, and the `M-?` popup.
 
-- **On start:** if empty or stale, set a first-line label with
-  `bay describe "short label"` (≤40 chars preferred, 80 max).
-- **At natural checkpoints** — pause, blocker, context switch, task
-  handoff — update the body via `bay describe --edit` with two or
-  three lines: where you left off, what's blocked, what's next.
-- **The body is why the field exists.** A label alone works, but
-  the body is what makes `M-?` useful two days later. Leaving it
-  unset defeats the feature.
+Treat the description as a **standing brief about the workspace**, not
+a log of what you just did. Git history already records activity; the
+description should let the user swap the workspace's overall context
+back into their head in five seconds.
+
+- **First line (≤40 chars):** the workspace's goal or scope. Stable —
+  rarely changes once set. Set it on start with `bay describe "..."`.
+- **Body (2–5 lines):** the *situation*, written for someone opening
+  this workspace cold. What problem is being solved, what shape the
+  approach is taking, what's the current state, and what's the
+  immediate next move. Update via `bay describe --edit` when the
+  situation meaningfully changes — not on every pause.
+- **Avoid recency bias.** Don't narrate the last few tool calls. If
+  the body would read the same after another hour of similar work,
+  it's at the right altitude.
+- **Keep it brief.** A reader should grasp it in one glance. If you're
+  writing a fourth line, ask whether it belongs in code comments or a
+  PR description instead.
 
 Run `bay agent-guide` for the full reference.
 ```
