@@ -372,7 +372,7 @@ func newWsShowCmd() *cobra.Command {
 }
 
 // formatWorkspaceShort builds a one-line workspace summary:
-// `name — description — branch — #PR`, skipping empty fields.
+// `compact-label — description — branch — #PR`, skipping empty fields.
 // The branch is omitted when it equals the workspace name — bay
 // auto-derives workspace names from branches, so in the common case
 // they match and showing both just duplicates the identifier.
@@ -383,12 +383,16 @@ func formatWorkspaceShort(ws *manifest.Workspace) string {
 	if ws == nil {
 		return ""
 	}
-	parts := []string{ws.Name}
+	var parts []string
+	label := engine.WorkspaceCompactLabel(ws)
+	if label != "" {
+		parts = append(parts, label)
+	}
 	if desc := engine.DescriptionFirstLine(ws.Description); desc != "" {
 		parts = append(parts, desc)
 	}
 	if ws.Worktree != nil {
-		if ws.Worktree.Branch != "" && ws.Worktree.Branch != ws.Name {
+		if ws.Worktree.Branch != "" && ws.Worktree.Branch != ws.Name && ws.Worktree.Branch != label {
 			parts = append(parts, ws.Worktree.Branch)
 		}
 		if ws.Worktree.PR != "" {
@@ -441,7 +445,14 @@ func renderPopupBody(ws *manifest.Workspace) {
 // so it can be unit-tested.
 func buildPopupContent(ws *manifest.Workspace, width, height int) string {
 	var header strings.Builder
-	fmt.Fprintln(&header, "\x1b[1m"+ws.Name+"\x1b[0m")
+	label := engine.WorkspaceCompactLabel(ws)
+	if label == "" {
+		label = ws.Name
+	}
+	fmt.Fprintln(&header, "\x1b[1m"+label+"\x1b[0m")
+	if ws.Path != "" {
+		fmt.Fprintln(&header, dim(ws.Path))
+	}
 	if ws.Worktree != nil {
 		var meta []string
 		if ws.Worktree.Branch != "" && ws.Worktree.Branch != ws.Name {

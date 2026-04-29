@@ -86,6 +86,76 @@ func TestTruncateTabName(t *testing.T) {
 	}
 }
 
+func TestWorkspaceCompactLabel(t *testing.T) {
+	tests := []struct {
+		name string
+		ws   *manifest.Workspace
+		want string
+	}{
+		{
+			name: "renamed worktree",
+			ws:   &manifest.Workspace{Name: "auth-fix", Path: "/tmp/bay-worktrees/w4"},
+			want: "w4.auth-fix",
+		},
+		{
+			name: "unnamed worktree",
+			ws:   &manifest.Workspace{Name: "", Path: "/tmp/bay-worktrees/w4"},
+			want: "w4",
+		},
+		{
+			name: "name equals dir",
+			ws:   &manifest.Workspace{Name: "w4", Path: "/tmp/bay-worktrees/w4"},
+			want: "w4",
+		},
+		{
+			name: "external path name equals dir",
+			ws:   &manifest.Workspace{Name: "notes", Path: "/Users/me/notes"},
+			want: "notes",
+		},
+		{
+			name: "external path distinct name",
+			ws:   &manifest.Workspace{Name: "research", Path: "/Users/me/notes"},
+			want: "notes.research",
+		},
+		{
+			name: "missing path",
+			ws:   &manifest.Workspace{Name: "scratch"},
+			want: "scratch",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := WorkspaceCompactLabel(tt.ws); got != tt.want {
+				t.Errorf("WorkspaceCompactLabel() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTruncateWorkspaceCompactLabel(t *testing.T) {
+	ws := &manifest.Workspace{Name: "auth-fix", Path: "/tmp/bay-worktrees/w4"}
+	tests := []struct {
+		maxLen int
+		want   string
+	}{
+		{20, "w4.auth-fix"},
+		{7, "w4.auth"},
+		{5, "w4.au"},
+		{4, "w4"},
+		{2, "w4"},
+		{1, "w"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			if got := TruncateWorkspaceCompactLabel(ws, tt.maxLen); got != tt.want {
+				t.Errorf("TruncateWorkspaceCompactLabel(maxLen=%d) = %q, want %q", tt.maxLen, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNextWorkspaceDir(t *testing.T) {
 	wtDir := t.TempDir()
 

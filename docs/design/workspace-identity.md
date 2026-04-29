@@ -2,6 +2,12 @@
 
 Captured 2026-04-26.
 
+Related implementation note:
+`worktree-dir-visibility.md` covers the narrower display affordance of
+keeping the path-derived worktree directory tag (`w4`, `w12`, ...)
+visible in tmux tabs and status-line fields when the workspace name is
+renamed.
+
 ## The problem
 
 Today a workspace's `Name` field plays three jobs at once: it's the

@@ -293,7 +293,7 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 			newName := uniqueWorkspaceName(dock, ws, abbreviateBranch(update.branch))
 			if newName != ws.Name {
 				ws.Name = newName
-				e.updateWindowNames(ws, ws.Name)
+				e.updateWindowNames(ws, "")
 				changed = true
 			}
 		}

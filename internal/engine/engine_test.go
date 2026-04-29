@@ -1492,13 +1492,13 @@ func TestWsRename_TmuxWindowRenamed(t *testing.T) {
 	mockTmux := eng.Tmux.(*tmux.Mock)
 	found := false
 	for _, call := range mockTmux.Calls {
-		if call.Method == "RenameWindow" && len(call.Args) >= 2 && call.Args[1] == "renamed" {
+		if call.Method == "RenameWindow" && len(call.Args) >= 2 && call.Args[1] == "w1.renamed" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Error("expected RenameWindow call with new name")
+		t.Error("expected RenameWindow call with compact new name")
 	}
 }
 
