@@ -612,6 +612,9 @@ workspace is already gone (e.g. the 60s orphan-cleanup grace window
 elapsed), the entry is silently discarded — call again to skip past
 stale entries.
 
+Agent surfaces relaunch with the agent's configured `resume_args`,
+so the prior session continues rather than starting fresh.
+
 ```
 bay sf restore            # restore most recent
 bay sf restore --list     # show the queue without restoring

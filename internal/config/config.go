@@ -50,8 +50,8 @@ type AgentInfo struct {
 // override exists for the agent.
 var KnownAgents = map[string]AgentInfo{
 	"claude": {Command: "claude", ResumeArgs: "--continue", ProjectFile: "CLAUDE.local.md"},
-	"codex":  {Command: "codex"},
-	"gemini": {Command: "gemini"},
+	"codex":  {Command: "codex", ResumeArgs: "resume --last"},
+	"gemini": {Command: "gemini", ResumeArgs: "--resume latest"},
 }
 
 // ResolveAgent returns the effective AgentInfo for a named agent,

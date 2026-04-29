@@ -248,8 +248,10 @@ const branchAbbrevReservedPrefix = "br-"
 
 // launchSurfaceInTmux launches the appropriate command in a tmux pane
 // based on the surface type and returns a populated Surface.
-// Used by workspace creation and surface add operations.
-func (e *Engine) launchSurfaceInTmux(tmuxPaneID, dockName string, surfaceType manifest.SurfaceType, agent, cmd, cwd string, agentArgs []string) (manifest.Surface, error) {
+// Used by workspace creation and surface add operations. When resume is
+// true and the surface is an agent, the agent is launched with its
+// configured resume_args so the prior session is picked up.
+func (e *Engine) launchSurfaceInTmux(tmuxPaneID, dockName string, surfaceType manifest.SurfaceType, agent, cmd, cwd string, agentArgs []string, resume bool) (manifest.Surface, error) {
 	s := manifest.Surface{
 		Type:    surfaceType,
 		Backend: manifest.SurfaceBackendTmux,
@@ -259,7 +261,7 @@ func (e *Engine) launchSurfaceInTmux(tmuxPaneID, dockName string, surfaceType ma
 	switch surfaceType {
 	case manifest.SurfaceTypeAgent:
 		s.Agent = &agent
-		agentCmd, err := e.buildAgentCommand(agent, agentArgs)
+		agentCmd, err := e.buildAgentCommand(agent, agentArgs, resume)
 		if err != nil {
 			return manifest.Surface{}, err
 		}

@@ -51,26 +51,17 @@ func (e *Engine) resolveWorkspaceAgent(dockName string, m *manifest.Manifest, re
 	return agentName, nil
 }
 
-// buildAgentCommand assembles the agent launch command for first launch.
-func (e *Engine) buildAgentCommand(agentName string, agentArgs []string) (string, error) {
+// buildAgentCommand assembles the agent launch command. When resume is
+// true, the agent's configured resume_args are spliced in (e.g.
+// "--continue" for Claude Code) so the prior session is picked up;
+// used by recovery and undo-close.
+func (e *Engine) buildAgentCommand(agentName string, agentArgs []string, resume bool) (string, error) {
 	if err := e.validateAgentName(agentName); err != nil {
 		return "", err
 	}
 	info, _ := e.Config.ResolveAgent(agentName)
 	parts := []string{info.Command}
-	parts = append(parts, agentArgs...)
-	return strings.Join(parts, " "), nil
-}
-
-// buildAgentResumeCommand assembles the agent launch command for restart/recovery.
-// Includes resume_args if configured (e.g. "--continue" for Claude Code).
-func (e *Engine) buildAgentResumeCommand(agentName string, agentArgs []string) (string, error) {
-	if err := e.validateAgentName(agentName); err != nil {
-		return "", err
-	}
-	info, _ := e.Config.ResolveAgent(agentName)
-	parts := []string{info.Command}
-	if info.ResumeArgs != "" {
+	if resume && info.ResumeArgs != "" {
 		parts = append(parts, strings.Fields(info.ResumeArgs)...)
 	}
 	parts = append(parts, agentArgs...)
