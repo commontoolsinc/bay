@@ -44,6 +44,7 @@ func (e *Engine) Recover() ([]RecoverResult, error) {
 		outcome := e.recoverDockWorkspaces(dock, m)
 		e.cleanPlaceholders(dock.Name)
 		e.recoverDockHostTerminal(dock, &outcome)
+		e.refreshDockWindowNames(dock)
 
 		if outcome.changed {
 			if err := e.mergeRecoveredDockState(dock); err != nil {
@@ -85,6 +86,7 @@ func (e *Engine) DockRecover(name string) (RecoverResult, error) {
 	e.recoverDockSurfaces(dock, &outcome)
 	e.cleanPlaceholders(name)
 	e.recoverDockHostTerminal(dock, &outcome)
+	e.refreshDockWindowNames(dock)
 
 	if outcome.changed {
 		if err := e.mergeRecoveredDockState(dock); err != nil {
@@ -229,9 +231,9 @@ func (e *Engine) recoverDockWorkspaces(dock *manifest.Dock, m *manifest.Manifest
 				outcome.changed = e.reconcileSurfaces(dock.Name, existingWindowID, ws, surfaceIndices, m, &outcome) || outcome.changed
 			} else {
 				// Window gone — recreate it. Primary windows (group 1) get
-				// the workspace name; secondary windows get :surfacename.
+				// the workspace compact label; secondary windows get :surfacename.
 				wsRecovered = true
-				windowName := ws.Name
+				windowName := workspaceWindowLabel(ws)
 				if layoutGroup > 1 && len(surfaceIndices) > 0 {
 					windowName = ":" + ws.Surfaces[surfaceIndices[0]].Name
 				}

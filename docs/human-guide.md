@@ -989,11 +989,13 @@ You can also add it manually if you skipped the prompt. If your
 `.tmux.conf` already has a `status-right` setting, bay won't overwrite
 it; setup prints the recommended lines so you can merge them yourself.
 
-The `full` field outputs `repo:branch #PR | status` (e.g.
-`bay:fix/login #42 | dirty`). The `--width` flag enables adaptive
-truncation — when space is tight, it progressively shortens the branch
-name, drops the repo prefix, and abbreviates status indicators. Pass
-`#{status-right-length}` so tmux tells bay how much space is available.
+The `full` field outputs `label branch #PR status` (e.g.
+`w4.auth-fix fix/login #42 dirty`). The label keeps the path-derived
+worktree dir tag visible after rename. The `--width` flag enables
+adaptive truncation — when space is tight, it crops the label's
+workspace-name portion first, then shortens branch/status metadata.
+Pass `#{status-right-length}` so tmux tells bay how much space is
+available.
 
 **Pass `--window #{window_id}`.** Tmux caches `#()` output per client
 keyed by the literal command string, and only refreshes on the
@@ -1003,7 +1005,8 @@ you'll see a stale status from another window until the next tick.
 Interpolating the window ID gives each window its own cache, and bay
 uses the explicit ID instead of asking tmux which window is "current".
 
-Other fields: `id`, `name`, `branch`, `pr`, `status`, `dock`, `merged`.
+Other fields: `id`, `name`, `dir`, `branch`, `pr`, `status`, `dock`,
+`merged`.
 
 The `merged` field shows a count of merged workspaces in the current
 dock (e.g. "2 merged"). Useful for a status bar reminder to clean up.

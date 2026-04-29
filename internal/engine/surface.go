@@ -189,8 +189,8 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 		}
 	} else {
 		// Create a new tmux window. Secondary windows get a ":surfacename"
-		// tab name; the first window keeps the workspace name.
-		windowName := ws.Name
+		// tab name; the first window keeps the workspace compact label.
+		windowName := workspaceWindowLabel(ws)
 		if len(ws.Surfaces) > 0 {
 			windowName = ":" + name
 		}
@@ -580,7 +580,7 @@ func (e *Engine) SurfaceRename(dockName, wsID, oldName, newName string) error {
 		// Update tmux window names if this surface could be a tab owner
 		// (i.e. it lives in a secondary layout group).
 		if s.Tmux != nil && s.Tmux.LayoutGroup > 1 {
-			e.updateWindowNames(ws, ws.Name)
+			e.updateWindowNames(ws, "")
 		}
 		return nil
 	})

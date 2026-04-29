@@ -604,13 +604,13 @@ func TestCheckOnce_RenamesWindowOnBranchChange(t *testing.T) {
 	// Tmux window should also have been renamed.
 	renamed := false
 	for _, c := range mock.Calls {
-		if c.Method == "RenameWindow" && len(c.Args) == 2 && c.Args[0] == winID && c.Args[1] == "login-bug" {
+		if c.Method == "RenameWindow" && len(c.Args) == 2 && c.Args[0] == winID && c.Args[1] == "wt.login-bug" {
 			renamed = true
 			break
 		}
 	}
 	if !renamed {
-		t.Errorf("expected RenameWindow(%s, login-bug); calls: %v", winID, mock.Calls)
+		t.Errorf("expected RenameWindow(%s, wt.login-bug); calls: %v", winID, mock.Calls)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 func TestFormatWorkspaceShort_AllFields(t *testing.T) {
 	ws := &manifest.Workspace{
 		Name:        "auth-fix",
+		Path:        "/tmp/bay-worktrees/w4",
 		Description: "Login flow fixes",
 		Worktree: &manifest.WorktreeAttrs{
 			Branch: "fix/login",
@@ -18,7 +19,7 @@ func TestFormatWorkspaceShort_AllFields(t *testing.T) {
 		},
 	}
 	got := stripANSI(formatWorkspaceShort(ws))
-	want := "auth-fix — Login flow fixes — fix/login — PR#123"
+	want := "w4.auth-fix — Login flow fixes — fix/login — PR#123"
 	if got != want {
 		t.Errorf("formatWorkspaceShort = %q, want %q", got, want)
 	}
@@ -128,6 +129,21 @@ func TestFormatWorkspaceShort_TruncatesMultiLineDescription(t *testing.T) {
 	want := "auth-fix — Login flow fixes — fix/login"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestBuildPopupContentIncludesCompactLabelAndPath(t *testing.T) {
+	ws := &manifest.Workspace{
+		Name:        "auth-fix",
+		Path:        "/tmp/bay-worktrees/w4",
+		Description: "Login flow fixes",
+	}
+	got := stripANSI(buildPopupContent(ws, 80, 10))
+	if !strings.Contains(got, "w4.auth-fix") {
+		t.Errorf("popup missing compact label:\n%s", got)
+	}
+	if !strings.Contains(got, "/tmp/bay-worktrees/w4") {
+		t.Errorf("popup missing path:\n%s", got)
 	}
 }
 
