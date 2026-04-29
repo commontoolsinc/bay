@@ -751,7 +751,7 @@ creation:
 ```tmux
 # BEGIN bay-personal-agent-bindings
 # Personal Bay agent launcher. Keep outside the "# Bay keybindings" block.
-bind-key -n M-o display-message "agent: c Claude, x Codex, g Gemini | Shift=window | w=workspace" \; switch-client -T bay-agent
+bind-key -n M-o display-message -d 2000 "agent: c Claude, x Codex, g Gemini | Shift=window | w=workspace" \; switch-client -T bay-agent
 
 bind-key -T bay-agent c run-shell 'bay agent claude --pane || true'
 bind-key -T bay-agent C run-shell 'bay agent claude --window || true'
@@ -760,7 +760,7 @@ bind-key -T bay-agent X run-shell 'bay agent codex --window || true'
 bind-key -T bay-agent g run-shell 'bay agent gemini --pane || true'
 bind-key -T bay-agent G run-shell 'bay agent gemini --window || true'
 
-bind-key -T bay-agent w display-message "workspace: c Claude, x Codex, g Gemini" \; switch-client -T bay-agent-workspace
+bind-key -T bay-agent w display-message -d 2000 "workspace: c Claude, x Codex, g Gemini" \; switch-client -T bay-agent-workspace
 bind-key -T bay-agent-workspace c run-shell 'bay ws new -q --agent=claude || true'
 bind-key -T bay-agent-workspace x run-shell 'bay ws new -q --agent=codex || true'
 bind-key -T bay-agent-workspace g run-shell 'bay ws new -q --agent=gemini || true'
