@@ -368,7 +368,7 @@ func (e *Engine) recoverSurfaceLaunch(dockName string, s *manifest.Surface, tmux
 		}
 		agentName := *s.Agent
 		agentArgs := e.resolvedAgentArgs(dockName, agentName, m)
-		agentCmd, err := e.buildAgentResumeCommand(agentName, agentArgs)
+		agentCmd, err := e.buildAgentCommand(agentName, agentArgs, true)
 		if err != nil {
 			return err
 		}

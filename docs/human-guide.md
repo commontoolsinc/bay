@@ -311,6 +311,10 @@ workspace has since been closed (e.g. the 60s orphan-cleanup grace
 window elapsed), the entry is silently discarded — hit `Option+z`
 again to reach the next entry.
 
+Restored agent surfaces relaunch with the agent's configured
+`resume_args` so the prior conversation continues rather than
+starting fresh — see [Session resumption](#session-resumption).
+
 ### Identifiers and references
 
 Workspaces are referenced by **ID** in commands. Bare form is `w1`;
@@ -479,10 +483,12 @@ prefix_rule(pattern=["bay", "describe"], decision="allow")
 
 ### Session resumption
 
-Built-in agents have resume args (e.g., `--continue` for Claude Code).
-On recovery (`bay recover`), bay appends these automatically. Claude
-Code binds sessions to project directories, so `--continue` in the
-same worktree resumes the right conversation.
+Built-in agents have resume args (`--continue` for Claude Code,
+`resume --last` for Codex, `--resume latest` for Gemini). Bay appends
+these automatically on `bay recover` and on undo-close (`Option+z` /
+`bay sf restore`). All three agents bind sessions to the project
+directory, so the resume picks up the right conversation when the
+restored pane lands back in the same worktree.
 
 ### Agent protection
 
@@ -1134,9 +1140,10 @@ is detected via `gh pr view` once a branch exists. Both are cached in
 the manifest.
 
 **"My agent lost context after recovery."**
-Built-in agents have resume args configured automatically (e.g.,
-`--continue` for Claude Code). Bay uses these on recovery.
-For custom agents, set `resume_args` in the `[agents]` config section.
+Built-in agents have resume args configured automatically; bay uses
+them on recovery and on undo-close. For custom agents, set
+`resume_args` in the `[agents]` config section. See
+[Session resumption](#session-resumption) for the full list.
 
 **"How do I see my editor in bay go?"**
 Terminal editors (nvim, vim) launched via `bay edit` appear as surfaces

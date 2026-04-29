@@ -2,6 +2,7 @@ package engine
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -462,5 +463,64 @@ func TestSurfaceRestore_FallsBackToNewWindowWhenLayoutGroupGone(t *testing.T) {
 	}
 	if !sawNewWindow {
 		t.Error("expected NewWindow call when the layout group is gone")
+	}
+}
+
+// TestSurfaceRestore_AgentResumesPriorSession verifies that an agent
+// surface restored via undo-close is launched with the agent's
+// resume_args (e.g. `claude --continue`) so the user lands back in
+// their previous conversation rather than a fresh session.
+func TestSurfaceRestore_AgentResumesPriorSession(t *testing.T) {
+	cases := []struct {
+		agent string
+		want  string // command substring expected in RespawnPane
+	}{
+		{"claude", "claude --continue"},
+		{"codex", "codex resume --last"},
+		{"gemini", "gemini --resume latest"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.agent, func(t *testing.T) {
+			eng, _ := testEngine(t)
+			mockTmux := eng.Tmux.(*tmux.Mock)
+
+			if _, err := eng.WsNew(WsNewOptions{Dock: "labs", Agent: tc.agent}); err != nil {
+				t.Fatalf("WsNew: %v", err)
+			}
+			// Add a second agent surface in a split so closing it leaves
+			// a sibling — keeps the layout group alive and the restore
+			// path simple.
+			if err := eng.SurfaceAdd(SurfaceAddOptions{
+				DockName: "labs", WsName: "w1",
+				Type: manifest.SurfaceTypeAgent, Name: "side",
+				Agent: tc.agent, SplitDir: "v",
+			}); err != nil {
+				t.Fatalf("SurfaceAdd: %v", err)
+			}
+
+			if err := eng.SurfaceClose("labs", "w1", "side", false); err != nil {
+				t.Fatalf("SurfaceClose: %v", err)
+			}
+
+			before := len(mockTmux.Calls)
+			if _, err := eng.SurfaceRestore("labs"); err != nil {
+				t.Fatalf("SurfaceRestore: %v", err)
+			}
+
+			found := false
+			for _, c := range mockTmux.Calls[before:] {
+				if c.Method != "RespawnPane" || len(c.Args) < 3 {
+					continue
+				}
+				if strings.Contains(c.Args[2], tc.want) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("expected RespawnPane with %q during restore; calls=%+v",
+					tc.want, mockTmux.Calls[before:])
+			}
+		})
 	}
 }

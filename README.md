@@ -22,7 +22,7 @@ bay recover                     # reconstruct everything after reboot
 - **Worktree lifecycle** — create, close, rename workspaces backed by git worktrees or external directories. Safety checks on close (dirty files, unlanded commits). Each workspace is an isolated checkout.
 - **Surface model** — each workspace contains one or more **surfaces** (agent panes, shell panes, command panes, GUI editors). Bay tracks them all and recovers them after reboot.
 - **Editor integration** — `bay edit` opens your workspace in cursor, VS Code, zed, nvim, or vim. `bay edit --all` for multi-root.
-- **Agent support** — optionally launch AI agents (Claude Code, Codex, Gemini). Agent surfaces resume on restart via configured `resume_args`. Closing an agent surface prompts for confirmation.
+- **Agent support** — optionally launch AI agents (Claude Code, Codex, Gemini). Agent surfaces resume on restart and on undo-close via configured `resume_args`. Closing an agent surface prompts for confirmation.
 - **Scoped navigation** — `bay go` (Option+j/k) cycles surfaces within the current workspace; `bay ws go` (Option+Shift+J/K) cycles workspaces within the current dock. Cycling flashes a brief position indicator.
 - **Command palette** — `Option+p` opens a VS Code-style palette in a tmux popup: fuzzy-search every bay command, see its hotkey if it has one, and launch without leaving the keyboard.
 - **Hierarchical browsing** — `bay ls` shows the dock/workspace structure scoped to your current focus; `bay tree` (or `bay ls -R`) shows the full hierarchy including surfaces.

@@ -102,6 +102,13 @@ type SurfaceAddOptions struct {
 	// exists, SurfaceAdd uses `tmux split-window -fb` so the pane lands
 	// at the root position (top/left) of the layout group.
 	RestoreLayoutGroup int
+
+	// Resume, when true, launches an agent surface with the agent's
+	// configured resume_args (e.g. `claude --continue`) so the prior
+	// session is picked up. Used by undo-close so restoring an agent
+	// surface continues its previous conversation rather than starting
+	// fresh. Ignored for non-agent surfaces.
+	Resume bool
 }
 
 // SurfaceAdd adds a new surface to a workspace.
@@ -218,7 +225,7 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 	agentArgs := e.resolvedAgentArgs(dockName, agent, m2)
 
 	// Launch the surface process.
-	surface, err := e.launchSurfaceInTmux(tmuxPaneID, dockName, surfaceType, agent, cmd, ws.Path, agentArgs)
+	surface, err := e.launchSurfaceInTmux(tmuxPaneID, dockName, surfaceType, agent, cmd, ws.Path, agentArgs, opts.Resume)
 	if err != nil {
 		rollbackSurface()
 		return err
@@ -534,6 +541,7 @@ func (e *Engine) restoreSurfaceEntry(dockName string, entry *manifest.ClosedEntr
 		Command:            cs.Command,
 		SplitDir:           cs.SplitDir,
 		RestoreLayoutGroup: cs.LayoutGroup,
+		Resume:             true,
 	}); addErr != nil {
 		// Leave the entry queued so the user can retry after fixing the
 		// underlying issue (per design "Restore is atomic from the user's
