@@ -167,10 +167,10 @@ func TestFormatListView_AlignsWorkspaceMetaWithinDock(t *testing.T) {
 
 	var authLine, cleanupLine string
 	for _, line := range strings.Split(out, "\n") {
-		if strings.Contains(line, "ws auth-fix") {
+		if strings.Contains(line, "bay auth-fix") {
 			authLine = line
 		}
-		if strings.Contains(line, "ws cleanup") {
+		if strings.Contains(line, "bay cleanup") {
 			cleanupLine = line
 		}
 	}
@@ -258,7 +258,7 @@ func TestBuildListView_DockFocusStopsAtWorkspacesByDefault(t *testing.T) {
 	if !strings.Contains(out, "dk api") {
 		t.Fatalf("dock focus output missing dock header:\n%s", out)
 	}
-	if !strings.Contains(out, "ws auth-fix") || !strings.Contains(out, "ws cleanup") {
+	if !strings.Contains(out, "bay auth-fix") || !strings.Contains(out, "bay cleanup") {
 		t.Fatalf("dock focus output missing workspaces:\n%s", out)
 	}
 	if strings.Contains(out, "sf ") {
@@ -275,7 +275,7 @@ func TestBuildListView_WorkspaceFocusShowsFullTree(t *testing.T) {
 	for _, want := range []string{
 		"rp bay",
 		"dk api",
-		"ws auth-fix",
+		"bay auth-fix",
 		"sf agent",
 		"ty=agent",
 		"ag=codex",
@@ -293,7 +293,7 @@ func TestBuildListView_WorkspaceFocusRestrictsToDock(t *testing.T) {
 	})
 	out := stripANSI(FormatListView(view, false, false))
 
-	if strings.Contains(out, "ws landing") {
+	if strings.Contains(out, "bay landing") {
 		t.Fatalf("workspace focus should not include workspaces from other docks:\n%s", out)
 	}
 }
@@ -351,7 +351,7 @@ func TestFormatWorkspaceShow_IncludesDefaultAgentAndSurfaces(t *testing.T) {
 
 	out := stripANSI(FormatWorkspaceShow("bay", "api", ws, false))
 	for _, want := range []string{
-		"workspace auth-fix",
+		"bay auth-fix",
 		"repo bay",
 		"dock api",
 		"default agent codex",
@@ -360,7 +360,7 @@ func TestFormatWorkspaceShow_IncludesDefaultAgentAndSurfaces(t *testing.T) {
 		"ag=codex",
 	} {
 		if !strings.Contains(out, want) {
-			t.Fatalf("workspace show missing %q:\n%s", want, out)
+			t.Fatalf("bay show missing %q:\n%s", want, out)
 		}
 	}
 }
@@ -429,8 +429,8 @@ func TestFormatListRows_DenormalizesSurfaceRows(t *testing.T) {
 			t.Fatalf("rows JSON missing %q:\n%s", want, s)
 		}
 	}
-	if !strings.Contains(s, `"workspace_waiting":true`) {
-		t.Fatalf("rows JSON missing workspace waiting flag:\n%s", s)
+	if !strings.Contains(s, `"bay_waiting":true`) {
+		t.Fatalf("rows JSON missing bay waiting flag:\n%s", s)
 	}
 }
 
@@ -471,11 +471,11 @@ func TestFormatListView_HighlightsCurrentContext(t *testing.T) {
 	if !strings.Contains(out, "dk api *") {
 		t.Fatalf("current dock should have * marker:\n%s", out)
 	}
-	if !strings.Contains(out, "ws auth-fix *") {
+	if !strings.Contains(out, "bay auth-fix *") {
 		t.Fatalf("current workspace should have * marker:\n%s", out)
 	}
 	// Non-current workspace should NOT have marker.
-	if strings.Contains(out, "ws cleanup *") {
+	if strings.Contains(out, "bay cleanup *") {
 		t.Fatalf("non-current workspace should not have * marker:\n%s", out)
 	}
 }

@@ -20,7 +20,7 @@ func newSurfaceCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "surface",
 		Aliases: []string{"sf"},
-		Short:   "Manage surfaces (agent, shell, cmd panes within a workspace)",
+		Short:   "Manage surfaces (agent, shell, cmd panes within a bay)",
 	}
 
 	cmd.AddCommand(
@@ -41,13 +41,13 @@ func newSurfaceCmd() *cobra.Command {
 func newSurfaceNewCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "new <kind>",
-		Short: "Add a surface to a workspace",
-		Long: `Add a surface to a workspace.
+		Short: "Add a surface to a bay",
+		Long: `Add a surface to a bay.
 
   bay sf new shell                       split a shell
   bay sf new shell logs --window         new tmux window named "logs"
   bay sf new agent claude                start an agent surface
-  bay sf new agent codex --ws auth-fix   agent in another workspace
+  bay sf new agent codex --bay w1        agent in another bay
   bay sf new cmd "npm test" tests        run a command
   bay sf new edit                        open the editor`,
 	}
@@ -63,8 +63,8 @@ func newSurfaceNewCmd() *cobra.Command {
 }
 
 // surfaceNewOpts collects the options accepted by all surface-creation
-// commands (sf new + the top-level bay new). Type is required; Name defaults
-// to a per-type label. SplitDir is "h", "v", or "" (new tmux window).
+// commands. Type is required; Name defaults to a per-type label.
+// SplitDir is "h", "v", or "" (new tmux window).
 // CLI callers default this to "v" unless --window is passed.
 type surfaceNewOpts struct {
 	Type     manifest.SurfaceType
@@ -75,11 +75,11 @@ type surfaceNewOpts struct {
 }
 
 // validateSurfaceName rejects names containing a colon. Users who type
-// `bay new shell w1:logs` expecting colon-path semantics would otherwise
-// land a surface literally named "w1:logs" in the current workspace.
+// `bay surface new shell w1:logs` expecting colon-path semantics would
+// otherwise land a surface literally named "w1:logs" in the current bay.
 func validateSurfaceName(name string) error {
 	if strings.Contains(name, ":") {
-		return fmt.Errorf("surface name %q cannot contain ':' (use --ws/--dock to specify a workspace)", name)
+		return fmt.Errorf("surface name %q cannot contain ':' (use --bay/--dock to specify a bay)", name)
 	}
 	return nil
 }
@@ -95,9 +95,8 @@ func defaultCmdName(command string) string {
 	return filepath.Base(fields[0])
 }
 
-// runSurfaceNew creates a new surface in (dockName, wsName). Shared by
-// `bay sf new` and the top-level `bay new` verbs. The caller is responsible
-// for resolving (dockName, wsName) and setting opts.Type.
+// runSurfaceNew creates a new surface in (dockName, wsName). The caller is
+// responsible for resolving (dockName, wsName) and setting opts.Type.
 func runSurfaceNew(eng *engine.Engine, dockName, wsName string, opts surfaceNewOpts) error {
 	if err := validateSurfaceName(opts.Name); err != nil {
 		return err
@@ -143,15 +142,15 @@ func newSurfaceCloseCmd() *cobra.Command {
 		Short:   "Close a surface",
 		Long: `Close a surface by name. Use 'self' to target the current surface.
 
-  bay sf close monitor              close "monitor" in the current workspace
-  bay sf close w1:monitor           close "monitor" in workspace w1
+  bay sf close monitor              close "monitor" in the current bay
+  bay sf close w1:monitor           close "monitor" in bay w1
   bay sf close labs:w1:monitor      fully-qualified
-  bay sf close monitor --ws w1      same as w1:monitor
+  bay sf close monitor --bay w1     same as w1:monitor
   bay sf close self                 close the current pane's surface
   bay sf rm shell-2                 same thing with the rm alias
 
 When invoked non-interactively, as from the Option+w tmux keybinding,
-closing the last surface in a workspace requires a quick second close
+closing the last surface in a bay requires a quick second close
 attempt. Interactive command-line invocations close the last surface on
 the first command.
 
@@ -168,26 +167,26 @@ skip close confirmations.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (disambiguates with --dock)")
-	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (only valid with --ws or a workspace prefix)")
+	cmd.Flags().StringVar(&wsFlag, "bay", "", "bay ID (disambiguates with --dock)")
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (only valid with --bay or a bay prefix)")
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "skip close confirmations")
 
 	return cmd
 }
 
-// runSurfaceClose closes a named surface. Shared by `bay sf close` and the
-// top-level `bay close`. Requires an explicit name — `close` is destructive
-// and we don't want a bare invocation to silently close the current pane.
-// Use `bay close self` to target the current surface.
+// runSurfaceClose closes a named surface. Requires an explicit name —
+// `close` is destructive and we don't want a bare invocation to silently
+// close the current pane. Use `bay sf close self` to target the current
+// surface.
 //
 // Non-interactive last-surface closes require a quick second invocation to
-// protect keybinding users from accidental workspace teardown. Agent surfaces
+// protect keybinding users from accidental bay teardown. Agent surfaces
 // prompt for confirmation when stdin is a TTY (unless force is true). Other
 // surface types close without prompting.
 func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string, force bool) error {
 	if len(args) == 0 {
 		if wsFlag != "" || dockFlag != "" {
-			return fmt.Errorf("--ws/--dock require a surface name")
+			return fmt.Errorf("--bay/--dock require a surface name")
 		}
 		return fmt.Errorf("specify a surface name (or 'self' to close the current surface)")
 	}
@@ -213,7 +212,7 @@ func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string,
 
 	// Two protections, neither of which fires with --force:
 	//   - last-surface double-tap: for non-interactive invocations (tmux
-	//     run-shell keybindings), closing the only surface in a workspace
+	//     run-shell keybindings), closing the only surface in a bay
 	//     tears down the visible pane (and triggers the orphan grace timer).
 	//     Easy to fat-finger via M-w; require a second close attempt within
 	//     a short window to confirm. Interactive CLI closes are allowed on the
@@ -260,18 +259,18 @@ func lastSurfaceCloseRefusal(eng *engine.Engine, ws *manifest.Workspace) (string
 
 	dirty, err := eng.Git.IsDirty(ws.Path)
 	if err != nil {
-		return "", fmt.Errorf("checking workspace state: %w", err)
+		return "", fmt.Errorf("checking bay state: %w", err)
 	}
 	if dirty {
-		return fmt.Sprintf("%s: workspace kept (uncommitted changes).", ws.Name), nil
+		return fmt.Sprintf("%s: bay kept (uncommitted changes).", ws.Name), nil
 	}
 
 	unpushed, err := eng.HasUnlandedCommits(ws)
 	if err != nil {
-		return "", fmt.Errorf("workspace %q: could not verify push status: %w (use --force to override)", ws.Name, err)
+		return "", fmt.Errorf("bay %q: could not verify push status: %w (use --force to override)", ws.Name, err)
 	}
 	if unpushed {
-		return fmt.Sprintf("%s: workspace kept (unlanded commits).", ws.Name), nil
+		return fmt.Sprintf("%s: bay kept (unlanded commits).", ws.Name), nil
 	}
 	return "", nil
 }
@@ -286,7 +285,7 @@ func newSurfaceRestoreCmd() *cobra.Command {
 
 bay keeps a per-dock LRU queue of the last 10 bay-initiated closes
 (for up to 1 hour). 'bay sf restore' (or Option+Z in tmux) pops the
-most recent entry and recreates the surface in its parent workspace.
+most recent entry and recreates the surface in its parent bay.
 
   bay sf restore             restore the most recent close
   bay sf restore --list      show the queue`,
@@ -403,7 +402,7 @@ func newSurfaceGoCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "go [query]",
-		Short: "Navigate to a surface within the current workspace",
+		Short: "Navigate to a surface within the current bay",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -422,7 +421,7 @@ func newSurfaceGoCmd() *cobra.Command {
 func newSurfaceNextCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "next",
-		Short: "Switch to the next surface in the current workspace",
+		Short: "Switch to the next surface in the current bay",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
@@ -436,7 +435,7 @@ func newSurfaceNextCmd() *cobra.Command {
 func newSurfacePrevCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "prev",
-		Short: "Switch to the previous surface in the current workspace",
+		Short: "Switch to the previous surface in the current bay",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
@@ -454,7 +453,7 @@ func newSurfaceLsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "ls",
 		Aliases: []string{"list"},
-		Short:   "List surfaces in the current workspace",
+		Short:   "List surfaces in the current bay",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
@@ -463,7 +462,7 @@ func newSurfaceLsCmd() *cobra.Command {
 
 			dockName, wsName, err := eng.ResolveSelf()
 			if err != nil {
-				return fmt.Errorf("not in a bay workspace")
+				return fmt.Errorf("not in a bay")
 			}
 
 			docks, err := eng.List()
@@ -476,7 +475,7 @@ func newSurfaceLsCmd() *cobra.Command {
 					continue
 				}
 				for _, ws := range d.Workspaces {
-					if ws.Name == wsName {
+					if ws.ID == wsName {
 						surfaces = ws.Surfaces
 						break
 					}
@@ -494,12 +493,12 @@ func newSurfaceLsCmd() *cobra.Command {
 			}
 
 			if len(surfaces) == 0 {
-				fmt.Println("No surfaces in this workspace.")
+				fmt.Println("No surfaces in this bay.")
 				return nil
 			}
 
 			currentSurface := ""
-			if ctx, err := eng.CurrentContext(); err == nil && ctx.Dock == dockName && ctx.Workspace == wsName {
+			if ctx, err := eng.CurrentContext(); err == nil && ctx.Dock == dockName && ctx.WorkspaceID == wsName {
 				currentSurface = ctx.Surface
 			}
 			fmt.Print(FormatSurfaceList(surfaces, currentSurface, shortOutput))
@@ -530,15 +529,15 @@ func newSurfaceShowCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (disambiguates with --dock)")
-	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (only valid with --ws or a workspace prefix)")
+	cmd.Flags().StringVar(&wsFlag, "bay", "", "bay ID (disambiguates with --dock)")
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (only valid with --bay or a bay prefix)")
 
 	return cmd
 }
 
-// runSurfaceShow prints details for a named surface. Shared by `bay sf show`
-// and the top-level `bay show`. Accepts the `self` keyword, and a bare
-// no-arg invocation defaults to the current pane's surface.
+// runSurfaceShow prints details for a named surface. Accepts the `self`
+// keyword, and a bare no-arg invocation defaults to the current pane's
+// surface.
 func runSurfaceShow(eng *engine.Engine, args []string, wsFlag, dockFlag string) error {
 	target := "self"
 	if len(args) > 0 {
@@ -557,7 +556,7 @@ func runSurfaceShow(eng *engine.Engine, args []string, wsFlag, dockFlag string) 
 
 	s := ws.FindSurface(sName)
 	if s == nil {
-		return fmt.Errorf("surface %q not found in workspace %q", sName, wsName)
+		return fmt.Errorf("surface %q not found in bay %q", sName, wsName)
 	}
 
 	rows := []showRow{
@@ -592,9 +591,9 @@ func newSurfaceRenameCmd() *cobra.Command {
 		Long: `Rename a surface. With one arg, renames the current surface.
 
   bay sf rename agent2                    rename current surface
-  bay sf rename agent agent2              rename in current workspace
-  bay sf rename w1:agent agent2           rename agent in workspace w1
-  bay sf rename agent agent2 --ws w1      same as w1:agent`,
+  bay sf rename agent agent2              rename in current bay
+  bay sf rename w1:agent agent2           rename agent in bay w1
+  bay sf rename agent agent2 --bay w1     same as w1:agent`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -608,15 +607,15 @@ func newSurfaceRenameCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (disambiguates with --dock)")
-	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (only valid with --ws or a workspace prefix)")
+	cmd.Flags().StringVar(&wsFlag, "bay", "", "bay ID (disambiguates with --dock)")
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (only valid with --bay or a bay prefix)")
 
 	return cmd
 }
 
 // runSurfaceRename renames a surface. The first arg is the old name (which
-// may include a workspace prefix or be the `self` keyword); the second is the
-// new name. Shared by `bay sf rename` and the top-level `bay rename`.
+// may include a bay prefix or be the `self` keyword); the second is the
+// new name.
 //
 // Precondition: args must contain exactly two elements. Cobra's ExactArgs(2)
 // enforces this in production; callers from tests should pass the same.
@@ -630,7 +629,7 @@ func runSurfaceRename(eng *engine.Engine, args []string, wsFlag, dockFlag string
 
 // surfaceGo implements the surface picker / direct jump logic.
 // surfaceGoPick checks if there are enough surfaces to pick from, then
-// opens a tmux display-popup with "bay go". Used by keybindings to avoid
+// opens a tmux display-popup with "bay surface go". Used by keybindings to avoid
 // flashing an empty popup when there's nothing to pick.
 func surfaceGoPick(eng *engine.Engine) error {
 	dockName, wsName, err := eng.ResolveSelf()
@@ -647,13 +646,13 @@ func surfaceGoPick(eng *engine.Engine) error {
 	if len(entries) < 2 {
 		return nil
 	}
-	return eng.Tmux.DisplayPopup("bay go")
+	return eng.Tmux.DisplayPopup("bay surface go")
 }
 
 func surfaceGo(eng *engine.Engine, args []string, nextWaiting bool) error {
 	dockName, wsName, err := eng.ResolveSelf()
 	if err != nil {
-		return fmt.Errorf("not in a bay workspace")
+		return fmt.Errorf("not in a bay")
 	}
 
 	ws, err := eng.WsShow(dockName, wsName)
@@ -699,12 +698,12 @@ func surfaceGo(eng *engine.Engine, args []string, nextWaiting bool) error {
 	}
 }
 
-// surfaceCycle moves to next/prev surface in the current workspace and
+// surfaceCycle moves to next/prev surface in the current bay and
 // flashes the new position via the cycling indicator.
 func surfaceCycle(eng *engine.Engine, forward bool) error {
 	dockName, wsName, err := eng.ResolveSelf()
 	if err != nil {
-		return fmt.Errorf("not in a bay workspace")
+		return fmt.Errorf("not in a bay")
 	}
 
 	ws, err := eng.WsShow(dockName, wsName)

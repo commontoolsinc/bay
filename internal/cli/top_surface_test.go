@@ -188,8 +188,8 @@ func TestEditTargetFromArgs(t *testing.T) {
 		{"no args no flags", nil, "", "", "self", false},
 		{"positional only", []string{"auth-fix"}, "", "", "auth-fix", false},
 		{"positional with dock prefix", []string{"labs:auth-fix"}, "", "", "labs:auth-fix", false},
-		{"ws flag", nil, "auth-fix", "", "auth-fix", false},
-		{"ws + dock flags", nil, "auth-fix", "labs", "labs:auth-fix", false},
+		{"bay flag", nil, "w1", "", "w1", false},
+		{"bay + dock flags", nil, "w1", "labs", "labs:w1", false},
 		{"positional + ws flag", []string{"a"}, "b", "", "", true},
 		{"positional + dock flag", []string{"a"}, "", "labs", "", true},
 		{"dock flag alone", nil, "", "labs", "", true},
@@ -266,12 +266,12 @@ func TestRunSurfaceClose_NoArgsErrors(t *testing.T) {
 	}
 	// Flags set but no positional: more specific message.
 	err = runSurfaceClose(eng, nil, "w1", "", false)
-	if err == nil || !strings.Contains(err.Error(), "--ws/--dock require") {
-		t.Errorf("expected '--ws/--dock require' error with --ws, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "--bay/--dock require") {
+		t.Errorf("expected '--bay/--dock require' error with --bay, got %v", err)
 	}
 	err = runSurfaceClose(eng, nil, "", "labs", false)
-	if err == nil || !strings.Contains(err.Error(), "--ws/--dock require") {
-		t.Errorf("expected '--ws/--dock require' error with --dock, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "--bay/--dock require") {
+		t.Errorf("expected '--bay/--dock require' error with --dock, got %v", err)
 	}
 }
 
@@ -444,7 +444,7 @@ func TestResolveSurfaceWorkspace_NoFlagsUsesSelf(t *testing.T) {
 	}
 }
 
-func TestResolveSurfaceWorkspace_WsFlag(t *testing.T) {
+func TestResolveSurfaceWorkspace_BayFlag(t *testing.T) {
 	eng := wsArgFixture(t)
 
 	// solo's ID is w2 (second labs workspace).
@@ -460,39 +460,39 @@ func TestResolveSurfaceWorkspace_WsFlag(t *testing.T) {
 func TestResolveSurfaceWorkspace_DockWithoutWs(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
 	_, _, err := resolveSurfaceWorkspace(eng, "", "labs")
-	if err == nil || !strings.Contains(err.Error(), "--ws") {
-		t.Errorf("expected --dock-requires-ws error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "--bay") {
+		t.Errorf("expected --dock-requires-bay error, got %v", err)
 	}
 }
 
 // --- command tree wiring ---
 
-func TestRoot_SurfaceGroupExists(t *testing.T) {
+func TestRoot_CommandGroupsExist(t *testing.T) {
 	root := NewRootCmd("test")
 
 	groups := root.Groups()
-	var hasSurface, hasWorkspace bool
+	var hasSurface, hasBay bool
 	for _, g := range groups {
 		if g.ID == "surface" {
 			hasSurface = true
 		}
-		if g.ID == "workspace" {
-			hasWorkspace = true
+		if g.ID == "bay" {
+			hasBay = true
 		}
 	}
 	if !hasSurface {
 		t.Error("expected 'surface' group to be defined on root")
 	}
-	if !hasWorkspace {
-		t.Error("expected 'workspace' group to be defined on root")
+	if !hasBay {
+		t.Error("expected 'bay' group to be defined on root")
 	}
 }
 
-func TestRoot_TopLevelSurfaceVerbsRegistered(t *testing.T) {
+func TestRoot_TopLevelBayVerbsRegistered(t *testing.T) {
 	root := NewRootCmd("test")
 
-	surfaceVerbs := []string{"new", "close", "show"}
-	for _, name := range surfaceVerbs {
+	bayVerbs := []string{"new", "close", "show", "rename", "describe", "ls", "go", "next", "prev"}
+	for _, name := range bayVerbs {
 		c, _, err := root.Find([]string{name})
 		if err != nil {
 			t.Errorf("could not find top-level command %q: %v", name, err)
@@ -501,17 +501,15 @@ func TestRoot_TopLevelSurfaceVerbsRegistered(t *testing.T) {
 		if c.Name() != name {
 			t.Errorf("Find(%q) returned %q", name, c.Name())
 		}
-		if c.GroupID != "surface" {
-			t.Errorf("command %q has GroupID %q, want surface", name, c.GroupID)
+		if name == "go" || name == "next" || name == "prev" {
+			if c.GroupID != "navigation" {
+				t.Errorf("command %q has GroupID %q, want navigation", name, c.GroupID)
+			}
+			continue
 		}
-	}
-
-	// bay rename targets workspaces, not surfaces.
-	renameCmd, _, err := root.Find([]string{"rename"})
-	if err != nil {
-		t.Errorf("could not find top-level command rename: %v", err)
-	} else if renameCmd.GroupID != "workspace" {
-		t.Errorf("command rename has GroupID %q, want workspace", renameCmd.GroupID)
+		if c.GroupID != "bay" {
+			t.Errorf("command %q has GroupID %q, want bay", name, c.GroupID)
+		}
 	}
 }
 
@@ -538,12 +536,12 @@ func TestRoot_HiddenAliasesResolve(t *testing.T) {
 	}
 }
 
-func TestRoot_BayNewSubcommands(t *testing.T) {
+func TestRoot_SurfaceNewSubcommands(t *testing.T) {
 	root := NewRootCmd("test")
 
-	newCmd, _, err := root.Find([]string{"new"})
+	newCmd, _, err := root.Find([]string{"surface", "new"})
 	if err != nil {
-		t.Fatalf("could not find 'new': %v", err)
+		t.Fatalf("could not find 'surface new': %v", err)
 	}
 
 	want := []string{"shell", "agent", "cmd", "edit"}
@@ -553,7 +551,7 @@ func TestRoot_BayNewSubcommands(t *testing.T) {
 	}
 	for _, name := range want {
 		if !have[name] {
-			t.Errorf("bay new is missing subcommand %q", name)
+			t.Errorf("bay surface new is missing subcommand %q", name)
 		}
 	}
 }
@@ -576,14 +574,11 @@ func TestRoot_SurfaceFlavoredCommandsInSurfaceGroup(t *testing.T) {
 	}
 }
 
-func TestRoot_WsStaysInWorkspaceGroup(t *testing.T) {
+func TestRoot_WorkspaceCommandRemoved(t *testing.T) {
 	root := NewRootCmd("test")
 
-	c, _, err := root.Find([]string{"workspace"})
-	if err != nil {
-		t.Fatalf("could not find workspace: %v", err)
-	}
-	if c.GroupID != "workspace" {
-		t.Errorf("workspace GroupID = %q, want workspace", c.GroupID)
+	_, _, err := root.Find([]string{"workspace"})
+	if err == nil {
+		t.Fatalf("workspace command should be removed")
 	}
 }

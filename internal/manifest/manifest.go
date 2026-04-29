@@ -1,4 +1,4 @@
-// Package manifest tracks all active docks, workspaces, and surfaces.
+// Package manifest tracks all active docks, bays, and surfaces.
 // The manifest is persisted as JSON at ~/.local/share/bay/manifest.json.
 package manifest
 
@@ -16,7 +16,7 @@ import (
 )
 
 // CurrentVersion is the manifest schema version.
-const CurrentVersion = 4
+const CurrentVersion = 5
 
 // WorkspaceType constants.
 const (
@@ -81,8 +81,28 @@ type Dock struct {
 	AgentArgs     map[string][]string `json:"agent_args,omitempty"` // per-agent args
 	Host          *GUIAttrs           `json:"host,omitempty"`       // terminal window hosting this dock's tmux session; nil if unmanaged
 	Surfaces      []Surface           `json:"surfaces,omitempty"`   // dock-level surfaces (e.g., dock-scoped editor)
-	Workspaces    []Workspace         `json:"workspaces"`
+	Workspaces    []Workspace         `json:"bays"`
 	ClosedEntries []ClosedEntry       `json:"closed_entries,omitempty"` // undo-close queue (see docs/design/undo-close.md)
+}
+
+// UnmarshalJSON accepts both the v5 `bays` field and the legacy v4
+// `workspaces` field. Marshal always writes `bays`, so loading and saving an
+// old manifest performs the schema rename.
+func (d *Dock) UnmarshalJSON(data []byte) error {
+	type dockJSON Dock
+	aux := struct {
+		*dockJSON
+		LegacyWorkspaces []Workspace `json:"workspaces"`
+	}{
+		dockJSON: (*dockJSON)(d),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if d.Workspaces == nil && aux.LegacyWorkspaces != nil {
+		d.Workspaces = aux.LegacyWorkspaces
+	}
+	return nil
 }
 
 // Workspace represents a unit of work — typically one branch/PR.
@@ -311,13 +331,32 @@ type ClosedEntry struct {
 // parent workspace. Transient fields (PaneID, WindowID, ID) are deliberately
 // omitted — they're reassigned on restore.
 type ClosedSurface struct {
-	Workspace   string      `json:"workspace"`              // parent workspace ID at close time (the stable handle)
+	Workspace   string      `json:"bay"`                    // parent bay ID at close time (the stable handle)
 	Name        string      `json:"name"`                   // user-facing surface name
 	Type        SurfaceType `json:"type"`                   // agent / shell / cmd / editor
 	Agent       string      `json:"agent,omitempty"`        // type=agent
 	Command     string      `json:"command,omitempty"`      // type=cmd or type=editor
 	SplitDir    string      `json:"split_dir,omitempty"`    // "" = root pane, "h"/"v" = split
 	LayoutGroup int         `json:"layout_group,omitempty"` // original tmux window membership; restore re-joins siblings if any survive
+}
+
+// UnmarshalJSON accepts both the v5 `bay` field and the legacy `workspace`
+// field used by older undo-close entries.
+func (cs *ClosedSurface) UnmarshalJSON(data []byte) error {
+	type closedSurfaceJSON ClosedSurface
+	aux := struct {
+		*closedSurfaceJSON
+		LegacyWorkspace string `json:"workspace"`
+	}{
+		closedSurfaceJSON: (*closedSurfaceJSON)(cs),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if cs.Workspace == "" && aux.LegacyWorkspace != "" {
+		cs.Workspace = aux.LegacyWorkspace
+	}
+	return nil
 }
 
 // PushClosedEntry appends entry to the dock's undo-close queue, enforcing
@@ -426,7 +465,7 @@ func Parse(data []byte) (*Manifest, error) {
 	for i := range m.Docks {
 		AssignWorkspaceIDs(&m.Docks[i])
 	}
-	if m.Version < 4 {
+	if m.Version < CurrentVersion {
 		m.Version = CurrentVersion
 	}
 
@@ -685,7 +724,7 @@ func (d *Dock) FindWorkspaceByID(id string) *Workspace {
 // always allowed; they'll display via their ID until a Name is set.
 func (d *Dock) AddWorkspace(ws Workspace) error {
 	if ws.Name != "" && d.FindWorkspace(ws.Name) != nil {
-		return fmt.Errorf("workspace %q already exists in dock %q", ws.Name, d.Name)
+		return fmt.Errorf("bay %q already exists in dock %q", ws.Name, d.Name)
 	}
 	if ws.Surfaces == nil {
 		ws.Surfaces = []Surface{}
@@ -704,7 +743,7 @@ func (d *Dock) RemoveWorkspace(id string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("workspace %q not found in dock %q", id, d.Name)
+	return fmt.Errorf("bay %q not found in dock %q", id, d.Name)
 }
 
 // FindDockSurface returns a pointer to a dock-level surface by name.
@@ -780,7 +819,7 @@ func (ws *Workspace) FindSurfaceByID(id int) *Surface {
 // AddSurface adds a surface with an auto-assigned ID. Returns the assigned ID.
 func (ws *Workspace) AddSurface(s Surface) (int, error) {
 	if ws.FindSurface(s.Name) != nil {
-		return 0, fmt.Errorf("surface %q already exists in workspace %q", s.Name, ws.Name)
+		return 0, fmt.Errorf("surface %q already exists in bay %q", s.Name, ws.Name)
 	}
 	s.ID = ws.NextSurfaceID()
 	ws.Surfaces = append(ws.Surfaces, s)
@@ -795,7 +834,7 @@ func (ws *Workspace) RemoveSurface(name string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("surface %q not found in workspace %q", name, ws.Name)
+	return fmt.Errorf("surface %q not found in bay %q", name, ws.Name)
 }
 
 // --- Workspace resolution ---
@@ -845,7 +884,7 @@ func (m *Manifest) ResolveWorkspace(query string) (*Workspace, *Dock, error) {
 		for _, match := range matches {
 			docks = append(docks, match.dock.Name)
 		}
-		return nil, nil, fmt.Errorf("workspace ID %q is ambiguous; found in docks: %s", query, strings.Join(docks, ", "))
+		return nil, nil, fmt.Errorf("bay ID %q is ambiguous; found in docks: %s", query, strings.Join(docks, ", "))
 	}
 }
 
@@ -880,9 +919,9 @@ func manifestNameHints(m *Manifest, query string) []nameHint {
 // optionally adding a "did you mean" pointer at the canonical ID for
 // any workspace whose Name matched the query.
 func workspaceNotFoundError(query, dockName string, hints []nameHint) error {
-	base := fmt.Sprintf("workspace %q not found", query)
+	base := fmt.Sprintf("bay %q not found", query)
 	if dockName != "" {
-		base = fmt.Sprintf("workspace %q not found in dock %q", query, dockName)
+		base = fmt.Sprintf("bay %q not found in dock %q", query, dockName)
 	}
 	switch len(hints) {
 	case 0:

@@ -214,7 +214,7 @@ func (e *Engine) recoverDockWorkspaces(dock *manifest.Dock, m *manifest.Manifest
 				if s.Tmux != nil && s.Tmux.WindowID != "" {
 					exists, err := e.Tmux.WindowExists(s.Tmux.WindowID)
 					if err != nil {
-						outcome.errs = append(outcome.errs, fmt.Sprintf("workspace %s: check window %s: %v", ws.Name, s.Tmux.WindowID, err))
+						outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: check window %s: %v", ws.Name, s.Tmux.WindowID, err))
 						continue
 					}
 					if exists {
@@ -237,7 +237,7 @@ func (e *Engine) recoverDockWorkspaces(dock *manifest.Dock, m *manifest.Manifest
 				}
 				newWindowID, err := e.Tmux.NewWindow(dock.Name, windowName, ws.Path)
 				if err != nil {
-					outcome.errs = append(outcome.errs, fmt.Sprintf("workspace %s: create window: %v", ws.Name, err))
+					outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: create window: %v", ws.Name, err))
 					continue
 				}
 				outcome.changed = true
@@ -254,16 +254,16 @@ func (e *Engine) recoverDockWorkspaces(dock *manifest.Dock, m *manifest.Manifest
 						// First surface uses the window's initial pane.
 						panes, err := e.Tmux.ListPanes(newWindowID)
 						if err != nil {
-							outcome.errs = append(outcome.errs, fmt.Sprintf("workspace %s: list panes for %s: %v", ws.Name, newWindowID, err))
+							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: list panes for %s: %v", ws.Name, newWindowID, err))
 							continue
 						}
 						if len(panes) == 0 {
-							outcome.errs = append(outcome.errs, fmt.Sprintf("workspace %s: window %s has no initial pane", ws.Name, newWindowID))
+							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: window %s has no initial pane", ws.Name, newWindowID))
 							continue
 						}
 						s.Tmux.PaneID = panes[0].ID
 						if err := e.recoverSurfaceLaunch(dock.Name, s, s.Tmux.PaneID, m, true); err != nil {
-							outcome.errs = append(outcome.errs, fmt.Sprintf("workspace %s surface %s: %v", ws.Name, s.Name, err))
+							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", ws.Name, s.Name, err))
 						}
 					} else {
 						// Subsequent surfaces split from their recorded parent pane.
@@ -273,17 +273,17 @@ func (e *Engine) recoverDockWorkspaces(dock *manifest.Dock, m *manifest.Manifest
 						}
 						splitTargetID, err := recoverSplitTargetID(ws, s, newWindowID)
 						if err != nil {
-							outcome.errs = append(outcome.errs, fmt.Sprintf("workspace %s surface %s: %v", ws.Name, s.Name, err))
+							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", ws.Name, s.Name, err))
 							continue
 						}
 						newPaneID, err := e.Tmux.SplitWindow(splitTargetID, dir, ws.Path, false)
 						if err != nil {
-							outcome.errs = append(outcome.errs, fmt.Sprintf("workspace %s surface %s: split window: %v", ws.Name, s.Name, err))
+							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: split window: %v", ws.Name, s.Name, err))
 							continue
 						}
 						s.Tmux.PaneID = newPaneID
 						if err := e.recoverSurfaceLaunch(dock.Name, s, newPaneID, m, true); err != nil {
-							outcome.errs = append(outcome.errs, fmt.Sprintf("workspace %s surface %s: %v", ws.Name, s.Name, err))
+							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", ws.Name, s.Name, err))
 						}
 					}
 				}
@@ -301,7 +301,7 @@ func (e *Engine) recoverDockWorkspaces(dock *manifest.Dock, m *manifest.Manifest
 func (e *Engine) reconcileSurfaces(dockName, tmuxWindowID string, ws *manifest.Workspace, surfaceIndices []int, m *manifest.Manifest, outcome *recoverOutcome) bool {
 	tmuxPanes, err := e.Tmux.ListPanes(tmuxWindowID)
 	if err != nil {
-		outcome.errs = append(outcome.errs, fmt.Sprintf("workspace %s: list panes for %s: %v", ws.Name, tmuxWindowID, err))
+		outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: list panes for %s: %v", ws.Name, tmuxWindowID, err))
 		return false
 	}
 	changed := false
@@ -327,18 +327,18 @@ func (e *Engine) reconcileSurfaces(dockName, tmuxWindowID string, ws *manifest.W
 		}
 		splitTargetID, err := recoverSplitTargetID(ws, s, tmuxWindowID)
 		if err != nil {
-			outcome.errs = append(outcome.errs, fmt.Sprintf("workspace %s surface %s: %v", ws.Name, s.Name, err))
+			outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", ws.Name, s.Name, err))
 			continue
 		}
 		newPaneID, err := e.Tmux.SplitWindow(splitTargetID, dir, ws.Path, false)
 		if err != nil {
-			outcome.errs = append(outcome.errs, fmt.Sprintf("workspace %s surface %s: split window: %v", ws.Name, s.Name, err))
+			outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: split window: %v", ws.Name, s.Name, err))
 			continue
 		}
 		s.Tmux.PaneID = newPaneID
 		changed = true
 		if err := e.recoverSurfaceLaunch(dockName, s, newPaneID, m, true); err != nil {
-			outcome.errs = append(outcome.errs, fmt.Sprintf("workspace %s surface %s: %v", ws.Name, s.Name, err))
+			outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", ws.Name, s.Name, err))
 		}
 	}
 	return changed

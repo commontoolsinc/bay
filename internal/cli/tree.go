@@ -3,16 +3,20 @@ package cli
 import (
 	"fmt"
 
+	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/spf13/cobra"
 )
 
 func newTreeCmd() *cobra.Command {
+	var jsonOutput bool
+	var rowsOutput bool
+	var dirtyOnly bool
 	var longOutput bool
 	var shortOutput bool
 
 	cmd := &cobra.Command{
 		Use:   "tree",
-		Short: "Show full hierarchy (repos, docks, workspaces, surfaces)",
+		Short: "Show full hierarchy (repos, docks, bays, surfaces)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
@@ -23,6 +27,16 @@ func newTreeCmd() *cobra.Command {
 				return err
 			}
 
+			// User-interest signal: any bay the user is viewing that still
+			// has no PR despite having a branch gets marked stale so the
+			// monitor's next tick re-queries gh, rather than waiting for the
+			// full TTL.
+			_ = eng.MarkAllPRChecksStale()
+
+			if dirtyOnly {
+				docks = filterDirtyWorkspaces(docks)
+			}
+
 			view := BuildListView(docks, ListViewOptions{
 				Focus:     ListFocus{Kind: FocusAll},
 				Recursive: true,
@@ -30,11 +44,39 @@ func newTreeCmd() *cobra.Command {
 
 			view.SetCurrentContext(eng)
 
+			if jsonOutput {
+				return printListViewJSON(view, rowsOutput)
+			}
+
 			fmt.Print(FormatListView(view, longOutput, shortOutput))
+
+			// Print advice for stale or missing bays visible in the output.
+			hasStale, hasMissing := false, false
+			for _, repo := range view.Repos {
+				for _, d := range repo.Docks {
+					for _, ws := range d.Workspaces {
+						if ws.SyncStatus == manifest.SyncStatusStale {
+							hasStale = true
+						}
+						if ws.SyncStatus == manifest.SyncStatusMissing {
+							hasMissing = true
+						}
+					}
+				}
+			}
+			if hasStale {
+				fmt.Println("\n[stale] = tmux window was closed. Run 'bay recover' to recreate, or 'bay close <id>' to remove.")
+			}
+			if hasMissing {
+				fmt.Println("\n[missing] = worktree directory was deleted. Run 'bay close <id> --force' to clean up.")
+			}
 			return nil
 		},
 	}
 
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON")
+	cmd.Flags().BoolVar(&rowsOutput, "rows", false, "output JSON as denormalized rows")
+	cmd.Flags().BoolVar(&dirtyOnly, "dirty", false, "only show dirty bays")
 	cmd.Flags().BoolVarP(&longOutput, "long", "l", false, "show extended details such as tmux IDs")
 	cmd.Flags().BoolVarP(&shortOutput, "short", "s", false, "compact output without labels or key names")
 

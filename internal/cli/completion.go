@@ -89,32 +89,30 @@ func registerCompletions(root *cobra.Command) {
 	wsFlagCompl := workspaceFlagCompletions()
 	dockFlagCompl := dockFlagCompletions()
 
-	// Workspace-target positional: ws verbs operate on workspaces.
-	// surface new / shell / ws new select their target via
-	// --ws/--dock flags, not a positional, so they're not in this list.
+	// Bay-target positional: bay verbs operate on bays.
+	// surface new / shell / bay new select their target via
+	// --bay/--dock flags, not a positional, so they're not in this list.
 	for _, path := range []string{
-		"workspace close", "workspace show", "workspace rename",
+		"close", "show", "rename",
 		"edit",
-		"new edit",
-		"rename",
+		"surface new edit",
 	} {
 		if cmd := findCmd(root, path); cmd != nil {
 			cmd.ValidArgsFunction = wsCompl
 		}
 	}
 
-	// Surface-name positional: sf verbs and the top-level surface verbs.
+	// Surface-name positional: sf verbs.
 	for _, path := range []string{
 		"surface close", "surface show", "surface rename",
-		"close", "show",
 	} {
 		if cmd := findCmd(root, path); cmd != nil {
 			cmd.ValidArgsFunction = sfCompl
 		}
 	}
 
-	// bay new agent / bay agent — first positional is the agent type.
-	for _, path := range []string{"new agent", "agent"} {
+	// bay surface new agent / bay agent — first positional is the agent type.
+	for _, path := range []string{"surface new agent", "agent"} {
 		if cmd := findCmd(root, path); cmd != nil {
 			cmd.ValidArgsFunction = agentArgCompletions
 		}
@@ -134,49 +132,46 @@ func registerCompletions(root *cobra.Command) {
 		}
 	}
 
-	// bay go (surface-scoped, no completions needed — surfaces are within workspace)
-	// bay ws go (workspace-scoped fuzzy match)
-	if cmd := findCmd(root, "workspace go"); cmd != nil {
+	// bay go is bay-scoped fuzzy match.
+	if cmd := findCmd(root, "go"); cmd != nil {
 		cmd.ValidArgsFunction = goCompl
 	}
 
-	// bay ws new — positional is the new workspace's display name (free
+	// bay new — positional is the new bay's display name (free
 	// text, no completion). Flags carry completions for the things bay
 	// can suggest: --dock, --agent, --repo.
-	if cmd := findCmd(root, "workspace new"); cmd != nil {
+	if cmd := findCmd(root, "new"); cmd != nil {
 		cmd.RegisterFlagCompletionFunc("dock", dockFlagCompl)
 		cmd.RegisterFlagCompletionFunc("agent", agentFlagCompletions)
 		cmd.RegisterFlagCompletionFunc("repo", repoCompletions)
 		cmd.RegisterFlagCompletionFunc("branch", branchCompletions)
 	}
 	// surface new is now a parent with shell/agent/cmd/edit subcommands
-	// (same objects as bay new). Flag completions are registered on those
-	// subcommands via "new shell", "new agent", etc. below.
+	// Flag completions are registered on those subcommands below.
 	if cmd := findCmd(root, "dock new"); cmd != nil {
 		cmd.RegisterFlagCompletionFunc("agent", agentFlagCompletions)
 		cmd.RegisterFlagCompletionFunc("repo", repoCompletions)
 	}
 
-	// --ws and --dock flag completions on every surface verb that
+	// --bay and --dock flag completions on every surface verb that
 	// supports them. Workspace commands get --dock too. The bay new
 	// <kind> commands also get --split for symmetry with sf new.
 	for _, path := range []string{
 		"surface close", "surface show", "surface rename",
-		"close", "show",
 		"shell", "agent",
-		"new shell", "new agent", "new cmd",
+		"surface new shell", "surface new agent", "surface new cmd",
 	} {
 		if cmd := findCmd(root, path); cmd != nil {
-			cmd.RegisterFlagCompletionFunc("ws", wsFlagCompl)
+			cmd.RegisterFlagCompletionFunc("bay", wsFlagCompl)
 			cmd.RegisterFlagCompletionFunc("dock", dockFlagCompl)
 		}
 	}
-	for _, path := range []string{"new shell", "new agent", "new cmd"} {
+	for _, path := range []string{"surface new shell", "surface new agent", "surface new cmd"} {
 		if cmd := findCmd(root, path); cmd != nil {
 			cmd.RegisterFlagCompletionFunc("split", splitCompletions)
 		}
 	}
-	for _, path := range []string{"workspace close", "workspace show", "workspace rename", "rename"} {
+	for _, path := range []string{"close", "show", "rename"} {
 		if cmd := findCmd(root, path); cmd != nil {
 			cmd.RegisterFlagCompletionFunc("dock", dockFlagCompl)
 		}
@@ -270,7 +265,7 @@ func workspaceCandidates(m *manifest.Manifest) []string {
 			ref.Dock+nameSuffix+extras,
 			strings.TrimSpace(nameSuffix+extras))
 	}
-	addCandidate(&completions, seen, "self", "current workspace")
+	addCandidate(&completions, seen, "self", "current bay")
 	return completions
 }
 
@@ -461,7 +456,7 @@ func goCompletions() func(cmd *cobra.Command, args []string, toComplete string) 
 // --- Flag completers (no args guard, since flag values aren't positionals) ---
 
 // workspaceFlagCompletions returns a flag-value completer for workspace
-// identifiers (used for --ws on surface verbs).
+// identifiers (used for --bay on surface verbs).
 func workspaceFlagCompletions() func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		m := loadManifestForCompletions()
@@ -496,7 +491,7 @@ func agentFlagCompletions(cmd *cobra.Command, args []string, toComplete string) 
 
 // agentArgCompletions is the positional version of agentFlagCompletions: it
 // returns nothing once an agent has already been provided. Used for
-// `bay new agent <agent>`.
+// `bay surface new agent <agent>`.
 func agentArgCompletions(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	if len(args) > 0 {
 		return nil, cobra.ShellCompDirectiveNoFileComp

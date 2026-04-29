@@ -432,7 +432,7 @@ func TestWsRename_SelfResolution(t *testing.T) {
 		t.Fatalf("WsShow after rename: %v", err)
 	}
 	if ws.Name != "renamed-ws" {
-		t.Errorf("ws name = %q, want renamed-ws", ws.Name)
+		t.Errorf("bay name = %q, want renamed-ws", ws.Name)
 	}
 }
 

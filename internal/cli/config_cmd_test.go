@@ -41,8 +41,8 @@ func TestBayEdit_HasScopeFlags(t *testing.T) {
 	if cmd.Flags().Lookup("dock") == nil {
 		t.Error("bay edit missing --dock flag")
 	}
-	if cmd.Flags().Lookup("ws") == nil {
-		t.Error("bay edit missing --ws flag")
+	if cmd.Flags().Lookup("bay") == nil {
+		t.Error("bay edit missing --bay flag")
 	}
 }
 

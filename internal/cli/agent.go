@@ -12,15 +12,15 @@ func newAgentCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "agent [type] [name]",
-		Short: "Open an agent surface in a workspace",
-		Long: `Launch an agent in a workspace. The agent type is optional — if
+		Short: "Open an agent surface in a bay",
+		Long: `Launch an agent in a bay. The agent type is optional — if
 omitted, uses the dock's default agent.
 
   bay agent                    dock's default agent as a split pane
   bay agent claude             specific agent
   bay agent codex my-codex     specific agent with custom name
   bay agent --window           as a new tmux window
-  bay agent --ws auth-fix      target a different workspace`,
+  bay agent --bay w1           target a different bay`,
 		Args: cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -51,8 +51,8 @@ omitted, uses the dock's default agent.
 		},
 	}
 
-	cmd.Flags().StringVar(&wsFlag, "ws", "", "workspace name (defaults to current)")
-	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (with --ws to disambiguate)")
+	cmd.Flags().StringVar(&wsFlag, "bay", "", "bay ID (defaults to current)")
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (with --bay to disambiguate)")
 	cmd.Flags().StringVar(&splitDir, "split", "", "split direction (h or v)")
 	cmd.Flags().BoolVar(&pane, "pane", false, "split into current window (default; shorthand for --split v)")
 	cmd.Flags().BoolVar(&window, "window", false, "open as a new tmux window")

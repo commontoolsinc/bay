@@ -66,7 +66,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		return nil, err
 	}
 	if nameExplicit && dock.FindWorkspace(displayName) != nil {
-		return nil, fmt.Errorf("workspace name %q already exists in dock %q", displayName, dockName)
+		return nil, fmt.Errorf("bay name %q already exists in dock %q", displayName, dockName)
 	}
 
 	agentName := ""
@@ -227,7 +227,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		if !nameExplicit {
 			finalName = uniqueWorkspaceName(dock, nil, displayName)
 		} else if dock.FindWorkspace(displayName) != nil {
-			return fmt.Errorf("workspace name %q already exists in dock %q", displayName, dockName)
+			return fmt.Errorf("bay name %q already exists in dock %q", displayName, dockName)
 		}
 
 		ws.Name = finalName
@@ -239,7 +239,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		manifest.AssignWorkspaceIDs(dock)
 		addedWs := findWorkspaceByPath(dock, wsPath)
 		if addedWs == nil {
-			return fmt.Errorf("workspace at %q not found after creation", wsPath)
+			return fmt.Errorf("bay at %q not found after creation", wsPath)
 		}
 		if _, err := addedWs.AddSurface(surface); err != nil {
 			_ = dock.RemoveWorkspace(addedWs.ID)
@@ -265,7 +265,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	}
 	addedWs := findWorkspaceByPath(dock, wsPath)
 	if addedWs == nil {
-		return nil, fmt.Errorf("workspace at %q not found after creation", wsPath)
+		return nil, fmt.Errorf("bay at %q not found after creation", wsPath)
 	}
 
 	// Set up git branch if requested. For existing branches the worktree
@@ -273,7 +273,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	if opts.Branch != "" && addedWs.Worktree != nil {
 		if !branchExists {
 			if err := e.Git.CreateBranch(wsPath, opts.Branch); err != nil {
-				return addedWs, fmt.Errorf("workspace created but branch creation failed: %w", err)
+				return addedWs, fmt.Errorf("bay created but branch creation failed: %w", err)
 			}
 		}
 		if err := e.withManifest(func(m *manifest.Manifest) error {
@@ -283,7 +283,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 			}
 			ws := findWorkspaceByPath(dock, wsPath)
 			if ws == nil {
-				return fmt.Errorf("workspace at %q not found in dock %q", wsPath, dockName)
+				return fmt.Errorf("bay at %q not found in dock %q", wsPath, dockName)
 			}
 
 			ws.Worktree.Branch = opts.Branch
@@ -296,7 +296,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 			}
 			return nil
 		}); err != nil {
-			return addedWs, fmt.Errorf("workspace created but metadata update failed: %w", err)
+			return addedWs, fmt.Errorf("bay created but metadata update failed: %w", err)
 		}
 	}
 
@@ -310,7 +310,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	}
 	updatedWs := findWorkspaceByPath(updatedDock, wsPath)
 	if updatedWs == nil {
-		return nil, fmt.Errorf("workspace at %q not found in dock %q", wsPath, dockName)
+		return nil, fmt.Errorf("bay at %q not found in dock %q", wsPath, dockName)
 	}
 
 	// Re-evaluate tab name lengths now that workspace count changed.
@@ -348,7 +348,7 @@ func (e *Engine) closeWorkspaceState(dockName, wsID string, force bool) ([]strin
 	}
 	ws := dock.FindWorkspaceByID(wsID)
 	if ws == nil {
-		return nil, fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
+		return nil, fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
 	}
 
 	// Safety checks for worktree workspaces + determine if the branch
@@ -363,18 +363,18 @@ func (e *Engine) closeWorkspaceState(dockName, wsID string, force bool) ([]strin
 		if _, statErr := os.Stat(ws.Path); statErr == nil {
 			dirty, err := e.Git.IsDirty(ws.Path)
 			if err != nil {
-				return nil, fmt.Errorf("checking workspace state: %w", err)
+				return nil, fmt.Errorf("checking bay state: %w", err)
 			}
 			if dirty {
-				return nil, fmt.Errorf("workspace %q has uncommitted changes (use --force to override)", wsID)
+				return nil, fmt.Errorf("bay %q has uncommitted changes (use --force to override)", wsID)
 			}
 
 			unpushed, err := e.HasUnlandedCommits(ws)
 			if err != nil {
-				return nil, fmt.Errorf("workspace %q: could not verify push status: %w (use --force to override)", wsID, err)
+				return nil, fmt.Errorf("bay %q: could not verify push status: %w (use --force to override)", wsID, err)
 			}
 			if unpushed {
-				return nil, fmt.Errorf("workspace %q has unlanded commits (use --force to override)", wsID)
+				return nil, fmt.Errorf("bay %q has unlanded commits (use --force to override)", wsID)
 			}
 			// Safety checks passed → branch work exists remotely or has landed.
 			if ws.Worktree != nil && ws.Worktree.Branch != "" {
@@ -580,7 +580,7 @@ func (e *Engine) wsCloseBatch(dockName string, force, dryRun bool, skip wsSkipFu
 		if len(skipped) > 0 {
 			return nil, skipped, nil
 		}
-		return nil, nil, fmt.Errorf("no workspaces found")
+		return nil, nil, fmt.Errorf("no bays found")
 	}
 
 	if dryRun {
@@ -642,7 +642,7 @@ func (e *Engine) WsUpdate(dockName, wsID string, branch, pr *string) error {
 		}
 		ws := dock.FindWorkspaceByID(wsID)
 		if ws == nil {
-			return fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
+			return fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
 		}
 
 		ws.LastActive = time.Now().Unix()
@@ -682,7 +682,7 @@ func (e *Engine) WsDescribe(dockName, wsID, desc string) error {
 		}
 		ws := dock.FindWorkspaceByID(wsID)
 		if ws == nil {
-			return fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
+			return fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
 		}
 		ws.Description = desc
 		ws.LastActive = time.Now().Unix()
@@ -703,7 +703,7 @@ func (e *Engine) WsRename(dockName, wsID, newName string) error {
 		}
 		ws := dock.FindWorkspaceByID(wsID)
 		if ws == nil {
-			return fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
+			return fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
 		}
 
 		// Check uniqueness.
@@ -721,7 +721,7 @@ func (e *Engine) WsRename(dockName, wsID, newName string) error {
 
 // WsShow returns detailed information about a workspace.
 // This is a read-only manifest query — it does NOT call SyncAll.
-// Callers that display data to the user (bay ws show, bay sf ls)
+// Callers that display data to the user (bay show, bay sf ls)
 // should call SyncAll first. Callers that just need workspace state
 // for an operation (navigation, close, restart) can skip the sync.
 func (e *Engine) WsShow(dockName, wsID string) (*manifest.Workspace, error) {
@@ -735,7 +735,7 @@ func (e *Engine) WsShow(dockName, wsID string) (*manifest.Workspace, error) {
 	}
 	ws := dock.FindWorkspaceByID(wsID)
 	if ws == nil {
-		return nil, fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
+		return nil, fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
 	}
 	return ws, nil
 }
@@ -755,18 +755,43 @@ func (e *Engine) MarkPRCheckStale(dockName, wsID string) error {
 			return false, nil
 		}
 		ws := dock.FindWorkspaceByID(wsID)
-		if ws == nil || ws.Worktree == nil {
+		if ws == nil {
 			return false, nil
 		}
-		if ws.Worktree.Branch == "" || ws.Worktree.PR != "" {
-			return false, nil
-		}
-		if ws.Worktree.PRCheckedAt == 0 {
-			return false, nil
-		}
-		ws.Worktree.PRCheckedAt = 0
-		return true, nil
+		return clearPRCheckedAt(ws), nil
 	})
+}
+
+// MarkAllPRChecksStale resets PRCheckedAt for every workspace that has a
+// branch but no PR, in a single locked manifest update. Used by `bay tree`
+// to nudge the monitor without paying N file-lock cycles.
+func (e *Engine) MarkAllPRChecksStale() error {
+	return e.withManifestMaybe(func(m *manifest.Manifest) (bool, error) {
+		changed := false
+		for i := range m.Docks {
+			dock := &m.Docks[i]
+			for j := range dock.Workspaces {
+				if clearPRCheckedAt(&dock.Workspaces[j]) {
+					changed = true
+				}
+			}
+		}
+		return changed, nil
+	})
+}
+
+func clearPRCheckedAt(ws *manifest.Workspace) bool {
+	if ws.Worktree == nil {
+		return false
+	}
+	if ws.Worktree.Branch == "" || ws.Worktree.PR != "" {
+		return false
+	}
+	if ws.Worktree.PRCheckedAt == 0 {
+		return false
+	}
+	ws.Worktree.PRCheckedAt = 0
+	return true
 }
 
 // ResolveWorkspace resolves a workspace query to (dockName, wsID).
@@ -823,7 +848,7 @@ func (e *Engine) ResolveSelf() (string, string, error) {
 		}
 	}
 
-	return "", "", fmt.Errorf("not in a bay workspace")
+	return "", "", fmt.Errorf("not in a bay")
 }
 
 // ResolveByWindowID finds the workspace that owns the given tmux window ID.
@@ -843,7 +868,7 @@ func (e *Engine) ResolveByWindowID(tmuxWindowID string) (dockName, wsID string, 
 			}
 		}
 	}
-	return "", "", nil, fmt.Errorf("no workspace found for tmux window %s", tmuxWindowID)
+	return "", "", nil, fmt.Errorf("no bay found for tmux window %s", tmuxWindowID)
 }
 
 // updateWindowNames renames all tmux windows for a workspace's surfaces.
@@ -1003,7 +1028,7 @@ func (e *Engine) SetLastFocused(dockName, wsID string, surfaceID int) error {
 		}
 		ws := dock.FindWorkspaceByID(wsID)
 		if ws == nil {
-			return false, fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
+			return false, fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
 		}
 		now := time.Now().Unix()
 		if ws.LastFocused == surfaceID && ws.LastActive == now {
@@ -1137,7 +1162,7 @@ func (e *Engine) positionNewWindow(dockName, windowID, wsID string, m *manifest.
 	if wsID == "" {
 		// New workspace: goes after the last window of the last existing workspace.
 		for i := len(dock.Workspaces) - 1; i >= 0; i-- {
-			if id := lastWindowIDInWorkspace(dock, dock.Workspaces[i].Name); id != "" {
+			if id := lastWindowIDInWorkspace(dock, dock.Workspaces[i].ID); id != "" {
 				afterID = id
 				break
 			}
@@ -1163,7 +1188,7 @@ func (e *Engine) positionNewWindow(dockName, windowID, wsID string, m *manifest.
 func lastWindowIDBeforeWorkspace(dock *manifest.Dock, wsID string) string {
 	wsIdx := -1
 	for i, ws := range dock.Workspaces {
-		if ws.Name == wsID {
+		if ws.ID == wsID {
 			wsIdx = i
 			break
 		}

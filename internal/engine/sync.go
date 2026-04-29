@@ -18,7 +18,7 @@ const syncProbeConcurrency = 10
 
 // orphanGraceSeconds is how long a newly-emptied workspace lingers
 // before auto-close finalizes. The user can cancel by re-adding a
-// surface (bay sf new --ws <name>) during this window. Var (not
+// surface (bay sf new --bay <id>) during this window. Var (not
 // const) so tests can set it to 0 to exercise immediate finalization.
 var orphanGraceSeconds int64 = 60
 
@@ -351,7 +351,7 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 			changed = true
 			// If the strip emptied the workspace, schedule auto-close
 			// after a grace window. The user has that long to re-open
-			// a surface (bay sf new --ws <name>) to cancel.
+			// a surface (bay sf new --bay <id>) to cancel.
 			if len(ws.Surfaces) == 0 && ws.PendingCloseAt == 0 {
 				ws.PendingCloseAt = time.Now().Unix() + orphanGraceSeconds
 			}

@@ -286,15 +286,15 @@ bind-key -n M-h previous-window
 bind-key -n M-l next-window
 bind-key -n M-H select-pane -L
 bind-key -n M-J select-pane -D
-bind-key -n M-g run-shell 'bay ws go --pick || true'
+bind-key -n M-g run-shell 'bay go --pick || true'
 `
 	got := commandsInBlock(block)
 	want := map[string]bool{
-		"previous-window":          true,
-		"next-window":              true,
-		"select-pane -L":           true,
-		"select-pane -D":           true,
-		"bay ws go --pick || true": true,
+		"previous-window":       true,
+		"next-window":           true,
+		"select-pane -L":        true,
+		"select-pane -D":        true,
+		"bay go --pick || true": true,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("commandsInBlock() = %v, want %v", got, want)
@@ -522,7 +522,7 @@ func TestMismatchedBindings(t *testing.T) {
 	kbs := []bayKeybinding{
 		{key: "M-s", cmd: "bay shell --pane", tmuxVerb: "run-shell"},
 		{key: "M-S", cmd: "bay shell --window", tmuxVerb: "run-shell"},
-		{key: "M-e", cmd: "bay edit --ws", tmuxVerb: "run-shell"},
+		{key: "M-e", cmd: "bay edit --bay", tmuxVerb: "run-shell"},
 		{key: "M-E", cmd: "bay edit --dock", tmuxVerb: "run-shell"},
 	}
 
@@ -533,7 +533,7 @@ func TestMismatchedBindings(t *testing.T) {
 		block := `# Bay keybindings
 bind-key -n M-s run-shell 'bay shell --window || true'
 bind-key -n M-S run-shell 'bay shell --pane || true'
-bind-key -n M-e run-shell 'bay edit --ws || true'
+bind-key -n M-e run-shell 'bay edit --bay || true'
 bind-key -n M-E run-shell 'bay edit --dock || true'
 `
 		got := mismatchedBindings(block, kbs)

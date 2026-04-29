@@ -18,29 +18,6 @@ import (
 	"golang.org/x/term"
 )
 
-func newWsCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "workspace",
-		Aliases: []string{"ws"},
-		Short:   "Manage workspaces",
-	}
-
-	cmd.AddCommand(
-		newWsNewCmd(),
-		newWsCloseCmd(),
-		newWsShowCmd(),
-		newWsRenameCmd(),
-		newWsDescribeCmd(),
-		newWsLsCmd(),
-		newWsTreeCmd(),
-		newWsGoCmd(),
-		newWsNextCmd(),
-		newWsPrevCmd(),
-	)
-
-	return cmd
-}
-
 func newWsNewCmd() *cobra.Command {
 	var opts engine.WsNewOptions
 	var shell bool
@@ -49,13 +26,13 @@ func newWsNewCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "new [name]",
-		Short: "Create a new workspace",
-		Long: `Create a new workspace in a dock.
+		Short: "Create a new bay",
+		Long: `Create a new bay in a dock.
 
-  bay ws new                          create in current dock, auto-named
-  bay ws new login-bug                create with display name "login-bug"
-  bay ws new --branch fix/login-bug   checkout or create a git branch
-  bay ws new --dock labs              create in a specific dock`,
+  bay new                          create in current dock, auto-named
+  bay new login-bug                create with display name "login-bug"
+  bay new --branch fix/login-bug   checkout or create a git branch
+  bay new --dock labs              create in a specific dock`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -63,7 +40,7 @@ func newWsNewCmd() *cobra.Command {
 				return err
 			}
 
-			// Positional is the workspace's display name.
+			// Positional is the bay's display name.
 			if len(args) > 0 {
 				opts.Name = args[0]
 			}
@@ -125,7 +102,7 @@ func newWsNewCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (defaults to current tmux session)")
 	cmd.Flags().StringVar(&opts.Repo, "repo", "", "repo name")
-	cmd.Flags().StringVar(&opts.Dir, "dir", "", "external directory (creates external workspace)")
+	cmd.Flags().StringVar(&opts.Dir, "dir", "", "external directory (creates external bay)")
 	cmd.Flags().StringVar(&opts.Agent, "agent", "", "agent type (bare --agent uses dock default; use --agent=TYPE for a specific type)")
 	cmd.Flags().BoolVar(&shell, "shell", false, "open shell instead of agent")
 	cmd.Flags().StringVar(&opts.Branch, "branch", "", "git branch to checkout (creates it if new)")
@@ -141,19 +118,19 @@ func newWsCloseCmd() *cobra.Command {
 	var dockFlag string
 
 	cmd := &cobra.Command{
-		Use:     "close [name]",
+		Use:     "close [id]",
 		Aliases: []string{"rm"},
-		Short:   "Close a workspace and all its surfaces",
-		Long: `Close a workspace and all its windows. Pass "self" to close the current
-workspace, or use --done/--clean to batch-close workspaces.
+		Short:   "Close a bay and all its surfaces",
+		Long: `Close a bay and all its windows. Pass "self" to close the current
+bay, or use --done/--clean to batch-close bays.
 
-  bay ws close w1               close a specific workspace
-  bay ws close labs:w1          dock-qualified
-  bay ws close w1 --dock labs   same, with flag
-  bay ws close self             close the current workspace
-  bay ws close --done           close workspaces that are not dirty or pending
-  bay ws close --clean          close all non-dirty workspaces
-  bay ws close --done --dry-run preview what --done would close`,
+  bay close w1               close a specific bay
+  bay close labs:w1          dock-qualified
+  bay close w1 --dock labs   same, with flag
+  bay close self             close the current bay
+  bay close --done           close bays that are not dirty or pending
+  bay close --clean          close all non-dirty bays
+  bay close --done --dry-run preview what --done would close`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -173,11 +150,11 @@ workspace, or use --done/--clean to batch-close workspaces.
 					}
 				}
 
-				// Exclude the current workspace so batch close doesn't kill
+				// Exclude the current bay so batch close doesn't kill
 				// the session the user is running from.
 				var exclude []string
-				if ctx, ctxErr := eng.CurrentContext(); ctxErr == nil && ctx.Workspace != "" {
-					exclude = append(exclude, ctx.Workspace)
+				if ctx, ctxErr := eng.CurrentContext(); ctxErr == nil && ctx.WorkspaceID != "" {
+					exclude = append(exclude, ctx.WorkspaceID)
 				}
 
 				var closed, skipped []string
@@ -199,13 +176,13 @@ workspace, or use --done/--clean to batch-close workspaces.
 					fmt.Printf("Skipped %s\n", s)
 				}
 				if len(skipped) > 0 && !force && !dryRun {
-					fmt.Println("\nUse --force to close dirty workspaces.")
+					fmt.Println("\nUse --force to close dirty bays.")
 				}
 				return closeErr
 			}
 
 			if len(args) == 0 {
-				return fmt.Errorf("specify a workspace to close (bay ws close <name>), or use --done / --clean")
+				return fmt.Errorf("specify a bay to close (bay close <id>), or use --done / --clean")
 			}
 
 			dockName, wsID, err := resolveWsArg(eng, args[0], dockFlag)
@@ -218,10 +195,10 @@ workspace, or use --done/--clean to batch-close workspaces.
 	}
 
 	cmd.Flags().BoolVar(&force, "force", false, "force close even if dirty")
-	cmd.Flags().BoolVar(&done, "done", false, "close workspaces that are not dirty or pending")
-	cmd.Flags().BoolVar(&clean, "clean", false, "close all non-dirty workspaces")
+	cmd.Flags().BoolVar(&done, "done", false, "close bays that are not dirty or pending")
+	cmd.Flags().BoolVar(&clean, "clean", false, "close all non-dirty bays")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "preview what --done/--clean would close")
-	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare workspace name)")
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare bay ID)")
 
 	return cmd
 }
@@ -231,9 +208,9 @@ func newWsShowCmd() *cobra.Command {
 	var dockFlag string
 
 	cmd := &cobra.Command{
-		Use:     "show [name]",
+		Use:     "show [id]",
 		Aliases: []string{"cat"},
-		Short:   "Show workspace details (default: current)",
+		Short:   "Show bay details (default: current)",
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -250,7 +227,7 @@ func newWsShowCmd() *cobra.Command {
 				if short || flash || popup || popupBody {
 					// Swallow the error so the keybindings leave the
 					// status bar clean instead of flashing a traceback
-					// when invoked outside a workspace.
+					// when invoked outside a bay.
 					return nil
 				}
 				return err
@@ -259,10 +236,10 @@ func newWsShowCmd() *cobra.Command {
 			if popup {
 				// Orchestrator side: open a tmux popup that renders the
 				// full description via --popup-body. Resolving the
-				// workspace now (rather than inside the popup) lets the
+				// bay now (rather than inside the popup) lets the
 				// popup inherit an explicit dock/name and avoids
 				// re-resolving against a possibly-different CWD.
-				return eng.Tmux.DisplayPopup(fmt.Sprintf("bay ws show %s --popup-body --dock %s", wsID, dockName))
+				return eng.Tmux.DisplayPopup(fmt.Sprintf("bay show %s --popup-body --dock %s", wsID, dockName))
 			}
 
 			if popupBody {
@@ -281,7 +258,7 @@ func newWsShowCmd() *cobra.Command {
 					return nil
 				}
 				// User interest signal: if they're looking at this
-				// workspace and its PR is still missing, ask the monitor
+				// bay and its PR is still missing, ask the monitor
 				// to re-check on its next tick (~3s) rather than waiting
 				// for the full PR TTL to elapse.
 				_ = eng.MarkPRCheckStale(dockName, wsID)
@@ -360,23 +337,23 @@ func newWsShowCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON")
-	cmd.Flags().BoolVarP(&short, "short", "s", false, "one-line workspace summary (name — description — branch — #PR)")
+	cmd.Flags().BoolVarP(&short, "short", "s", false, "one-line bay summary (name — description — branch — #PR)")
 	cmd.Flags().BoolVar(&plain, "plain", false, "plain-text output (no ANSI colors); useful with --short for tmux display-message")
 	cmd.Flags().BoolVar(&flash, "flash", false, "send the short summary to tmux display-message for 5s (used by the M-/ binding)")
 	cmd.Flags().BoolVar(&popup, "popup", false, "open a tmux popup showing the full description (used by the M-? binding)")
 	cmd.Flags().BoolVar(&popupBody, "popup-body", false, "render the popup body and wait for keypress (invoked inside the popup)")
 	_ = cmd.Flags().MarkHidden("popup-body")
-	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare workspace name)")
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare bay ID)")
 
 	return cmd
 }
 
-// formatWorkspaceShort builds a one-line workspace summary:
+// formatWorkspaceShort builds a one-line bay summary:
 // `name — description — branch — #PR`, skipping empty fields.
-// The branch is omitted when it equals the workspace name — bay
-// auto-derives workspace names from branches, so in the common case
+// The branch is omitted when it equals the bay name — bay
+// auto-derives bay names from branches, so in the common case
 // they match and showing both just duplicates the identifier.
-// Used by `bay ws show --short` (and the M-/ flash binding); the
+// Used by `bay show --short` (and the M-/ flash binding); the
 // description is truncated to its first line, since this output
 // must fit on a single tmux status row.
 func formatWorkspaceShort(ws *manifest.Workspace) string {
@@ -398,7 +375,7 @@ func formatWorkspaceShort(ws *manifest.Workspace) string {
 	return strings.Join(parts, dim(" — "))
 }
 
-// renderPopupBody prints the workspace's full description (including body)
+// renderPopupBody prints the bay's full description (including body)
 // inside a tmux popup and waits for a keypress to dismiss. Word-wraps body
 // text to the pty width; if the rendered body would overflow, clipBody
 // replaces the tail with a "+N more lines" hint. The dismiss hint is
@@ -436,7 +413,7 @@ func renderPopupBody(ws *manifest.Workspace) {
 	_ = picker.NewKeyReader(os.Stdin).Read()
 }
 
-// buildPopupContent renders the workspace header and (wrapped, possibly
+// buildPopupContent renders the bay header and (wrapped, possibly
 // truncated) description for the popup. Isolated from the display path
 // so it can be unit-tested.
 func buildPopupContent(ws *manifest.Workspace, width, height int) string {
@@ -573,9 +550,9 @@ func newWsRenameCmd() *cobra.Command {
 	var dockFlag string
 
 	cmd := &cobra.Command{
-		Use:     "rename [name] <new-name>",
+		Use:     "rename [id] <new-name>",
 		Aliases: []string{"mv"},
-		Short:   "Rename a workspace (defaults to current)",
+		Short:   "Rename a bay (defaults to current)",
 		Args:    cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -601,50 +578,12 @@ func newWsRenameCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare workspace name)")
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare bay ID)")
 
 	return cmd
 }
 
-func newWsDescribeCmd() *cobra.Command {
-	var dockFlag string
-	var clear, edit bool
-
-	cmd := &cobra.Command{
-		Use:   "describe [name] [<description>]",
-		Short: "Set, edit, or show a workspace description (defaults to current)",
-		Long: `Read or set a free-form description for a workspace. The first line
-is a short label (cap 80) shown in the picker, bay ls, bay tree, and
-the M-/ flash. Optional trailing lines (separated from the first by a
-blank line, commit-message style) are context notes surfaced via the
-M-? popup — useful for returning to a workspace after working elsewhere.
-
-  bay ws describe                            print current workspace's description
-  bay ws describe "Login flow fixes"         set current workspace's description
-  bay ws describe auth-fix "Login fixes"     set by workspace name
-  bay ws describe "label
-
-  body line 1
-  body line 2"                               set with a body (multi-line arg)
-  bay ws describe --edit                     open $EDITOR to edit the description
-  bay ws describe --clear                    clear current workspace's description`,
-		Args: cobra.RangeArgs(0, 2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDescribe(args, dockFlag, clear, edit)
-		},
-	}
-
-	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare workspace name)")
-	cmd.Flags().BoolVar(&clear, "clear", false, "clear the description")
-	cmd.Flags().BoolVar(&edit, "edit", false, "open $EDITOR to edit the description (for multi-line bodies)")
-
-	return cmd
-}
-
-// runDescribe is shared between `bay ws describe` and the top-level `bay
-// describe`. Unlike `bay rename` (which has distinct tab-rename behavior on
-// the top-level variant), describe is a direct pass-through to the workspace
-// command, so the two cobra wrappers only differ in Use/Short/Long strings.
+// runDescribe backs `bay describe`.
 func runDescribe(args []string, dockFlag string, clear, edit bool) error {
 	eng, err := newEngine()
 	if err != nil {
@@ -755,7 +694,7 @@ func editDescription(current string) (string, error) {
 }
 
 // autoBootstrap detects the CWD git repo, creates a dock and repo in the manifest,
-// and saves. Returns the dock name to use for ws new.
+// and saves. Returns the dock name to use for bay new.
 func autoBootstrap(eng *engine.Engine, quiet bool) (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -847,8 +786,8 @@ func resolveCurrentDock(eng *engine.Engine) (dockName, repoName string, err erro
 	return "", "", fmt.Errorf("cannot determine current dock — not in a tmux session or a known git repo")
 }
 
-// resolveTarget resolves "self" or a workspace query. Bare names
-// prefer the current dock for disambiguation (see resolveBareWs).
+// resolveTarget resolves "self" or a bay query. Bare IDs prefer the
+// current dock for disambiguation (see resolveBareWs).
 func resolveTarget(eng *engine.Engine, target string) (string, string, error) {
 	if target == "self" {
 		return eng.ResolveSelf()
@@ -867,7 +806,7 @@ func newWsLsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "ls",
 		Aliases: []string{"list"},
-		Short:   "List workspaces in the current dock",
+		Short:   "List bays in the current dock",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
@@ -891,7 +830,21 @@ func newWsLsCmd() *cobra.Command {
 			view.SetCurrentContext(eng)
 
 			if jsonOutput {
-				return printListViewJSON(view, rowsOutput)
+				if rowsOutput {
+					return printListViewJSON(view, true)
+				}
+				var bays []engine.WorkspaceInfo
+				for _, repo := range view.Repos {
+					for _, d := range repo.Docks {
+						bays = append(bays, d.Workspaces...)
+					}
+				}
+				data, err := json.MarshalIndent(bays, "", "  ")
+				if err != nil {
+					return err
+				}
+				fmt.Println(string(data))
+				return nil
 			}
 
 			fmt.Print(FormatListView(view, false, shortOutput))
@@ -906,52 +859,12 @@ func newWsLsCmd() *cobra.Command {
 	return cmd
 }
 
-func newWsTreeCmd() *cobra.Command {
-	var longOutput bool
-	var shortOutput bool
-
-	cmd := &cobra.Command{
-		Use:   "tree",
-		Short: "Tree view of workspaces and surfaces in the current dock",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			eng, err := newEngine()
-			if err != nil {
-				return err
-			}
-
-			dockName, repo, err := resolveCurrentDock(eng)
-			if err != nil {
-				return err
-			}
-
-			docks, err := eng.List()
-			if err != nil {
-				return err
-			}
-
-			view := BuildListView(docks, ListViewOptions{
-				Focus:     ListFocus{Kind: FocusDock, Repo: repo, Dock: dockName},
-				Recursive: true,
-			})
-			view.SetCurrentContext(eng)
-
-			fmt.Print(FormatListView(view, longOutput, shortOutput))
-			return nil
-		},
-	}
-
-	cmd.Flags().BoolVarP(&longOutput, "long", "l", false, "show extended details such as tmux IDs")
-	cmd.Flags().BoolVarP(&shortOutput, "short", "s", false, "compact output without labels or key names")
-
-	return cmd
-}
-
 func newWsGoCmd() *cobra.Command {
 	var waiting, nextWaiting, pick bool
 
 	cmd := &cobra.Command{
 		Use:   "go [query]",
-		Short: "Fuzzy find and switch to a workspace in the current dock",
+		Short: "Fuzzy find and switch to a bay in the current dock",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -965,8 +878,8 @@ func newWsGoCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVar(&waiting, "waiting", false, "filter to waiting workspaces")
-	cmd.Flags().BoolVar(&nextWaiting, "next-waiting", false, "jump to next waiting workspace")
+	cmd.Flags().BoolVar(&waiting, "waiting", false, "filter to waiting bays")
+	cmd.Flags().BoolVar(&nextWaiting, "next-waiting", false, "jump to next waiting bay")
 	cmd.Flags().BoolVar(&pick, "pick", false, "open picker in a popup (used by keybindings)")
 	cmd.Flags().MarkHidden("pick")
 
@@ -976,7 +889,7 @@ func newWsGoCmd() *cobra.Command {
 func newWsNextCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "next",
-		Short: "Switch to the next workspace in the current dock",
+		Short: "Switch to the next bay in the current dock",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
@@ -990,7 +903,7 @@ func newWsNextCmd() *cobra.Command {
 func newWsPrevCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "prev",
-		Short: "Switch to the previous workspace in the current dock",
+		Short: "Switch to the previous bay in the current dock",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
@@ -1001,8 +914,8 @@ func newWsPrevCmd() *cobra.Command {
 	}
 }
 
-// wsGoPick checks if there are enough workspaces to pick from, then
-// opens a tmux display-popup with "bay ws go". Avoids flashing an
+// wsGoPick checks if there are enough bays to pick from, then
+// opens a tmux display-popup with "bay go". Avoids flashing an
 // empty popup when there's nothing to pick.
 func wsGoPick(eng *engine.Engine) error {
 	currentSession, err := eng.Tmux.CurrentSession()
@@ -1023,14 +936,14 @@ func wsGoPick(eng *engine.Engine) error {
 	if count < 2 {
 		return nil
 	}
-	return eng.Tmux.DisplayPopup("bay ws go")
+	return eng.Tmux.DisplayPopup("bay go")
 }
 
-// wsGo implements workspace picker scoped to the current dock.
+// wsGo implements bay picker scoped to the current dock.
 func wsGo(eng *engine.Engine, args []string, waiting, nextWaiting bool) error {
 	currentSession, err := eng.Tmux.CurrentSession()
 	if err != nil {
-		return fmt.Errorf("bay ws go requires tmux — use bay ls to see workspaces")
+		return fmt.Errorf("bay go requires tmux — use bay ls to see bays")
 	}
 
 	m, err := eng.LoadManifest()
@@ -1040,7 +953,7 @@ func wsGo(eng *engine.Engine, args []string, waiting, nextWaiting bool) error {
 
 	entries := nav.CollectEntries(m, eng.Tmux)
 
-	// Filter to current dock, excluding workspaces with no tmux presence.
+	// Filter to current dock, excluding bays with no tmux presence.
 	var dockEntries []nav.Entry
 	for _, e := range entries {
 		if e.DockName == currentSession && e.TmuxWindowID != "" {
@@ -1088,7 +1001,7 @@ func wsGo(eng *engine.Engine, args []string, waiting, nextWaiting bool) error {
 	}
 }
 
-// wsCycle moves to next/prev workspace in the current dock and flashes the
+// wsCycle moves to next/prev bay in the current dock and flashes the
 // new position via the cycling indicator.
 func wsCycle(eng *engine.Engine, forward bool) error {
 	currentSession, err := eng.Tmux.CurrentSession()
@@ -1137,7 +1050,7 @@ func wsCycle(eng *engine.Engine, forward bool) error {
 	return eng.Tmux.SelectWindow(dockEntries[next].TmuxWindowID)
 }
 
-// pickWorkspace shows the built-in picker for workspace selection.
+// pickWorkspace shows the built-in picker for bay selection.
 func pickWorkspace(eng *engine.Engine, entries []nav.Entry) error {
 	currentWinID, _ := eng.Tmux.CurrentWindowID()
 	currentIdx := 0
@@ -1189,14 +1102,14 @@ func pickWorkspace(eng *engine.Engine, entries []nav.Entry) error {
 		items[i] = picker.Item{Display: s, Value: i}
 	}
 
-	selected, err := defaultPicker.Pick(items, picker.Options{Prompt: "workspace> ", Selected: currentIdx})
+	selected, err := defaultPicker.Pick(items, picker.Options{Prompt: "bay> ", Selected: currentIdx})
 	if err != nil || selected < 0 {
 		return nil
 	}
 	return eng.Tmux.SelectWindow(entries[selected].TmuxWindowID)
 }
 
-// pickerDescMaxLen caps description width in the workspace picker. Larger than
+// pickerDescMaxLen caps description width in the bay picker. Larger than
 // tab names (where space is scarce) but still bounded to keep the picker
 // scannable.
 const pickerDescMaxLen = 40

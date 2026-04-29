@@ -58,17 +58,17 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 			Title:   "Go to surface...",
 			Section: palette.SectionNavigation,
 			Needs:   palette.ScopeInWorkspace,
-			Hotkey:  h.Lookup("bay go --pick"),
+			Hotkey:  h.Lookup("bay surface go --pick"),
 			Action: func() (string, error) {
 				return "", surfaceGo(env.Engine, nil, false)
 			},
 		},
 		{
 			ID:      "go-workspace",
-			Title:   "Go to workspace...",
+			Title:   "Go to bay...",
 			Section: palette.SectionNavigation,
 			Needs:   palette.ScopeInDock,
-			Hotkey:  h.Lookup("bay ws go --pick"),
+			Hotkey:  h.Lookup("bay go --pick"),
 			Action: func() (string, error) {
 				return "", wsGo(env.Engine, nil, false, false)
 			},
@@ -169,10 +169,10 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 		},
 		{
 			ID:      "edit-workspace",
-			Title:   "Open editor (workspace)",
+			Title:   "Open editor (bay)",
 			Section: palette.SectionCreateSurface,
 			Needs:   palette.ScopeInWorkspace,
-			Hotkey:  h.Lookup("bay edit --ws"),
+			Hotkey:  h.Lookup("bay edit --bay"),
 			Action: func() (string, error) {
 				return "", runEditCreate(env.Engine, "self", "", split)
 			},
@@ -188,13 +188,13 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 			},
 		},
 
-		// === Create — workspace ===
+		// === Create — bay ===
 		{
 			ID:      "new-workspace",
-			Title:   "New workspace",
+			Title:   "New bay",
 			Section: palette.SectionCreateWorkspace,
 			Needs:   palette.ScopeInDock,
-			Hotkey:  h.Lookup("bay ws new -q"),
+			Hotkey:  h.Lookup("bay new -q"),
 			Action: func() (string, error) {
 				_, err := env.Engine.WsNew(engine.WsNewOptions{
 					Dock:  env.Ctx.Dock,
@@ -205,10 +205,10 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 		},
 		{
 			ID:      "new-workspace-agent",
-			Title:   "New workspace with default agent",
+			Title:   "New bay with default agent",
 			Section: palette.SectionCreateWorkspace,
 			Needs:   palette.ScopeInDock,
-			Hotkey:  h.Lookup("bay ws new -q --agent"),
+			Hotkey:  h.Lookup("bay new -q --agent"),
 			Action: func() (string, error) {
 				_, err := env.Engine.WsNew(engine.WsNewOptions{
 					Dock:         env.Ctx.Dock,
@@ -219,12 +219,12 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 		},
 		{
 			ID:         "new-workspace-agent-pick",
-			Title:      "New workspace with agent...",
+			Title:      "New bay with agent...",
 			Section:    palette.SectionCreateWorkspace,
 			Needs:      palette.ScopeInDock,
 			ParamValid: agentParamValid,
 			TitleWithParam: func(p string) string {
-				return fmt.Sprintf("New workspace with agent (%s)", p)
+				return fmt.Sprintf("New bay with agent (%s)", p)
 			},
 			Action: func() (string, error) {
 				agent, ok := paletteAgentPick(env)
@@ -238,55 +238,56 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 			},
 		},
 
-		// === Current workspace ===
+		// === Current bay ===
 		{
 			ID:      "rename-workspace",
-			Title:   "Rename workspace...",
+			Title:   "Rename bay...",
 			Section: palette.SectionCurrentWorkspace,
 			Needs:   palette.ScopeInWorkspace,
 			Action: func() (string, error) {
+				currentID := env.Ctx.WorkspaceID
 				current := env.Ctx.Workspace
-				name, ok, err := picker.Prompt("rename workspace: ", current, env.In, env.Out)
+				name, ok, err := picker.Prompt("rename bay: ", current, env.In, env.Out)
 				if err != nil || !ok || name == "" || name == current {
 					return "", err
 				}
-				return "", env.Engine.WsRename(env.Ctx.Dock, current, name)
+				return "", env.Engine.WsRename(env.Ctx.Dock, currentID, name)
 			},
 		},
 		{
 			ID:      "describe-workspace",
-			Title:   "Describe workspace...",
+			Title:   "Describe bay...",
 			Section: palette.SectionCurrentWorkspace,
 			Needs:   palette.ScopeInWorkspace,
 			Action: func() (string, error) {
 				prefill := ""
-				if info, err := env.Engine.WorkspaceInfoByName(env.Ctx.Dock, env.Ctx.Workspace); err == nil {
+				if info, err := env.Engine.WorkspaceInfoByName(env.Ctx.Dock, env.Ctx.WorkspaceID); err == nil {
 					prefill = info.Description
 				}
 				desc, ok, err := picker.Prompt("describe: ", prefill, env.In, env.Out)
 				if err != nil || !ok {
 					return "", err
 				}
-				return "", env.Engine.WsDescribe(env.Ctx.Dock, env.Ctx.Workspace, desc)
+				return "", env.Engine.WsDescribe(env.Ctx.Dock, env.Ctx.WorkspaceID, desc)
 			},
 		},
 		{
 			ID:      "clear-workspace-description",
-			Title:   "Clear workspace description",
+			Title:   "Clear bay description",
 			Section: palette.SectionCurrentWorkspace,
 			Needs:   palette.ScopeInWorkspace,
 			Action: func() (string, error) {
-				return "", env.Engine.WsDescribe(env.Ctx.Dock, env.Ctx.Workspace, "")
+				return "", env.Engine.WsDescribe(env.Ctx.Dock, env.Ctx.WorkspaceID, "")
 			},
 		},
 		{
 			ID:      "show-workspace",
-			Title:   "Show workspace details",
+			Title:   "Show bay details",
 			Section: palette.SectionCurrentWorkspace,
 			Needs:   palette.ScopeInWorkspace,
 			Action: func() (string, error) {
 				env.Engine.SyncAll()
-				info, err := env.Engine.WorkspaceInfoByName(env.Ctx.Dock, env.Ctx.Workspace)
+				info, err := env.Engine.WorkspaceInfoByName(env.Ctx.Dock, env.Ctx.WorkspaceID)
 				if err != nil {
 					return "", err
 				}
@@ -297,11 +298,11 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 		},
 		{
 			ID:      "close-workspace",
-			Title:   "Close workspace",
+			Title:   "Close bay",
 			Section: palette.SectionCurrentWorkspace,
 			Needs:   palette.ScopeInWorkspace,
 			Action: func() (string, error) {
-				return "", env.Engine.WsClose(env.Ctx.Dock, env.Ctx.Workspace, false)
+				return "", env.Engine.WsClose(env.Ctx.Dock, env.Ctx.WorkspaceID, false)
 			},
 		},
 
@@ -320,7 +321,7 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 				if err != nil || !ok || name == "" || name == current {
 					return "", err
 				}
-				return "", env.Engine.SurfaceRename(env.Ctx.Dock, env.Ctx.Workspace, current, name)
+				return "", env.Engine.SurfaceRename(env.Ctx.Dock, env.Ctx.WorkspaceID, current, name)
 			},
 		},
 		{
@@ -333,7 +334,7 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 				if env.Ctx.Surface == "" {
 					return "", fmt.Errorf("no current surface")
 				}
-				return "", env.Engine.SurfaceClose(env.Ctx.Dock, env.Ctx.Workspace, env.Ctx.Surface, false)
+				return "", env.Engine.SurfaceClose(env.Ctx.Dock, env.Ctx.WorkspaceID, env.Ctx.Surface, false)
 			},
 		},
 		{
@@ -346,7 +347,7 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 					return "", fmt.Errorf("no current surface")
 				}
 				env.Engine.SyncAll()
-				ws, err := env.Engine.WsShow(env.Ctx.Dock, env.Ctx.Workspace)
+				ws, err := env.Engine.WsShow(env.Ctx.Dock, env.Ctx.WorkspaceID)
 				if err != nil {
 					return "", err
 				}

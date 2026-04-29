@@ -25,7 +25,7 @@ func TestUseStrings_NoSelfMarker(t *testing.T) {
 
 // TestPositionalShapes pins the new positional contracts. If anyone
 // changes a command's Use line back to a container-positional ([dock],
-// [workspace]) or removes the optional [name], this test fails with a
+// [bay]) or removes the optional [name], this test fails with a
 // clear pointer to the contract.
 func TestPositionalShapes(t *testing.T) {
 	root := NewRootCmd("test")
@@ -36,26 +36,23 @@ func TestPositionalShapes(t *testing.T) {
 		why     string
 	}{
 		// Create-verbs: positional is the new thing's name.
-		{[]string{"workspace", "new"}, "new [name]", "ws new positional must be the workspace's display name"},
+		{[]string{"new"}, "new [name]", "bay new positional must be the bay's display name"},
 		{[]string{"shell"}, "shell [name]", "shell positional must be the surface name"},
 
 		// Show: optional positional, defaults to current.
-		{[]string{"show"}, "show [name]", "top-level show positional must be optional (defaults to current)"},
+		{[]string{"show"}, "show [id]", "top-level show positional must be optional (defaults to current)"},
 		{[]string{"surface", "show"}, "show [name]", "surface show positional must be optional"},
-		{[]string{"workspace", "show"}, "show [name]", "ws show positional must be optional"},
 
 		// Tree: optional positional, defaults to current.
 		{[]string{"dock", "tree"}, "tree [name]", "dock tree positional must be optional (defaults to current dock)"},
 
 		// Close: positional shape, no '|self' marker.
-		{[]string{"close"}, "close <name>", "close positional must be name (no '|self' in usage)"},
+		{[]string{"close"}, "close [id]", "bay close has --clean so positional is optional"},
 		{[]string{"surface", "close"}, "close <name>", "surface close positional must be name"},
-		{[]string{"workspace", "close"}, "close [name]", "ws close has --clean so positional is optional"},
 
 		// Rename: first positional optional (defaults to self).
-		{[]string{"rename"}, "rename [name] <new-name>", "top-level rename — workspace form"},
+		{[]string{"rename"}, "rename [id] <new-name>", "top-level rename — bay form"},
 		{[]string{"surface", "rename"}, "rename [old] <new>", "surface rename"},
-		{[]string{"workspace", "rename"}, "rename [name] <new-name>", "ws rename"},
 	}
 
 	for _, c := range cases {
@@ -72,53 +69,53 @@ func TestPositionalShapes(t *testing.T) {
 	}
 }
 
-// TestWsNew_DockFlagExists pins that ws new accepts --dock now that the
-// positional has been repurposed for the workspace name. Without this
+// TestBayNew_DockFlagExists pins that bay new accepts --dock now that the
+// positional has been repurposed for the bay name. Without this
 // flag the old dock-targeting workflow would have no replacement.
-func TestWsNew_DockFlagExists(t *testing.T) {
+func TestBayNew_DockFlagExists(t *testing.T) {
 	root := NewRootCmd("test")
-	cmd, _, err := root.Find([]string{"workspace", "new"})
+	cmd, _, err := root.Find([]string{"new"})
 	if err != nil {
-		t.Fatalf("could not find ws new: %v", err)
+		t.Fatalf("could not find bay new: %v", err)
 	}
 	if cmd.Flags().Lookup("dock") == nil {
-		t.Error("ws new is missing --dock flag (the replacement for the old positional)")
+		t.Error("bay new is missing --dock flag (the replacement for the old positional)")
 	}
 	// The old --name flag is gone — positional replaces it.
 	if cmd.Flags().Lookup("name") != nil {
-		t.Error("ws new still has --name flag; positional replaces it")
+		t.Error("bay new still has --name flag; positional replaces it")
 	}
 }
 
-// TestWsNew_BareAgentFlag pins that --agent can be used without a value
+// TestBayNew_BareAgentFlag pins that --agent can be used without a value
 // to get the dock's default agent. NoOptDefVal must be set so cobra
 // doesn't require an argument.
-func TestWsNew_BareAgentFlag(t *testing.T) {
+func TestBayNew_BareAgentFlag(t *testing.T) {
 	root := NewRootCmd("test")
-	cmd, _, err := root.Find([]string{"workspace", "new"})
+	cmd, _, err := root.Find([]string{"new"})
 	if err != nil {
-		t.Fatalf("could not find ws new: %v", err)
+		t.Fatalf("could not find bay new: %v", err)
 	}
 	f := cmd.Flags().Lookup("agent")
 	if f == nil {
-		t.Fatal("ws new is missing --agent flag")
+		t.Fatal("bay new is missing --agent flag")
 	}
 	if f.NoOptDefVal == "" {
 		t.Error("--agent flag must have NoOptDefVal set so bare --agent works")
 	}
 }
 
-// TestSurfaceNew_SubcommandsHaveWsAndDockFlags pins that surface new's
-// subcommands (shell, agent, cmd) accept --ws and --dock.
-func TestSurfaceNew_SubcommandsHaveWsAndDockFlags(t *testing.T) {
+// TestSurfaceNew_SubcommandsHaveBayAndDockFlags pins that surface new's
+// subcommands (shell, agent, cmd) accept --bay and --dock.
+func TestSurfaceNew_SubcommandsHaveBayAndDockFlags(t *testing.T) {
 	root := NewRootCmd("test")
 	for _, kind := range []string{"shell", "agent", "cmd"} {
 		cmd, _, err := root.Find([]string{"surface", "new", kind})
 		if err != nil {
 			t.Fatalf("could not find surface new %s: %v", kind, err)
 		}
-		if cmd.Flags().Lookup("ws") == nil {
-			t.Errorf("surface new %s is missing --ws flag", kind)
+		if cmd.Flags().Lookup("bay") == nil {
+			t.Errorf("surface new %s is missing --bay flag", kind)
 		}
 		if cmd.Flags().Lookup("dock") == nil {
 			t.Errorf("surface new %s is missing --dock flag", kind)
@@ -126,16 +123,16 @@ func TestSurfaceNew_SubcommandsHaveWsAndDockFlags(t *testing.T) {
 	}
 }
 
-// TestShell_WsAndDockFlagsExist pins that bay shell accepts --ws now
+// TestShell_BayAndDockFlagsExist pins that bay shell accepts --bay now
 // that the positional has been repurposed for the shell surface name.
-func TestShell_WsAndDockFlagsExist(t *testing.T) {
+func TestShell_BayAndDockFlagsExist(t *testing.T) {
 	root := NewRootCmd("test")
 	cmd, _, err := root.Find([]string{"shell"})
 	if err != nil {
 		t.Fatalf("could not find shell: %v", err)
 	}
-	if cmd.Flags().Lookup("ws") == nil {
-		t.Error("shell is missing --ws flag (the replacement for the old positional)")
+	if cmd.Flags().Lookup("bay") == nil {
+		t.Error("shell is missing --bay flag (the replacement for the old positional)")
 	}
 	if cmd.Flags().Lookup("dock") == nil {
 		t.Error("shell is missing --dock flag")

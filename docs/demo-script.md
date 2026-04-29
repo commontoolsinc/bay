@@ -5,9 +5,9 @@ through a pre-built dock.
 
 ## Pre-demo setup
 
-Have a dock (e.g., `labs-demo`) with 3-4 workspaces ready:
+Have a dock (e.g., `labs-demo`) with 3-4 bays ready:
 
-| Workspace      | Branch              | Status   | Surfaces        | Notes                          |
+| Bay            | Branch              | Status   | Surfaces        | Notes                          |
 |----------------|---------------------|----------|-----------------|--------------------------------|
 | `auth-fix`     | `fix/auth-header`   | active   | agent, shell    | Agent running, not waiting     |
 | `cache-ttl`    | `fix/cache-ttl`     | active   | agent           | Agent waiting for input (highlighted) |
@@ -16,9 +16,9 @@ Have a dock (e.g., `labs-demo`) with 3-4 workspaces ready:
 
 - Monitor running (`bay monitor start`)
 - tmux status line configured
-- A branch `fix/rate-limit` exists in the repo with no workspace
+- A branch `fix/rate-limit` exists in the repo with no bay
   attached (for the cold-open tab-complete)
-- Start focused on a shell in the demo dock (not inside a workspace)
+- Start focused on a shell in the demo dock (not inside a bay)
   — the demo dock must be the *current* dock so `bay dk tree` defaults
   to it
 
@@ -31,11 +31,11 @@ No preamble. One sentence of context, then just do it.
 > I'm inside a tmux session that bay manages. Let me pick up a
 > branch I was working on earlier.
 
-**Do:** Type `bay ws new --branch ` and tab-complete. Let the
+**Do:** Type `bay new --branch ` and tab-complete. Let the
 audience see the branch list appear, select `fix/rate-limit`.
 
 ```
-bay ws new --branch fix/rate-limit
+bay new --branch fix/rate-limit
 ```
 
 > New worktree, new tmux window.
@@ -51,12 +51,12 @@ bay dk tree
 
 > Agent running. There it is in the tree.
 
-**Do:** Close it. Workspaces are addressed by ID — `bay dk tree` shows
+**Do:** Close it. Bays are addressed by ID — `bay dk tree` shows
 the ID column when it differs from the friendly Name; here the new
-workspace's ID is the next free `w<N>`.
+bay's ID is the next free `w<N>`.
 
 ```
-bay ws close <id>
+bay close <id>
 bay dk tree
 ```
 
@@ -74,11 +74,11 @@ bay dk tree
 > The problem was never the working — it was the setup. Creating a
 > worktree, checking out a branch, opening a window, launching an
 > agent... that friction adds up. So you start pre-building
-> workspaces and maintaining them just in case. You keep more around
+> bays and maintaining them just in case. You keep more around
 > than you need because setting up a new one is a hassle.
 >
 > Bay makes it cheap enough that you stop doing that. You create a
-> workspace when you need one and throw it away when you're done.
+> bay when you need one and throw it away when you're done.
 > No planning ahead, no hoarding state. And it's all persistently
 > managed — reboot your machine, `bay recover`, you're back where
 > you were.
@@ -90,7 +90,7 @@ bay dk tree
 **Do:** Run `bay dk tree`
 
 > This is my actual working state. Four things going on. Bay shows
-> me each one — workspace name, branch, PR number, surfaces.
+> me each one — bay name, branch, PR number, surfaces.
 
 **Walk through the output:**
 
@@ -100,7 +100,7 @@ bay dk tree
 > `cache-ttl` — see the hourglass next to it? That means the agent
 > stopped to ask me something. I didn't go check. Bay runs a
 > background monitor that watches every agent across every
-> workspace, and the moment one waits for input it gets flagged
+> bay, and the moment one waits for input it gets flagged
 > here and its tab in the tmux status bar lights up. I have six
 > agents running at any given time — I don't poll them. They tell
 > me when they need me.
@@ -116,7 +116,7 @@ bay dk tree
 
 **Do:** Run `bay pwd`
 
-> And bay always knows where I am — which dock, which workspace,
+> And bay always knows where I am — which dock, which bay,
 > which surface. No guessing.
 
 ---
@@ -128,11 +128,11 @@ bay dk tree
 > Option-h and l cycle through tmux windows (vim-style left/right —
 > tabs run horizontally across the status bar). Every surface — agent,
 > shell, editor — is a window, so this walks through all of them
-> regardless of which workspace they belong to.
+> regardless of which bay they belong to.
 
-**Do:** Hit `Option+g` — the workspace picker pops up.
+**Do:** Hit `Option+g` — the bay picker pops up.
 
-> Once you have more than a few workspaces, cycling gets tedious.
+> Once you have more than a few bays, cycling gets tedious.
 > Option-g is the fuzzy picker — filter by name or description, Enter
 > to jump.
 
@@ -154,13 +154,13 @@ create with default names.
 bay dk tree
 ```
 
-> Three new workspaces. Each has its own worktree, branch, and tab.
+> Three new bays. Each has its own worktree, branch, and tab.
 > Option-C is real keybindings, not demo tricks — that's how I
-> actually create workspaces day to day.
+> actually create bays day to day.
 
 **Do:** Close them — `Option+w` twice on each tab (first tap triggers
-the last-surface confirmation, second confirms), or `bay ws close
-<id>`. Then close the merged dep-update workspace too — type its ID
+the last-surface confirmation, second confirms), or `bay close
+<id>`. Then close the merged dep-update bay too — type its ID
 from the tree.
 
 ```
@@ -179,7 +179,7 @@ bay dk tree
 > I know exactly which ones need me. And when I'm done, they clean
 > up after themselves.
 >
-> `bay setup` from your terminal, then `bay ws new` from any repo.
+> `bay setup` from your terminal, then `bay new` from any repo.
 > Zero config. Works with Claude, Codex, Gemini, or custom agents.
 
 ---
@@ -200,11 +200,11 @@ bay dk tree
 - `Option+r` jumps to the next waiting agent ("ready" for input).
 - `Option+C` (create) and `Option+w` (close current surface) are real
   bay keybindings, not aliases. `Option+w` on the only surface in a
-  workspace tears down the workspace itself, after a one-tap-to-confirm
+  bay tears down the bay itself, after a one-tap-to-confirm
   guard.
-- If someone asks about editors: "bay edit opens your workspace in
+- If someone asks about editors: "bay edit opens your bay in
   Cursor, VS Code, nvim, whatever you use. Terminal editors get
   tracked as surfaces; GUI editors just launch."
-- If someone asks about multiple repos: "One dock can hold workspaces
-  from different repos. `bay ws new --repo backend` alongside your
-  frontend workspaces."
+- If someone asks about multiple repos: "One dock can hold bays
+  from different repos. `bay new --repo backend` alongside your
+  frontend bays."

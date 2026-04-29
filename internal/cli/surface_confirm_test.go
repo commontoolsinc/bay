@@ -162,7 +162,7 @@ func TestRunSurfaceClose_LastSurface_DirtyShowsRefusalInsteadOfDoubleTap(t *test
 	if len(*agent) != 0 {
 		t.Errorf("agent prompt should not fire for shell surface, got %v", *agent)
 	}
-	if msgs := mockTmux.DisplayMessages(); len(msgs) != 1 || !strings.Contains(msgs[0], "workspace kept (uncommitted changes)") {
+	if msgs := mockTmux.DisplayMessages(); len(msgs) != 1 || !strings.Contains(msgs[0], "bay kept (uncommitted changes)") {
 		t.Fatalf("expected dirty refusal toast, got %v", msgs)
 	}
 
@@ -201,7 +201,7 @@ func TestRunSurfaceClose_LastSurface_UnpushedShowsRefusalInsteadOfDoubleTap(t *t
 	if len(*agent) != 0 {
 		t.Errorf("agent prompt should not fire for shell surface, got %v", *agent)
 	}
-	if msgs := mockTmux.DisplayMessages(); len(msgs) != 1 || !strings.Contains(msgs[0], "workspace kept (unlanded commits)") {
+	if msgs := mockTmux.DisplayMessages(); len(msgs) != 1 || !strings.Contains(msgs[0], "bay kept (unlanded commits)") {
 		t.Fatalf("expected unlanded refusal toast, got %v", msgs)
 	}
 

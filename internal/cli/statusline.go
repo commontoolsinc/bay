@@ -25,9 +25,9 @@ func newStatusLineCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "status-line <field>",
-		Short: "Output workspace info for tmux status line",
-		Long: `Output a single field for the current workspace, resolved by tmux window ID.
-Designed for use in tmux status-format strings. Outputs empty string if not in a workspace.
+		Short: "Output bay info for tmux status line",
+		Long: `Output a single field for the current bay, resolved by tmux window ID.
+Designed for use in tmux status-format strings. Outputs empty string if not in a bay.
 
 Fields: id, name, branch, pr, status, dock, merged, full
 
@@ -47,7 +47,7 @@ window until the next status-interval tick.`,
 
 			// Fast path: skip newEngine() entirely. status-line
 			// only needs a tmux connection (for the current window
-			// ID) and the manifest (for workspace data). No config
+			// ID) and the manifest (for bay data). No config
 			// parse, no git interface, no engine construction.
 			t := tmuxpkg.NewReal()
 			g := gitpkg.NewReal()
@@ -72,7 +72,7 @@ window until the next status-interval tick.`,
 			// ("@1", "@2", ...), giving each its own cache entry.
 			// The cache miss on a new window triggers a fresh run
 			// with the correct --window, and bay reports that
-			// window's workspace rather than whichever one tmux
+			// window's bay rather than whichever one tmux
 			// reports as "current".
 			//
 			// Fall back to CurrentWindowID() for backward compat

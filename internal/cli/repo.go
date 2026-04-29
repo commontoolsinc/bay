@@ -143,7 +143,7 @@ func newRepoTreeCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "tree [name]",
-		Short: "Tree view of a repo's docks, workspaces, and surfaces (default: current)",
+		Short: "Tree view of a repo's docks, bays, and surfaces (default: current)",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -244,7 +244,7 @@ func newRepoShowCmd() *cobra.Command {
 			if len(dockNames) > 0 {
 				rows = append(rows, showRow{"docks", strings.Join(dockNames, ", ")})
 			}
-			rows = append(rows, showRow{"workspaces", fmt.Sprintf("%d", wsCount)})
+			rows = append(rows, showRow{"bays", fmt.Sprintf("%d", wsCount)})
 
 			printAlignedRows(rows)
 			return nil

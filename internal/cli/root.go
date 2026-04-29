@@ -56,15 +56,17 @@ func newEngine() (*engine.Engine, error) {
 	return engine.New(cfg, p.ConfigFile, p.ManifestFile, p.ArchiveFile, t, g), nil
 }
 
-const bayHelpTemplate = `Bay — workspace management for tmux and git worktrees.
+const bayHelpTemplate = `Bay — bay management for tmux and git worktrees.
 
 Quick start:
-  bay ws new              create a workspace
-  bay new shell           create a shell surface
+  bay new                 create a bay
+  bay surface new shell   create a shell surface
   bay agent               launch dock's default agent
-  bay go [query]          jump to a surface
-  bay ls                  see everything
-  bay close [name]        close a surface (or current pane)
+  bay go [query]          jump to a bay
+  bay surface go [query]  jump to a surface
+  bay ls                  list bays in this dock
+  bay tree                see everything
+  bay close [id]          close a bay
   bay edit                open editor
 
 Run 'bay help' for all commands, or 'bay help <command>' for details.
@@ -74,7 +76,7 @@ Run 'bay help' for all commands, or 'bay help <command>' for details.
 func NewRootCmd(version string) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "bay",
-		Short:         "Multi-session workspace management for tmux and git worktrees",
+		Short:         "Multi-session bay management for tmux and git worktrees",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Run: func(cmd *cobra.Command, args []string) {
@@ -85,16 +87,32 @@ func NewRootCmd(version string) *cobra.Command {
 
 	// Define command groups
 	root.AddGroup(
-		&cobra.Group{ID: "workspace", Title: "Workspaces:"},
+		&cobra.Group{ID: "bay", Title: "Bays:"},
 		&cobra.Group{ID: "surface", Title: "Surfaces:"},
 		&cobra.Group{ID: "navigation", Title: "Navigation:"},
 		&cobra.Group{ID: "infra", Title: "Infrastructure:"},
 		&cobra.Group{ID: "other", Title: "Other:"},
 	)
 
-	// Workspace commands
-	wsCmd := newWsCmd()
-	wsCmd.GroupID = "workspace"
+	// Bay commands
+	bayNewCmd := newWsNewCmd()
+	bayNewCmd.GroupID = "bay"
+	bayCloseCmd := newWsCloseCmd()
+	bayCloseCmd.GroupID = "bay"
+	bayShowCmd := newWsShowCmd()
+	bayShowCmd.GroupID = "bay"
+	bayRenameCmd := newWsRenameCmd()
+	bayRenameCmd.GroupID = "bay"
+	bayDescribeCmd := newTopDescribeCmd()
+	bayDescribeCmd.GroupID = "bay"
+	bayLsCmd := newWsLsCmd()
+	bayLsCmd.GroupID = "bay"
+	bayGoCmd := newWsGoCmd()
+	bayGoCmd.GroupID = "navigation"
+	bayNextCmd := newWsNextCmd()
+	bayNextCmd.GroupID = "navigation"
+	bayPrevCmd := newWsPrevCmd()
+	bayPrevCmd.GroupID = "navigation"
 
 	// Surface commands (namespace + verbs + utility)
 	surfaceCmd := newSurfaceCmd()
@@ -105,24 +123,10 @@ func NewRootCmd(version string) *cobra.Command {
 	agentCmd.GroupID = "surface"
 	editCmd := newEditCmd()
 	editCmd.GroupID = "surface"
-	topNewCmd := newTopNewCmd()
-	topNewCmd.GroupID = "surface"
-	topCloseCmd := newTopCloseCmd()
-	topCloseCmd.GroupID = "surface"
 	topRestoreCmd := newTopRestoreCmd()
 	topRestoreCmd.GroupID = "surface"
-	topShowCmd := newTopShowCmd()
-	topShowCmd.GroupID = "surface"
-	topRenameCmd := newTopRenameCmd()
-	topRenameCmd.GroupID = "workspace"
-	topDescribeCmd := newTopDescribeCmd()
-	topDescribeCmd.GroupID = "workspace"
 
 	// Navigation commands
-	goCmd := newGoCmd()
-	goCmd.GroupID = "navigation"
-	lsCmd := newLsCmd()
-	lsCmd.GroupID = "navigation"
 	treeCmd := newTreeCmd()
 	treeCmd.GroupID = "navigation"
 	pwdCmd := newPwdCmd()
@@ -152,19 +156,20 @@ func NewRootCmd(version string) *cobra.Command {
 	configCmd.GroupID = "infra"
 
 	root.AddCommand(
-		wsCmd,
+		bayNewCmd,
+		bayCloseCmd,
+		bayShowCmd,
+		bayRenameCmd,
+		bayDescribeCmd,
+		bayLsCmd,
+		bayGoCmd,
+		bayNextCmd,
+		bayPrevCmd,
 		surfaceCmd,
 		shellCmd,
 		agentCmd,
 		editCmd,
-		topNewCmd,
-		topCloseCmd,
 		topRestoreCmd,
-		topShowCmd,
-		topRenameCmd,
-		topDescribeCmd,
-		goCmd,
-		lsCmd,
 		treeCmd,
 		pwdCmd,
 		statusLineCmd,
