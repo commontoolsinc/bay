@@ -628,27 +628,6 @@ func runSurfaceRename(eng *engine.Engine, args []string, wsFlag, dockFlag string
 }
 
 // surfaceGo implements the surface picker / direct jump logic.
-// surfaceGoPick checks if there are enough surfaces to pick from, then
-// opens a tmux display-popup with "bay surface go". Used by keybindings to avoid
-// flashing an empty popup when there's nothing to pick.
-func surfaceGoPick(eng *engine.Engine) error {
-	dockName, wsName, err := eng.ResolveSelf()
-	if err != nil {
-		return nil
-	}
-	ws, err := eng.WsShow(dockName, wsName)
-	if err != nil {
-		return nil
-	}
-	currentPaneID, _ := eng.Tmux.CurrentPaneID()
-	waitingWindows, _ := eng.Tmux.WaitingOrBellWindowIDs(dockName)
-	entries := nav.CollectSurfaces(ws, currentPaneID, waitingWindows)
-	if len(entries) < 2 {
-		return nil
-	}
-	return eng.Tmux.DisplayPopup("bay surface go")
-}
-
 func surfaceGo(eng *engine.Engine, args []string, nextWaiting bool) error {
 	dockName, wsName, err := eng.ResolveSelf()
 	if err != nil {
