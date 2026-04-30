@@ -200,6 +200,15 @@ func TestDockNew_LaunchesHostTerminal(t *testing.T) {
 	eng.configPath = filepath.Join(dir, "config.toml")
 	config.Save(eng.configPath, eng.Config)
 
+	oldLaunchTerminal := launchTerminal
+	launchTerminal = func(terminal, session string) (int, error) {
+		if terminal != "ghostty" || session != "research" {
+			t.Fatalf("launchTerminal(%q, %q)", terminal, session)
+		}
+		return 4242, nil
+	}
+	defer func() { launchTerminal = oldLaunchTerminal }()
+
 	// Pass terminal name directly to DockNew.
 	err := eng.DockNew("research", "labs", "claude", "ghostty")
 	if err != nil {
@@ -216,6 +225,9 @@ func TestDockNew_LaunchesHostTerminal(t *testing.T) {
 	}
 	if dock.Host.AppCommand != "ghostty" {
 		t.Errorf("host app_command = %q, want ghostty", dock.Host.AppCommand)
+	}
+	if dock.Host.PID != 4242 {
+		t.Errorf("host pid = %d, want 4242", dock.Host.PID)
 	}
 	// Config should have Terminal override persisted.
 	if dc, ok := eng.Config.Docks["research"]; !ok || dc.Terminal != "ghostty" {
