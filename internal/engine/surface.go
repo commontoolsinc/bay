@@ -131,7 +131,7 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 	}
 	ws := dock.FindWorkspaceByID(wsID)
 	if ws == nil {
-		return fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
+		return fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
 	}
 
 	// Determine the layout group — find an existing tmux window to split into,
@@ -246,7 +246,7 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 		ws := dock.FindWorkspaceByID(wsID)
 		if ws == nil {
 			rollbackSurface()
-			return fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
+			return fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
 		}
 
 		surface.Name = uniqueSurfaceName(ws, name)
@@ -324,11 +324,11 @@ func (e *Engine) SurfaceClose(dockName, wsID, surfaceName string, force bool) er
 		}
 		ws := dock.FindWorkspaceByID(wsID)
 		if ws == nil {
-			return fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
+			return fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
 		}
 		s := ws.FindSurface(surfaceName)
 		if s == nil {
-			return fmt.Errorf("surface %q not found in workspace %q", surfaceName, wsID)
+			return fmt.Errorf("surface %q not found in bay %q", surfaceName, wsID)
 		}
 
 		// Capture what we'll kill before the surface is removed from
@@ -396,7 +396,7 @@ func (e *Engine) SurfaceClose(dockName, wsID, surfaceName string, force bool) er
 	if wsEmpty {
 		if force {
 			if err := e.WsClose(dockName, wsID, force); err != nil {
-				return fmt.Errorf("surface closed, but workspace %q not removed: %w", wsID, err)
+				return fmt.Errorf("surface closed, but bay %q not removed: %w", wsID, err)
 			}
 			return nil
 		}
@@ -565,14 +565,14 @@ func (e *Engine) SurfaceRename(dockName, wsID, oldName, newName string) error {
 		}
 		ws := dock.FindWorkspaceByID(wsID)
 		if ws == nil {
-			return fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
+			return fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
 		}
 		s := ws.FindSurface(oldName)
 		if s == nil {
-			return fmt.Errorf("surface %q not found in workspace %q", oldName, wsID)
+			return fmt.Errorf("surface %q not found in bay %q", oldName, wsID)
 		}
 		if existing := ws.FindSurface(newName); existing != nil {
-			return fmt.Errorf("surface name %q already in use in workspace %q", newName, wsID)
+			return fmt.Errorf("surface name %q already in use in bay %q", newName, wsID)
 		}
 		s.Name = newName
 		ws.LastActive = time.Now().Unix()

@@ -135,7 +135,7 @@ bind-key C-z send-prefix
 ## 4. If you use bay
 
 Run `bay setup` once. It adds a block of `Option`-prefixed keybindings
-to `~/.tmux.conf` (workspace picker, new workspace, switch windows,
+to `~/.tmux.conf` (bay picker, new bay, switch windows,
 etc.) without touching anything above. No tmux prefix required for bay
 keys — just `Option + <key>` directly.
 

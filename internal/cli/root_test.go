@@ -13,9 +13,10 @@ func TestNewRootCmd(t *testing.T) {
 	// Verify all subcommands are registered (including hidden ones).
 	// add-prompt was removed entirely — see TestAddPrompt_RemovedEntirely.
 	expected := map[string]bool{
-		"dock": false, "repo": false, "workspace": false, "surface": false,
-		"go": false, "ls": false, "tree": false, "pwd": false, "recover": false, "doctor": false,
-		"setup": false, "monitor": false, "version": false,
+		"dock": false, "repo": false, "surface": false,
+		"new": false, "close": false, "show": false, "rename": false, "describe": false,
+		"go": false, "ls": false, "next": false, "prev": false, "tree": false, "pwd": false,
+		"recover": false, "doctor": false, "setup": false, "monitor": false, "version": false,
 		"shell": false, "edit": false, "status-line": false,
 		"agent-guide": false,
 		"palette":     false,
@@ -52,7 +53,7 @@ func TestNewRootCmd(t *testing.T) {
 func TestNewRootCmd_OldCommandsRemoved(t *testing.T) {
 	root := NewRootCmd("test")
 
-	removed := []string{"win", "pane", "close-pane"}
+	removed := []string{"win", "pane", "close-pane", "workspace", "ws"}
 	for _, cmd := range root.Commands() {
 		for _, name := range removed {
 			if cmd.Name() == name {
@@ -154,21 +155,13 @@ func TestTreeCommandExists(t *testing.T) {
 	}
 }
 
-func TestWsSubcommands(t *testing.T) {
+func TestBayTopLevelSubcommands(t *testing.T) {
 	root := NewRootCmd("test")
-	ws, _, err := root.Find([]string{"workspace"})
-	if err != nil {
-		t.Fatalf("finding ws: %v", err)
-	}
-
-	expected := []string{"new", "close", "show", "rename", "ls", "tree", "go", "next", "prev"}
-	found := map[string]bool{}
-	for _, cmd := range ws.Commands() {
-		found[cmd.Name()] = true
-	}
+	expected := []string{"new", "close", "show", "rename", "describe", "ls", "go", "next", "prev"}
 	for _, name := range expected {
-		if !found[name] {
-			t.Errorf("ws subcommand %q not found", name)
+		cmd, _, err := root.Find([]string{name})
+		if err != nil || cmd == nil || cmd.Name() != name {
+			t.Errorf("top-level bay command %q not found", name)
 		}
 	}
 }

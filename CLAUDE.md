@@ -1,12 +1,12 @@
 # Bay development
 
-Bay is a Go CLI tool for managing concurrent workspaces with git worktrees and tmux.
+Bay is a Go CLI tool for managing concurrent bays with git worktrees and tmux.
 
-Run `bay agent-guide` for bay CLI commands available in this workspace.
+Run `bay agent-guide` for bay CLI commands available in this bay.
 
 ## Installing during development
 
-Bay manages its own workspaces, so changes to the CLI need to be installed to test interactively:
+Bay manages its own bays, so changes to the CLI need to be installed to test interactively:
 
 ```
 go install ./cmd/bay    # install your working copy

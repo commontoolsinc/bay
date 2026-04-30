@@ -14,20 +14,20 @@ import (
 )
 
 func newEditCmd() *cobra.Command {
-	var dockScope, wsScope bool
+	var dockScope, bayScope bool
 	var editorFlag, splitDir string
 	var window, pane bool
 
 	cmd := &cobra.Command{
-		Use:   "edit [workspace]",
-		Short: "Open editor on workspace or dock",
-		Long: `Open your editor. Default is workspace-scoped (current workspace).
+		Use:   "edit [bay]",
+		Short: "Open editor on bay or dock",
+		Long: `Open your editor. Default is bay-scoped (current bay).
 Terminal editors split the current tmux window by default; use --window
 for a new tmux window.
 
-  bay edit                    workspace editor as a split pane
-  bay edit auth-fix           specific workspace as a split pane
-  bay edit --dock             dock editor (all workspaces)
+  bay edit                    bay editor as a split pane
+  bay edit w1                 specific bay as a split pane
+  bay edit --dock             dock editor (all bays)
   bay edit --dock src/main.go focus dock editor on a file
   bay edit --dock .           focus dock editor on cwd
   bay edit --editor vim       use a specific editor this time
@@ -63,8 +63,8 @@ Editor resolution order:
 		},
 	}
 
-	cmd.Flags().BoolVar(&dockScope, "dock", false, "dock-scoped editor (all workspaces)")
-	cmd.Flags().BoolVar(&wsScope, "ws", false, "workspace-scoped editor (default)")
+	cmd.Flags().BoolVar(&dockScope, "dock", false, "dock-scoped editor (all bays)")
+	cmd.Flags().BoolVar(&bayScope, "bay", false, "bay-scoped editor (default)")
 	cmd.Flags().StringVar(&editorFlag, "editor", "", "editor command (overrides config for this invocation)")
 	cmd.Flags().StringVar(&splitDir, "split", "", "split direction (h or v)")
 	cmd.Flags().BoolVar(&pane, "pane", false, "split into current window (default; shorthand for --split v)")
@@ -90,7 +90,7 @@ func resolveSplit(splitDir string, window, pane bool) string {
 }
 
 // runEditDock launches or focuses a dock-level editor that covers all
-// workspaces. For terminal editors, creates a tracked surface in a tmux
+// bays. For terminal editors, creates a tracked surface in a tmux
 // window at index 0. For GUI editors, launches fire-and-forget.
 func runEditDock(eng *engine.Engine, editorOverride, focusPath string) error {
 	dockName, err := eng.Tmux.CurrentSession()
@@ -103,13 +103,13 @@ func runEditDock(eng *engine.Engine, editorOverride, focusPath string) error {
 		return fmt.Errorf("no editor found; set [editor].command in config, or $VISUAL/$EDITOR")
 	}
 
-	// Determine the edit path — worktree parent dir so all workspaces are visible.
+	// Determine the edit path — worktree parent dir so all bays are visible.
 	editPath, err := eng.EditAllParentDir(dockName)
 	if err != nil {
-		// Fallback: use the first workspace path.
+		// Fallback: use the first bay path.
 		paths, pathErr := eng.EditAll(dockName)
 		if pathErr != nil || len(paths) == 0 {
-			return fmt.Errorf("no workspaces to edit in dock %q", dockName)
+			return fmt.Errorf("no bays to edit in dock %q", dockName)
 		}
 		editPath = paths[0]
 	}
@@ -177,7 +177,7 @@ func focusTerminalEditor(eng *engine.Engine, dockName, absPath string) error {
 	return eng.Tmux.SendKeys(paneID, keys)
 }
 
-// runEditCreate launches the editor on a single workspace.
+// runEditCreate launches the editor on a single bay.
 // GUI editors launch and return (fire-and-forget). Terminal editors
 // create a tracked surface in their own tmux pane via SurfaceAdd.
 // Shared by `bay edit` and `bay new edit`.

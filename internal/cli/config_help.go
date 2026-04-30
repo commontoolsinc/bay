@@ -5,7 +5,7 @@ package cli
 // file so the parent command code stays focused.
 const configHelpText = `Bay Configuration — ~/.config/bay/config.toml
 
-Bay's config file holds user preferences. Repos, docks, and workspaces
+Bay's config file holds user preferences. Repos, docks, and bays
 are tracked automatically in the manifest (~/.local/share/bay/manifest.json).
 A config file is only needed for customization — bay works without one.
 

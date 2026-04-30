@@ -105,7 +105,7 @@ Do you want to proceed
 			configureEditor(reader, configPath)
 
 			fmt.Println("\nSetup complete. Next steps:")
-			fmt.Println("  bay ws new             create a workspace in any git repo")
+			fmt.Println("  bay new                create a bay in any git repo")
 			fmt.Println("  bay help               see all commands")
 			fmt.Println("  bay help <command>      detailed help for a command")
 			fmt.Println()
@@ -217,27 +217,27 @@ var bayKeybindings = []bayKeybinding{
 	{key: "M-J", cmd: "select-pane -D", desc: "Option+J: select pane down (mirror of j)", isTmuxCommand: true},
 	{key: "M-K", cmd: "select-pane -U", desc: "Option+K: select pane up (mirror of k)", isTmuxCommand: true},
 
-	// Workspace picker
-	{key: "M-g", cmd: "bay ws go --pick", desc: "Option+g: pick workspace in dock", tmuxVerb: "run-shell"},
+	// Bay picker
+	{key: "M-g", cmd: "bay go --pick", previousCmds: []string{"bay ws go --pick"}, desc: "Option+g: pick bay in dock", tmuxVerb: "run-shell"},
 
 	// Creation
-	{key: "M-c", cmd: "bay ws new -q", desc: "Option+c: create workspace in current dock", tmuxVerb: "run-shell"},
-	{key: "M-C", cmd: "bay ws new -q --agent", desc: "Option+C: create workspace with agent in current dock", tmuxVerb: "run-shell"},
+	{key: "M-c", cmd: "bay new -q", previousCmds: []string{"bay ws new -q"}, desc: "Option+c: create bay in current dock", tmuxVerb: "run-shell"},
+	{key: "M-C", cmd: "bay new -q --agent", previousCmds: []string{"bay ws new -q --agent"}, desc: "Option+C: create bay with agent in current dock", tmuxVerb: "run-shell"},
 	{key: "M-s", cmd: "bay shell --pane", desc: "Option+s: shell as split pane", tmuxVerb: "run-shell"},
 	{key: "M-S", cmd: "bay shell --window", desc: "Option+S: shell in a new window", tmuxVerb: "run-shell"},
 	{key: "M-a", cmd: "bay agent --pane", desc: "Option+a: agent as split pane", tmuxVerb: "run-shell"},
 	{key: "M-A", cmd: "bay agent --window", desc: "Option+A: agent in a new window", tmuxVerb: "run-shell"},
-	{key: "M-e", cmd: "bay edit --ws", desc: "Option+e: workspace editor", tmuxVerb: "run-shell"},
+	{key: "M-e", cmd: "bay edit --bay", previousCmds: []string{"bay edit --ws"}, desc: "Option+e: bay editor", tmuxVerb: "run-shell"},
 	{key: "M-E", cmd: "bay edit --dock", desc: "Option+E: dock editor", tmuxVerb: "run-shell"},
 
 	// Navigation (dock-wide)
-	{key: "M-r", cmd: "bay ws go --next-waiting", desc: "Option+r: jump to next waiting workspace", tmuxVerb: "run-shell"},
+	{key: "M-r", cmd: "bay go --next-waiting", previousCmds: []string{"bay ws go --next-waiting"}, desc: "Option+r: jump to next waiting bay", tmuxVerb: "run-shell"},
 
 	// Utility
 	{key: "M-w", cmd: "bay sf close self", desc: "Option+w: close current surface (or pane)", tmuxVerb: "run-shell"},
 	{key: "M-z", cmd: "bay sf restore", desc: "Option+z: restore most recently closed surface (undo-close)", tmuxVerb: "run-shell"},
-	{key: "M-/", cmd: "bay ws show --flash", desc: "Option+/: flash current workspace info (first line)", tmuxVerb: "run-shell"},
-	{key: "M-?", cmd: "bay ws show --popup", desc: "Option+?: popup with full workspace description", tmuxVerb: "run-shell"},
+	{key: "M-/", cmd: "bay show --flash", previousCmds: []string{"bay ws show --flash"}, desc: "Option+/: flash current bay info (first line)", tmuxVerb: "run-shell"},
+	{key: "M-?", cmd: "bay show --popup", previousCmds: []string{"bay ws show --popup"}, desc: "Option+?: popup with full bay description", tmuxVerb: "run-shell"},
 
 	// Command palette
 	{key: "M-p", cmd: "bay palette --split pane", previousCmds: []string{"bay palette"}, desc: "Option+p: command palette (Tab inside to flip mode)", tmuxVerb: "display-popup -w 80% -h 80% -E"},
@@ -953,7 +953,7 @@ func configureEditor(reader *bufio.Reader, configPath string) {
 
 const baySkillContent = `---
 name: bay
-description: Bay workspace management — git worktrees and tmux windows. Use when creating, managing, or navigating workspaces, docks, or repos.
+description: Bay management — git worktrees and tmux windows. Use when creating, managing, or navigating bays, docks, or repos.
 ---
 
 !` + "`bay agent-guide`" + `

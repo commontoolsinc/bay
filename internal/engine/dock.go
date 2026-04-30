@@ -22,7 +22,7 @@ type DockInfo struct {
 	Agent      string          `json:"agent,omitempty"`
 	Repo       string          `json:"repo,omitempty"`
 	Surfaces   []SurfaceInfo   `json:"surfaces,omitempty"` // dock-level surfaces
-	Workspaces []WorkspaceInfo `json:"workspaces"`
+	Workspaces []WorkspaceInfo `json:"bays"`
 }
 
 // SurfaceInfo holds runtime information about a tracked surface.
@@ -210,7 +210,7 @@ func (e *Engine) DockClose(name string, force bool) error {
 					e.ensurePlaceholderIfLastWindow(name, id)
 					_ = e.Tmux.KillWindow(id)
 				}
-				return fmt.Errorf("workspace %q: %w", wsID, err)
+				return fmt.Errorf("bay %q: %w", wsID, err)
 			}
 		}
 		killedWindowIDs = append(killedWindowIDs, ids...)
@@ -370,7 +370,7 @@ func (e *Engine) WorkspaceInfoByName(dockName, wsID string) (*WorkspaceInfo, err
 	}
 	ws := dock.FindWorkspaceByID(wsID)
 	if ws == nil {
-		return nil, fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
+		return nil, fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
 	}
 	agent := e.resolvedDockAgent(dockName, m)
 	waitingWindows, _ := e.Tmux.WaitingOrBellWindowIDs(dockName)

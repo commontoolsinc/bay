@@ -92,7 +92,7 @@ func detectScope(ctx *engine.Context) palette.Scope {
 	if ctx == nil {
 		return palette.ScopeAnywhere
 	}
-	if ctx.Workspace != "" {
+	if ctx.WorkspaceID != "" || ctx.Workspace != "" {
 		return palette.ScopeInWorkspace
 	}
 	if ctx.Dock != "" {

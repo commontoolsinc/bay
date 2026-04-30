@@ -234,7 +234,7 @@ func ensureBayAwareness(path string) error {
 		return nil // already present
 	}
 
-	line := "\nThis project uses bay for workspace management. Run `bay agent-guide` for commands.\n"
+	line := "\nThis project uses bay for bay and surface management. Run `bay agent-guide` for commands.\n"
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err

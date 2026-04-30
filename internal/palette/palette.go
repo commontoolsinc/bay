@@ -76,9 +76,9 @@ func (s Section) Title() string {
 	case SectionCreateSurface:
 		return "Create — surface"
 	case SectionCreateWorkspace:
-		return "Create — workspace"
+		return "Create — bay"
 	case SectionCurrentWorkspace:
-		return "Current workspace"
+		return "Current bay"
 	case SectionCurrentSurface:
 		return "Current surface"
 	case SectionAdmin:

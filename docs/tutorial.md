@@ -6,8 +6,8 @@ got uncommitted changes and a dev server running. Either way, you need
 multiple copies of the repo, each on its own branch, each with their
 own state — without stashing, cloning, or losing your place.
 
-Bay gives each task its own **workspace** — an isolated git worktree
-inside a **dock** (a tmux session for one project). Each workspace has
+Bay gives each task its own **bay** — an isolated git worktree
+inside a **dock** (a tmux session for one project). Each bay has
 **surfaces**: the shells, AI agents, and editors you work in and
 navigate between. Jump between tasks instantly, and pick up right
 where you left off — even after a reboot.
@@ -17,12 +17,12 @@ This tutorial walks through the full lifecycle in about 10 minutes.
 **You'll need:** bay (install with `go install ./cmd/bay`), tmux, and git.
 
 **Cleaning up:** When you're done, `bay repo remove bay-tutorial --force`
-removes all workspaces and bay state. Then `rm -rf /tmp/bay-tutorial`
+removes all bays and bay state. Then `rm -rf /tmp/bay-tutorial`
 removes the repo itself.
 
 ---
 
-## 1. Create your first workspace
+## 1. Create your first bay
 
 Grab a throwaway repo to experiment with. If you're already inside
 tmux, open a new terminal window first — bay creates its own tmux
@@ -31,10 +31,10 @@ session and you'll attach to it in a moment.
 ```
 git clone https://github.com/octocat/Hello-World.git /tmp/bay-tutorial
 cd /tmp/bay-tutorial
-bay ws new
+bay new
 ```
 
-Bay creates a workspace with a clean copy of your default branch.
+Bay creates a bay with a clean copy of your default branch.
 Attach to the dock:
 
 ```
@@ -42,91 +42,91 @@ tmux attach -t bay-tutorial
 ```
 
 You're now in a tmux session managed by bay, with a shell cd'd into
-your workspace's worktree. Run `bay ws ls` to see what bay created:
+your bay's worktree. Run `bay ls` to see what bay created:
 
 ```
-bay ws ls
+bay ls
 ```
 
 ```
 rp bay-tutorial
   dk bay-tutorial *
-    ws w1 *  n=1
+    bay w1 *  n=1
 ```
 
-One repo, one dock, one workspace with a shell surface. Everything
-you do from here — creating more workspaces, adding shells,
+One repo, one dock, one bay with a shell surface. Everything
+you do from here — creating more bays, adding shells,
 navigating — happens inside this session.
 
 > **What just happened?** Bay detected your git repo, created a
 > worktree at `/tmp/bay-tutorial-worktrees/<name>`, and started
 > a tmux session called `bay-tutorial` with a window for your
-> workspace. The worktree starts on detached HEAD — it has the
+> bay. The worktree starts on detached HEAD — it has the
 > default branch's content but isn't on any named branch yet. Bay
 > tracks all of this in its state file at
 > `~/.local/share/bay/manifest.json` — you don't need to touch it.
 
-## 2. Work in your workspace
+## 2. Work in your bay
 
-Your workspace is a normal directory with a normal git checkout. To
-start working on a branch, use `--branch` when creating a workspace:
+Your bay is a normal directory with a normal git checkout. To
+start working on a branch, use `--branch` when creating a bay:
 
 ```
-bay ws new --branch fix/login-bug
+bay new --branch fix/login-bug
 ```
 
-That creates a second workspace on the `fix/login-bug` branch (or
+That creates a second bay on the `fix/login-bug` branch (or
 checks it out if it already exists on the remote).
 Within a few seconds the tmux tab name updates to `w1.login-bug` — bay
 watches your branch in the background and keeps the name in sync.
 
-You can also create a branch manually in an existing workspace with
+You can also create a branch manually in an existing bay with
 `git checkout -b`, and bay picks up the change the same way.
 
 Now you realize the auth refactor should be its own PR. Create a third
-workspace:
+bay:
 
 ```
-bay ws new --branch fix/auth-refactor
+bay new --branch fix/auth-refactor
 ```
 
-Each workspace is completely independent — different branch, different
+Each bay is completely independent — different branch, different
 files, different tmux tab. Your login bug work is untouched.
 
-A teammate pings you for a review? Create a workspace for it:
+A teammate pings you for a review? Create a bay for it:
 
 ```
-bay ws new review
+bay new review
 ```
 
-That creates a workspace with no branch — useful for scratch work,
+That creates a bay with no branch — useful for scratch work,
 exploring code, or running tests against main.
 
-To see all workspaces in the dock, use `bay ws ls`:
+To see all bays in the dock, use `bay ls`:
 
 ```
-bay ws ls
+bay ls
 ```
 
 ```
 rp bay-tutorial
   dk bay-tutorial *
-    ws w1             n=1
-    ws login-bug      br=fix/login-bug  n=1
-    ws auth-refactor  br=fix/auth-refactor  n=1
-    ws review *       n=1
+    bay w1             n=1
+    bay login-bug      br=fix/login-bug  n=1
+    bay auth-refactor  br=fix/auth-refactor  n=1
+    bay review *       n=1
 ```
 
-Four workspaces in creation order. The two with `--branch` show their
+Four bays in creation order. The two with `--branch` show their
 branch; `review` and `w1` have no branch. The `*` marks where you
 are now.
 
-Switch between them with `Option+g` (workspace picker, requires
-`bay setup`) or `bay ws go`.
+Switch between them with `Option+g` (bay picker, requires
+`bay setup`) or `bay go`.
 
-## 3. Add tools to your workspace
+## 3. Add tools to your bay
 
-A workspace starts with one shell, but you can add more surfaces.
+A bay starts with one shell, but you can add more surfaces.
 
 Split a second shell (for running tests while you edit):
 
@@ -137,62 +137,62 @@ bay shell
 Run a long-lived command in its own pane:
 
 ```
-bay new cmd "top" monitor
+bay surface new cmd "top" monitor
 ```
 
-(`bay new cmd` creates a `cmd` surface; the second argument is its display
+(`bay surface new cmd` creates a `cmd` surface; the second argument is its display
 name.)
 
-Open your editor on the workspace directory:
+Open your editor on the bay directory:
 
 ```
 bay edit
 ```
 
-This opens your editor on the workspace's root directory — use the
+This opens your editor on the bay's root directory — use the
 editor's file browser to navigate within the project. Terminal editors
 (nvim, vim) run as tracked surfaces in tmux. GUI editors (Cursor,
 VS Code, Zed) launch and return — run `bay edit` (or `Option+e`)
 again to switch back to the editor window.
 
-Run `bay ls` to see the current workspace's surfaces:
+Run `bay tree` to see the current bay's surfaces:
 
 ```
-bay ls
+bay tree
 ```
 
 ```
 rp bay-tutorial
   dk bay-tutorial *
-    ws login-bug *  br=fix/login-bug  id=w1
+    bay login-bug *  br=fix/login-bug  id=w1
       sf shell *    ty=shell
       sf shell-2    ty=shell
       sf monitor    ty=cmd
 ```
 
-The `id=w1` column shows the workspace's stable handle. It only
-appears when ID and Name differ; auto-numbered workspaces (no Name
-yet) display the ID directly in the `ws` column.
+The `id=w1` column shows the bay's stable handle. It only
+appears when ID and Name differ; auto-numbered bays (no Name
+yet) display the ID directly in the `bay` column.
 
-Three surfaces, all navigable. (`bay ws ls` shows all workspaces;
-`bay ls` shows the one you're in.)
+Three surfaces, all navigable. `bay ls` lists bays in the current dock;
+`bay tree` shows bays and their surfaces.
 
 ## 4. Navigate
 
 - `Option+h` / `Option+l` — previous / next window (vim-style left/right)
 - `Option+j` / `Option+k` — select pane down / up
 - `Option+Shift+H/L` — select pane left / right (for horizontal splits)
-- `Option+g` — workspace picker (type to filter, Enter to select)
+- `Option+g` — bay picker (type to filter, Enter to select)
 
 With only a handful of tabs, `Option+h/l` cycles fine. Once you have
-more than a few workspaces, the picker is usually faster — especially
+more than a few bays, the picker is usually faster — especially
 with descriptions.
 
 All of these work without the Option-key shortcuts too:
 
 ```
-bay go shell        # jump to the shell surface by name
-bay ws go review    # workspace picker filters by ID, Name, branch, or PR
+bay surface go shell        # jump to the shell surface by name
+bay go review    # bay picker filters by ID, Name, branch, or PR
 ```
 
 ## 5. Add an AI agent
@@ -204,7 +204,7 @@ bay agent
 This launches your default agent (bay auto-detects Claude Code, Codex,
 or Gemini on your PATH) as a split pane. Use `bay agent --window` if
 you want a separate tmux window. You can also create a
-workspace with an agent as the first surface: `bay ws new --agent`.
+bay with an agent as the first surface: `bay new --agent`.
 
 Add a shell alongside it
 with `Option+s` (or `bay shell`).
@@ -214,7 +214,7 @@ When the agent waits for your input, bay highlights it. Use `Option+h`
 
 ## 6. Inspect
 
-To see every workspace and surface at once, use `bay tree`:
+To see every bay and surface at once, use `bay tree`:
 
 ```
 bay tree
@@ -223,30 +223,30 @@ bay tree
 ```
 rp bay-tutorial
   dk bay-tutorial *
-    ws login-bug *  br=fix/login-bug
+    bay login-bug *  br=fix/login-bug
       sf shell    ty=shell
       sf monitor  ty=cmd
-    ws review
+    bay review
       sf agent    ty=agent ag=claude
       sf shell    ty=shell
 ```
 
 Other useful commands:
 
-- `bay pwd` — where am I? (repo, dock, workspace, surface)
-- `bay ws show` — detailed info about the current workspace
+- `bay pwd` — where am I? (repo, dock, bay, surface)
+- `bay show` — detailed info about the current bay
 - `bay doctor` — health checks (keybindings, agents, repos)
 
 ## 7. Clean up
 
-Close a workspace when you're done with it. Use the workspace **ID**
-(`w1`, `w2`, etc.) — visible in `bay ls` and `bay ws ls`. Friendly
+Close a bay when you're done with it. Use the bay **ID**
+(`w1`, `w2`, etc.) — visible in `bay ls` and `bay tree`. Friendly
 Names like "review" are display labels; the ID is what every command
 takes:
 
 ```
-bay ws close w1     # by ID
-bay ws close self   # close the current workspace
+bay close w1     # by ID
+bay close self   # close the current bay
 ```
 
 Bay checks for uncommitted changes and unlanded commits first. If
@@ -255,16 +255,16 @@ the default branch as an equivalent patch, bay also deletes the local
 git branch — no stale branches left behind. Use `--force` to skip the
 safety checks.
 
-Closing an *individual* agent surface (`bay close agent`) prompts for
+Closing an *individual* agent surface (`bay sf close agent`) prompts for
 confirmation, since agents carry valuable conversation context. Use
 `--force` (or `-f`) to skip the prompt.
 
-When a PR is merged, bay detects it in the background. Workspaces with
-unmerged branches show `st=pending`. Clean up all finished workspaces:
+When a PR is merged, bay detects it in the background. Bays with
+unmerged branches show `st=pending`. Clean up all finished bays:
 
 ```
-bay ws close --done             # close workspaces not dirty or pending
-bay ws close --done --dry-run   # preview first
+bay close --done             # close bays not dirty or pending
+bay close --done --dry-run   # preview first
 ```
 
 ## 8. Recovery
@@ -288,7 +288,7 @@ It's optional — everything works without it, but the keybindings make
 navigation instant.
 
 **Multiple repos:** `bay repo add backend ~/projects/backend` registers
-another repo. Create workspaces from it with `bay ws new --repo backend`.
+another repo. Create bays from it with `bay new --repo backend`.
 
 **Agent awareness:** `bay repo init` adds a one-liner to your project's
 `CLAUDE.local.md` (or equivalent) so agents know about bay commands.
@@ -297,9 +297,9 @@ another repo. Create workspaces from it with `bay ws new --repo backend`.
 For more control: `bay dock new myproject --repo myproject`.
 
 **Status line:** Add `#(bay status-line full --window #{window_id})` to
-your tmux `status-right` to always see your current workspace label,
-branch, PR, and status. Pass `#{window_id}` so each window gets its own
-tmux `#()` cache entry — without it, tmux may show stale status from a
+your tmux `status-right` to always see your current bay label, branch,
+PR, and status. Pass `#{window_id}` so each window gets its own tmux
+`#()` cache entry — without it, tmux may show stale status from a
 different window. Other field names: `id`, `name`, `dir`, `branch`,
 `pr`, `status`, `dock`, `merged`. See the human guide for details.
 
@@ -310,4 +310,4 @@ different window. Other field names: `id`, `name`, `dir`, `branch`,
 - **[Human Guide](human-guide.md)** — full command reference, config
   options, and advanced features.
 - **[Agent Reference](agent-reference.md)** — reference for AI agents
-  operating inside bay workspaces.
+  operating inside bays.

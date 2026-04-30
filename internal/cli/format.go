@@ -31,14 +31,14 @@ const (
 	FocusAll       FocusKind = "all"
 	FocusRepo      FocusKind = "repo"
 	FocusDock      FocusKind = "dock"
-	FocusWorkspace FocusKind = "workspace"
+	FocusWorkspace FocusKind = "bay"
 )
 
 type ListFocus struct {
 	Kind        FocusKind `json:"kind"`
 	Repo        string    `json:"repo,omitempty"`
 	Dock        string    `json:"dock,omitempty"`
-	WorkspaceID string    `json:"workspace_id,omitempty"`
+	WorkspaceID string    `json:"bay_id,omitempty"`
 }
 
 type ListViewOptions struct {
@@ -79,12 +79,12 @@ func (v *ListView) SetCurrentContext(eng *engine.Engine) {
 type ListRow struct {
 	Repo                string `json:"repo"`
 	Dock                string `json:"dock,omitempty"`
-	WorkspaceName       string `json:"workspace_name,omitempty"`
-	WorkspaceBranch     string `json:"workspace_branch,omitempty"`
-	WorkspaceDirty      bool   `json:"workspace_dirty,omitempty"`
-	WorkspacePending    bool   `json:"workspace_pending,omitempty"`
-	WorkspaceSyncStatus string `json:"workspace_sync_status,omitempty"`
-	WorkspaceWaiting    bool   `json:"workspace_waiting,omitempty"`
+	WorkspaceName       string `json:"bay_name,omitempty"`
+	WorkspaceBranch     string `json:"bay_branch,omitempty"`
+	WorkspaceDirty      bool   `json:"bay_dirty,omitempty"`
+	WorkspacePending    bool   `json:"bay_pending,omitempty"`
+	WorkspaceSyncStatus string `json:"bay_sync_status,omitempty"`
+	WorkspaceWaiting    bool   `json:"bay_waiting,omitempty"`
 	SurfaceID           int    `json:"surface_id,omitempty"`
 	SurfaceName         string `json:"surface_name,omitempty"`
 	SurfaceType         string `json:"surface_type,omitempty"`
@@ -670,7 +670,7 @@ func FormatListView(view ListView, long, short bool) string {
 			}
 
 			if len(dock.Workspaces) == 0 && len(dock.Surfaces) == 0 {
-				p, _ := indentedPrefix(2, "", "(no workspaces)", short)
+				p, _ := indentedPrefix(2, "", "(no bays)", short)
 				fmt.Fprintln(&b, p)
 				continue
 			}
@@ -687,7 +687,7 @@ func FormatListView(view ListView, long, short bool) string {
 				if isCurrentWs {
 					wsName += " *"
 				}
-				p, w := indentedPrefix(2, "ws", wsName, short)
+				p, w := indentedPrefix(2, "bay", wsName, short)
 				wsRows[i] = alignedRow{
 					prefix:      p,
 					prefixWidth: w,
@@ -788,7 +788,7 @@ func FormatWorkspaceShow(repoName, dockName string, ws *engine.WorkspaceInfo, lo
 	var b strings.Builder
 
 	var rows []showRow
-	rows = append(rows, showRow{"workspace", ws.Name})
+	rows = append(rows, showRow{"bay", ws.Name})
 	if ws.ID != "" && ws.ID != ws.Name {
 		rows = append(rows, showRow{"id", ws.ID})
 	}

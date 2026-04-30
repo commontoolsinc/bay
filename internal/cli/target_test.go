@@ -168,7 +168,7 @@ func TestResolveSurfaceArg_FlagsResolveAmbiguity(t *testing.T) {
 func TestResolveSurfaceArg_FlagsAlone(t *testing.T) {
 	eng := surfaceArgFixture(t)
 
-	// Bare surface name + --ws + --dock.
+	// Bare surface name + --bay + --dock.
 	dock, ws, surface, err := resolveSurfaceArg(eng, "agent", "w1", "labs2")
 	if err != nil {
 		t.Fatalf("resolveSurfaceArg: %v", err)
@@ -188,20 +188,20 @@ func TestResolveSurfaceArg_DockFlagConflict(t *testing.T) {
 	}
 }
 
-func TestResolveSurfaceArg_WsFlagConflict(t *testing.T) {
+func TestResolveSurfaceArg_BayFlagConflict(t *testing.T) {
 	eng := surfaceArgFixture(t)
 
-	// --ws conflicts with ws prefix in the positional.
+	// --bay conflicts with bay prefix in the positional.
 	_, _, _, err := resolveSurfaceArg(eng, "w1:agent", "other", "")
-	if err == nil || !strings.Contains(err.Error(), "--ws") {
-		t.Errorf("expected --ws conflict, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "--bay") {
+		t.Errorf("expected --bay conflict, got %v", err)
 	}
 }
 
 func TestResolveSurfaceArg_DockFlagWithoutWs(t *testing.T) {
 	eng := surfaceArgFixture(t)
 
-	// --dock without --ws or ws prefix is meaningless.
+	// --dock without --bay or bay prefix is meaningless.
 	_, _, _, err := resolveSurfaceArg(eng, "agent", "", "labs")
 	if err == nil {
 		t.Errorf("expected error when --dock has no workspace context")
@@ -429,7 +429,7 @@ func TestResolveSurfaceArgOrSelf_QualifiedSelfIsAlwaysLiteral(t *testing.T) {
 
 func TestResolveSurfaceArgOrSelf_FlagDisablesSelfFallback(t *testing.T) {
 	eng := selfFixture(t)
-	// --ws set means "self" is a literal name, not the virtual keyword.
+	// --bay set means "self" is a literal name, not the virtual keyword.
 	_, _, surface, err := resolveSurfaceArgOrSelf(eng, "self", "w1", "")
 	if err != nil {
 		t.Fatalf("resolveSurfaceArgOrSelf: %v", err)

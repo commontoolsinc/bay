@@ -1,103 +1,12 @@
 package cli
 
 import (
-	"fmt"
-
-	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/engine"
-	"github.com/commontoolsinc/bay/internal/manifest"
-	"github.com/spf13/cobra"
 )
 
-func newLsCmd() *cobra.Command {
-	var jsonOutput bool
-	var rowsOutput bool
-	var dirtyOnly bool
-	var recursive bool
-	var longOutput bool
-	var shortOutput bool
-
-	cmd := &cobra.Command{
-		Use:     "ls",
-		Aliases: []string{"list"},
-		Short:   "Browse the Bay hierarchy from your current scope (use -R for full descent)",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			eng, err := newEngine()
-			if err != nil {
-				return err
-			}
-			docks, err := eng.List()
-			if err != nil {
-				return err
-			}
-
-			// User-interest signal: any workspace the user is viewing
-			// that still has no PR despite having a branch gets marked
-			// stale so the monitor's next tick re-queries gh, rather
-			// than waiting for the full TTL.
-			for _, d := range docks {
-				for _, ws := range d.Workspaces {
-					if ws.Branch != "" && ws.PR == "" {
-						_ = eng.MarkPRCheckStale(d.Name, ws.Name)
-					}
-				}
-			}
-
-			if dirtyOnly {
-				docks = filterDirtyWorkspaces(eng, docks)
-			}
-
-			view := BuildListView(docks, ListViewOptions{
-				Focus:     resolveListFocus(eng, dirtyOnly),
-				Recursive: recursive,
-			})
-
-			view.SetCurrentContext(eng)
-
-			if jsonOutput {
-				return printListViewJSON(view, rowsOutput)
-			}
-
-			fmt.Print(FormatListView(view, longOutput, shortOutput))
-
-			// Print advice for stale or missing workspaces visible in the output.
-			hasStale, hasMissing := false, false
-			for _, repo := range view.Repos {
-				for _, d := range repo.Docks {
-					for _, ws := range d.Workspaces {
-						if ws.SyncStatus == manifest.SyncStatusStale {
-							hasStale = true
-						}
-						if ws.SyncStatus == manifest.SyncStatusMissing {
-							hasMissing = true
-						}
-					}
-				}
-			}
-			if hasStale {
-				fmt.Println("\n[stale] = tmux window was closed. Run 'bay recover' to recreate, or 'bay ws close <name>' to remove.")
-			}
-			if hasMissing {
-				fmt.Println("\n[missing] = worktree directory was deleted. Run 'bay ws close <name> --force' to clean up.")
-			}
-
-			return nil
-		},
-	}
-
-	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON")
-	cmd.Flags().BoolVar(&rowsOutput, "rows", false, "output JSON as denormalized rows")
-	cmd.Flags().BoolVar(&dirtyOnly, "dirty", false, "only show dirty workspaces")
-	cmd.Flags().BoolVarP(&recursive, "recursive", "R", false, "show full descendant tree from the current focus")
-	cmd.Flags().BoolVarP(&longOutput, "long", "l", false, "show extended details such as tmux IDs")
-	cmd.Flags().BoolVarP(&shortOutput, "short", "s", false, "compact output without labels or key names")
-
-	return cmd
-}
-
 // filterDirtyWorkspaces filters dock info to only include workspaces with
-// uncommitted changes.
-func filterDirtyWorkspaces(eng *engine.Engine, docks []engine.DockInfo) []engine.DockInfo {
+// uncommitted changes. Relies on Dirty being populated by engine.List().
+func filterDirtyWorkspaces(docks []engine.DockInfo) []engine.DockInfo {
 	var result []engine.DockInfo
 	for _, d := range docks {
 		filtered := engine.DockInfo{
@@ -106,15 +15,7 @@ func filterDirtyWorkspaces(eng *engine.Engine, docks []engine.DockInfo) []engine
 			Repo:  d.Repo,
 		}
 		for _, ws := range d.Workspaces {
-			if ws.Path == "" {
-				continue
-			}
-			path := config.ExpandPath(ws.Path)
-			dirty, err := eng.Git.IsDirty(path)
-			if err != nil {
-				continue
-			}
-			if dirty {
+			if ws.Dirty {
 				filtered.Workspaces = append(filtered.Workspaces, ws)
 			}
 		}

@@ -48,7 +48,7 @@ func newDockNewCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&repo, "repo", "", "default repo for workspaces")
+	cmd.Flags().StringVar(&repo, "repo", "", "default repo for bays")
 	cmd.Flags().StringVar(&agent, "agent", "", "default agent type")
 	cmd.Flags().StringVar(&terminal, "terminal", "", "host terminal app (e.g. ghostty, iterm2)")
 
@@ -63,7 +63,7 @@ func newDockLsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "ls [name]",
 		Aliases: []string{"list"},
-		Short:   "List docks and their workspaces (defaults to current dock)",
+		Short:   "List docks and their bays (defaults to current dock)",
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -169,7 +169,7 @@ func newDockShowCmd() *cobra.Command {
 				rows = append(rows, showRow{"session", "not running"})
 			}
 
-			// Workspace summary
+			// Bay summary
 			total := len(mDock.Workspaces)
 			wsSummary := fmt.Sprintf("%d", total)
 			if total > 0 {
@@ -183,7 +183,7 @@ func newDockShowCmd() *cobra.Command {
 					wsSummary += fmt.Sprintf(" (%d merged)", merged)
 				}
 			}
-			rows = append(rows, showRow{"workspaces", wsSummary})
+			rows = append(rows, showRow{"bays", wsSummary})
 
 			printAlignedRows(rows)
 			return nil
@@ -279,7 +279,7 @@ func newDockCloseCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "close <name>",
 		Aliases: []string{"rm"},
-		Short:   "Close all workspaces in a dock",
+		Short:   "Close all bays in a dock",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -290,7 +290,7 @@ func newDockCloseCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVar(&force, "force", false, "force close even if workspaces are dirty")
+	cmd.Flags().BoolVar(&force, "force", false, "force close even if bays are dirty")
 
 	return cmd
 }

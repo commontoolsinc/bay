@@ -106,7 +106,7 @@ func runDoctor(eng *engine.Engine, w io.Writer) {
 		}
 	}
 
-	// Check workspace paths in manifest
+	// Check bay paths in manifest
 	m, loadErr := eng.LoadManifest()
 	if loadErr != nil {
 		fmt.Fprintf(w, "[WARN] could not load manifest: %v\n", loadErr)
@@ -126,14 +126,14 @@ func runDoctor(eng *engine.Engine, w io.Writer) {
 				}
 				wsPath := config.ExpandPath(ws.Path)
 				if _, err := os.Stat(wsPath); err != nil {
-					fmt.Fprintf(w, "[WARN] workspace %s:%s path missing: %s\n", dock.Name, ws.Name, wsPath)
+					fmt.Fprintf(w, "[WARN] bay %s:%s path missing: %s\n", dock.Name, ws.Name, wsPath)
 					missingCount++
 					ok = false
 				}
 			}
 		}
 		if missingCount == 0 {
-			fmt.Fprintln(w, "[OK] all workspace paths exist")
+			fmt.Fprintln(w, "[OK] all bay paths exist")
 		}
 
 		// Warn if gh is missing but we have worktrees that would
@@ -248,7 +248,7 @@ func checkManifestConsistency(m *manifest.Manifest, cfg *config.Config) []string
 			ws := &dock.Workspaces[j]
 			if ws.Name != "" {
 				if seenNames[ws.Name] {
-					warnings = append(warnings, fmt.Sprintf("dock %s has duplicate workspace name %q", dock.Name, ws.Name))
+					warnings = append(warnings, fmt.Sprintf("dock %s has duplicate bay name %q", dock.Name, ws.Name))
 				}
 				seenNames[ws.Name] = true
 			}
@@ -257,15 +257,15 @@ func checkManifestConsistency(m *manifest.Manifest, cfg *config.Config) []string
 			seenSurfaceNames := map[string]bool{}
 			for _, s := range ws.Surfaces {
 				if seenSurfaceIDs[s.ID] {
-					warnings = append(warnings, fmt.Sprintf("workspace %s:%s has duplicate surface id %d", dock.Name, ws.Name, s.ID))
+					warnings = append(warnings, fmt.Sprintf("bay %s:%s has duplicate surface id %d", dock.Name, ws.Name, s.ID))
 				}
 				seenSurfaceIDs[s.ID] = true
 				if seenSurfaceNames[s.Name] {
-					warnings = append(warnings, fmt.Sprintf("workspace %s:%s has duplicate surface name %q", dock.Name, ws.Name, s.Name))
+					warnings = append(warnings, fmt.Sprintf("bay %s:%s has duplicate surface name %q", dock.Name, ws.Name, s.Name))
 				}
 				seenSurfaceNames[s.Name] = true
 				for _, e := range s.Validate() {
-					warnings = append(warnings, fmt.Sprintf("workspace %s:%s: %s", dock.Name, ws.Name, e))
+					warnings = append(warnings, fmt.Sprintf("bay %s:%s: %s", dock.Name, ws.Name, e))
 				}
 			}
 		}

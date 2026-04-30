@@ -21,7 +21,7 @@ const (
 
 const backupReadme = `# Bay Manifest Backups
 
-Bay automatically backs up the manifest (workspace/surface state) here.
+Bay automatically backs up the manifest (bay/surface state) here.
 
 ## Retention policy
 
@@ -39,7 +39,7 @@ If your manifest gets corrupted or loses data:
 4. Restore:           cp backups/manifest-YYYY-MM-DDTHH-MM-SS.json manifest.json
 5. Recover:           bay recover
 
-The manifest tracks workspace names, surface layout, branches, and
+The manifest tracks bay names, surface layout, branches, and
 PR state. Worktree directories on disk are not affected by restoring
 a manifest backup.
 `

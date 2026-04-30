@@ -19,7 +19,7 @@ func (e *Engine) Edit(dockName, wsID string) (string, error) {
 		}
 		ws := dock.FindWorkspaceByID(wsID)
 		if ws == nil {
-			return fmt.Errorf("workspace %q not found in dock %q", wsID, dockName)
+			return fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
 		}
 		ws.LastActive = time.Now().Unix()
 		path = ws.Path

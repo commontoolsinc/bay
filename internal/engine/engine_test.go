@@ -3122,8 +3122,8 @@ func TestResolveByWindowID_NotFound(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for non-existent window ID")
 	}
-	if !strings.Contains(err.Error(), "no workspace found") {
-		t.Errorf("error = %q, want 'no workspace found' message", err)
+	if !strings.Contains(err.Error(), "no bay found") {
+		t.Errorf("error = %q, want 'no bay found' message", err)
 	}
 }
 

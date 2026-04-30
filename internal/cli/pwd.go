@@ -61,7 +61,7 @@ func formatPWD(ctx *engine.Context) string {
 				ws += " " + dim("(") + dim("dir") + " " + dir + dim(")")
 			}
 		}
-		parts = append(parts, labelValue("workspace", ws))
+		parts = append(parts, labelValue("bay", ws))
 	}
 	if ctx.Surface != "" {
 		parts = append(parts, labelValue("surface", ctx.Surface))

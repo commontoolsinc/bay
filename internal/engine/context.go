@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -11,11 +12,34 @@ import (
 type Context struct {
 	Repo        string `json:"repo,omitempty"`
 	Dock        string `json:"dock,omitempty"`
-	WorkspaceID string `json:"workspace_id,omitempty"`
-	Workspace   string `json:"workspace,omitempty"`
+	WorkspaceID string `json:"-"`
+	Workspace   string `json:"-"`
 	Surface     string `json:"surface,omitempty"`
 	SurfaceID   int    `json:"surface_id,omitempty"`
 	Path        string `json:"path,omitempty"`
+}
+
+// MarshalJSON emits the user-facing bay vocabulary while preserving the
+// internal field names used by the rest of the engine.
+func (c Context) MarshalJSON() ([]byte, error) {
+	type contextJSON struct {
+		Repo      string `json:"repo,omitempty"`
+		Dock      string `json:"dock,omitempty"`
+		BayID     string `json:"bay_id,omitempty"`
+		Bay       string `json:"bay,omitempty"`
+		Surface   string `json:"surface,omitempty"`
+		SurfaceID int    `json:"surface_id,omitempty"`
+		Path      string `json:"path,omitempty"`
+	}
+	return json.Marshal(contextJSON{
+		Repo:      c.Repo,
+		Dock:      c.Dock,
+		BayID:     c.WorkspaceID,
+		Bay:       c.Workspace,
+		Surface:   c.Surface,
+		SurfaceID: c.SurfaceID,
+		Path:      c.Path,
+	})
 }
 
 // CurrentContext resolves the current Bay context from cwd and tmux state.

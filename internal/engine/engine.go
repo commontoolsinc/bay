@@ -129,7 +129,7 @@ func ValidateWorkspaceName(name string) error {
 		return err
 	}
 	if manifest.IsWorkspaceID(name) {
-		return fmt.Errorf("invalid workspace name %q: matches the reserved workspace ID pattern (^w[1-9]\\d*$); pick a different name", name)
+		return fmt.Errorf("invalid bay name %q: matches the reserved bay ID pattern (^w[1-9]\\d*$); pick a different name", name)
 	}
 	return nil
 }
