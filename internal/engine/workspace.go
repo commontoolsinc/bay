@@ -162,7 +162,8 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 
 	// Create tmux window and position it at the end of existing workspace
 	// windows so new workspaces appear rightmost in the tab bar.
-	windowID, err := e.Tmux.NewWindow(dockName, displayName, wsPath)
+	initialWindowLabel := WorkspaceCompactLabel(&manifest.Workspace{Name: displayName, Path: wsPath})
+	windowID, err := e.Tmux.NewWindow(dockName, initialWindowLabel, wsPath)
 	if err != nil {
 		rollbackWorktree()
 		return nil, fmt.Errorf("creating tmux window: %w", err)
@@ -252,7 +253,8 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		return nil, err
 	}
 	if finalName != displayName {
-		_ = e.Tmux.RenameWindow(windowID, finalName)
+		finalWindowLabel := WorkspaceCompactLabel(&manifest.Workspace{Name: finalName, Path: wsPath})
+		_ = e.Tmux.RenameWindow(windowID, finalWindowLabel)
 	}
 
 	addedDock, err := e.LoadManifest()
@@ -291,7 +293,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 				newName := uniqueWorkspaceName(dock, ws, abbreviateBranch(opts.Branch))
 				if newName != ws.Name {
 					ws.Name = newName
-					e.updateWindowNames(ws, ws.Name)
+					e.updateWindowNames(ws, "")
 				}
 			}
 			return nil
@@ -660,7 +662,7 @@ func (e *Engine) WsUpdate(dockName, wsID string, branch, pr *string) error {
 		}
 
 		if nameChanged {
-			e.updateWindowNames(ws, ws.Name)
+			e.updateWindowNames(ws, "")
 		}
 
 		return nil
@@ -713,7 +715,7 @@ func (e *Engine) WsRename(dockName, wsID, newName string) error {
 
 		ws.Name = newName
 		ws.LastActive = time.Now().Unix()
-		e.updateWindowNames(ws, newName)
+		e.updateWindowNames(ws, "")
 
 		return nil
 	})
@@ -871,15 +873,89 @@ func (e *Engine) ResolveByWindowID(tmuxWindowID string) (dockName, wsID string, 
 	return "", "", nil, fmt.Errorf("no bay found for tmux window %s", tmuxWindowID)
 }
 
+// WorkspaceDirTag returns the path-derived display tag for a workspace.
+// For worktree workspaces this is usually the stable worktree directory
+// basename (w1, w2, ...).
+func WorkspaceDirTag(ws *manifest.Workspace) string {
+	if ws == nil || ws.Path == "" {
+		return ""
+	}
+	clean := filepath.Clean(ws.Path)
+	base := filepath.Base(clean)
+	if base == "." || base == string(filepath.Separator) {
+		return ""
+	}
+	return base
+}
+
+// WorkspaceCompactLabel returns the ordinary tmux/status display label for a
+// workspace, preserving the path-derived dir tag when the workspace has a
+// distinct semantic name.
+func WorkspaceCompactLabel(ws *manifest.Workspace) string {
+	if ws == nil {
+		return ""
+	}
+	dirTag := WorkspaceDirTag(ws)
+	if dirTag == "" {
+		return ws.Name
+	}
+	if ws.Name == "" || ws.Name == dirTag {
+		return dirTag
+	}
+	return dirTag + "." + ws.Name
+}
+
+// TruncateWorkspaceCompactLabel crops a compact workspace label to maxLen
+// bytes, preserving the dir tag before the semantic name.
+func TruncateWorkspaceCompactLabel(ws *manifest.Workspace, maxLen int) string {
+	label := WorkspaceCompactLabel(ws)
+	if maxLen <= 0 || label == "" {
+		return ""
+	}
+	if len(label) <= maxLen {
+		return label
+	}
+
+	dirTag := WorkspaceDirTag(ws)
+	if dirTag == "" || ws == nil || ws.Name == "" || ws.Name == dirTag {
+		return TruncateName(label, maxLen)
+	}
+
+	prefix := dirTag + "."
+	if maxLen >= len(prefix)+2 {
+		nameBudget := maxLen - len(prefix)
+		if len(ws.Name) <= nameBudget {
+			return prefix + ws.Name
+		}
+		return prefix + ws.Name[:nameBudget]
+	}
+	if len(dirTag) <= maxLen {
+		return dirTag
+	}
+	return TruncateName(dirTag, maxLen)
+}
+
+func workspaceWindowLabel(ws *manifest.Workspace) string {
+	label := WorkspaceCompactLabel(ws)
+	if label != "" {
+		return label
+	}
+	if ws != nil {
+		return ws.ID
+	}
+	return ""
+}
+
 // updateWindowNames renames all tmux windows for a workspace's surfaces.
-// Primary windows (layout group 1) get the workspace name; secondary windows
-// get ":surfacename" where surfacename is the first surface in the group.
+// Primary windows (layout group 1) get the workspace compact label; secondary
+// windows get ":surfacename" where surfacename is the first surface in the
+// group.
 //
-// When wsID is empty (no Name set yet), falls back to the workspace's ID
-// so the tab still has a stable label. Display = Name (display) → ID (handle).
-func (e *Engine) updateWindowNames(ws *manifest.Workspace, wsID string) {
-	if wsID == "" {
-		wsID = ws.ID
+// When primaryLabel is empty and no compact label is available, falls back to
+// the workspace's ID so the tab still has a stable label.
+func (e *Engine) updateWindowNames(ws *manifest.Workspace, primaryLabel string) {
+	if primaryLabel == "" {
+		primaryLabel = workspaceWindowLabel(ws)
 	}
 	// Build a map of layout group → first surface name (by slice order).
 	firstInGroup := map[int]string{}
@@ -895,7 +971,7 @@ func (e *Engine) updateWindowNames(ws *manifest.Workspace, wsID string) {
 	for _, s := range ws.Surfaces {
 		if s.Tmux != nil && s.Tmux.WindowID != "" && !seen[s.Tmux.WindowID] {
 			if s.Tmux.LayoutGroup <= 1 {
-				_ = e.Tmux.RenameWindow(s.Tmux.WindowID, wsID)
+				_ = e.Tmux.RenameWindow(s.Tmux.WindowID, primaryLabel)
 			} else if surfName := firstInGroup[s.Tmux.LayoutGroup]; surfName != "" {
 				_ = e.Tmux.RenameWindow(s.Tmux.WindowID, ":"+surfName)
 			}
@@ -942,9 +1018,9 @@ func (e *Engine) refreshDockWindowNames(dock *manifest.Dock) {
 	}
 	for i := range dock.Workspaces {
 		ws := &dock.Workspaces[i]
-		name := ws.Name
+		name := WorkspaceCompactLabel(ws)
 		if truncate {
-			name = TruncateTabName(name, maxLen)
+			name = TruncateWorkspaceCompactLabel(ws, maxLen)
 		}
 		e.updateWindowNames(ws, name)
 	}

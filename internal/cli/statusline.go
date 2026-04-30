@@ -29,9 +29,9 @@ func newStatusLineCmd() *cobra.Command {
 		Long: `Output a single field for the current bay, resolved by tmux window ID.
 Designed for use in tmux status-format strings. Outputs empty string if not in a bay.
 
-Fields: id, name, branch, pr, status, dock, merged, full
+Fields: id, name, dir, branch, pr, status, dock, merged, full
 
-The full field outputs repo:branch #PR | status. Use --width to enable
+The full field outputs label branch #PR status. Use --width to enable
 adaptive truncation (pass #{status-right-length} from tmux). Non-numeric
 width values are treated as 0 (full format, no truncation).
 
@@ -103,6 +103,8 @@ window until the next status-interval tick.`,
 				out = ws.ID
 			case "name":
 				out = ws.Name
+			case "dir":
+				out = engine.WorkspaceDirTag(ws)
 			case "branch":
 				if ws.Worktree != nil {
 					out = ws.Worktree.Branch
@@ -136,13 +138,6 @@ window until the next status-interval tick.`,
 					}
 				}
 			case "full":
-				repo := ""
-				if ws.Worktree != nil && ws.Worktree.Repo != "" {
-					repo = ws.Worktree.Repo
-				} else if dock := m.FindDock(dockName); dock != nil {
-					repo = dock.Repo
-				}
-
 				branch := ""
 				pr := ""
 				if ws.Worktree != nil {
@@ -162,9 +157,9 @@ window until the next status-interval tick.`,
 				}
 
 				width, _ := strconv.Atoi(widthStr)
-				out = formatStatusLine(repo, branch, pr, status, width)
+				out = formatStatusLine(ws, branch, pr, status, width)
 			default:
-				return fmt.Errorf("unknown field %q; valid fields: id, name, branch, pr, status, dock, merged, full", field)
+				return fmt.Errorf("unknown field %q; valid fields: id, name, dir, branch, pr, status, dock, merged, full", field)
 			}
 
 			if out != "" {
@@ -185,130 +180,139 @@ window until the next status-interval tick.`,
 //
 // Tiers (tried in order until output fits within width):
 //
-//	full:    repo:branch #PR | status
-//	medium:  repo:bran.. #PR | status   (truncate branch)
-//	compact: bran.. #PR *               (drop repo, shorten status)
-//	minimal: bran.. *                   (also drop PR)
-//	repo-only: bay *                    (no branch available — truncate repo)
-func formatStatusLine(repo, branch, pr, status string, width int) string {
-	full := buildFull(repo, branch, pr, status)
+//	full:             label branch #PR status
+//	label-cropped:    w4.auth branch #PR status
+//	branch-cropped:   w4.auth bran.. #PR status
+//	compact-status:   w4.auth bran.. #PR *
+//	minimal:          w4.auth bran.. *
+//	label-only:       w4.auth
+func formatStatusLine(ws *manifest.Workspace, branch, pr, status string, width int) string {
+	label := engine.WorkspaceCompactLabel(ws)
+	full := buildStatusLine(label, branch, pr, status)
 	if width <= 0 || len(full) <= width {
 		return full
 	}
 
-	shortStatus := abbreviateStatus(status)
-
-	// Medium: truncate branch, keep everything else.
-	if branch != "" {
-		overhead := 0
-		if repo != "" {
-			overhead += len(repo) + 1 // "repo:"
-		}
-		if pr != "" {
-			overhead += len(" #") + len(pr)
-		}
-		if status != "" {
-			overhead += len(" | ") + len(status)
-		}
-		budget := width - overhead
-		if budget >= 4 {
-			med := buildFull(repo, engine.TruncateName(branch, budget), pr, status)
-			if len(med) <= width {
-				return med
-			}
-		}
+	// First crop only the label, preserving branch/PR/status.
+	if out, ok := fitByCroppingLabel(ws, branch, pr, status, width); ok {
+		return out
 	}
 
-	// Compact: drop repo, abbreviate status.
+	// Then truncate branch metadata. Keep full status first.
 	if branch != "" {
-		overhead := 0
-		if pr != "" {
-			overhead += len(" #") + len(pr)
-		}
-		if shortStatus != "" {
-			overhead += 1 + len(shortStatus) // " *" or " M"
-		}
-		budget := width - overhead
-		if budget >= 4 {
-			return buildCompact(engine.TruncateName(branch, budget), pr, shortStatus)
-		}
-	}
-
-	// Minimal: drop PR too.
-	if branch != "" {
-		overhead := 0
-		if shortStatus != "" {
-			overhead += 1 + len(shortStatus)
-		}
-		budget := width - overhead
-		if budget >= 4 {
-			return buildCompact(engine.TruncateName(branch, budget), "", shortStatus)
-		}
-	}
-
-	// Repo-only: no branch available, so fall back to truncated repo +
-	// abbreviated status. Rare (bay workspaces almost always have a branch),
-	// but beats dropping the repo entirely when only status fits.
-	if branch == "" && repo != "" {
-		overhead := 0
-		if shortStatus != "" {
-			overhead += 1 + len(shortStatus)
-		}
-		budget := width - overhead
-		if budget >= 3 {
-			out := engine.TruncateName(repo, budget)
-			if shortStatus != "" {
-				out += " " + shortStatus
-			}
+		if out, ok := fitWithTruncatedBranch(ws, branch, pr, status, width); ok {
 			return out
 		}
 	}
 
-	// Last resort: just status indicator.
-	if shortStatus != "" {
+	shortStatus := abbreviateStatus(status)
+	if branch != "" {
+		if out, ok := fitWithTruncatedBranch(ws, branch, pr, shortStatus, width); ok {
+			return out
+		}
+		if out, ok := fitWithTruncatedBranch(ws, branch, "", shortStatus, width); ok {
+			return out
+		}
+	}
+
+	if label != "" {
+		if out, ok := fitByCroppingLabel(ws, "", "", shortStatus, width); ok {
+			return out
+		}
+		return engine.TruncateWorkspaceCompactLabel(ws, width)
+	}
+	if shortStatus != "" && len(shortStatus) <= width {
 		return shortStatus
 	}
 	return ""
 }
 
-// buildFull builds the full-format string: repo:branch #PR | status.
-func buildFull(repo, branch, pr, status string) string {
-	var b strings.Builder
-	if repo != "" {
-		b.WriteString(repo)
-		if branch != "" {
-			b.WriteByte(':')
+func fitByCroppingLabel(ws *manifest.Workspace, branch, pr, status string, width int) (string, bool) {
+	rest := buildStatusLine("", branch, pr, status)
+	budget := width
+	if rest != "" {
+		budget -= len(rest) + 1
+	}
+	if budget <= 0 {
+		return "", false
+	}
+	if engine.WorkspaceCompactLabel(ws) != "" {
+		minBudget := 1
+		if dirTag := engine.WorkspaceDirTag(ws); dirTag != "" {
+			minBudget = len(dirTag)
+		}
+		if budget < minBudget {
+			return "", false
 		}
 	}
-	if branch != "" {
-		b.WriteString(branch)
-	}
-	if pr != "" {
-		b.WriteString(" #")
-		b.WriteString(pr)
-	}
-	if status != "" {
-		if b.Len() > 0 {
-			b.WriteString(" | ")
-		}
-		b.WriteString(status)
-	}
-	return b.String()
+	label := engine.TruncateWorkspaceCompactLabel(ws, budget)
+	out := buildStatusLine(label, branch, pr, status)
+	return out, out != "" && len(out) <= width
 }
 
-// buildCompact builds the compact format: branch #PR status (no separators).
-func buildCompact(branch, pr, shortStatus string) string {
-	var b strings.Builder
-	b.WriteString(branch)
+func fitWithTruncatedBranch(ws *manifest.Workspace, branch, pr, status string, width int) (string, bool) {
+	label := engine.WorkspaceCompactLabel(ws)
+	maxLabelBudget := len(label)
+	if maxLabelBudget > width {
+		maxLabelBudget = width
+	}
+	minLabelBudget := 0
+	if label != "" {
+		minLabelBudget = 1
+		if dirTag := engine.WorkspaceDirTag(ws); dirTag != "" && len(dirTag) <= width {
+			minLabelBudget = len(dirTag)
+		}
+	}
+	for labelBudget := maxLabelBudget; labelBudget >= minLabelBudget; labelBudget-- {
+		truncatedLabel := ""
+		if labelBudget > 0 {
+			truncatedLabel = engine.TruncateWorkspaceCompactLabel(ws, labelBudget)
+		}
+		branchBudget := statusLineBranchBudget(width, truncatedLabel, pr, status)
+		if branchBudget < 4 {
+			continue
+		}
+		out := buildStatusLine(truncatedLabel, engine.TruncateName(branch, branchBudget), pr, status)
+		if len(out) <= width {
+			return out, true
+		}
+	}
+	return "", false
+}
+
+func statusLineBranchBudget(width int, label, pr, status string) int {
+	used := 0
+	parts := 1 // branch
+	if label != "" {
+		used += len(label)
+		parts++
+	}
 	if pr != "" {
-		b.WriteString(" #")
-		b.WriteString(pr)
+		used += len("#") + len(pr)
+		parts++
 	}
-	if shortStatus != "" {
-		b.WriteByte(' ')
-		b.WriteString(shortStatus)
+	if status != "" {
+		used += len(status)
+		parts++
 	}
-	return b.String()
+	return width - used - (parts - 1)
+}
+
+func buildStatusLine(label, branch, pr, status string) string {
+	var parts []string
+	if label != "" {
+		parts = append(parts, label)
+	}
+	if branch != "" {
+		parts = append(parts, branch)
+	}
+	if pr != "" {
+		parts = append(parts, "#"+pr)
+	}
+	if status != "" {
+		parts = append(parts, status)
+	}
+	return strings.Join(parts, " ")
 }
 
 // abbreviateStatus returns a short status indicator: * for dirty, M for merged.

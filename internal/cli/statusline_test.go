@@ -1,29 +1,37 @@
 package cli
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/commontoolsinc/bay/internal/manifest"
+)
+
+func statusLineTestWorkspace() *manifest.Workspace {
+	return &manifest.Workspace{Name: "auth-fix", Path: "/tmp/bay-worktrees/w4"}
+}
 
 func TestFormatStatusLine_NoWidth(t *testing.T) {
 	tests := []struct {
 		name   string
-		repo   string
+		ws     *manifest.Workspace
 		branch string
 		pr     string
 		status string
 		want   string
 	}{
-		{"full", "bay", "fix/login", "42", "dirty", "bay:fix/login #42 | dirty"},
-		{"no pr", "bay", "fix/login", "", "dirty", "bay:fix/login | dirty"},
-		{"clean", "bay", "fix/login", "42", "", "bay:fix/login #42"},
-		{"merged", "bay", "main", "", "merged", "bay:main | merged"},
-		{"no branch", "bay", "", "", "", "bay"},
-		{"no repo", "", "fix/login", "", "", "fix/login"},
-		{"empty", "", "", "", "", ""},
-		{"status only", "", "", "", "dirty", "dirty"},
+		{"full", statusLineTestWorkspace(), "feature/auth-fix", "42", "dirty", "w4.auth-fix feature/auth-fix #42 dirty"},
+		{"no pr", statusLineTestWorkspace(), "feature/auth-fix", "", "dirty", "w4.auth-fix feature/auth-fix dirty"},
+		{"clean", statusLineTestWorkspace(), "feature/auth-fix", "42", "", "w4.auth-fix feature/auth-fix #42"},
+		{"merged", statusLineTestWorkspace(), "main", "", "merged", "w4.auth-fix main merged"},
+		{"no branch", statusLineTestWorkspace(), "", "", "", "w4.auth-fix"},
+		{"dir tag only", &manifest.Workspace{Name: "", Path: "/tmp/bay-worktrees/w4"}, "", "", "", "w4"},
+		{"empty", &manifest.Workspace{}, "", "", "", ""},
+		{"status only", &manifest.Workspace{}, "", "", "dirty", "dirty"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := formatStatusLine(tt.repo, tt.branch, tt.pr, tt.status, 0)
+			got := formatStatusLine(tt.ws, tt.branch, tt.pr, tt.status, 0)
 			if got != tt.want {
 				t.Errorf("formatStatusLine() = %q, want %q", got, tt.want)
 			}
@@ -34,7 +42,7 @@ func TestFormatStatusLine_NoWidth(t *testing.T) {
 func TestFormatStatusLine_WithWidth(t *testing.T) {
 	tests := []struct {
 		name   string
-		repo   string
+		ws     *manifest.Workspace
 		branch string
 		pr     string
 		status string
@@ -43,43 +51,39 @@ func TestFormatStatusLine_WithWidth(t *testing.T) {
 	}{
 		{
 			"fits in width",
-			"bay", "main", "42", "dirty",
+			statusLineTestWorkspace(), "main", "42", "dirty",
 			40,
-			"bay:main #42 | dirty",
+			"w4.auth-fix main #42 dirty",
 		},
 		{
-			"medium truncates branch",
-			"bay", "fix/login-crash-on-submit", "42", "dirty",
-			30,
-			// overhead: "bay:" (4) + " #42" (4) + " | dirty" (8) = 16
-			// budget: 30 - 16 = 14
-			"bay:fix/login-cr.. #42 | dirty",
+			"crops label before branch",
+			statusLineTestWorkspace(), "feature/auth-fix", "42", "dirty",
+			34,
+			"w4.auth feature/auth-fix #42 dirty",
 		},
 		{
-			"compact drops repo",
-			"bay", "fix/login-crash-on-submit", "42", "dirty",
-			18,
-			// compact: branch + " #42" (4) + " *" (2) = branch budget 12
-			"fix/login-.. #42 *",
+			"truncates branch after label",
+			statusLineTestWorkspace(), "feature/auth-fix", "42", "dirty",
+			24,
+			"w4.auth-f fe.. #42 dirty",
 		},
 		{
-			"minimal drops PR",
-			"bay", "fix/login-crash-on-submit", "", "dirty",
-			10,
-			// minimal: branch + " *" (2) = budget 8
-			"fix/lo.. *",
+			"abbreviates status after branch",
+			statusLineTestWorkspace(), "feature/auth-fix", "42", "dirty",
+			16,
+			"w4.au fe.. #42 *",
 		},
 		{
-			"very tight just status",
-			"bay", "fix/x", "", "dirty",
+			"very tight keeps dir tag",
+			statusLineTestWorkspace(), "fix/x", "", "dirty",
 			2,
-			"*",
+			"w4",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := formatStatusLine(tt.repo, tt.branch, tt.pr, tt.status, tt.width)
+			got := formatStatusLine(tt.ws, tt.branch, tt.pr, tt.status, tt.width)
 			if got != tt.want {
 				t.Errorf("formatStatusLine(%d) = %q, want %q", tt.width, got, tt.want)
 			}
@@ -91,28 +95,26 @@ func TestFormatStatusLine_WithWidth(t *testing.T) {
 }
 
 func TestFormatStatusLine_EmptyBranch(t *testing.T) {
-	// When branch is empty (unusual but possible), fall back to
-	// repo-only tier instead of dropping the repo entirely.
 	tests := []struct {
 		name   string
-		repo   string
+		ws     *manifest.Workspace
 		status string
 		width  int
 		want   string
 	}{
-		{"repo + dirty fits", "bay", "dirty", 20, "bay | dirty"},
-		{"repo-only tier", "bay", "dirty", 5, "bay *"},
-		{"repo truncated", "verylongrepo", "dirty", 8, "very.. *"},
-		{"too tight, status only", "bay", "dirty", 2, "*"},
-		{"no status, no repo", "", "", 5, ""},
+		{"label + dirty fits", statusLineTestWorkspace(), "dirty", 20, "w4.auth-fix dirty"},
+		{"label cropped with status", statusLineTestWorkspace(), "dirty", 11, "w4.au dirty"},
+		{"label cropped tight", statusLineTestWorkspace(), "dirty", 7, "w4.au *"},
+		{"dir tag only", statusLineTestWorkspace(), "dirty", 2, "w4"},
+		{"no status, no label", &manifest.Workspace{}, "", 5, ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := formatStatusLine(tt.repo, "", "", tt.status, tt.width)
+			got := formatStatusLine(tt.ws, "", "", tt.status, tt.width)
 			if got != tt.want {
 				t.Errorf("formatStatusLine(repo=%q, status=%q, width=%d) = %q, want %q",
-					tt.repo, tt.status, tt.width, got, tt.want)
+					tt.ws.Name, tt.status, tt.width, got, tt.want)
 			}
 			if tt.width > 0 && len(got) > tt.width {
 				t.Errorf("output %q exceeds width %d", got, tt.width)

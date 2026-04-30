@@ -77,7 +77,7 @@ bay new --branch fix/login-bug
 
 That creates a second bay on the `fix/login-bug` branch (or
 checks it out if it already exists on the remote).
-Within a few seconds the tmux tab name updates to `login-bug` — bay
+Within a few seconds the tmux tab name updates to `w1.login-bug` — bay
 watches your branch in the background and keeps the name in sync.
 
 You can also create a branch manually in an existing bay with
@@ -297,11 +297,11 @@ another repo. Create bays from it with `bay new --repo backend`.
 For more control: `bay dock new myproject --repo myproject`.
 
 **Status line:** Add `#(bay status-line full --window #{window_id})` to
-your tmux `status-right` to always see your current bay. Pass
-`#{window_id}` so each window gets its own tmux `#()` cache entry —
-without it, tmux may show stale status from a different window. Other
-field names: `name`, `branch`, `pr`, `dirty`, `dock`, `merged`. See the
-human guide for details.
+your tmux `status-right` to always see your current bay label, branch,
+PR, and status. Pass `#{window_id}` so each window gets its own tmux
+`#()` cache entry — without it, tmux may show stale status from a
+different window. Other field names: `id`, `name`, `dir`, `branch`,
+`pr`, `status`, `dock`, `merged`. See the human guide for details.
 
 ---
 
