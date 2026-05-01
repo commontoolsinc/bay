@@ -419,8 +419,45 @@ aid, not just a label. Expect them to:
   every pause.
 
 The dock setup installs the pointer to `bay agent-guide` which tells
-agents how. For a stronger nudge, paste the block below into your
-user-global agent instructions (for Claude Code, `~/.claude/CLAUDE.md`):
+agents how. For a stronger nudge, install the block below into your
+user-global agent instructions. Three options, depending on how many
+agents you use:
+
+**Option A — single agent: paste directly.** If you only use one
+agent, paste the block straight into its global config (Claude Code:
+`~/.claude/CLAUDE.md`; Codex: `~/.codex/AGENTS.md`).
+
+**Option B — multiple agents: shared file + reference.** Keep the
+block in one file (e.g. `~/.config/agent-instructions/bay.md`) and
+have each agent's config pull it in. This avoids drift when you tweak
+the wording.
+
+- Claude Code supports transitive imports — add a line to
+  `~/.claude/CLAUDE.md`:
+
+  ```markdown
+  @/Users/you/.config/agent-instructions/bay.md
+  ```
+
+  The harness inlines the file's contents into context at session
+  start (recursive, up to 5 hops). A prose pointer like "read this
+  file at session start" is *not* equivalent — Claude Code does not
+  reliably follow prose pointers, only `@path` imports.
+
+- For Codex, add a prose pointer in `~/.codex/AGENTS.md`:
+
+  ```markdown
+  At session start, read `/Users/you/.config/agent-instructions/bay.md`
+  and follow it as shared agent instructions.
+  ```
+
+**Option C — shared base + agent-specific overrides.** Combine the
+two: the shared file holds the canonical block, and each agent's
+config references it *and* adds agent-specific notes after. State
+which file wins on conflict (typically the agent-specific one, since
+it's the more local override).
+
+The block to install:
 
 ```markdown
 ## Bay descriptions
