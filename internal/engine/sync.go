@@ -125,14 +125,16 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 			discoveredClosed = append(discoveredClosed, closedEntries...)
 		}
 
-		// Clean up dead dock-level surfaces.
+		// Clean up dead dock-level surfaces. Skip when the session is
+		// gone, foreign, or in-flight (e.g., recover hasn't finished
+		// persisting new pane IDs) — see verifySessionOwnership.
 		for i := range m.Docks {
 			dock := &m.Docks[i]
 			if len(dock.Surfaces) == 0 {
 				continue
 			}
-			sessionAlive, _ := e.Tmux.HasSession(dock.Name)
-			if !sessionAlive {
+			exists, owned := e.verifySessionOwnership(dock)
+			if !exists || !owned {
 				continue
 			}
 			live := dock.Surfaces[:0]
@@ -260,13 +262,14 @@ func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace)
 		}
 	}
 
-	// Only clean up dead surfaces if the dock's tmux session is alive.
-	// If the session is gone (reboot, manual kill), the surfaces are
-	// needed for `bay recover` to know what to recreate. Stripping
-	// them here would leave workspaces with surfaces=0 and recover
-	// would report "nothing to recover."
-	sessionAlive, _ := e.Tmux.HasSession(dock.Name)
-	if sessionAlive {
+	// Only clean up dead surfaces if the dock's tmux session is alive
+	// AND it's the session bay set up. If the session is gone, foreign,
+	// or in-flight (e.g., a recover that hasn't persisted new pane IDs
+	// yet), the surfaces are needed for `bay recover` to know what to
+	// recreate. Stripping them here would leave workspaces with
+	// surfaces=0 and recover would report "nothing to recover."
+	exists, owned := e.verifySessionOwnership(dock)
+	if exists && owned {
 		update.deadSurfaceIDs = e.deadSurfaceIDs(ws)
 	}
 	if !update.branchChanged && !update.branchDetached && !update.prChanged && !update.merged && len(update.deadSurfaceIDs) == 0 {

@@ -37,11 +37,22 @@ func (e *Engine) Recover() ([]RecoverResult, error) {
 	for i := range m.Docks {
 		dock := &m.Docks[i]
 
-		if err := e.ensureSession(dock.Name); err != nil {
+		// Stash the session ID on the in-memory recovered dock;
+		// mergeRecoveredDockState will persist it alongside any new
+		// pane IDs in a single withManifest transaction. Updating the
+		// manifest here would open a race window where SyncAll sees
+		// matching IDs but stale pane IDs.
+		sessionID, err := e.ensureSession(dock.Name, dock.SessionID)
+		if err != nil {
 			return nil, err
 		}
+		sessionIDChanged := dock.SessionID != sessionID
+		dock.SessionID = sessionID
 
 		outcome := e.recoverDockWorkspaces(dock, m)
+		if sessionIDChanged {
+			outcome.changed = true
+		}
 		e.cleanPlaceholders(dock.Name)
 		e.recoverDockHostTerminal(dock, &outcome)
 		e.refreshDockWindowNames(dock)
@@ -78,11 +89,17 @@ func (e *Engine) DockRecover(name string) (RecoverResult, error) {
 		return RecoverResult{}, fmt.Errorf("unknown dock %q in manifest", name)
 	}
 
-	if err := e.ensureSession(name); err != nil {
+	sessionID, err := e.ensureSession(name, dock.SessionID)
+	if err != nil {
 		return RecoverResult{}, err
 	}
+	sessionIDChanged := dock.SessionID != sessionID
+	dock.SessionID = sessionID
 
 	outcome := e.recoverDockWorkspaces(dock, m)
+	if sessionIDChanged {
+		outcome.changed = true
+	}
 	e.recoverDockSurfaces(dock, &outcome)
 	e.cleanPlaceholders(name)
 	e.recoverDockHostTerminal(dock, &outcome)
@@ -421,6 +438,11 @@ func (e *Engine) mergeRecoveredDockState(recovered *manifest.Dock) error {
 
 func mergeRecoveredDockRuntimeState(dst, src *manifest.Dock) bool {
 	changed := false
+
+	if src.SessionID != "" && dst.SessionID != src.SessionID {
+		dst.SessionID = src.SessionID
+		changed = true
+	}
 
 	if src.Host != nil {
 		if dst.Host == nil {

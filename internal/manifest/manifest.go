@@ -80,6 +80,7 @@ type Dock struct {
 	Agent         string              `json:"agent,omitempty"`      // default agent
 	AgentArgs     map[string][]string `json:"agent_args,omitempty"` // per-agent args
 	Host          *GUIAttrs           `json:"host,omitempty"`       // terminal window hosting this dock's tmux session; nil if unmanaged
+	SessionID     string              `json:"session_id,omitempty"` // identifies the tmux session bay set up; matched against the @bay-session-id session option to detect server restarts
 	Surfaces      []Surface           `json:"surfaces,omitempty"`   // dock-level surfaces (e.g., dock-scoped editor)
 	Workspaces    []Workspace         `json:"bays"`
 	ClosedEntries []ClosedEntry       `json:"closed_entries,omitempty"` // undo-close queue (see docs/design/undo-close.md)

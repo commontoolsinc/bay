@@ -65,6 +65,20 @@ func (r *Real) RenameSession(oldName string, newName string) error {
 	return runSilent("rename-session", "-t", exactSession(oldName), newName)
 }
 
+func (r *Real) SetSessionOption(session string, option string, value string) error {
+	return runSilent("set-option", "-t", exactSession(session), option, value)
+}
+
+func (r *Real) GetSessionOption(session string, option string) (string, error) {
+	out, err := run("show-options", "-t", exactSession(session), "-v", option)
+	if err != nil {
+		// tmux returns non-zero when the option is unset; that's the
+		// expected "no marker" state and not an error for callers.
+		return "", nil
+	}
+	return out, nil
+}
+
 func (r *Real) ListSessions() ([]Session, error) {
 	out, err := run("list-sessions", "-F", "#{session_name}")
 	if err != nil {

@@ -154,8 +154,12 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		}
 	}
 
-	// Ensure tmux session exists.
-	if err := e.ensureSession(dockName); err != nil {
+	// Ensure tmux session exists. In normal operation this is a no-op
+	// (marker on the live session matches dock.SessionID); the rare
+	// branch where ensureSession returns a different ID gets persisted
+	// alongside the new workspace below.
+	sessionID, err := e.ensureSession(dockName, dock.SessionID)
+	if err != nil {
 		rollbackWorktree()
 		return nil, err
 	}
@@ -222,6 +226,13 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		dock := m.FindDock(dockName)
 		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
+		}
+
+		// Backfill session identity if ensureSession resolved to a
+		// different UUID than the manifest had recorded (legacy or
+		// post-restart state).
+		if dock.SessionID != sessionID {
+			dock.SessionID = sessionID
 		}
 
 		finalName = displayName

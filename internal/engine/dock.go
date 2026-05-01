@@ -76,7 +76,8 @@ func (e *Engine) DockNew(name, repo, agent, terminal string) error {
 		return fmt.Errorf("tmux session %q already exists and is not a bay dock", name)
 	}
 
-	if err := e.ensureSession(name); err != nil {
+	sessionID, err := e.ensureSession(name, "")
+	if err != nil {
 		return err
 	}
 
@@ -111,10 +112,11 @@ func (e *Engine) DockNew(name, repo, agent, terminal string) error {
 			return fmt.Errorf("dock %q already exists", name)
 		}
 		return m.AddDock(manifest.Dock{
-			Name:  name,
-			Repo:  repo,
-			Agent: agent,
-			Host:  host,
+			Name:      name,
+			Repo:      repo,
+			Agent:     agent,
+			Host:      host,
+			SessionID: sessionID,
 		})
 	})
 }

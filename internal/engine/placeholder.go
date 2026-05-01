@@ -1,29 +1,131 @@
 package engine
 
-import "fmt"
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+
+	"github.com/commontoolsinc/bay/internal/manifest"
+)
 
 const placeholderName = "~"
 
-// ensureSession creates the tmux session if it doesn't exist.
-// The default window created by new-session is tagged as a placeholder.
-func (e *Engine) ensureSession(name string) error {
+// sessionIDOption is the tmux session-scoped user option that bay sets
+// on every session it manages. Its value is the same UUID stored in
+// the matching Dock.SessionID. The two together let SyncAll detect a
+// tmux server restart that left a same-named session in its wake.
+const sessionIDOption = "@bay-session-id"
+
+// newSessionID generates a fresh session identity. var (not const-fn)
+// so tests can swap in deterministic IDs.
+var newSessionID = func() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
+}
+
+// verifySessionOwnership reports whether the tmux session for dock
+// exists and, if so, whether it's the one bay last set up.
+//
+// `exists` is false when no tmux session of dock.Name is found —
+// today's "session fully gone" branch. Callers should preserve state.
+//
+// `owned` is true only when the session's @bay-session-id marker and
+// dock.SessionID agree (or both empty for legacy/pre-rollout). Any
+// mismatch — foreign session resurrection, in-flight recover that
+// hasn't persisted its new SessionID yet — produces owned=false so
+// pane-id-based cleanup is suppressed.
+func (e *Engine) verifySessionOwnership(dock *manifest.Dock) (exists, owned bool) {
+	exists, _ = e.Tmux.HasSession(dock.Name)
+	if !exists {
+		return false, false
+	}
+	marker, _ := e.Tmux.GetSessionOption(dock.Name, sessionIDOption)
+	switch {
+	case marker == "" && dock.SessionID == "":
+		// Legacy state — neither side has been tagged. Behave as today
+		// (owned, run cleanup) so existing live docks don't regress.
+		return true, true
+	case marker == dock.SessionID:
+		return true, true
+	default:
+		// (empty marker, set manifest) — session was recreated outside bay
+		// (set marker, empty manifest)  — recover in flight, or partial failure
+		// (set, set, mismatched)        — session was recreated since bay last ran
+		return true, false
+	}
+}
+
+// ensureSession ensures a tmux session named `name` exists and carries
+// a known @bay-session-id marker. It does NOT persist the manifest —
+// the caller writes the returned session ID at the moment that's
+// race-safe for its flow (see docs/design/session-identity.md).
+//
+// expectedSessionID is the manifest's stored Dock.SessionID for this
+// dock (empty for fresh docks). Behavior matrix:
+//
+//   - no session                        → create + tag with new UUID
+//   - session, marker empty             → tag with new UUID (claim)
+//   - session, marker matches expected  → no-op, return existing
+//   - session, marker mismatched        → re-tag with new UUID (claim)
+//   - session, marker set, expected ""  → adopt the existing marker
+//
+// Returns the UUID that the session's marker now holds.
+func (e *Engine) ensureSession(name, expectedSessionID string) (string, error) {
 	exists, err := e.Tmux.HasSession(name)
 	if err != nil {
-		return fmt.Errorf("checking tmux session: %w", err)
+		return "", fmt.Errorf("checking tmux session: %w", err)
 	}
-	if exists {
-		return nil
+	if !exists {
+		if err := e.Tmux.NewSession(name); err != nil {
+			return "", fmt.Errorf("creating tmux session: %w", err)
+		}
+		// Tag the default window as a placeholder.
+		windows, err := e.Tmux.ListWindows(name)
+		if err == nil && len(windows) > 0 {
+			_ = e.Tmux.SetWindowOption(windows[0].ID, "@bay-placeholder", "1")
+			_ = e.Tmux.RenameWindow(windows[0].ID, placeholderName)
+		}
+		id := newSessionID()
+		if err := e.Tmux.SetSessionOption(name, sessionIDOption, id); err != nil {
+			return "", fmt.Errorf("tagging tmux session: %w", err)
+		}
+		return id, nil
 	}
-	if err := e.Tmux.NewSession(name); err != nil {
-		return fmt.Errorf("creating tmux session: %w", err)
+
+	marker, _ := e.Tmux.GetSessionOption(name, sessionIDOption)
+	switch {
+	case marker == "" && expectedSessionID == "":
+		// Legacy / unknown — claim with a new UUID so future probes
+		// have something to verify against.
+		id := newSessionID()
+		if err := e.Tmux.SetSessionOption(name, sessionIDOption, id); err != nil {
+			return "", fmt.Errorf("tagging tmux session: %w", err)
+		}
+		return id, nil
+	case marker == "":
+		// Session is back without bay's marker (likely a restart) —
+		// claim it.
+		id := newSessionID()
+		if err := e.Tmux.SetSessionOption(name, sessionIDOption, id); err != nil {
+			return "", fmt.Errorf("tagging tmux session: %w", err)
+		}
+		return id, nil
+	case marker == expectedSessionID:
+		return marker, nil
+	case expectedSessionID == "":
+		// Manifest hasn't recorded a SessionID yet but tmux is tagged.
+		// Adopt the existing marker rather than churning a new one.
+		return marker, nil
+	default:
+		// Marker present but doesn't match — session was recreated
+		// since bay last ran. Re-tag and let the caller persist.
+		id := newSessionID()
+		if err := e.Tmux.SetSessionOption(name, sessionIDOption, id); err != nil {
+			return "", fmt.Errorf("tagging tmux session: %w", err)
+		}
+		return id, nil
 	}
-	// Tag the default window as a placeholder
-	windows, err := e.Tmux.ListWindows(name)
-	if err == nil && len(windows) > 0 {
-		_ = e.Tmux.SetWindowOption(windows[0].ID, "@bay-placeholder", "1")
-		_ = e.Tmux.RenameWindow(windows[0].ID, placeholderName)
-	}
-	return nil
 }
 
 // cleanPlaceholders removes unused placeholder windows from a session.
