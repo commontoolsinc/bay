@@ -203,6 +203,52 @@ bay, or use --done/--clean to batch-close bays.
 	return cmd
 }
 
+func newWsCleanReviewCmd() *cobra.Command {
+	var dockFlag string
+
+	cmd := &cobra.Command{
+		Use:    "clean-review [id]",
+		Hidden: true,
+		Short:  "Clear review changes from a bay",
+		Long: `Clear dirty review changes from a bay only when bay can verify the
+whole worktree exactly matches a recoverable git ref.
+
+  bay clean-review self
+  bay clean-review w1
+  bay clean-review w1 --dock labs`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine()
+			if err != nil {
+				return err
+			}
+
+			var dockName, wsID string
+			if len(args) == 0 {
+				dockName, wsID, err = eng.ResolveSelf()
+			} else {
+				dockName, wsID, err = resolveWsArg(eng, args[0], dockFlag)
+			}
+			if err != nil {
+				return err
+			}
+
+			ref, err := eng.WsCleanReview(dockName, wsID)
+			if err != nil {
+				return err
+			}
+			if ref == "" {
+				fmt.Printf("%s:%s already clean\n", dockName, wsID)
+			} else {
+				fmt.Printf("Cleaned review changes in %s:%s (matched %s)\n", dockName, wsID, ref)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare bay ID)")
+	return cmd
+}
+
 func newWsShowCmd() *cobra.Command {
 	var jsonOutput, short, plain, flash, popup, popupBody bool
 	var dockFlag string

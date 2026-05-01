@@ -162,7 +162,7 @@ func TestRunSurfaceClose_LastSurface_DirtyShowsRefusalInsteadOfDoubleTap(t *test
 	if len(*agent) != 0 {
 		t.Errorf("agent prompt should not fire for shell surface, got %v", *agent)
 	}
-	if msgs := mockTmux.DisplayMessages(); len(msgs) != 1 || !strings.Contains(msgs[0], "bay kept (uncommitted changes)") {
+	if msgs := mockTmux.DisplayMessages(); len(msgs) != 1 || !strings.Contains(msgs[0], "local changes may be work in progress") {
 		t.Fatalf("expected dirty refusal toast, got %v", msgs)
 	}
 

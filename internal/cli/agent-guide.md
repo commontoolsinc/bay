@@ -397,11 +397,13 @@ bay new auth-fix --description "Login flow fixes"
 
 Close a bay and all its surfaces. For worktree bays,
 checks for uncommitted changes and unlanded commits. Refuses if dirty
-unless `--force` is used. If the branch has been pushed, its HEAD is
-included in a merged PR, or its patches are already on the default
-branch after a squash merge or cherry-pick, bay deletes the local branch
-on close — no stale branches left behind. Pass `self` to close the
-current bay.
+unless `--force` is used, except when bay can verify the dirty tree
+exactly matches a recoverable git ref. In that case the dirty files are
+treated as review changes bay can recreate, and close proceeds. If the
+branch has been pushed, its HEAD is included in a merged PR, or its
+patches are already on the default branch after a squash merge or
+cherry-pick, bay deletes the local branch on close — no stale branches
+left behind. Pass `self` to close the current bay.
 
 Batch flags (without an ID):
 - `--done`: close bays that are not dirty and not pending (have
@@ -417,6 +419,11 @@ bay close --done
 bay close --done --dry-run
 bay close --clean
 ```
+
+`bay clean-review [id]` clears dirty review changes without closing the
+bay, but only after the same recoverable-ref check succeeds. It is a
+targeted hidden command for intentionally clearing review changes bay can
+recreate, not a normal cleanup command.
 
 **Orphan auto-close (with grace window).** When a bay's last
 surface goes away — via sync-detected tmux kill or via

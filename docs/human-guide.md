@@ -1087,9 +1087,13 @@ and recreates tmux state on demand. Your worktrees and code are on disk.
 Safety checks prevent losing work. Bay treats pushed branches and
 commits included in a merged PR as safe, including multi-commit squash
 merges. It also accepts squash-merged/cherry-picked patches on the
-default branch. If you're sure despite a refusal, use `--force`. Or use
-`bay close --done` to batch-close all finished bays, or
-`--clean` for anything non-dirty. Add `--dry-run` to preview first.
+default branch. For review bays where PR code was applied as dirty files,
+bay also closes when it can verify the whole dirty tree exactly matches a
+recoverable git ref. If a close keybinding refuses, bay could not verify
+the local changes as review changes it can recreate. If you're sure
+despite a refusal, use `--force`. Or use `bay close --done` to
+batch-close all finished bays, or `--clean` for anything non-dirty. Add
+`--dry-run` to preview first.
 
 **"The waiting indicator isn't working."**
 For bell-based detection: ensure `monitor-bell` is on in tmux (it is by

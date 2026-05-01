@@ -361,14 +361,18 @@ func (e *Engine) closeWorkspaceState(dockName, wsID string, force bool) ([]strin
 	// because HasUnpushedCommits treats patch-equivalent commits on the
 	// default branch as landed.
 	branchSafeToDelete := false
+	forceRemoveWorktree := force
 	if ws.Type == manifest.WorkspaceTypeWorktree && !force {
 		if _, statErr := os.Stat(ws.Path); statErr == nil {
-			dirty, err := e.Git.IsDirty(ws.Path)
+			dirty, blockingDirty, err := e.CheckDirtyChanges(ws)
 			if err != nil {
-				return nil, fmt.Errorf("checking bay state: %w", err)
+				return nil, fmt.Errorf("bay %q has uncommitted changes; %w (use --force to override)", wsID, err)
+			}
+			if blockingDirty {
+				return nil, fmt.Errorf("bay %q has uncommitted changes (use --force to override)", wsID)
 			}
 			if dirty {
-				return nil, fmt.Errorf("bay %q has uncommitted changes (use --force to override)", wsID)
+				forceRemoveWorktree = true
 			}
 
 			unpushed, err := e.HasUnlandedCommits(ws)
@@ -415,7 +419,7 @@ func (e *Engine) closeWorkspaceState(dockName, wsID string, force bool) ([]strin
 		repo := m.FindRepo(ws.Worktree.Repo)
 		if repo != nil {
 			repoPath := config.ExpandPath(repo.Path)
-			if err := e.Git.RemoveWorktree(repoPath, ws.Path, force); err != nil {
+			if err := e.Git.RemoveWorktree(repoPath, ws.Path, forceRemoveWorktree); err != nil {
 				if !force {
 					return nil, fmt.Errorf("removing worktree: %w", err)
 				}
@@ -492,6 +496,79 @@ func (e *Engine) localHeadInMergedPR(ws *manifest.Workspace) bool {
 	}
 	landed, err := e.Git.LocalHeadInMergedPR(ws.Path, ws.Worktree.PR)
 	return err == nil && landed
+}
+
+// HasBlockingDirtyChanges reports whether a worktree has uncommitted changes
+// that normal close must preserve. Dirty changes are allowed only when the
+// full working tree exactly matches a durable ref that bay can recover later.
+func (e *Engine) HasBlockingDirtyChanges(ws *manifest.Workspace) (bool, error) {
+	_, blocking, err := e.CheckDirtyChanges(ws)
+	return blocking, err
+}
+
+// CheckDirtyChanges reports whether a worktree is dirty, and whether those
+// dirty changes should block normal close.
+func (e *Engine) CheckDirtyChanges(ws *manifest.Workspace) (dirty bool, blocking bool, err error) {
+	if ws == nil || ws.Type != manifest.WorkspaceTypeWorktree || ws.Path == "" {
+		return false, false, nil
+	}
+	dirty, err = e.Git.IsDirty(ws.Path)
+	if err != nil {
+		return false, false, fmt.Errorf("checking bay state: %w", err)
+	}
+	if !dirty {
+		return false, false, nil
+	}
+
+	matches, _, err := e.Git.WorktreeMatchesRecoverableRef(ws.Path)
+	if err != nil {
+		return true, true, fmt.Errorf("could not verify changes against recoverable refs: %w", err)
+	}
+	return true, !matches, nil
+}
+
+// WsCleanReview clears dirty review changes only when the full worktree state
+// exactly matches a durable ref. It returns the matched ref, or "" when the
+// worktree was already clean.
+func (e *Engine) WsCleanReview(dockName, wsID string) (string, error) {
+	m, err := e.LoadManifest()
+	if err != nil {
+		return "", err
+	}
+	dock := m.FindDock(dockName)
+	if dock == nil {
+		return "", fmt.Errorf("unknown dock %q", dockName)
+	}
+	ws := dock.FindWorkspaceByID(wsID)
+	if ws == nil {
+		return "", fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
+	}
+	if ws.Type != manifest.WorkspaceTypeWorktree || ws.Path == "" {
+		return "", fmt.Errorf("bay %q is not a worktree", wsID)
+	}
+	if _, statErr := os.Stat(ws.Path); statErr != nil {
+		return "", fmt.Errorf("bay %q path: %w", wsID, statErr)
+	}
+
+	dirty, err := e.Git.IsDirty(ws.Path)
+	if err != nil {
+		return "", fmt.Errorf("checking bay state: %w", err)
+	}
+	if !dirty {
+		return "", nil
+	}
+
+	matches, ref, err := e.Git.WorktreeMatchesRecoverableRef(ws.Path)
+	if err != nil {
+		return "", fmt.Errorf("could not verify changes against recoverable refs: %w", err)
+	}
+	if !matches {
+		return "", fmt.Errorf("bay %q has uncommitted changes that do not exactly match a recoverable git ref", wsID)
+	}
+	if err := e.Git.DiscardWorktreeChanges(ws.Path); err != nil {
+		return "", err
+	}
+	return ref, nil
 }
 
 func (e *Engine) WsClose(dockName, wsID string, force bool) error {
@@ -591,7 +668,7 @@ func (e *Engine) wsCloseBatch(dockName string, force, dryRun bool, skip wsSkipFu
 			label := t.dock + ":" + t.id
 			ws := m.FindDock(t.dock).FindWorkspaceByID(t.id)
 			if ws != nil && ws.Path != "" && !force {
-				if dirty, err := e.Git.IsDirty(ws.Path); err == nil && dirty {
+				if dirty, err := e.HasBlockingDirtyChanges(ws); err == nil && dirty {
 					skipped = append(skipped, label+" (dirty)")
 					continue
 				}
