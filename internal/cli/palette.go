@@ -56,7 +56,7 @@ func runPalette(mode palette.Mode) error {
 	scope := detectScope(ctx)
 	// The palette is a bay-session tool. Outside bay, exit silently so
 	// the M-p binding isn't visible to users who haven't set things up.
-	if ctx == nil || (scope == palette.ScopeAnywhere && ctx.Repo == "" && ctx.Dock == "") {
+	if ctx == nil || (scope == palette.ScopeAnywhere && ctx.Dock == "") {
 		return nil
 	}
 

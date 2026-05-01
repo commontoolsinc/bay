@@ -45,9 +45,11 @@ func TestParse_InvalidJSON(t *testing.T) {
 func TestParse_FullManifest(t *testing.T) {
 	data := []byte(`{
 		"version": 1,
+		"repos": [{"name": "labs", "path": "/repo/labs"}],
 		"docks": [
 			{
 				"name": "labs",
+				"repo": "labs",
 				"workspaces": [
 					{
 						"name": "auth-fix",
@@ -140,8 +142,11 @@ func TestParse_FullManifest(t *testing.T) {
 	if ws.Worktree == nil {
 		t.Fatal("worktree attrs is nil")
 	}
-	if ws.Worktree.Repo != "labs" {
-		t.Errorf("worktree repo = %q, want %q", ws.Worktree.Repo, "labs")
+	if dock.Path != "/repo/labs" {
+		t.Errorf("dock path = %q, want /repo/labs", dock.Path)
+	}
+	if ws.Worktree.Repo != "" {
+		t.Errorf("worktree repo = %q, want empty after v6 migration", ws.Worktree.Repo)
 	}
 	if ws.Worktree.Branch != "fix-auth" {
 		t.Errorf("worktree branch = %q, want %q", ws.Worktree.Branch, "fix-auth")
@@ -192,13 +197,13 @@ func TestRoundTrip(t *testing.T) {
 		Docks: []Dock{
 			{
 				Name: "labs",
+				Path: "/repo/labs",
 				Workspaces: []Workspace{
 					{
 						Name: "auth-fix",
 						Type: WorkspaceTypeWorktree,
 						Path: "/tmp/ws1",
 						Worktree: &WorktreeAttrs{
-							Repo:   "labs",
 							Branch: "fix-auth",
 							PR:     "52",
 						},
@@ -860,71 +865,13 @@ func TestResolveWorkspace_DockColonNotFound(t *testing.T) {
 	}
 }
 
-// --- Repo operations ---
-
-func TestFindRepo(t *testing.T) {
-	m := New()
-	m.Repos = []Repo{{Name: "labs", Path: "/p/labs"}, {Name: "other", Path: "/p/other"}}
-
-	r := m.FindRepo("labs")
-	if r == nil || r.Name != "labs" {
-		t.Errorf("FindRepo(labs) = %v", r)
-	}
-
-	r = m.FindRepo("nonexistent")
-	if r != nil {
-		t.Errorf("FindRepo(nonexistent) = %v, want nil", r)
-	}
-}
-
-func TestAddRepo(t *testing.T) {
-	m := New()
-
-	if err := m.AddRepo(Repo{Name: "labs", Path: "/p/labs"}); err != nil {
-		t.Fatal(err)
-	}
-	if len(m.Repos) != 1 || m.Repos[0].Name != "labs" {
-		t.Errorf("after add: %v", m.Repos)
-	}
-}
-
-func TestAddRepo_Duplicate(t *testing.T) {
-	m := New()
-	m.Repos = []Repo{{Name: "labs", Path: "/p/labs"}}
-
-	err := m.AddRepo(Repo{Name: "labs", Path: "/p/labs2"})
-	if err == nil {
-		t.Fatal("expected error for duplicate repo name")
-	}
-}
-
-func TestRemoveRepo(t *testing.T) {
-	m := New()
-	m.Repos = []Repo{{Name: "labs", Path: "/p/labs"}, {Name: "other", Path: "/p/other"}}
-
-	if err := m.RemoveRepo("labs"); err != nil {
-		t.Fatal(err)
-	}
-	if len(m.Repos) != 1 || m.Repos[0].Name != "other" {
-		t.Errorf("after remove: %v", m.Repos)
-	}
-}
-
-func TestRemoveRepo_NotFound(t *testing.T) {
-	m := New()
-	if err := m.RemoveRepo("nonexistent"); err == nil {
-		t.Fatal("expected error for missing repo")
-	}
-}
-
-func TestDockRepoAndAgentRoundTrip(t *testing.T) {
+func TestDockCheckoutAndAgentRoundTrip(t *testing.T) {
 	original := &Manifest{
 		Version: CurrentVersion,
-		Repos:   []Repo{{Name: "labs", Path: "/p/labs"}},
 		Docks: []Dock{
 			{
 				Name:       "dev",
-				Repo:       "labs",
+				Path:       "/p/labs",
 				Agent:      "claude",
 				AgentArgs:  map[string][]string{"claude": {"--add-dir", "/extra"}},
 				Workspaces: []Workspace{},
@@ -942,16 +889,12 @@ func TestDockRepoAndAgentRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(restored.Repos) != 1 || restored.Repos[0].Name != "labs" {
-		t.Errorf("repos not round-tripped: %v", restored.Repos)
-	}
-
 	dock := restored.FindDock("dev")
 	if dock == nil {
 		t.Fatal("dock not found")
 	}
-	if dock.Repo != "labs" {
-		t.Errorf("dock.Repo = %q, want labs", dock.Repo)
+	if dock.Path != "/p/labs" {
+		t.Errorf("dock.Path = %q, want /p/labs", dock.Path)
 	}
 	if dock.Agent != "claude" {
 		t.Errorf("dock.Agent = %q, want claude", dock.Agent)
@@ -961,13 +904,113 @@ func TestDockRepoAndAgentRoundTrip(t *testing.T) {
 	}
 }
 
+func TestParse_MigratesV5ReposToDockCheckouts(t *testing.T) {
+	data := []byte(`{
+		"version": 5,
+		"repos": [{"name": "labs", "path": "/p/labs", "worktree_dir": "/wt/labs"}],
+		"docks": [
+			{
+				"name": "dev",
+				"repo": "labs",
+				"bays": [
+					{
+						"id": "w1",
+						"name": "auth",
+						"type": "worktree",
+						"path": "/wt/labs/w1",
+						"worktree": {"repo": "labs", "branch": "fix/auth"}
+					}
+				]
+			}
+		]
+	}`)
+
+	m, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Version != CurrentVersion {
+		t.Errorf("version = %d, want %d", m.Version, CurrentVersion)
+	}
+	if len(m.Repos) != 0 {
+		t.Errorf("repos = %v, want empty after v6 migration", m.Repos)
+	}
+	dock := m.FindDock("dev")
+	if dock == nil {
+		t.Fatal("dock not found")
+	}
+	if dock.Path != "/p/labs" || dock.WorktreeDir != "/wt/labs" || dock.Repo != "" {
+		t.Fatalf("dock migration mismatch: %#v", dock)
+	}
+	ws := dock.FindWorkspaceByID("w1")
+	if ws == nil || ws.Worktree == nil {
+		t.Fatalf("workspace not migrated: %#v", dock.Workspaces)
+	}
+	if ws.Worktree.Repo != "" {
+		t.Errorf("worktree repo = %q, want empty after v6 migration", ws.Worktree.Repo)
+	}
+}
+
+func TestParse_MigratesV5RejectsSharedRepo(t *testing.T) {
+	data := []byte(`{
+		"version": 5,
+		"repos": [{"name": "labs", "path": "/p/labs"}],
+		"docks": [
+			{"name": "dev", "repo": "labs", "bays": []},
+			{"name": "ops", "repo": "labs", "bays": []}
+		]
+	}`)
+
+	_, err := Parse(data)
+	if err == nil {
+		t.Fatal("expected shared repo migration error")
+	}
+	if !strings.Contains(err.Error(), "multiple docks share one repo") {
+		t.Fatalf("error = %q, want shared repo message", err)
+	}
+}
+
+func TestParse_MigratesV5RejectsCrossRepoBay(t *testing.T) {
+	data := []byte(`{
+		"version": 5,
+		"repos": [
+			{"name": "labs", "path": "/p/labs"},
+			{"name": "other", "path": "/p/other"}
+		],
+		"docks": [
+			{
+				"name": "dev",
+				"repo": "labs",
+				"bays": [
+					{
+						"id": "w1",
+						"name": "api",
+						"type": "worktree",
+						"path": "/p/other-worktrees/w1",
+						"worktree": {"repo": "other", "branch": "fix/api"}
+					}
+				]
+			}
+		]
+	}`)
+
+	_, err := Parse(data)
+	if err == nil {
+		t.Fatal("expected cross-repo bay migration error")
+	}
+	if !strings.Contains(err.Error(), "cross-repo bay dev:w1 uses repo \"other\" but dock uses repo \"labs\"") {
+		t.Fatalf("error = %q, want cross-repo bay message", err)
+	}
+}
+
 func TestParse_MigratesV2StatusDoneToMerged(t *testing.T) {
 	data := []byte(`{
 		"version": 2,
-		"repos": [],
+		"repos": [{"name": "labs", "path": "/repo"}],
 		"docks": [
 			{
 				"name": "labs",
+				"repo": "labs",
 				"workspaces": [
 					{
 						"name": "ws-done",
@@ -1057,10 +1100,11 @@ func TestIsWorkspaceID(t *testing.T) {
 func TestParse_FillsMissingIDsFromPathBasename(t *testing.T) {
 	data := []byte(`{
 		"version": 3,
-		"repos": [],
+		"repos": [{"name": "labs", "path": "/repo"}],
 		"docks": [
 			{
 				"name": "labs",
+				"repo": "labs",
 				"workspaces": [
 					{"name": "auth-fix", "type": "worktree", "path": "/repo-worktrees/w1", "surfaces": []},
 					{"name": "cache-ttl", "type": "worktree", "path": "/repo-worktrees/w2", "surfaces": []},
@@ -1090,10 +1134,11 @@ func TestParse_FillsMissingIDsFromPathBasename(t *testing.T) {
 func TestParse_AssignsSequentialIDsForUnusablePaths(t *testing.T) {
 	data := []byte(`{
 		"version": 3,
-		"repos": [],
+		"repos": [{"name": "mixed", "path": "/repo"}],
 		"docks": [
 			{
 				"name": "mixed",
+				"repo": "mixed",
 				"workspaces": [
 					{"name": "wt", "type": "worktree", "path": "/repo-worktrees/w3", "surfaces": []},
 					{"name": "ext1", "type": "external", "path": "/Users/me/projects/foo", "surfaces": []},
@@ -1124,10 +1169,11 @@ func TestParse_AssignsSequentialIDsForUnusablePaths(t *testing.T) {
 func TestParse_HandlesIDCollisions(t *testing.T) {
 	data := []byte(`{
 		"version": 3,
-		"repos": [],
+		"repos": [{"name": "labs", "path": "/repo"}],
 		"docks": [
 			{
 				"name": "labs",
+				"repo": "labs",
 				"workspaces": [
 					{"name": "a", "type": "worktree", "path": "/x/w1", "surfaces": []},
 					{"name": "b", "type": "worktree", "path": "/x/w1", "surfaces": []}
@@ -1152,10 +1198,11 @@ func TestParse_HandlesIDCollisions(t *testing.T) {
 func TestParse_PreservesExistingIDs(t *testing.T) {
 	data := []byte(`{
 		"version": 4,
-		"repos": [],
+		"repos": [{"name": "labs", "path": "/repo"}],
 		"docks": [
 			{
 				"name": "labs",
+				"repo": "labs",
 				"workspaces": [
 					{"id": "w7", "name": "a", "type": "worktree", "path": "/x/w1", "surfaces": []}
 				]
@@ -1235,16 +1282,16 @@ func TestSaveAndLoad_PreservesID(t *testing.T) {
 	}
 }
 
-func TestRepoEffectiveWorktreeDir(t *testing.T) {
+func TestDockEffectiveWorktreeDir(t *testing.T) {
 	// Explicit worktree_dir
-	r := Repo{Name: "labs", Path: "/projects/labs", WorktreeDir: "/custom/worktrees"}
-	if got := r.EffectiveWorktreeDir(); got != "/custom/worktrees" {
+	d := Dock{Name: "labs", Path: "/projects/labs", WorktreeDir: "/custom/worktrees"}
+	if got := d.EffectiveWorktreeDir(); got != "/custom/worktrees" {
 		t.Errorf("expected /custom/worktrees, got %q", got)
 	}
 
 	// Default: path + "-worktrees"
-	r2 := Repo{Name: "labs", Path: "/projects/labs"}
-	if got := r2.EffectiveWorktreeDir(); got != "/projects/labs-worktrees" {
+	d2 := Dock{Name: "labs", Path: "/projects/labs"}
+	if got := d2.EffectiveWorktreeDir(); got != "/projects/labs-worktrees" {
 		t.Errorf("expected /projects/labs-worktrees, got %q", got)
 	}
 }

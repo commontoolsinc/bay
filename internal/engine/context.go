@@ -10,7 +10,6 @@ import (
 
 // Context describes the current Bay location resolved from cwd and tmux.
 type Context struct {
-	Repo        string `json:"repo,omitempty"`
 	Dock        string `json:"dock,omitempty"`
 	WorkspaceID string `json:"-"`
 	Workspace   string `json:"-"`
@@ -23,7 +22,6 @@ type Context struct {
 // internal field names used by the rest of the engine.
 func (c Context) MarshalJSON() ([]byte, error) {
 	type contextJSON struct {
-		Repo      string `json:"repo,omitempty"`
 		Dock      string `json:"dock,omitempty"`
 		BayID     string `json:"bay_id,omitempty"`
 		Bay       string `json:"bay,omitempty"`
@@ -32,7 +30,6 @@ func (c Context) MarshalJSON() ([]byte, error) {
 		Path      string `json:"path,omitempty"`
 	}
 	return json.Marshal(contextJSON{
-		Repo:      c.Repo,
 		Dock:      c.Dock,
 		BayID:     c.WorkspaceID,
 		Bay:       c.Workspace,
@@ -71,12 +68,6 @@ func (e *Engine) CurrentContext() (*Context, error) {
 				ctx.Dock = dock.Name
 				ctx.WorkspaceID = ws.ID
 				ctx.Workspace = ws.Name
-				if ws.Worktree != nil {
-					ctx.Repo = ws.Worktree.Repo
-				}
-				if ctx.Repo == "" {
-					ctx.Repo = dock.Repo
-				}
 				// Find current surface from tmux pane.
 				for _, s := range ws.Surfaces {
 					if s.Tmux != nil && s.Tmux.PaneID == currentPaneID {
@@ -107,12 +98,6 @@ func (e *Engine) CurrentContext() (*Context, error) {
 					ctx.WorkspaceID = ws.ID
 					ctx.Workspace = ws.Name
 					ctx.Path = config.CanonicalPath(ws.Path)
-					if ws.Worktree != nil {
-						ctx.Repo = ws.Worktree.Repo
-					}
-					if ctx.Repo == "" {
-						ctx.Repo = dock.Repo
-					}
 					if s.Tmux.PaneID == currentPaneID {
 						ctx.Surface = s.Name
 						ctx.SurfaceID = s.ID
@@ -128,20 +113,20 @@ func (e *Engine) CurrentContext() (*Context, error) {
 		dock := m.FindDock(currentSession)
 		if dock != nil {
 			ctx.Dock = currentSession
-			ctx.Repo = dock.Repo
 			return ctx, nil
 		}
 	}
 
-	// Fallback: match CWD to a repo.
-	for _, repo := range m.Repos {
-		if cwd != "" && config.IsPathUnder(cwd, repo.Path) {
-			ctx.Repo = repo.Name
+	// Fallback: match CWD to a dock checkout or its worktree dir.
+	for i := range m.Docks {
+		dock := &m.Docks[i]
+		if cwd != "" && (config.IsPathUnder(cwd, dock.Path) || config.IsPathUnder(cwd, dock.EffectiveWorktreeDir())) {
+			ctx.Dock = dock.Name
 			return ctx, nil
 		}
 	}
 
-	if ctx.Repo != "" || ctx.Dock != "" {
+	if ctx.Dock != "" {
 		return ctx, nil
 	}
 	return ctx, fmt.Errorf("not in a bay context")

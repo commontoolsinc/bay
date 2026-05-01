@@ -1,7 +1,15 @@
 # Repo-level lifecycle hooks — design plan
 
-Captured 2026-04-16. No code has been written for any of this. The
-design emerged from a discussion about mise's per-path trust model:
+Captured 2026-04-16. No code has been written for any of this.
+
+The repo/dock merge supersedes the command shape in this document: future
+hook work should be modeled on dock-owned checkouts (`bay dock new`,
+`bay dock close`, `bay dock sync`) rather than the removed `bay repo`
+commands. The problem statement still applies.
+
+Historical context:
+
+The design emerged from a discussion about mise's per-path trust model:
 every newly-created bay worktree triggers a `mise trust` prompt
 because mise's trust state is keyed on absolute paths and bay creates
 worktrees under `<repo>-worktrees/`, which mise has never seen

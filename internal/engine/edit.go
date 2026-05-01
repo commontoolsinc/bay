@@ -105,7 +105,7 @@ func (e *Engine) DockEditorAdd(dockName, editorCmd, editPath string) error {
 	})
 }
 
-// EditAllParentDir returns the worktree parent directory for a dock's repo.
+// EditAllParentDir returns the worktree parent directory for a dock.
 func (e *Engine) EditAllParentDir(dockName string) (string, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
@@ -115,12 +115,8 @@ func (e *Engine) EditAllParentDir(dockName string) (string, error) {
 	if dock == nil {
 		return "", fmt.Errorf("unknown dock %q", dockName)
 	}
-	if dock.Repo == "" {
-		return "", fmt.Errorf("dock %q has no repo configured", dockName)
+	if dock.Path == "" {
+		return "", fmt.Errorf("dock %q has no checkout configured", dockName)
 	}
-	repo := m.FindRepo(dock.Repo)
-	if repo == nil {
-		return "", fmt.Errorf("unknown repo %q", dock.Repo)
-	}
-	return repo.EffectiveWorktreeDir(), nil
+	return dock.EffectiveWorktreeDir(), nil
 }

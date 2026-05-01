@@ -132,15 +132,10 @@ func (e *Engine) recoverDockSurfaces(dock *manifest.Dock, outcome *recoverOutcom
 			}
 		}
 
-		// Determine CWD — use the repo's worktree dir if available.
+		// Determine CWD — use the dock's worktree dir if available.
 		cwd := "/tmp"
-		if dock.Repo != "" {
-			m, _ := e.LoadManifest()
-			if m != nil {
-				if parentDir, err := e.EditAllParentDir(dock.Name); err == nil {
-					cwd = parentDir
-				}
-			}
+		if parentDir, err := e.EditAllParentDir(dock.Name); err == nil {
+			cwd = parentDir
 		}
 
 		// Recreate the window.

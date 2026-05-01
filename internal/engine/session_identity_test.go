@@ -351,8 +351,9 @@ func TestEnsureSession_ReclaimsMismatchedMarker(t *testing.T) {
 func TestDockNew_PopulatesSessionID(t *testing.T) {
 	eng, _ := testEngine(t)
 	withDeterministicSessionID(t, "new-dock-uuid")
+	checkout := makeCheckout(t, t.TempDir())
 
-	if err := eng.DockNew("new-dock", "", "", ""); err != nil {
+	if err := eng.DockNew("new-dock", checkout, "", "", ""); err != nil {
 		t.Fatalf("DockNew: %v", err)
 	}
 

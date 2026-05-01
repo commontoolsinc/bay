@@ -74,39 +74,7 @@ func runDoctor(eng *engine.Engine, w io.Writer) {
 		fmt.Fprintln(w, "[OK] config valid")
 	}
 
-	// Check repo paths exist and bay awareness
-	repos, repoErr := eng.RepoList()
-	if repoErr != nil {
-		fmt.Fprintf(w, "[WARN] could not load repos: %v\n", repoErr)
-		ok = false
-	} else {
-		for _, repo := range repos {
-			path := config.ExpandPath(repo.Path)
-			if _, err := os.Stat(path); err != nil {
-				fmt.Fprintf(w, "[WARN] repo %q path %s not accessible\n", repo.Name, path)
-				ok = false
-				continue
-			}
-			fmt.Fprintf(w, "[OK] repo %q accessible\n", repo.Name)
-
-			// Check bay awareness in agent project files.
-			for agentName := range config.KnownAgents {
-				info, _ := eng.Config.ResolveAgent(agentName)
-				if info.ProjectFile == "" {
-					continue
-				}
-				pf := filepath.Join(path, info.ProjectFile)
-				data, readErr := os.ReadFile(pf)
-				if readErr != nil {
-					fmt.Fprintf(w, "[INFO] repo %q: %s not found (run bay repo init %s)\n", repo.Name, info.ProjectFile, repo.Name)
-				} else if !strings.Contains(string(data), "bay agent-guide") {
-					fmt.Fprintf(w, "[INFO] repo %q: %s missing bay awareness for %s (run bay repo init %s)\n", repo.Name, info.ProjectFile, agentName, repo.Name)
-				}
-			}
-		}
-	}
-
-	// Check bay paths in manifest
+	// Check dock and bay paths in manifest.
 	m, loadErr := eng.LoadManifest()
 	if loadErr != nil {
 		fmt.Fprintf(w, "[WARN] could not load manifest: %v\n", loadErr)
@@ -116,6 +84,28 @@ func runDoctor(eng *engine.Engine, w io.Writer) {
 		worktreesWithBranches := 0
 		for i := range m.Docks {
 			dock := &m.Docks[i]
+			if dock.Path != "" {
+				path := config.ExpandPath(dock.Path)
+				if _, err := os.Stat(path); err != nil {
+					fmt.Fprintf(w, "[WARN] dock %q checkout path %s not accessible\n", dock.Name, path)
+					ok = false
+				} else {
+					fmt.Fprintf(w, "[OK] dock %q checkout accessible\n", dock.Name)
+					for agentName := range config.KnownAgents {
+						info, _ := eng.Config.ResolveAgent(agentName)
+						if info.ProjectFile == "" {
+							continue
+						}
+						pf := filepath.Join(path, info.ProjectFile)
+						data, readErr := os.ReadFile(pf)
+						if readErr != nil {
+							fmt.Fprintf(w, "[INFO] dock %q checkout: %s not found\n", dock.Name, info.ProjectFile)
+						} else if !strings.Contains(string(data), "bay agent-guide") {
+							fmt.Fprintf(w, "[INFO] dock %q checkout: %s missing bay awareness for %s\n", dock.Name, info.ProjectFile, agentName)
+						}
+					}
+				}
+			}
 			for j := range dock.Workspaces {
 				ws := &dock.Workspaces[j]
 				if ws.Worktree != nil && ws.Worktree.Branch != "" {

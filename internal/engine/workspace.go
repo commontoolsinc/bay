@@ -14,7 +14,6 @@ import (
 // WsNewOptions are options for creating a new workspace.
 type WsNewOptions struct {
 	Dock         string // dock name (required)
-	Repo         string // repo name override (optional, defaults to dock's repo)
 	Dir          string // external directory (makes it external type)
 	Name         string // display name override
 	Description  string // short free-form label shown in picker/ls/tree
@@ -44,10 +43,6 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	var wsPath string
 	var worktreeAttrs *manifest.WorktreeAttrs
 	var branchExists bool
-	repoName := opts.Repo
-	if repoName == "" {
-		repoName = dock.Repo
-	}
 
 	nameExplicit := opts.Name != ""
 	displayName := opts.Name
@@ -87,16 +82,12 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	} else {
 		// Worktree workspace.
 		wsType = manifest.WorkspaceTypeWorktree
-		if repoName == "" {
-			return nil, fmt.Errorf("dock %q has no default repo; specify --repo or --dir", dockName)
+		if dock.Path == "" {
+			return nil, fmt.Errorf("dock %q has no checkout; specify --dir for an external bay", dockName)
 		}
-		repo := m.FindRepo(repoName)
-		if repo == nil {
-			return nil, fmt.Errorf("unknown repo %q", repoName)
-		}
-		worktreeAttrs = &manifest.WorktreeAttrs{Repo: repoName}
+		worktreeAttrs = &manifest.WorktreeAttrs{}
 
-		wtDir := repo.EffectiveWorktreeDir()
+		wtDir := dock.EffectiveWorktreeDir()
 		if err := os.MkdirAll(wtDir, 0o755); err != nil {
 			return nil, fmt.Errorf("creating worktree dir: %w", err)
 		}
@@ -105,7 +96,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		// work pivots, but the on-disk directory stays stable.
 		wsPath = filepath.Join(wtDir, nextWorkspaceDir(wtDir, dock))
 
-		repoPath := config.ExpandPath(repo.Path)
+		repoPath := config.ExpandPath(dock.Path)
 
 		// Only fetch when --branch is used so the common case (no branch)
 		// stays fast. The detached worktree uses origin/<default> which
@@ -145,12 +136,9 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 
 	// rollbackWorktree cleans up a worktree on failure.
 	rollbackWorktree := func() {
-		if wsType == manifest.WorkspaceTypeWorktree && repoName != "" {
-			repo := m.FindRepo(repoName)
-			if repo != nil {
-				repoPath := config.ExpandPath(repo.Path)
-				_ = e.Git.RemoveWorktree(repoPath, wsPath, true)
-			}
+		if wsType == manifest.WorkspaceTypeWorktree && dock.Path != "" {
+			repoPath := config.ExpandPath(dock.Path)
+			_ = e.Git.RemoveWorktree(repoPath, wsPath, true)
 		}
 	}
 
@@ -344,11 +332,6 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 // the manifest update first, the worst case is that bay dies between
 // the manifest write and the kill — leaving the manifest correct and
 // the pane briefly orphaned (next bay invocation will skip it).
-//
-// Callers: WsClose (kills the returned IDs immediately), DockClose
-// (collects across all workspaces and uses KillSession at the end),
-// RepoRemove (collects across all docks), WsCloseByStatus (collects
-// across all targets).
 func (e *Engine) closeWorkspaceState(dockName, wsID string, force bool) ([]string, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
@@ -426,24 +409,20 @@ func (e *Engine) closeWorkspaceState(dockName, wsID string, force bool) ([]strin
 	// Remove worktree from disk. This is destructive of the worktree
 	// directory (and may invalidate the shell's CWD), but does not
 	// kill bay's process.
-	if ws.Type == manifest.WorkspaceTypeWorktree && ws.Worktree != nil && ws.Worktree.Repo != "" {
-		repo := m.FindRepo(ws.Worktree.Repo)
-		if repo != nil {
-			repoPath := config.ExpandPath(repo.Path)
-			if err := e.Git.RemoveWorktree(repoPath, ws.Path, forceRemoveWorktree); err != nil {
-				if !force {
-					return nil, fmt.Errorf("removing worktree: %w", err)
-				}
+	if ws.Type == manifest.WorkspaceTypeWorktree && ws.Worktree != nil && dock.Path != "" {
+		repoPath := config.ExpandPath(dock.Path)
+		if err := e.Git.RemoveWorktree(repoPath, ws.Path, forceRemoveWorktree); err != nil {
+			if !force {
+				return nil, fmt.Errorf("removing worktree: %w", err)
 			}
-			// Delete the local branch now that the worktree is gone.
-			// git refuses to delete a branch checked out in a worktree,
-			// so this must come after RemoveWorktree.
-			if branchSafeToDelete {
-				_ = e.Git.DeleteBranch(repoPath, ws.Worktree.Branch)
-			}
-			wtDir := repo.EffectiveWorktreeDir()
-			_ = os.Remove(wtDir)
 		}
+		// Delete the local branch now that the worktree is gone.
+		// git refuses to delete a branch checked out in a worktree,
+		// so this must come after RemoveWorktree.
+		if branchSafeToDelete {
+			_ = e.Git.DeleteBranch(repoPath, ws.Worktree.Branch)
+		}
+		_ = os.Remove(dock.EffectiveWorktreeDir())
 	}
 
 	// Archive the workspace. Disambiguate name if it already exists
@@ -996,6 +975,16 @@ func WorkspaceCompactLabel(ws *manifest.Workspace) string {
 // TruncateWorkspaceCompactLabel crops a compact workspace label to maxLen
 // bytes, preserving the dir tag before the semantic name.
 func TruncateWorkspaceCompactLabel(ws *manifest.Workspace, maxLen int) string {
+	return TruncateWorkspaceCompactLabelWithSiblings(ws, maxLen, "")
+}
+
+// TruncateWorkspaceCompactLabelWithSiblings is like TruncateWorkspaceCompactLabel
+// but additionally aware of a common hyphen-token prefix shared by sibling
+// workspace names in the same dock. When truncation is needed and ws.Name
+// starts with commonPrefix + "-", the common prefix is replaced with a single
+// leading "…" so the unique tail of the name has more room. commonPrefix
+// should not include a trailing hyphen and is ignored when empty.
+func TruncateWorkspaceCompactLabelWithSiblings(ws *manifest.Workspace, maxLen int, commonPrefix string) string {
 	label := WorkspaceCompactLabel(ws)
 	if maxLen <= 0 || label == "" {
 		return ""
@@ -1010,17 +999,103 @@ func TruncateWorkspaceCompactLabel(ws *manifest.Workspace, maxLen int) string {
 	}
 
 	prefix := dirTag + "."
-	if maxLen >= len(prefix)+2 {
-		nameBudget := maxLen - len(prefix)
-		if len(ws.Name) <= nameBudget {
-			return prefix + ws.Name
+	if maxLen < len(prefix)+2 {
+		if len(dirTag) <= maxLen {
+			return dirTag
 		}
-		return prefix + ws.Name[:nameBudget]
+		return TruncateName(dirTag, maxLen)
 	}
-	if len(dirTag) <= maxLen {
-		return dirTag
+	nameBudget := maxLen - len(prefix)
+	if stripped, ok := stripCommonPrefix(ws.Name, commonPrefix, nameBudget); ok {
+		return prefix + stripped
 	}
-	return TruncateName(dirTag, maxLen)
+	if len(ws.Name) <= nameBudget {
+		return prefix + ws.Name
+	}
+	return prefix + ws.Name[:nameBudget]
+}
+
+// stripCommonPrefix returns name with commonPrefix+"-" replaced by a leading
+// "…" (and a trailing "…" if the tail still overflows nameBudget cells).
+// Returns ok=false when no prefix applies or the budget is too tight.
+//
+// Budget is in tmux cells; truncTabEllipsis is 1 cell but 3 bytes, so the
+// returned string's byte length may exceed nameBudget. That's fine — tmux
+// measures cells. Tail-byte math assumes ASCII (true for branch-derived
+// names).
+func stripCommonPrefix(name, commonPrefix string, nameBudget int) (string, bool) {
+	if commonPrefix == "" || nameBudget < 2 {
+		return "", false
+	}
+	strip := commonPrefix + "-"
+	if !strings.HasPrefix(name, strip) || len(name) <= len(strip) {
+		return "", false
+	}
+	tail := name[len(strip):]
+	if 1+len(tail) <= nameBudget {
+		return truncTabEllipsis + tail, true
+	}
+	tailBudget := nameBudget - 2 // leading + trailing ellipsis
+	if tailBudget < 1 {
+		return "", false
+	}
+	return truncTabEllipsis + tail[:tailBudget] + truncTabEllipsis, true
+}
+
+// commonHyphenPrefixes returns, for each name, the longest hyphen-token prefix
+// it shares with at least one sibling name. Each prefix leaves at least one
+// token in every matched name after stripping.
+func commonHyphenPrefixes(names []string) []string {
+	prefixes := make([]string, len(names))
+	tokenLists := make([][]string, len(names))
+	for i, n := range names {
+		if n != "" {
+			tokenLists[i] = strings.Split(n, "-")
+		}
+	}
+	for i, tokens := range tokenLists {
+		for prefixLen := len(tokens) - 1; prefixLen >= 1; prefixLen-- {
+			prefix, ok := hyphenTokenPrefix(tokens, prefixLen)
+			if !ok {
+				continue
+			}
+			matches := 0
+			for _, other := range tokenLists {
+				if hasHyphenTokenPrefix(other, tokens, prefixLen) {
+					matches++
+				}
+			}
+			if matches >= 2 {
+				prefixes[i] = prefix
+				break
+			}
+		}
+	}
+	return prefixes
+}
+
+func hyphenTokenPrefix(tokens []string, prefixLen int) (string, bool) {
+	if prefixLen <= 0 || len(tokens) <= prefixLen {
+		return "", false
+	}
+	for i := 0; i < prefixLen; i++ {
+		if tokens[i] == "" {
+			return "", false
+		}
+	}
+	return strings.Join(tokens[:prefixLen], "-"), true
+}
+
+func hasHyphenTokenPrefix(tokens, prefix []string, prefixLen int) bool {
+	if len(tokens) <= prefixLen {
+		return false
+	}
+	for i := 0; i < prefixLen; i++ {
+		if tokens[i] != prefix[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func workspaceWindowLabel(ws *manifest.Workspace) string {
@@ -1104,11 +1179,19 @@ func (e *Engine) refreshDockWindowNames(dock *manifest.Dock) {
 		}
 		maxLen = maxTabNameLen(clientWidth, reserved, len(dock.Workspaces))
 	}
+	var commonPrefixes []string
+	if truncate {
+		names := make([]string, len(dock.Workspaces))
+		for i := range dock.Workspaces {
+			names[i] = dock.Workspaces[i].Name
+		}
+		commonPrefixes = commonHyphenPrefixes(names)
+	}
 	for i := range dock.Workspaces {
 		ws := &dock.Workspaces[i]
 		name := WorkspaceCompactLabel(ws)
 		if truncate {
-			name = TruncateWorkspaceCompactLabel(ws, maxLen)
+			name = TruncateWorkspaceCompactLabelWithSiblings(ws, maxLen, commonPrefixes[i])
 		}
 		e.updateWindowNames(ws, name)
 	}

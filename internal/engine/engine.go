@@ -75,19 +75,6 @@ func (e *Engine) SaveConfig() error {
 	return config.Save(e.configPath, e.Config)
 }
 
-// findRepo loads the manifest and looks up a repo by name.
-func (e *Engine) findRepo(name string) (*manifest.Repo, error) {
-	m, err := e.LoadManifest()
-	if err != nil {
-		return nil, err
-	}
-	r := m.FindRepo(name)
-	if r == nil {
-		return nil, fmt.Errorf("repo %q not found", name)
-	}
-	return r, nil
-}
-
 // resolvedDockAgent returns the effective agent for a dock,
 // checking config overrides first, then the manifest default.
 func (e *Engine) resolvedDockAgent(dockName string, m *manifest.Manifest) string {

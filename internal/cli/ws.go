@@ -45,7 +45,7 @@ func newWsNewCmd() *cobra.Command {
 				opts.Name = args[0]
 			}
 
-			// Resolve dock: explicit --dock > current tmux session > auto-bootstrap.
+			// Resolve dock: explicit --dock > current tmux session > known checkout > auto-bootstrap.
 			// Check $TMUX (not $TMUX_PANE) because tmux run-shell doesn't
 			// set TMUX_PANE. The FindDock check below ensures we only use
 			// the session if it's actually a bay dock.
@@ -57,6 +57,11 @@ func newWsNewCmd() *cobra.Command {
 					if m != nil && m.FindDock(dock) != nil {
 						opts.Dock = dock
 					}
+				}
+			}
+			if opts.Dock == "" {
+				if dockName, resolveErr := resolveCurrentDock(eng); resolveErr == nil {
+					opts.Dock = dockName
 				}
 			}
 			if opts.Dock == "" {
@@ -101,7 +106,6 @@ func newWsNewCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (defaults to current tmux session)")
-	cmd.Flags().StringVar(&opts.Repo, "repo", "", "repo name")
 	cmd.Flags().StringVar(&opts.Dir, "dir", "", "external directory (creates external bay)")
 	cmd.Flags().StringVar(&opts.Agent, "agent", "", "agent type (bare --agent uses dock default; use --agent=TYPE for a specific type)")
 	cmd.Flags().BoolVar(&shell, "shell", false, "open shell instead of agent")
@@ -334,22 +338,10 @@ func newWsShowCmd() *cobra.Command {
 			if wsInfo.PR == "" && wsInfo.Branch != "" {
 				_ = eng.MarkPRCheckStale(dockName, wsID)
 			}
-			repoName := ""
-			ws, wsErr := eng.WsShow(dockName, wsID)
-			if wsErr == nil && ws.Worktree != nil {
-				repoName = ws.Worktree.Repo
-			}
-			if repoName == "" {
-				m, _ := eng.LoadManifest()
-				if m != nil {
-					if dock := m.FindDock(dockName); dock != nil {
-						if wsInfo.DefaultAgent == "" {
-							wsInfo.DefaultAgent = dock.Agent
-						}
-						if repoName == "" {
-							repoName = dock.Repo
-						}
-					}
+			m, _ := eng.LoadManifest()
+			if m != nil {
+				if dock := m.FindDock(dockName); dock != nil && wsInfo.DefaultAgent == "" {
+					wsInfo.DefaultAgent = dock.Agent
 				}
 			}
 
@@ -357,7 +349,6 @@ func newWsShowCmd() *cobra.Command {
 				out := map[string]interface{}{
 					"name":          wsInfo.Name,
 					"description":   wsInfo.Description,
-					"repo":          repoName,
 					"dock":          dockName,
 					"type":          wsInfo.Type,
 					"path":          wsInfo.Path,
@@ -377,7 +368,7 @@ func newWsShowCmd() *cobra.Command {
 				return nil
 			}
 
-			fmt.Print(FormatWorkspaceShow(repoName, dockName, wsInfo, false))
+			fmt.Print(FormatWorkspaceShow(dockName, wsInfo, false))
 			return nil
 		},
 	}
@@ -750,7 +741,7 @@ func editDescription(current string) (string, error) {
 	return strings.TrimRight(string(data), "\n\r\t "), nil
 }
 
-// autoBootstrap detects the CWD git repo, creates a dock and repo in the manifest,
+// autoBootstrap detects the CWD git checkout, creates a dock in the manifest,
 // and saves. Returns the dock name to use for bay new.
 func autoBootstrap(eng *engine.Engine, quiet bool) (string, error) {
 	cwd, err := os.Getwd()
@@ -763,16 +754,13 @@ func autoBootstrap(eng *engine.Engine, quiet bool) (string, error) {
 		return "", fmt.Errorf("not in a git repository; specify dock name or run from a git repo")
 	}
 
-	repoName := filepath.Base(repoRoot)
-	dockName := repoName
-
-	// Add repo to manifest if not already present.
 	m, _ := eng.LoadManifest()
-	if m == nil || m.FindRepo(repoName) == nil {
-		if addErr := eng.RepoAdd(repoName, repoRoot, "", "", true); addErr != nil {
-			// Ignore duplicate errors
-			if m != nil && m.FindRepo(repoName) == nil {
-				return "", addErr
+	if m != nil {
+		root := config.CanonicalPath(repoRoot)
+		for i := range m.Docks {
+			dock := &m.Docks[i]
+			if dock.Path != "" && config.CanonicalPath(dock.Path) == root {
+				return dock.Name, nil
 			}
 		}
 	}
@@ -785,15 +773,26 @@ func autoBootstrap(eng *engine.Engine, quiet bool) (string, error) {
 	}
 
 	// Create dock if not already present in manifest.
-	m, _ = eng.LoadManifest()
-	if m == nil || m.FindDock(dockName) == nil {
-		if err := eng.DockNew(dockName, repoName, "", ""); err != nil {
+	dockName := filepath.Base(repoRoot)
+	var existing *manifest.Dock
+	if m != nil {
+		existing = m.FindDock(dockName)
+	}
+	if existing != nil {
+		if existing.Path != "" && config.CanonicalPath(existing.Path) != config.CanonicalPath(repoRoot) {
+			return "", fmt.Errorf("dock %q already exists for checkout %s; create a dock with a different name", dockName, config.ExpandPath(existing.Path))
+		}
+	} else {
+		if err := eng.DockNew(dockName, repoRoot, "", "", ""); err != nil {
 			return "", err
+		}
+		if initErr := eng.DockInit(dockName); initErr != nil && !quiet {
+			fmt.Fprintf(os.Stderr, "Warning: dock checkout setup failed: %v\n", initErr)
 		}
 	}
 
 	if !quiet {
-		fmt.Printf("Auto-configured: repo %s, dock %s", repoName, dockName)
+		fmt.Printf("Auto-configured dock %s", dockName)
 		if agentName != "" {
 			fmt.Printf(", agent %s", agentName)
 		}
@@ -811,36 +810,40 @@ func probeAgent() string {
 
 // resolveCurrentDock resolves the dock for listing commands. Tries:
 // 1. Current tmux session (if it's a bay dock)
-// 2. CWD → git repo → matching dock in the manifest
-// Returns the dock name and repo name, or an error if neither works.
-func resolveCurrentDock(eng *engine.Engine) (dockName, repoName string, err error) {
+// 2. CWD → git checkout/worktree → matching dock in the manifest
+func resolveCurrentDock(eng *engine.Engine) (string, error) {
 	m, _ := eng.LoadManifest()
 
 	// Try: current tmux session (only when inside tmux).
 	if os.Getenv("TMUX") != "" {
 		if sess, tmuxErr := eng.Tmux.CurrentSession(); tmuxErr == nil && m != nil && m.FindDock(sess) != nil {
-			dock := m.FindDock(sess)
-			return sess, dock.Repo, nil
+			return sess, nil
 		}
 	}
 
-	// Fallback: CWD → git repo → matching dock.
+	// Fallback: CWD → git checkout/worktree → matching dock.
 	if m != nil {
 		cwd, cwdErr := os.Getwd()
 		if cwdErr == nil {
 			if repoRoot, rootErr := eng.Git.RepoRoot(cwd); rootErr == nil {
-				repoBase := filepath.Base(repoRoot)
+				root := config.CanonicalPath(repoRoot)
 				for i := range m.Docks {
 					d := &m.Docks[i]
-					if d.Repo == repoBase {
-						return d.Name, d.Repo, nil
+					if d.Path != "" && config.CanonicalPath(d.Path) == root {
+						return d.Name, nil
+					}
+					for j := range d.Workspaces {
+						ws := &d.Workspaces[j]
+						if ws.Path != "" && config.CanonicalPath(ws.Path) == root {
+							return d.Name, nil
+						}
 					}
 				}
 			}
 		}
 	}
 
-	return "", "", fmt.Errorf("cannot determine current dock — not in a tmux session or a known git repo")
+	return "", fmt.Errorf("cannot determine current dock — not in a tmux session or a known checkout")
 }
 
 // resolveTarget resolves "self" or a bay query. Bare IDs prefer the
@@ -870,7 +873,7 @@ func newWsLsCmd() *cobra.Command {
 				return err
 			}
 
-			dockName, repo, err := resolveCurrentDock(eng)
+			dockName, err := resolveCurrentDock(eng)
 			if err != nil {
 				return err
 			}
@@ -881,7 +884,7 @@ func newWsLsCmd() *cobra.Command {
 			}
 
 			view := BuildListView(docks, ListViewOptions{
-				Focus:     ListFocus{Kind: FocusDock, Repo: repo, Dock: dockName},
+				Focus:     ListFocus{Kind: FocusDock, Dock: dockName},
 				Recursive: false,
 			})
 			view.SetCurrentContext(eng)
@@ -891,10 +894,8 @@ func newWsLsCmd() *cobra.Command {
 					return printListViewJSON(view, true)
 				}
 				var bays []engine.WorkspaceInfo
-				for _, repo := range view.Repos {
-					for _, d := range repo.Docks {
-						bays = append(bays, d.Workspaces...)
-					}
+				for _, d := range view.Docks {
+					bays = append(bays, d.Workspaces...)
 				}
 				data, err := json.MarshalIndent(bays, "", "  ")
 				if err != nil {

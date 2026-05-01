@@ -26,7 +26,7 @@ func testNavEngine(t *testing.T) (*engine.Engine, *tmux.Mock, *git.Mock, string)
 	}
 
 	repoDir := filepath.Join(dir, "repos", "labs")
-	os.MkdirAll(repoDir, 0o755)
+	os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755)
 
 	mockTmux := tmux.NewMock()
 	mockGit := git.NewMock()
@@ -35,11 +35,8 @@ func testNavEngine(t *testing.T) (*engine.Engine, *tmux.Mock, *git.Mock, string)
 	manifestPath := filepath.Join(dir, "manifest.json")
 	manifest.Save(manifestPath, &manifest.Manifest{
 		Version: manifest.CurrentVersion,
-		Repos: []manifest.Repo{
-			{Name: "labs", Path: repoDir},
-		},
 		Docks: []manifest.Dock{
-			{Name: "labs", Repo: "labs", Agent: "claude", Workspaces: []manifest.Workspace{}},
+			{Name: "labs", Path: repoDir, Agent: "claude", Workspaces: []manifest.Workspace{}},
 		},
 	})
 
@@ -481,7 +478,7 @@ func TestAutoBootstrap_CreatesRepoAndDock(t *testing.T) {
 	mockGit := git.NewMock()
 
 	repoDir := filepath.Join(dir, "myproject")
-	os.MkdirAll(repoDir, 0o755)
+	os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755)
 
 	// Resolve symlinks so the mock key matches os.Getwd().
 	resolvedRepo, _ := filepath.EvalSymlinks(repoDir)
@@ -510,13 +507,13 @@ func TestAutoBootstrap_CreatesRepoAndDock(t *testing.T) {
 	if dockName != "myproject" {
 		t.Errorf("dockName = %q, want myproject", dockName)
 	}
-	// Repo and dock should be in the manifest.
+	// Dock should be in the manifest with the checkout path.
 	m, _ := eng.LoadManifest()
-	if m.FindRepo("myproject") == nil {
-		t.Error("repo not added to manifest")
-	}
-	if m.FindDock("myproject") == nil {
+	dock := m.FindDock("myproject")
+	if dock == nil {
 		t.Error("dock not added to manifest")
+	} else if dock.Path != resolvedRepo {
+		t.Errorf("dock path = %q, want %q", dock.Path, resolvedRepo)
 	}
 }
 
@@ -551,7 +548,7 @@ func TestAutoBootstrap_SkipsExistingDock(t *testing.T) {
 	dir := t.TempDir()
 
 	repoDir := filepath.Join(dir, "myproject")
-	os.MkdirAll(repoDir, 0o755)
+	os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755)
 	resolvedRepo, _ := filepath.EvalSymlinks(repoDir)
 
 	cfg := &config.Config{
@@ -565,11 +562,8 @@ func TestAutoBootstrap_SkipsExistingDock(t *testing.T) {
 	manifestPath := filepath.Join(dir, "manifest.json")
 	manifest.Save(manifestPath, &manifest.Manifest{
 		Version: manifest.CurrentVersion,
-		Repos: []manifest.Repo{
-			{Name: "myproject", Path: resolvedRepo},
-		},
 		Docks: []manifest.Dock{
-			{Name: "myproject", Repo: "myproject", Workspaces: []manifest.Workspace{}},
+			{Name: "myproject", Path: resolvedRepo, Workspaces: []manifest.Workspace{}},
 		},
 	})
 
@@ -598,6 +592,57 @@ func TestAutoBootstrap_SkipsExistingDock(t *testing.T) {
 	for _, call := range mockTmux.Calls {
 		if call.Method == "NewSession" {
 			t.Error("should not create new session for existing dock")
+		}
+	}
+}
+
+func TestAutoBootstrap_ReusesExistingDockByCheckoutPath(t *testing.T) {
+	dir := t.TempDir()
+
+	repoDir := filepath.Join(dir, "myproject")
+	os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755)
+	resolvedRepo, _ := filepath.EvalSymlinks(repoDir)
+
+	cfg := &config.Config{
+		Agents: map[string]config.AgentConfig{},
+		Docks:  map[string]config.DockConfig{},
+	}
+	mockTmux := tmux.NewMock()
+	mockGit := git.NewMock()
+	mockGit.SetRepoRoot(resolvedRepo, resolvedRepo)
+
+	manifestPath := filepath.Join(dir, "manifest.json")
+	manifest.Save(manifestPath, &manifest.Manifest{
+		Version: manifest.CurrentVersion,
+		Docks: []manifest.Dock{
+			{Name: "dev", Path: resolvedRepo, Workspaces: []manifest.Workspace{}},
+		},
+	})
+
+	eng := engine.New(
+		cfg,
+		filepath.Join(dir, "config.toml"),
+		manifestPath,
+		filepath.Join(dir, "archive.json"),
+		mockTmux,
+		mockGit,
+	)
+
+	origDir, _ := os.Getwd()
+	os.Chdir(repoDir)
+	defer os.Chdir(origDir)
+
+	dockName, err := autoBootstrap(eng, false)
+	if err != nil {
+		t.Fatalf("autoBootstrap: %v", err)
+	}
+	if dockName != "dev" {
+		t.Errorf("dockName = %q, want dev", dockName)
+	}
+
+	for _, call := range mockTmux.Calls {
+		if call.Method == "NewSession" {
+			t.Error("should not create new session when checkout already belongs to a dock")
 		}
 	}
 }

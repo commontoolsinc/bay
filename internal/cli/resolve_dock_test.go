@@ -15,15 +15,12 @@ func TestResolveCurrentDock_TmuxSession(t *testing.T) {
 	// Simulate being inside tmux.
 	t.Setenv("TMUX", "/tmp/tmux-501/default,12345,0")
 
-	dock, repo, err := resolveCurrentDock(eng)
+	dock, err := resolveCurrentDock(eng)
 	if err != nil {
 		t.Fatalf("resolveCurrentDock: %v", err)
 	}
 	if dock != "labs" {
 		t.Errorf("dock = %q, want labs", dock)
-	}
-	if repo != "labs" {
-		t.Errorf("repo = %q, want labs", repo)
 	}
 }
 
@@ -37,7 +34,7 @@ func TestResolveCurrentDock_IgnoresTmuxOutsidePane(t *testing.T) {
 	// $TMUX is NOT set — simulates being outside tmux.
 	t.Setenv("TMUX", "")
 
-	_, _, err := resolveCurrentDock(eng)
+	_, err := resolveCurrentDock(eng)
 	if err == nil {
 		t.Error("expected error: should not resolve via tmux session when TMUX is unset")
 	}
@@ -45,7 +42,7 @@ func TestResolveCurrentDock_IgnoresTmuxOutsidePane(t *testing.T) {
 
 // TestResolveCurrentDock_CWDFallback verifies the fallback: if the
 // user is NOT in a tmux session but their CWD is inside a known
-// repo, the matching dock is returned.
+// checkout, the matching dock is returned.
 func TestResolveCurrentDock_CWDFallback(t *testing.T) {
 	eng, _, mockGit, dir := testNavEngine(t)
 	// Not in tmux — no SetCurrentSession call.
@@ -63,15 +60,12 @@ func TestResolveCurrentDock_CWDFallback(t *testing.T) {
 	actualCwd, _ := os.Getwd()
 	mockGit.SetRepoRoot(actualCwd, actualCwd)
 
-	dock, repo, err := resolveCurrentDock(eng)
+	dock, err := resolveCurrentDock(eng)
 	if err != nil {
 		t.Fatalf("resolveCurrentDock: %v", err)
 	}
 	if dock != "labs" {
 		t.Errorf("dock = %q, want labs", dock)
-	}
-	if repo != "labs" {
-		t.Errorf("repo = %q, want labs", repo)
 	}
 }
 
@@ -81,7 +75,7 @@ func TestResolveCurrentDock_NeitherErrors(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
 	// Not in tmux, CWD is not a known repo.
 
-	_, _, err := resolveCurrentDock(eng)
+	_, err := resolveCurrentDock(eng)
 	if err == nil {
 		t.Error("expected error when neither tmux nor CWD resolves to a dock")
 	}
