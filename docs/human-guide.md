@@ -600,6 +600,7 @@ matches open an interactive picker.
 bay dock new <name> --path <path>           # create dock + tmux session
 bay dock new <name> --path <path> --agent <a>  # with default agent
 bay dock new <name> --terminal <t>          # with host terminal
+bay dock init [name]                        # set up bay files in checkout
 bay dock ls [name]                          # list dock contents (default: current)
 bay dock ls --json                          # machine-readable dock view
 bay dock show <name>                        # detailed dock info
@@ -611,6 +612,10 @@ bay dock sync [name]                        # copy .worktreeinclude files to wor
 ```
 
 `dk` is an alias for `dock`.
+
+`dock init` prepares the source checkout (`.worktreeinclude`,
+agent project files, `.gitignore`). `dock sync` copies configured
+checkout files into existing bay worktrees.
 
 ### Listing and context
 

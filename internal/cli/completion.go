@@ -119,8 +119,8 @@ func registerCompletions(root *cobra.Command) {
 		}
 	}
 
-	// Dock commands: dock close, dock recover, dock sync, dock tree, dock show, dock rename.
-	for _, path := range []string{"dock close", "dock recover", "dock sync", "dock tree", "dock show", "dock rename"} {
+	// Dock commands: dock close, dock init, dock recover, dock sync, dock tree, dock show, dock rename.
+	for _, path := range []string{"dock close", "dock init", "dock recover", "dock sync", "dock tree", "dock show", "dock rename"} {
 		if cmd := findCmd(root, path); cmd != nil {
 			cmd.ValidArgsFunction = dockCompl
 		}

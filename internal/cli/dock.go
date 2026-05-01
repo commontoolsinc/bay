@@ -20,6 +20,7 @@ func newDockCmd() *cobra.Command {
 
 	cmd.AddCommand(
 		newDockNewCmd(),
+		newDockInitCmd(),
 		newDockLsCmd(),
 		newDockShowCmd(),
 		newDockTreeCmd(),
@@ -30,6 +31,41 @@ func newDockCmd() *cobra.Command {
 	)
 
 	return cmd
+}
+
+func newDockInitCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "init [name]",
+		Short: "Set up bay files in a dock checkout",
+		Long: `Set up bay awareness in a dock checkout.
+
+This updates the source checkout: agent project files, .worktreeinclude,
+and .gitignore. It does not copy files into existing worktrees; use
+'bay dock sync' for that backfill step.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine()
+			if err != nil {
+				return err
+			}
+
+			var name string
+			if len(args) > 0 {
+				name = args[0]
+			} else {
+				name, err = resolveCurrentDock(eng)
+				if err != nil {
+					return err
+				}
+			}
+
+			if err := eng.DockInit(name); err != nil {
+				return err
+			}
+			fmt.Printf("Initialized dock checkout %q.\n", name)
+			return nil
+		},
+	}
 }
 
 func newDockNewCmd() *cobra.Command {

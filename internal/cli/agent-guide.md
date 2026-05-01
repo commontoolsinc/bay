@@ -781,6 +781,7 @@ Waiting detection uses three mechanisms, all feeding into
 
 ```
 bay dock new [name] [--path PATH] [--worktree-dir PATH] [--agent TYPE] [--terminal APP]
+bay dock init [name]
 bay dock ls [name] [--json] [--rows]
 bay dock show <name>
 bay dock close <name> [--force]
@@ -788,10 +789,11 @@ bay dock recover <name>
 bay dock sync [name]
 ```
 
-`bay dock new` sets up bay awareness: appends a one-liner to each
-agent's project file (e.g., `CLAUDE.local.md`) pointing to `bay agent-guide`,
-and creates `.worktreeinclude` if missing. `bay dock sync` copies
-`.worktreeinclude` matches from the checkout into existing worktrees.
+`bay dock new` runs `bay dock init` after creating the dock. `bay dock init`
+sets up bay awareness: appends a one-liner to each agent's project file
+(e.g., `CLAUDE.local.md`) pointing to `bay agent-guide`, and creates
+`.worktreeinclude` if missing. `bay dock sync` copies `.worktreeinclude`
+matches from the checkout into existing worktrees.
 
 `.worktreeinclude` uses gitignore syntax. Each pattern is resolved by
 git; matching files are copied from the dock checkout into new worktrees.

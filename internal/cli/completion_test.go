@@ -68,7 +68,7 @@ func TestCompletionsRegistered(t *testing.T) {
 	withCompletions := []string{
 		"close", "show", "rename",
 		"go",
-		"dock close", "dock recover", "dock tree",
+		"dock close", "dock init", "dock recover", "dock tree",
 		// surface verbs (sf X form) — close/show/rename target
 		// existing surfaces by name.
 		"surface close", "surface show", "surface rename",
