@@ -232,7 +232,7 @@ func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string,
 			if msg, err := lastSurfaceCloseRefusal(eng, ws); err != nil {
 				return err
 			} else if msg != "" {
-				notify(eng, msg)
+				notifyFor(eng, msg, 5000)
 				return nil
 			}
 			if !confirmLastSurfaceClose(eng.Tmux.DisplayMessage, dockName, wsName) {
@@ -257,12 +257,12 @@ func lastSurfaceCloseRefusal(eng *engine.Engine, ws *manifest.Workspace) (string
 		return "", nil
 	}
 
-	dirty, err := eng.Git.IsDirty(ws.Path)
+	dirty, err := eng.HasBlockingDirtyChanges(ws)
 	if err != nil {
-		return "", fmt.Errorf("checking bay state: %w", err)
+		return "", err
 	}
 	if dirty {
-		return fmt.Sprintf("%s: bay kept (uncommitted changes).", ws.Name), nil
+		return fmt.Sprintf("%s: bay kept (local changes may be work in progress).", ws.Name), nil
 	}
 
 	unpushed, err := eng.HasUnlandedCommits(ws)
@@ -284,8 +284,9 @@ func newSurfaceRestoreCmd() *cobra.Command {
 		Long: `Restore the most recently closed surface in the current dock.
 
 bay keeps a per-dock LRU queue of the last 10 bay-initiated closes
-(for up to 1 hour). 'bay sf restore' (or Option+Z in tmux) pops the
-most recent entry and recreates the surface in its parent bay.
+and sync-discovered pane exits (for up to 1 hour). 'bay sf restore'
+(or Option+Z in tmux) pops the most recent entry and recreates the
+surface in its parent bay.
 
   bay sf restore             restore the most recent close
   bay sf restore --list      show the queue`,
@@ -319,6 +320,21 @@ func runSurfaceRestore(eng *engine.Engine, list bool) error {
 		return err
 	}
 
+	entries, err := eng.ListClosedEntries(dockName)
+	if err != nil {
+		return err
+	}
+	// Sync so panes the user just exited (Ctrl-D, kill-pane) are stripped
+	// and can be discovered for immediate Option+Z. Keep entries from this
+	// sync below the queue entries bay already knew about: a sync-discovered
+	// exit has no reliable close timestamp, so it must not jump known closes.
+	discovered := eng.SyncAllForRestore()
+	if len(discovered) > 0 {
+		if err := eng.MoveClosedEntriesBelowKnown(dockName, discovered, entries); err != nil {
+			return err
+		}
+	}
+
 	if list {
 		return printClosedQueue(eng, dockName)
 	}
@@ -350,7 +366,11 @@ func runSurfaceRestore(eng *engine.Engine, list bool) error {
 // DisplayMessage delays run-shell's exit, which delays tmux's redraw of
 // the freshly-created pane. Advisory toasts must never block visible work.
 func notify(eng *engine.Engine, msg string) {
-	_ = eng.Tmux.DisplayMessageAsync(msg, 2500)
+	notifyFor(eng, msg, 2500)
+}
+
+func notifyFor(eng *engine.Engine, msg string, durationMs int) {
+	_ = eng.Tmux.DisplayMessageAsync(msg, durationMs)
 	fmt.Fprintln(os.Stderr, msg)
 }
 

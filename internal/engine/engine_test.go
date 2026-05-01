@@ -1010,6 +1010,96 @@ func TestWsClose_Dirty(t *testing.T) {
 	}
 }
 
+func TestWsClose_AllowsDirtyTreeMatchingRecoverableRef(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetDirty(ws.Path, true)
+	mockGit.SetWorktreeMatchesRecoverableRef(ws.Path, "refs/bay/review-heads/github/123")
+
+	if err := eng.WsClose("labs", "w1", false); err != nil {
+		t.Fatalf("WsClose should allow dirty tree matching recoverable ref: %v", err)
+	}
+	if removed := mockGit.RemovedWorktrees(); len(removed) != 1 {
+		t.Fatalf("expected worktree removal, got %v", removed)
+	} else if got := removed[0].Args[2]; got != "true" {
+		t.Fatalf("RemoveWorktree force = %s, want true for verified dirty review tree", got)
+	}
+}
+
+func TestWsClose_RefusesDirtyTreeWithoutRecoverableRef(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetDirty(ws.Path, true)
+
+	err = eng.WsClose("labs", "w1", false)
+	if err == nil {
+		t.Fatal("expected dirty tree without recoverable ref to be refused")
+	}
+	if removed := mockGit.RemovedWorktrees(); len(removed) != 0 {
+		t.Fatalf("worktree should not be removed without recoverable ref: %v", removed)
+	}
+}
+
+func TestWsCleanReview_DiscardsDirtyTreeMatchingRecoverableRef(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetDirty(ws.Path, true)
+	mockGit.SetWorktreeMatchesRecoverableRef(ws.Path, "refs/bay/review-heads/github/123")
+
+	ref, err := eng.WsCleanReview("labs", "w1")
+	if err != nil {
+		t.Fatalf("WsCleanReview: %v", err)
+	}
+	if ref != "refs/bay/review-heads/github/123" {
+		t.Fatalf("ref = %q, want review ref", ref)
+	}
+	if calls := mockGit.Calls("DiscardWorktreeChanges"); len(calls) != 1 {
+		t.Fatalf("expected DiscardWorktreeChanges call, got %v", calls)
+	}
+}
+
+func TestWsCleanReview_RefusesDirtyTreeWithoutRecoverableRef(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	ws, err := eng.WsNew(WsNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("WsNew failed: %v", err)
+	}
+	os.MkdirAll(ws.Path, 0o755)
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetDirty(ws.Path, true)
+
+	_, err = eng.WsCleanReview("labs", "w1")
+	if err == nil {
+		t.Fatal("expected WsCleanReview to refuse unverified dirty changes")
+	}
+	if calls := mockGit.Calls("DiscardWorktreeChanges"); len(calls) != 0 {
+		t.Fatalf("should not discard unverified changes, got %v", calls)
+	}
+}
+
 func TestWsRename(t *testing.T) {
 	eng, _ := testEngine(t)
 

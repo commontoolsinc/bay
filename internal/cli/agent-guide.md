@@ -384,11 +384,13 @@ bay new auth-fix --description "Login flow fixes"
 
 Close a bay and all its surfaces. For worktree bays,
 checks for uncommitted changes and unlanded commits. Refuses if dirty
-unless `--force` is used. If the branch has been pushed, its HEAD is
-included in a merged PR, or its patches are already on the default
-branch after a squash merge or cherry-pick, bay deletes the local branch
-on close — no stale branches left behind. Pass `self` to close the
-current bay.
+unless `--force` is used, except when bay can verify the dirty tree
+exactly matches a recoverable git ref. In that case the dirty files are
+treated as review changes bay can recreate, and close proceeds. If the
+branch has been pushed, its HEAD is included in a merged PR, or its
+patches are already on the default branch after a squash merge or
+cherry-pick, bay deletes the local branch on close — no stale branches
+left behind. Pass `self` to close the current bay.
 
 Batch flags (without an ID):
 - `--done`: close bays that are not dirty and not pending (have
@@ -405,6 +407,11 @@ bay close --done --dry-run
 bay close --clean
 ```
 
+`bay clean-review [id]` clears dirty review changes without closing the
+bay, but only after the same recoverable-ref check succeeds. It is a
+targeted hidden command for intentionally clearing review changes bay can
+recreate, not a normal cleanup command.
+
 **Orphan auto-close (with grace window).** When a bay's last
 surface goes away — via sync-detected tmux kill or via
 `bay sf close` (no `--force`) on the last surface — bay schedules
@@ -420,13 +427,13 @@ resolve manually.
 Direct `bay close <id>`, `--done`, `--clean`, and
 `bay sf close --force` close immediately (no grace).
 
-**Undo-close interaction.** `bay sf close` (and `Option+W`) push a
-surface entry onto the dock's undo-close queue regardless of whether
-the bay survives. When the close is the last surface, the
-surface is queued and `PendingCloseAt` is scheduled; restoring
-within the grace window recreates the surface via `SurfaceAdd`,
-which clears `PendingCloseAt` as part of its normal cancel path.
-Past the grace window, the bay is gone and a `bay sf
+**Undo-close interaction.** `bay sf close` (and `Option+W`) and
+sync-discovered tmux pane exits push a surface entry onto the dock's
+undo-close queue regardless of whether the bay survives. When the
+close is the last surface, the surface is queued and `PendingCloseAt`
+is scheduled; restoring within the grace window recreates the surface
+via `SurfaceAdd`, which clears `PendingCloseAt` as part of its normal
+cancel path. Past the grace window, the bay is gone and a `bay sf
 restore` call drops the stale entry silently.
 
 #### `bay show [id] [--json|--short|--flash|--popup] [--plain]`
@@ -612,11 +619,11 @@ bay sf close agent --force
 
 Restore the most recently closed surface in the current dock
 (undo-close). Bay keeps a per-dock LRU queue of the last 10
-bay-initiated closes, retained for 1 hour. Pops the top entry and
-recreates the surface in its parent bay. If the parent
-bay is already gone (e.g. the 60s orphan-cleanup grace window
-elapsed), the entry is silently discarded — call again to skip past
-stale entries.
+bay-initiated closes or sync-discovered pane exits, retained for 1
+hour. Pops the top entry and recreates the surface in its parent bay.
+If the parent bay is already gone (e.g. the 60s orphan-cleanup grace
+window elapsed), the entry is silently discarded — call again to skip
+past stale entries.
 
 Agent surfaces relaunch with the agent's configured `resume_args`,
 so the prior session continues rather than starting fresh.

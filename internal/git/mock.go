@@ -13,17 +13,18 @@ type Call struct {
 
 // repoState holds the simulated state for a single repository path.
 type repoState struct {
-	dirty         bool
-	unpushed      bool
-	branch        string
-	defaultBranch string
-	ignored       map[string]bool
-	worktrees     map[string]bool
-	prs           map[string]string // branch → PR number
-	mergedPRs     map[string]bool   // PR number → local HEAD is contained in merged PR
-	merged        map[string]bool   // branch → merged
-	branchExists  map[string]bool   // branch → exists (local or remote)
-	repoRoot      string
+	dirty          bool
+	unpushed       bool
+	branch         string
+	defaultBranch  string
+	ignored        map[string]bool
+	worktrees      map[string]bool
+	prs            map[string]string // branch → PR number
+	recoverableRef string            // non-empty when dirty tree matches a durable ref
+	mergedPRs      map[string]bool   // PR number → local HEAD is contained in merged PR
+	merged         map[string]bool   // branch → merged
+	branchExists   map[string]bool   // branch → exists (local or remote)
+	repoRoot       string
 	// excludeMatches[excludeFile] → {tracked, untracked}. Set via
 	// SetExcludeMatches for tests exercising .worktreeinclude expansion.
 	excludeMatches map[string]excludeMatch
@@ -115,6 +116,12 @@ func (m *Mock) SetUnpushed(path string, unpushed bool) {
 	m.repo(path).unpushed = unpushed
 }
 
+// SetWorktreeMatchesRecoverableRef configures whether the repo's current
+// working tree exactly matches a durable, recoverable ref.
+func (m *Mock) SetWorktreeMatchesRecoverableRef(path, ref string) {
+	m.repo(path).recoverableRef = ref
+}
+
 // SetBranch configures the current branch for a repo.
 func (m *Mock) SetBranch(path, branch string) {
 	m.repo(path).branch = branch
@@ -202,7 +209,7 @@ func (m *Mock) CreateWorktree(repoPath, worktreePath, branch string) error {
 }
 
 func (m *Mock) RemoveWorktree(repoPath, worktreePath string, force bool) error {
-	m.record("RemoveWorktree", repoPath, worktreePath)
+	m.record("RemoveWorktree", repoPath, worktreePath, fmt.Sprintf("%t", force))
 	r := m.repo(repoPath)
 	if !r.worktrees[worktreePath] && !force {
 		return fmt.Errorf("worktree %q not found", worktreePath)
@@ -217,6 +224,18 @@ func (m *Mock) IsDirty(path string) (bool, error) {
 		return *m.globalDirty, nil
 	}
 	return m.repo(path).dirty, nil
+}
+
+func (m *Mock) WorktreeMatchesRecoverableRef(path string) (bool, string, error) {
+	m.record("WorktreeMatchesRecoverableRef", path)
+	ref := m.repo(path).recoverableRef
+	return ref != "", ref, nil
+}
+
+func (m *Mock) DiscardWorktreeChanges(path string) error {
+	m.record("DiscardWorktreeChanges", path)
+	m.repo(path).dirty = false
+	return nil
 }
 
 func (m *Mock) HasUnpushedCommits(path string) (bool, error) {

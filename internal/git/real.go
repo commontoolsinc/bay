@@ -87,6 +87,130 @@ func (r *Real) IsDirty(path string) (bool, error) {
 	return strings.TrimSpace(string(out)) != "", nil
 }
 
+func (r *Real) WorktreeMatchesRecoverableRef(path string) (bool, string, error) {
+	worktreeTree, err := currentWorktreeTree(path)
+	if err != nil {
+		return false, "", err
+	}
+
+	staged, err := hasStagedChanges(path)
+	if err != nil {
+		return false, "", err
+	}
+	indexTree := ""
+	if staged {
+		indexTree, err = currentIndexTree(path)
+		if err != nil {
+			return false, "", err
+		}
+	}
+
+	refs, err := recoverableRefs(path)
+	if err != nil {
+		return false, "", err
+	}
+	for _, ref := range refs {
+		if ref.Tree == worktreeTree && (!staged || ref.Tree == indexTree) {
+			return true, ref.Name, nil
+		}
+	}
+
+	return false, "", nil
+}
+
+type recoverableRef struct {
+	Name string
+	Tree string
+}
+
+func recoverableRefs(path string) ([]recoverableRef, error) {
+	out, err := gitOutput(path, "for-each-ref", "--format=%(refname) %(tree)", "refs/heads", "refs/remotes", "refs/bay/review-heads")
+	if err != nil {
+		return nil, err
+	}
+	var refs []recoverableRef
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 {
+			refs = append(refs, recoverableRef{Name: fields[0], Tree: fields[1]})
+		}
+	}
+	return refs, nil
+}
+
+func (r *Real) DiscardWorktreeChanges(path string) error {
+	reset := exec.Command("git", "-C", path, "reset", "--hard", "HEAD")
+	if out, err := reset.CombinedOutput(); err != nil {
+		return fmt.Errorf("git reset --hard HEAD: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	clean := exec.Command("git", "-C", path, "clean", "-fd")
+	if out, err := clean.CombinedOutput(); err != nil {
+		return fmt.Errorf("git clean -fd: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func currentWorktreeTree(path string) (string, error) {
+	dir, err := os.MkdirTemp("", "bay-git-index-*")
+	if err != nil {
+		return "", fmt.Errorf("creating temp index dir: %w", err)
+	}
+	defer os.RemoveAll(dir)
+
+	indexPath := filepath.Join(dir, "index")
+	if err := runGitWithIndex(path, indexPath, "read-tree", "HEAD"); err != nil {
+		return "", err
+	}
+	if err := runGitWithIndex(path, indexPath, "add", "-A", "--", "."); err != nil {
+		return "", err
+	}
+	return gitOutputWithIndex(path, indexPath, "write-tree")
+}
+
+func hasStagedChanges(path string) (bool, error) {
+	cmd := exec.Command("git", "-C", path, "diff", "--cached", "--quiet")
+	err := cmd.Run()
+	if err == nil {
+		return false, nil
+	}
+	if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+		return true, nil
+	}
+	return false, fmt.Errorf("git diff --cached --quiet: %w", err)
+}
+
+func currentIndexTree(path string) (string, error) {
+	return gitOutput(path, "write-tree")
+}
+
+func runGitWithIndex(path, indexPath string, args ...string) error {
+	cmd := exec.Command("git", append([]string{"-C", path}, args...)...)
+	cmd.Env = append(os.Environ(), "GIT_INDEX_FILE="+indexPath)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git %s: %s: %w", strings.Join(args, " "), strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func gitOutputWithIndex(path, indexPath string, args ...string) (string, error) {
+	cmd := exec.Command("git", append([]string{"-C", path}, args...)...)
+	cmd.Env = append(os.Environ(), "GIT_INDEX_FILE="+indexPath)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func gitOutput(path string, args ...string) (string, error) {
+	cmd := exec.Command("git", append([]string{"-C", path}, args...)...)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 func (r *Real) HasUnpushedCommits(path string) (bool, error) {
 	cmd := exec.Command("git", "-C", path, "log", "@{upstream}..", "--oneline")
 	out, err := cmd.Output()

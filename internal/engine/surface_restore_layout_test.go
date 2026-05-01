@@ -160,6 +160,37 @@ func TestSurfaceRestore_LayoutStackedRestoreReproducesOriginal(t *testing.T) {
 	}
 }
 
+func TestSurfaceRestore_LayoutDiscoveredWholeWindowDeathRestoresOriginalOrder(t *testing.T) {
+	f := setupThreePaneWindow(t)
+
+	if err := f.mock.KillWindow(f.winID); err != nil {
+		t.Fatalf("KillWindow: %v", err)
+	}
+	f.eng.SyncAll()
+
+	for i := range 3 {
+		if _, err := f.eng.SurfaceRestore("labs"); err != nil {
+			t.Fatalf("SurfaceRestore (%d): %v", i, err)
+		}
+	}
+
+	wsView, _ := f.eng.WsShow("labs", "w1")
+	rootPane := wsView.FindSurface(f.rootName).Tmux.PaneID
+	middlePane := wsView.FindSurface("middle").Tmux.PaneID
+	bottomPane := wsView.FindSurface("bottom").Tmux.PaneID
+	winID := wsView.FindSurface(f.rootName).Tmux.WindowID
+
+	got, err := f.mock.LayoutString(winID)
+	if err != nil {
+		t.Fatalf("LayoutString: %v", err)
+	}
+	flat := strings.NewReplacer("(", "", ")", "").Replace(got)
+	want := rootPane + "/" + middlePane + "/" + bottomPane
+	if flat != want {
+		t.Errorf("discovered whole-window restore visual order wrong\n  got (flattened): %s\n  raw:             %s\n  want:            %s", flat, got, want)
+	}
+}
+
 // TestSurfaceRestore_LayoutMixedAxisStaysIntact ensures the layout-tree
 // mock correctly handles a mixed-axis layout: a horizontal split on top
 // with a vertical split inside its right half. Closing and restoring

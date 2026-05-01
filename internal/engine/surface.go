@@ -45,6 +45,36 @@ func (e *Engine) preferredSplitTarget(ws *manifest.Workspace) *manifest.Surface 
 	return nil
 }
 
+func closedEntryForSurface(wsID string, s *manifest.Surface, closedAt int64) (manifest.ClosedEntry, bool) {
+	if s.Backend != manifest.SurfaceBackendTmux {
+		return manifest.ClosedEntry{}, false
+	}
+	entry := manifest.ClosedEntry{
+		ClosedAt: closedAt,
+		Kind:     manifest.ClosedKindSurface,
+		Surface: &manifest.ClosedSurface{
+			Workspace: wsID,
+			Name:      s.Name,
+			Type:      s.Type,
+		},
+	}
+	if s.Agent != nil {
+		entry.Surface.Agent = *s.Agent
+	}
+	if s.Command != nil {
+		entry.Surface.Command = *s.Command
+	}
+	if s.Tmux != nil {
+		// Preserve split direction and layout group so restore can rejoin
+		// the original tmux window if any siblings survive. SplitDir=""
+		// identifies a root pane; restoring into an existing layout group
+		// uses split-window -fb to insert at the root position.
+		entry.Surface.SplitDir = s.Tmux.SplitDir
+		entry.Surface.LayoutGroup = s.Tmux.LayoutGroup
+	}
+	return entry, true
+}
+
 // lastSurfaceInLayoutGroup returns the most-recently-added surviving
 // surface in the given layout group, or nil if none. Restore uses this
 // as the split target so a re-created pane appends to the end of the
@@ -311,8 +341,7 @@ func (e *Engine) DockSurfaceClose(dockName, surfaceName string) error {
 // SurfaceRestart and the closeWorkspaceState helper for the same pattern.
 //
 // Records an undo-close entry on the dock's queue so `bay sf restore`
-// (Option+Z) can recreate the surface. Skipped for tmux-backed surfaces
-// without a pane (nothing to restore) and gui-app surfaces (Step 2).
+// (Option+Z) can recreate the surface. Skipped for non-tmux-backed surfaces.
 func (e *Engine) SurfaceClose(dockName, wsID, surfaceName string, force bool) error {
 	var windowIDToKill, paneIDToKill string
 	wsEmpty := false
@@ -341,32 +370,8 @@ func (e *Engine) SurfaceClose(dockName, wsID, surfaceName string, force bool) er
 			}
 		}
 
-		// Queue an undo entry (Step 1: tmux-backed surfaces only).
-		if s.Backend == manifest.SurfaceBackendTmux {
-			entry := manifest.ClosedEntry{
-				ClosedAt: time.Now().Unix(),
-				Kind:     manifest.ClosedKindSurface,
-				Surface: &manifest.ClosedSurface{
-					Workspace: wsID,
-					Name:      s.Name,
-					Type:      s.Type,
-				},
-			}
-			if s.Agent != nil {
-				entry.Surface.Agent = *s.Agent
-			}
-			if s.Command != nil {
-				entry.Surface.Command = *s.Command
-			}
-			if s.Tmux != nil {
-				// Preserve split direction and layout group so restore can
-				// rejoin the original tmux window if any siblings survive.
-				// SplitDir="" identifies a root pane; restoring into an
-				// existing layout group uses split-window -fb to insert
-				// at the root position.
-				entry.Surface.SplitDir = s.Tmux.SplitDir
-				entry.Surface.LayoutGroup = s.Tmux.LayoutGroup
-			}
+		// Queue an undo entry (tmux-backed surfaces only).
+		if entry, ok := closedEntryForSurface(wsID, s, time.Now().Unix()); ok {
 			dock.PushClosedEntry(entry)
 		}
 
@@ -441,6 +446,89 @@ func (e *Engine) ListClosedEntries(dockName string) ([]manifest.ClosedEntry, err
 		return nil, err
 	}
 	return out, nil
+}
+
+// MoveClosedEntriesBelowKnown moves entries discovered by a restore-triggered
+// sync below the queue entries that were already known before that sync. This
+// keeps known bay-initiated closes in LIFO order while still allowing the sync
+// to strip dead panes before restore. Entries added concurrently by other
+// commands are left where they are.
+func (e *Engine) MoveClosedEntriesBelowKnown(dockName string, discovered []manifest.ClosedEntry, knownNewestFirst []manifest.ClosedEntry) error {
+	if len(discovered) == 0 {
+		return nil
+	}
+	return e.withManifestMaybe(func(m *manifest.Manifest) (bool, error) {
+		dock := m.FindDock(dockName)
+		if dock == nil {
+			return false, fmt.Errorf("unknown dock %q", dockName)
+		}
+		remove := make([]bool, len(dock.ClosedEntries))
+		for _, target := range discovered {
+			for i := len(dock.ClosedEntries) - 1; i >= 0; i-- {
+				if remove[i] || !sameClosedEntry(dock.ClosedEntries[i], target) {
+					continue
+				}
+				remove[i] = true
+				break
+			}
+		}
+
+		var remaining, moved []manifest.ClosedEntry
+		for i, entry := range dock.ClosedEntries {
+			if remove[i] {
+				moved = append(moved, entry)
+				continue
+			}
+			remaining = append(remaining, entry)
+		}
+		if len(moved) == 0 {
+			return false, nil
+		}
+
+		changed := false
+		if len(knownNewestFirst) > 0 {
+			insertAt := -1
+			for i, entry := range remaining {
+				for _, known := range knownNewestFirst {
+					if sameClosedEntry(entry, known) {
+						insertAt = i
+						break
+					}
+				}
+				if insertAt >= 0 {
+					break
+				}
+			}
+			if insertAt >= 0 {
+				next := make([]manifest.ClosedEntry, 0, len(dock.ClosedEntries))
+				next = append(next, remaining[:insertAt]...)
+				next = append(next, moved...)
+				next = append(next, remaining[insertAt:]...)
+				dock.ClosedEntries = next
+				changed = true
+			}
+		}
+
+		// If the restore-triggered sync appended entries uncapped, enforce
+		// the queue limit only after discovered entries have been moved
+		// below known entries. This prevents old discovered exits from
+		// evicting known user closes when the queue was already full.
+		if len(dock.ClosedEntries) > manifest.ClosedQueueMax {
+			dock.ClosedEntries = dock.ClosedEntries[len(dock.ClosedEntries)-manifest.ClosedQueueMax:]
+			changed = true
+		}
+		return changed, nil
+	})
+}
+
+func sameClosedEntry(a, b manifest.ClosedEntry) bool {
+	if a.ClosedAt != b.ClosedAt || a.Kind != b.Kind {
+		return false
+	}
+	if a.Surface == nil || b.Surface == nil {
+		return a.Surface == nil && b.Surface == nil
+	}
+	return *a.Surface == *b.Surface
 }
 
 // SurfaceRestore pops the most recent undo-close entry from the dock's

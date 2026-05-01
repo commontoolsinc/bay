@@ -14,7 +14,7 @@ func TestNewRootCmd(t *testing.T) {
 	// add-prompt was removed entirely — see TestAddPrompt_RemovedEntirely.
 	expected := map[string]bool{
 		"dock": false, "surface": false,
-		"new": false, "close": false, "show": false, "rename": false, "describe": false,
+		"new": false, "close": false, "clean-review": false, "show": false, "rename": false, "describe": false,
 		"go": false, "ls": false, "next": false, "prev": false, "tree": false, "pwd": false,
 		"recover": false, "doctor": false, "setup": false, "monitor": false, "version": false,
 		"shell": false, "edit": false, "status-line": false,
@@ -46,6 +46,14 @@ func TestNewRootCmd(t *testing.T) {
 	for _, cmd := range root.Commands() {
 		if cmd.Name() == "palette" && !cmd.Hidden {
 			t.Error("palette should be hidden")
+		}
+	}
+
+	// clean-review is a targeted maintenance command, not a core command
+	// shown in the main help.
+	for _, cmd := range root.Commands() {
+		if cmd.Name() == "clean-review" && !cmd.Hidden {
+			t.Error("clean-review should be hidden")
 		}
 	}
 }
