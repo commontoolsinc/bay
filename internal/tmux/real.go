@@ -69,11 +69,17 @@ func (r *Real) SetSessionOption(session string, option string, value string) err
 	return runSilent("set-option", "-t", exactSession(session), option, value)
 }
 
+// GetSessionOption deviates from GetWindowOption's error-propagating
+// shape: tmux exits non-zero when the option is unset (and on some
+// versions also when the session is gone), but for the
+// session-identity caller the empty marker IS the answer, not a
+// failure. Returning ("", nil) keeps the gate decision compact at
+// the cost of conflating "unset" with "session disappeared mid-call"
+// — which is fine because verifySessionOwnership guards with
+// HasSession first.
 func (r *Real) GetSessionOption(session string, option string) (string, error) {
 	out, err := run("show-options", "-t", exactSession(session), "-v", option)
 	if err != nil {
-		// tmux returns non-zero when the option is unset; that's the
-		// expected "no marker" state and not an error for callers.
 		return "", nil
 	}
 	return out, nil

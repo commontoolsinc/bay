@@ -86,46 +86,36 @@ func (e *Engine) ensureSession(name, expectedSessionID string) (string, error) {
 			_ = e.Tmux.SetWindowOption(windows[0].ID, "@bay-placeholder", "1")
 			_ = e.Tmux.RenameWindow(windows[0].ID, placeholderName)
 		}
-		id := newSessionID()
-		if err := e.Tmux.SetSessionOption(name, sessionIDOption, id); err != nil {
-			return "", fmt.Errorf("tagging tmux session: %w", err)
-		}
-		return id, nil
+		return e.tagSession(name)
 	}
 
 	marker, _ := e.Tmux.GetSessionOption(name, sessionIDOption)
 	switch {
-	case marker == "" && expectedSessionID == "":
-		// Legacy / unknown — claim with a new UUID so future probes
-		// have something to verify against.
-		id := newSessionID()
-		if err := e.Tmux.SetSessionOption(name, sessionIDOption, id); err != nil {
-			return "", fmt.Errorf("tagging tmux session: %w", err)
-		}
-		return id, nil
-	case marker == "":
-		// Session is back without bay's marker (likely a restart) —
-		// claim it.
-		id := newSessionID()
-		if err := e.Tmux.SetSessionOption(name, sessionIDOption, id); err != nil {
-			return "", fmt.Errorf("tagging tmux session: %w", err)
-		}
-		return id, nil
-	case marker == expectedSessionID:
+	case marker != "" && marker == expectedSessionID:
+		// Steady state — leave both sides alone.
 		return marker, nil
-	case expectedSessionID == "":
-		// Manifest hasn't recorded a SessionID yet but tmux is tagged.
-		// Adopt the existing marker rather than churning a new one.
+	case marker != "" && expectedSessionID == "":
+		// Tmux is tagged but the manifest hasn't recorded a SessionID
+		// yet. Adopt the existing marker rather than churning a new
+		// one (covers the post-failure recovery path).
 		return marker, nil
 	default:
-		// Marker present but doesn't match — session was recreated
-		// since bay last ran. Re-tag and let the caller persist.
-		id := newSessionID()
-		if err := e.Tmux.SetSessionOption(name, sessionIDOption, id); err != nil {
-			return "", fmt.Errorf("tagging tmux session: %w", err)
-		}
-		return id, nil
+		// (empty, empty)        → first-time claim for a legacy session
+		// (empty, set)          → session was recreated without bay's marker
+		// (set, set, different) → session was recreated since bay last ran
+		return e.tagSession(name)
 	}
+}
+
+// tagSession sets a fresh @bay-session-id on the named session and
+// returns the UUID it set. Called from every ensureSession branch
+// that needs to (re-)tag.
+func (e *Engine) tagSession(name string) (string, error) {
+	id := newSessionID()
+	if err := e.Tmux.SetSessionOption(name, sessionIDOption, id); err != nil {
+		return "", fmt.Errorf("tagging tmux session: %w", err)
+	}
+	return id, nil
 }
 
 // cleanPlaceholders removes unused placeholder windows from a session.

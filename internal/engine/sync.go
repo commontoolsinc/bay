@@ -63,6 +63,18 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 		return nil
 	}
 
+	// Resolve session ownership once per dock, so the per-workspace
+	// probe and the dock-surface cleanup below don't each spawn
+	// `tmux show-options` per workspace. Captured before the parallel
+	// fanout so the read is unsynchronized (the map is only read from
+	// goroutines, never mutated).
+	dockOwned := make(map[string]bool, len(m.Docks))
+	for i := range m.Docks {
+		dock := &m.Docks[i]
+		exists, owned := e.verifySessionOwnership(dock)
+		dockOwned[dock.Name] = exists && owned
+	}
+
 	type probeJob struct {
 		dock *manifest.Dock
 		ws   *manifest.Workspace
@@ -89,7 +101,7 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 		go func(i int, job probeJob) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			if update, ok := e.probeWorkspaceSync(job.dock, job.ws); ok {
+			if update, ok := e.probeWorkspaceSync(job.dock, job.ws, dockOwned[job.dock.Name]); ok {
 				results[i] = update
 				valid[i] = true
 			}
@@ -133,8 +145,7 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 			if len(dock.Surfaces) == 0 {
 				continue
 			}
-			exists, owned := e.verifySessionOwnership(dock)
-			if !exists || !owned {
+			if !dockOwned[dock.Name] {
 				continue
 			}
 			live := dock.Surfaces[:0]
@@ -205,7 +216,7 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 	return discoveredClosed
 }
 
-func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace) (workspaceSyncUpdate, bool) {
+func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace, sessionOwned bool) (workspaceSyncUpdate, bool) {
 	update := workspaceSyncUpdate{
 		dockName:   dock.Name,
 		originalID: ws.ID,
@@ -268,8 +279,7 @@ func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace)
 	// yet), the surfaces are needed for `bay recover` to know what to
 	// recreate. Stripping them here would leave workspaces with
 	// surfaces=0 and recover would report "nothing to recover."
-	exists, owned := e.verifySessionOwnership(dock)
-	if exists && owned {
+	if sessionOwned {
 		update.deadSurfaceIDs = e.deadSurfaceIDs(ws)
 	}
 	if !update.branchChanged && !update.branchDetached && !update.prChanged && !update.merged && len(update.deadSurfaceIDs) == 0 {
