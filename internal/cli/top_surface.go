@@ -54,24 +54,47 @@ func newTopNewSurfaceCmd(spec topNewCmdSpec) *cobra.Command {
 	return cmd
 }
 
+// shellSurfaceOpts builds surfaceNewOpts for shell-creation commands. Shared
+// by `bay surface new shell` and the top-level `bay shell` shortcut.
+func shellSurfaceOpts(args []string, splitDir string, window, pane bool) (surfaceNewOpts, error) {
+	opts := surfaceNewOpts{
+		Type:     manifest.SurfaceTypeShell,
+		SplitDir: resolveSplit(splitDir, window, pane),
+	}
+	if len(args) > 0 {
+		if err := validateSurfaceName(args[0]); err != nil {
+			return opts, err
+		}
+		opts.Name = args[0]
+	}
+	return opts, nil
+}
+
+// agentSurfaceOpts builds surfaceNewOpts for agent-creation commands. Shared
+// by `bay surface new agent` and the top-level `bay agent` shortcut.
+func agentSurfaceOpts(args []string, splitDir string, window, pane bool) (surfaceNewOpts, error) {
+	opts := surfaceNewOpts{
+		Type:     manifest.SurfaceTypeAgent,
+		SplitDir: resolveSplit(splitDir, window, pane),
+	}
+	if len(args) > 0 {
+		opts.Agent = args[0]
+	}
+	if len(args) > 1 {
+		if err := validateSurfaceName(args[1]); err != nil {
+			return opts, err
+		}
+		opts.Name = args[1]
+	}
+	return opts, nil
+}
+
 func newTopNewShellCmd() *cobra.Command {
 	return newTopNewSurfaceCmd(topNewCmdSpec{
-		use:   "shell [name]",
-		short: "Create a shell surface",
-		args:  cobra.MaximumNArgs(1),
-		buildOpts: func(args []string, splitDir string, window, pane bool) (surfaceNewOpts, error) {
-			opts := surfaceNewOpts{
-				Type:     manifest.SurfaceTypeShell,
-				SplitDir: resolveSplit(splitDir, window, pane),
-			}
-			if len(args) > 0 {
-				if err := validateSurfaceName(args[0]); err != nil {
-					return opts, err
-				}
-				opts.Name = args[0]
-			}
-			return opts, nil
-		},
+		use:       "shell [name]",
+		short:     "Create a shell surface",
+		args:      cobra.MaximumNArgs(1),
+		buildOpts: shellSurfaceOpts,
 	})
 }
 
@@ -87,23 +110,8 @@ uses the dock's default agent.
   bay surface new agent codex codex-debug      specific agent with custom name
   bay surface new agent --bay w1               in another bay
   bay surface new agent --window               as a new tmux window`,
-		args: cobra.MaximumNArgs(2),
-		buildOpts: func(args []string, splitDir string, window, pane bool) (surfaceNewOpts, error) {
-			opts := surfaceNewOpts{
-				Type:     manifest.SurfaceTypeAgent,
-				SplitDir: resolveSplit(splitDir, window, pane),
-			}
-			if len(args) > 0 {
-				opts.Agent = args[0]
-			}
-			if len(args) > 1 {
-				if err := validateSurfaceName(args[1]); err != nil {
-					return opts, err
-				}
-				opts.Name = args[1]
-			}
-			return opts, nil
-		},
+		args:      cobra.MaximumNArgs(2),
+		buildOpts: agentSurfaceOpts,
 	})
 }
 
