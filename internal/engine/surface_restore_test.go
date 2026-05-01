@@ -2,6 +2,7 @@ package engine
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -182,6 +183,170 @@ func TestSurfaceRestore_RestoreWithinGraceCancelsPendingClose(t *testing.T) {
 	}
 	if len(ws.Surfaces) != 1 {
 		t.Errorf("expected 1 surface after restore, got %d", len(ws.Surfaces))
+	}
+}
+
+func TestSurfaceRestore_DiscoveredDeadAgentQueuesUndo(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	if err := eng.SurfaceAdd(SurfaceAddOptions{
+		DockName: "labs", WsName: "w1",
+		Type: manifest.SurfaceTypeAgent, Name: "codex-agent", Agent: "codex", SplitDir: "v",
+	}); err != nil {
+		t.Fatalf("SurfaceAdd: %v", err)
+	}
+
+	ws, _ := eng.WsShow("labs", "w1")
+	agent := ws.FindSurface("codex-agent")
+	if agent == nil || agent.Tmux == nil {
+		t.Fatalf("agent surface missing tmux attrs: %+v", ws.Surfaces)
+	}
+	agentLayoutGroup := agent.Tmux.LayoutGroup
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if err := mockTmux.KillPane(agent.Tmux.PaneID); err != nil {
+		t.Fatalf("KillPane: %v", err)
+	}
+
+	eng.SyncAll()
+
+	entries, err := eng.ListClosedEntries("labs")
+	if err != nil {
+		t.Fatalf("ListClosedEntries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 queued entry, got %d", len(entries))
+	}
+	got := entries[0].Surface
+	if got == nil {
+		t.Fatal("queued entry missing surface payload")
+	}
+	if got.Workspace != "w1" || got.Name != "codex-agent" || got.Type != manifest.SurfaceTypeAgent || got.Agent != "codex" {
+		t.Fatalf("wrong queued surface payload: %+v", got)
+	}
+	if got.SplitDir != "v" || got.LayoutGroup != agentLayoutGroup {
+		t.Fatalf("queued layout attrs = SplitDir %q LayoutGroup %d, want v/%d", got.SplitDir, got.LayoutGroup, agentLayoutGroup)
+	}
+
+	ws, _ = eng.WsShow("labs", "w1")
+	if ws.FindSurface("codex-agent") != nil {
+		t.Fatal("dead agent surface should be stripped before restore")
+	}
+
+	if _, err := eng.SurfaceRestore("labs"); err != nil {
+		t.Fatalf("SurfaceRestore: %v", err)
+	}
+	ws, _ = eng.WsShow("labs", "w1")
+	restored := ws.FindSurface("codex-agent")
+	if restored == nil {
+		t.Fatal("agent surface was not restored")
+	}
+	if restored.Agent == nil || *restored.Agent != "codex" {
+		t.Fatalf("restored agent = %v, want codex", restored.Agent)
+	}
+}
+
+func TestMoveClosedEntriesBelowKnown_LeavesConcurrentCloseOnTop(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	entry := func(closedAt int64, name string) manifest.ClosedEntry {
+		return manifest.ClosedEntry{
+			ClosedAt: closedAt,
+			Kind:     manifest.ClosedKindSurface,
+			Surface: &manifest.ClosedSurface{
+				Workspace: "w1",
+				Name:      name,
+				Type:      manifest.SurfaceTypeShell,
+			},
+		}
+	}
+	now := time.Now().Unix()
+	a := entry(now+1, "a")
+	b := entry(now+2, "b")
+	d := entry(now+4, "concurrent")
+	c := entry(now+3, "discovered")
+
+	if err := eng.withManifest(func(m *manifest.Manifest) error {
+		dock := m.FindDock("labs")
+		dock.ClosedEntries = []manifest.ClosedEntry{a, b, d, c}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed queue: %v", err)
+	}
+
+	if err := eng.MoveClosedEntriesBelowKnown("labs", []manifest.ClosedEntry{c}, []manifest.ClosedEntry{b, a}); err != nil {
+		t.Fatalf("MoveClosedEntriesBelowKnown: %v", err)
+	}
+
+	entries, err := eng.ListClosedEntries("labs")
+	if err != nil {
+		t.Fatalf("ListClosedEntries: %v", err)
+	}
+	gotNames := make([]string, 0, len(entries))
+	for _, e := range entries {
+		gotNames = append(gotNames, e.Surface.Name)
+	}
+	want := []string{"concurrent", "b", "a", "discovered"}
+	if strings.Join(gotNames, ",") != strings.Join(want, ",") {
+		t.Fatalf("restore order = %v, want %v", gotNames, want)
+	}
+}
+
+func TestMoveClosedEntriesBelowKnown_FullQueueDropsDiscoveredBeforeKnown(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	entry := func(closedAt int64, name string) manifest.ClosedEntry {
+		return manifest.ClosedEntry{
+			ClosedAt: closedAt,
+			Kind:     manifest.ClosedKindSurface,
+			Surface: &manifest.ClosedSurface{
+				Workspace: "w1",
+				Name:      name,
+				Type:      manifest.SurfaceTypeShell,
+			},
+		}
+	}
+	now := time.Now().Unix()
+	var knownStorage []manifest.ClosedEntry
+	var knownNewestFirst []manifest.ClosedEntry
+	for i := 0; i < manifest.ClosedQueueMax; i++ {
+		e := entry(now+int64(i+1), fmt.Sprintf("known-%d", i+1))
+		knownStorage = append(knownStorage, e)
+		knownNewestFirst = append([]manifest.ClosedEntry{e}, knownNewestFirst...)
+	}
+	discovered := entry(now+100, "discovered")
+
+	if err := eng.withManifest(func(m *manifest.Manifest) error {
+		dock := m.FindDock("labs")
+		dock.ClosedEntries = append(append([]manifest.ClosedEntry{}, knownStorage...), discovered)
+		return nil
+	}); err != nil {
+		t.Fatalf("seed queue: %v", err)
+	}
+
+	if err := eng.MoveClosedEntriesBelowKnown("labs", []manifest.ClosedEntry{discovered}, knownNewestFirst); err != nil {
+		t.Fatalf("MoveClosedEntriesBelowKnown: %v", err)
+	}
+
+	entries, err := eng.ListClosedEntries("labs")
+	if err != nil {
+		t.Fatalf("ListClosedEntries: %v", err)
+	}
+	if len(entries) != manifest.ClosedQueueMax {
+		t.Fatalf("queue len = %d, want %d", len(entries), manifest.ClosedQueueMax)
+	}
+	for _, e := range entries {
+		if e.Surface.Name == "discovered" {
+			t.Fatalf("discovered entry survived full known queue: %+v", entries)
+		}
+	}
+	for i, e := range entries {
+		want := fmt.Sprintf("known-%d", manifest.ClosedQueueMax-i)
+		if e.Surface.Name != want {
+			t.Fatalf("entry %d = %q, want %q; full order=%+v", i, e.Surface.Name, want, entries)
+		}
 	}
 }
 

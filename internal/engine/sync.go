@@ -39,15 +39,28 @@ type workspaceSyncUpdate struct {
 }
 
 // SyncAll checks git branches, PR numbers, merge status, and tmux surface state
-// for all workspaces and updates the manifest if anything changed.
+// for all workspaces and updates the manifest if anything changed. It returns
+// undo-close entries discovered from dead workspace surfaces during this sync
+// pass; callers that don't care can ignore the return value.
 //
 // The probe phase runs in parallel (bounded to syncProbeConcurrency) so that
 // fresh docks with many workspaces don't pay N × ~500ms gh latency on first
 // display. Probes only read the manifest, so the parallelism is safe.
-func (e *Engine) SyncAll() {
+func (e *Engine) SyncAll() []manifest.ClosedEntry {
+	return e.syncAll(true)
+}
+
+// SyncAllForRestore is the restore-path variant of SyncAll. It temporarily
+// leaves sync-discovered undo entries uncapped so the caller can move them
+// below already-known entries before enforcing the queue cap.
+func (e *Engine) SyncAllForRestore() []manifest.ClosedEntry {
+	return e.syncAll(false)
+}
+
+func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 	m, err := e.LoadManifest()
 	if err != nil {
-		return
+		return nil
 	}
 
 	type probeJob struct {
@@ -62,7 +75,7 @@ func (e *Engine) SyncAll() {
 		}
 	}
 	if len(jobs) == 0 {
-		return
+		return nil
 	}
 
 	results := make([]workspaceSyncUpdate, len(jobs))
@@ -96,17 +109,20 @@ func (e *Engine) SyncAll() {
 	// elapsed since the last sync.
 
 	var dockNames []string
+	var discoveredClosed []manifest.ClosedEntry
 	// Workspaces whose PendingCloseAt has expired — finalize via
 	// WsClose after the lock releases (WsClose acquires its own lock).
 	type orphanCandidate struct{ dock, ws string }
 	var toFinalize []orphanCandidate
 
-	_ = e.withManifestMaybe(func(m *manifest.Manifest) (bool, error) {
+	syncErr := e.withManifestMaybe(func(m *manifest.Manifest) (bool, error) {
 		changed := false
 		for _, update := range updates {
-			if e.applyWorkspaceSyncUpdate(m, update) {
+			updateChanged, closedEntries := e.applyWorkspaceSyncUpdate(m, update, enforceClosedQueueCap)
+			if updateChanged {
 				changed = true
 			}
+			discoveredClosed = append(discoveredClosed, closedEntries...)
 		}
 
 		// Clean up dead dock-level surfaces.
@@ -163,6 +179,9 @@ func (e *Engine) SyncAll() {
 		}
 		return changed, nil
 	})
+	if syncErr != nil {
+		discoveredClosed = nil
+	}
 
 	// Finalize expired pending closes. Best-effort: any failure
 	// (gate refused, I/O error) leaves PendingCloseAt set; we clear
@@ -181,6 +200,7 @@ func (e *Engine) SyncAll() {
 	for _, name := range dockNames {
 		e.refreshDockWindowNamesByName(name)
 	}
+	return discoveredClosed
 }
 
 func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace) (workspaceSyncUpdate, bool) {
@@ -255,10 +275,10 @@ func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace)
 	return update, true
 }
 
-func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspaceSyncUpdate) bool {
+func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspaceSyncUpdate, enforceClosedQueueCap bool) (bool, []manifest.ClosedEntry) {
 	dock := m.FindDock(update.dockName)
 	if dock == nil {
-		return false
+		return false, nil
 	}
 
 	ws := findWorkspaceByPath(dock, update.path)
@@ -266,9 +286,10 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 		ws = dock.FindWorkspaceByID(update.originalID)
 	}
 	if ws == nil {
-		return false
+		return false, nil
 	}
 	changed := false
+	var discoveredClosed []manifest.ClosedEntry
 	if update.branchChanged && ws.Worktree != nil && ws.Worktree.Branch != update.branch {
 		ws.Worktree.Branch = update.branch
 		// Cached PR belongs to the old branch — invalidate it. The probe
@@ -338,15 +359,31 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 
 	if len(update.deadSurfaceIDs) > 0 {
 		live := ws.Surfaces[:0]
+		var dead []manifest.Surface
 		removed := false
-		for _, s := range ws.Surfaces {
+		closedAt := time.Now().Unix()
+		for i := range ws.Surfaces {
+			s := &ws.Surfaces[i]
 			if update.deadSurfaceIDs[s.ID] {
 				removed = true
+				dead = append(dead, *s)
 				continue
 			}
-			live = append(live, s)
+			live = append(live, *s)
 		}
 		if removed {
+			// Push in reverse manifest order so LIFO restore recreates a
+			// whole-window death in its original visual order.
+			for i := len(dead) - 1; i >= 0; i-- {
+				if entry, ok := closedEntryForSurface(ws.ID, &dead[i], closedAt); ok {
+					if enforceClosedQueueCap {
+						dock.PushClosedEntry(entry)
+					} else {
+						dock.ClosedEntries = append(dock.ClosedEntries, entry)
+					}
+					discoveredClosed = append(discoveredClosed, entry)
+				}
+			}
 			ws.Surfaces = live
 			changed = true
 			// If the strip emptied the workspace, schedule auto-close
@@ -358,7 +395,7 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 		}
 	}
 
-	return changed
+	return changed, discoveredClosed
 }
 
 // clearPendingClose resets PendingCloseAt on a workspace to 0. Used

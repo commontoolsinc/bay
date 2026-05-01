@@ -87,11 +87,10 @@ close immediately.
 
 ### Why not do more
 
-- **Undo on sync-detect.** Considered and rejected (see earlier
-  discussion around undo-close design). The user's pain is orphans
-  collecting, not "I want to restore a pane I intentionally
-  killed with Ctrl-B x." Auto-close addresses the pain directly
-  without the queue machinery.
+- **Workspace-level undo on sync-detect.** Surface-level undo is now
+  handled by the undo-close queue when sync strips a dead pane.
+  Workspace-level restore is still deferred; auto-close plus the
+  surface restore grace window cover the common accidental-exit case.
 - **Aggressive sweep of existing orphans.** Tempting but riskier:
   a workspace someone legitimately has as zero-surface (e.g. a
   just-created workspace that hasn't had a surface spawned yet)

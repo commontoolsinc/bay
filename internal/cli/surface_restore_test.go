@@ -63,3 +63,87 @@ func TestRunSurfaceRestore_SuccessEmitsNoToast(t *testing.T) {
 			mockTmux.DisplayMessages()[before:])
 	}
 }
+
+func TestRunSurfaceRestore_DiscoversDeadSurfaceBeforeRestore(t *testing.T) {
+	eng, mockTmux, _, _ := testNavEngine(t)
+	mockTmux.SetCurrentSession("labs")
+	t.Setenv("TMUX", "/tmp/tmux-501/default,12345,0")
+
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs"}); err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{
+		DockName: "labs", WsName: "w1",
+		Type: manifest.SurfaceTypeShell, Name: "logs", SplitDir: "v",
+	}); err != nil {
+		t.Fatalf("SurfaceAdd: %v", err)
+	}
+
+	ws, _ := eng.WsShow("labs", "w1")
+	logs := ws.FindSurface("logs")
+	if logs == nil || logs.Tmux == nil {
+		t.Fatalf("logs surface missing tmux attrs: %+v", ws.Surfaces)
+	}
+	if err := mockTmux.KillPane(logs.Tmux.PaneID); err != nil {
+		t.Fatalf("KillPane: %v", err)
+	}
+
+	if err := runSurfaceRestore(eng, false); err != nil {
+		t.Fatalf("runSurfaceRestore: %v", err)
+	}
+
+	ws, _ = eng.WsShow("labs", "w1")
+	if ws.FindSurface("logs") == nil {
+		t.Fatal("expected runSurfaceRestore to discover and restore dead surface")
+	}
+	entries, err := eng.ListClosedEntries("labs")
+	if err != nil {
+		t.Fatalf("ListClosedEntries: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected queue drained after restore, got %d entries", len(entries))
+	}
+}
+
+func TestRunSurfaceRestore_KeepsQueuedCloseBlockAheadOfDiscoveredDeadSurface(t *testing.T) {
+	eng, mockTmux, _, _ := testNavEngine(t)
+	mockTmux.SetCurrentSession("labs")
+	t.Setenv("TMUX", "/tmp/tmux-501/default,12345,0")
+
+	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs"}); err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+	for _, name := range []string{"logs", "notes", "scratch"} {
+		if err := eng.SurfaceAdd(engine.SurfaceAddOptions{
+			DockName: "labs", WsName: "w1",
+			Type: manifest.SurfaceTypeShell, Name: name, SplitDir: "v",
+		}); err != nil {
+			t.Fatalf("SurfaceAdd %s: %v", name, err)
+		}
+	}
+	if err := eng.SurfaceClose("labs", "w1", "logs", false); err != nil {
+		t.Fatalf("SurfaceClose logs: %v", err)
+	}
+	if err := eng.SurfaceClose("labs", "w1", "notes", false); err != nil {
+		t.Fatalf("SurfaceClose notes: %v", err)
+	}
+
+	ws, _ := eng.WsShow("labs", "w1")
+	scratch := ws.FindSurface("scratch")
+	if scratch == nil || scratch.Tmux == nil {
+		t.Fatalf("scratch surface missing tmux attrs: %+v", ws.Surfaces)
+	}
+	if err := mockTmux.KillPane(scratch.Tmux.PaneID); err != nil {
+		t.Fatalf("KillPane scratch: %v", err)
+	}
+
+	for i, want := range []string{"notes", "logs", "scratch"} {
+		if err := runSurfaceRestore(eng, false); err != nil {
+			t.Fatalf("runSurfaceRestore %d: %v", i+1, err)
+		}
+		ws, _ = eng.WsShow("labs", "w1")
+		if ws.FindSurface(want) == nil {
+			t.Fatalf("restore %d restored wrong surface; expected %q in %+v", i+1, want, ws.Surfaces)
+		}
+	}
+}

@@ -303,9 +303,13 @@ Closes that aren't the last surface in a bay are unaffected, and
 
 `Option+z` (or `bay sf restore`) restores the most recently closed
 surface in the current dock. Bay keeps a per-dock LRU queue of the
-last 10 bay-initiated closes, retained for 1 hour. `bay sf close`,
-`Option+W`, and last-surface closes all push an entry; `bay sf
-restore --list` shows the queue without restoring.
+last 10 bay-initiated closes or sync-discovered pane exits, retained
+for 1 hour. `bay sf close`, `Option+W`, last-surface closes, and
+closed tmux panes discovered by sync all push an entry; `bay sf
+restore --list` shows the queue without restoring. Restore/list run a
+sync first, so an agent pane exited with `Ctrl-D` can be undone
+immediately from another pane; if a known undo entry is already queued,
+it stays ahead of newly discovered exits.
 
 Restore recreates the surface in its parent bay. If the
 bay has since been closed (e.g. the 60s orphan-cleanup grace
