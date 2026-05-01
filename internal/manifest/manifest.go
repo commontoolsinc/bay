@@ -59,14 +59,6 @@ type Repo struct {
 	WorktreeDir string `json:"worktree_dir,omitempty"`
 }
 
-// EffectiveWorktreeDir returns the worktree directory, defaulting to {path}-worktrees.
-func (r Repo) EffectiveWorktreeDir() string {
-	if r.WorktreeDir != "" {
-		return config.ExpandPath(r.WorktreeDir)
-	}
-	return config.ExpandPath(r.Path) + "-worktrees"
-}
-
 // Manifest is the top-level structure persisted as JSON.
 type Manifest struct {
 	Version int    `json:"version"`

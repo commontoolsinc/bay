@@ -85,11 +85,7 @@ func newDockNewCmd() *cobra.Command {
 				name = args[0]
 			}
 			if name == "" {
-				if path != "" {
-					name = filepath.Base(config.ExpandPath(path))
-				} else if cwd, cwdErr := os.Getwd(); cwdErr == nil {
-					name = filepath.Base(cwd)
-				}
+				name = defaultDockName(path)
 			}
 			if err := eng.DockNew(name, path, worktreeDir, agent, terminal); err != nil {
 				return err
@@ -108,6 +104,21 @@ func newDockNewCmd() *cobra.Command {
 	cmd.Flags().StringVar(&terminal, "terminal", "", "host terminal app (e.g. ghostty, iterm2)")
 
 	return cmd
+}
+
+func defaultDockName(path string) string {
+	if path == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return ""
+		}
+		return filepath.Base(cwd)
+	}
+	expanded := config.ExpandPath(path)
+	if abs, err := filepath.Abs(expanded); err == nil {
+		expanded = abs
+	}
+	return filepath.Base(expanded)
 }
 
 func newDockLsCmd() *cobra.Command {

@@ -227,7 +227,7 @@ var bayKeybindings = []bayKeybinding{
 	{key: "M-S", cmd: "bay shell --window", desc: "Option+S: shell in a new window", tmuxVerb: "run-shell"},
 	{key: "M-a", cmd: "bay agent --pane", desc: "Option+a: agent as split pane", tmuxVerb: "run-shell"},
 	{key: "M-A", cmd: "bay agent --window", desc: "Option+A: agent in a new window", tmuxVerb: "run-shell"},
-	{key: "M-e", cmd: "bay edit --bay", previousCmds: []string{"bay edit --ws"}, desc: "Option+e: bay editor", tmuxVerb: "run-shell"},
+	{key: "M-e", cmd: "bay edit", previousCmds: []string{"bay edit --bay", "bay edit --ws"}, desc: "Option+e: bay editor", tmuxVerb: "run-shell"},
 	{key: "M-E", cmd: "bay edit --dock", desc: "Option+E: dock editor", tmuxVerb: "run-shell"},
 
 	// Navigation (dock-wide)
@@ -542,6 +542,10 @@ func previousCommandMatches(cmd, previous string) bool {
 	return cmd == previous || strings.HasPrefix(cmd, previous+" ||")
 }
 
+func canonicalCommandMatches(cmd, canonical string) bool {
+	return cmd == canonical || strings.HasPrefix(cmd, canonical+" ||")
+}
+
 // bayKeybindingMismatch records a canonical key whose active binding
 // runs a bay command that exists in the canonical set but isn't the
 // canonical one for that key — the silent-drift case that appears
@@ -573,7 +577,7 @@ func mismatchedBindings(block string, kbs []bayKeybinding) []bayKeybindingMismat
 		if !ok {
 			continue
 		}
-		if commandMatches(map[string]bool{userCmd: true}, kb.cmd) {
+		if canonicalCommandMatches(userCmd, kb.cmd) {
 			continue
 		}
 		replacesPrevious := false

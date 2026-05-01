@@ -97,6 +97,29 @@ func (e *Engine) DockNew(name, path, worktreeDir, agent, terminal string) error 
 		return err
 	}
 
+	// Roll back tmux/terminal/config side effects if the manifest update
+	// fails — otherwise a losing race against a concurrent dock create on
+	// the same path leaves a stray session, terminal process, or config entry.
+	var host *manifest.GUIAttrs
+	success := false
+	defer func() {
+		if success {
+			return
+		}
+		_ = e.Tmux.KillSession(name)
+		if host != nil && host.PID != 0 {
+			if proc, err := os.FindProcess(host.PID); err == nil {
+				_ = proc.Kill()
+			}
+		}
+		if terminal != "" {
+			delete(e.Config.Docks, name)
+			if e.configPath != "" {
+				_ = config.Save(e.configPath, e.Config)
+			}
+		}
+	}()
+
 	// Save terminal override to config if set.
 	if terminal != "" {
 		e.Config.Docks[name] = config.DockConfig{Terminal: terminal}
@@ -108,7 +131,6 @@ func (e *Engine) DockNew(name, path, worktreeDir, agent, terminal string) error 
 	}
 
 	// Record host terminal if configured.
-	var host *manifest.GUIAttrs
 	if terminal != "" {
 		host = &manifest.GUIAttrs{AppCommand: terminal}
 		// Attempt to launch the terminal. Best-effort — don't fail dock creation.
@@ -117,7 +139,7 @@ func (e *Engine) DockNew(name, path, worktreeDir, agent, terminal string) error 
 		}
 	}
 
-	return e.withManifest(func(m *manifest.Manifest) error {
+	if err := e.withManifest(func(m *manifest.Manifest) error {
 		if err := validateDockCheckoutPath(m, path); err != nil {
 			return err
 		}
@@ -128,7 +150,11 @@ func (e *Engine) DockNew(name, path, worktreeDir, agent, terminal string) error 
 			Agent:       agent,
 			Host:        host,
 		})
-	})
+	}); err != nil {
+		return err
+	}
+	success = true
+	return nil
 }
 
 func validateDockCheckoutPath(m *manifest.Manifest, path string) error {

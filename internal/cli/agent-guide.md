@@ -657,7 +657,7 @@ bay pwd                → show current bay context
 bay recover            → reconstruct state after reboot
 ```
 
-#### `bay edit [bay] [--dock|--bay] [--editor CMD] [--window|--split h|v]`
+#### `bay edit [bay] [--dock] [--editor CMD] [--window|--split h|v]`
 
 Open the bay's root directory in an editor. Use the editor's
 file browser to navigate within the project. To edit individual files,
