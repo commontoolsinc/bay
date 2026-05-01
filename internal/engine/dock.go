@@ -101,6 +101,8 @@ func (e *Engine) DockNew(name, path, worktreeDir, agent, terminal string) error 
 	// fails — otherwise a losing race against a concurrent dock create on
 	// the same path leaves a stray session, terminal process, or config entry.
 	var host *manifest.GUIAttrs
+	var previousDockCfg config.DockConfig
+	hadDockCfg := false
 	success := false
 	defer func() {
 		if success {
@@ -113,7 +115,11 @@ func (e *Engine) DockNew(name, path, worktreeDir, agent, terminal string) error 
 			}
 		}
 		if terminal != "" {
-			delete(e.Config.Docks, name)
+			if hadDockCfg {
+				e.Config.Docks[name] = previousDockCfg
+			} else {
+				delete(e.Config.Docks, name)
+			}
 			if e.configPath != "" {
 				_ = config.Save(e.configPath, e.Config)
 			}
@@ -122,6 +128,7 @@ func (e *Engine) DockNew(name, path, worktreeDir, agent, terminal string) error 
 
 	// Save terminal override to config if set.
 	if terminal != "" {
+		previousDockCfg, hadDockCfg = e.Config.Docks[name]
 		e.Config.Docks[name] = config.DockConfig{Terminal: terminal}
 		if e.configPath != "" {
 			if err := config.Save(e.configPath, e.Config); err != nil {

@@ -239,6 +239,56 @@ func TestDockNew_DuplicateCheckoutHasNoSideEffects(t *testing.T) {
 	}
 }
 
+func TestDockNew_RollbackRestoresExistingConfig(t *testing.T) {
+	eng, dir := testEngine(t)
+	eng.configPath = filepath.Join(dir, "config.toml")
+	original := config.DockConfig{Agent: "codex", Terminal: "iterm2"}
+	eng.Config.Docks["research"] = original
+	if err := config.Save(eng.configPath, eng.Config); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	researchDir := makeCheckout(t, filepath.Join(dir, "repos", "research"))
+
+	oldLaunchTerminal := launchTerminal
+	launchTerminal = func(terminal, session string) (int, error) {
+		m, err := eng.LoadManifest()
+		if err != nil {
+			t.Fatalf("LoadManifest: %v", err)
+		}
+		m.Docks = append(m.Docks, manifest.Dock{Name: "other", Path: researchDir})
+		if err := manifest.Save(eng.manifestPath, m); err != nil {
+			t.Fatalf("SaveManifest: %v", err)
+		}
+		return 0, nil
+	}
+	defer func() { launchTerminal = oldLaunchTerminal }()
+
+	err := eng.DockNew("research", researchDir, "", "claude", "ghostty")
+	if err == nil {
+		t.Fatal("expected error for duplicate checkout introduced before manifest save")
+	}
+	if !strings.Contains(err.Error(), "already owned by dock") {
+		t.Fatalf("error = %q, want duplicate checkout message", err)
+	}
+
+	got, ok := eng.Config.Docks["research"]
+	if !ok || got.Agent != original.Agent || got.Terminal != original.Terminal {
+		t.Fatalf("in-memory dock config = %#v, want %#v", got, original)
+	}
+	saved, err := config.Load(eng.configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	got, ok = saved.Docks["research"]
+	if !ok || got.Agent != original.Agent || got.Terminal != original.Terminal {
+		t.Fatalf("persisted dock config = %#v, want %#v", got, original)
+	}
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if exists, _ := mockTmux.HasSession("research"); exists {
+		t.Error("failed dock creation should roll back tmux session")
+	}
+}
+
 func TestDockNew_DefaultConfigSavesTerminal(t *testing.T) {
 	dir := t.TempDir()
 	checkout := makeCheckout(t, filepath.Join(dir, "repos", "research"))
