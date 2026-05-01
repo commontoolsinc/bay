@@ -522,6 +522,13 @@ func migrateV5ToV6(m *Manifest) error {
 			dock.Path = repo.Path
 			dock.WorktreeDir = repo.WorktreeDir
 		}
+		for j := range dock.Workspaces {
+			ws := &dock.Workspaces[j]
+			if ws.Worktree == nil || ws.Worktree.Repo == "" || ws.Worktree.Repo == dock.Repo {
+				continue
+			}
+			return fmt.Errorf("cannot migrate manifest v5 to v6: cross-repo bay %s:%s uses repo %q but dock uses repo %q; close or recreate the bay in a dock for repo %q before upgrading", dock.Name, ws.ID, ws.Worktree.Repo, dock.Repo, ws.Worktree.Repo)
+		}
 		dock.Repo = ""
 		for j := range dock.Workspaces {
 			if dock.Workspaces[j].Worktree != nil {

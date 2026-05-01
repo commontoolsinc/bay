@@ -970,6 +970,39 @@ func TestParse_MigratesV5RejectsSharedRepo(t *testing.T) {
 	}
 }
 
+func TestParse_MigratesV5RejectsCrossRepoBay(t *testing.T) {
+	data := []byte(`{
+		"version": 5,
+		"repos": [
+			{"name": "labs", "path": "/p/labs"},
+			{"name": "other", "path": "/p/other"}
+		],
+		"docks": [
+			{
+				"name": "dev",
+				"repo": "labs",
+				"bays": [
+					{
+						"id": "w1",
+						"name": "api",
+						"type": "worktree",
+						"path": "/p/other-worktrees/w1",
+						"worktree": {"repo": "other", "branch": "fix/api"}
+					}
+				]
+			}
+		]
+	}`)
+
+	_, err := Parse(data)
+	if err == nil {
+		t.Fatal("expected cross-repo bay migration error")
+	}
+	if !strings.Contains(err.Error(), "cross-repo bay dev:w1 uses repo \"other\" but dock uses repo \"labs\"") {
+		t.Fatalf("error = %q, want cross-repo bay message", err)
+	}
+}
+
 func TestParse_MigratesV2StatusDoneToMerged(t *testing.T) {
 	data := []byte(`{
 		"version": 2,
