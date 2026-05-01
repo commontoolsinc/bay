@@ -284,8 +284,9 @@ func newSurfaceRestoreCmd() *cobra.Command {
 		Long: `Restore the most recently closed surface in the current dock.
 
 bay keeps a per-dock LRU queue of the last 10 bay-initiated closes
-(for up to 1 hour). 'bay sf restore' (or Option+Z in tmux) pops the
-most recent entry and recreates the surface in its parent bay.
+and sync-discovered pane exits (for up to 1 hour). 'bay sf restore'
+(or Option+Z in tmux) pops the most recent entry and recreates the
+surface in its parent bay.
 
   bay sf restore             restore the most recent close
   bay sf restore --list      show the queue`,
@@ -317,6 +318,21 @@ func runSurfaceRestore(eng *engine.Engine, list bool) error {
 	dockName, _, err := resolveCurrentDock(eng)
 	if err != nil {
 		return err
+	}
+
+	entries, err := eng.ListClosedEntries(dockName)
+	if err != nil {
+		return err
+	}
+	// Sync so panes the user just exited (Ctrl-D, kill-pane) are stripped
+	// and can be discovered for immediate Option+Z. Keep entries from this
+	// sync below the queue entries bay already knew about: a sync-discovered
+	// exit has no reliable close timestamp, so it must not jump known closes.
+	discovered := eng.SyncAllForRestore()
+	if len(discovered) > 0 {
+		if err := eng.MoveClosedEntriesBelowKnown(dockName, discovered, entries); err != nil {
+			return err
+		}
 	}
 
 	if list {

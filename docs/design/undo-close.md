@@ -34,7 +34,8 @@ off with a single keystroke.
 
 ### Scope of "close" (v1)
 
-Only bay-initiated closes are eligible for undo:
+Bay-initiated closes and sync-discovered tmux surface exits are
+eligible for undo:
 
 - `bay sf close` / Option+W on a surface (workspace survives) →
   surface entry
@@ -51,14 +52,16 @@ Only bay-initiated closes are eligible for undo:
 - `bay ws close` from the CLI → workspace entry
 - Sync-finalize cascade (`WsClose` fires after the grace window,
   succeeds) → workspace entry
+- Sync-detected pane/window exits (`Ctrl-D`, `kill-pane`,
+  `kill-window`) → surface entry when bay strips the dead surface.
+  `bay sf restore` and `bay sf restore --list` run a sync first, so
+  an immediate Option+Z can discover and restore the closed pane.
+  If the queue already had a known top entry before that sync, bay
+  promotes that entry back to the top so older undiscovered exits
+  cannot jump ahead of it.
 
 Out of scope for v1:
 
-- tmux-native kills (`Ctrl-B x`, `kill-pane`, `kill-window`). Bay
-  detects these via sync; surfaces get stripped and orphan-hygiene
-  handles any resulting empty workspace. Undo-close doesn't cover
-  them — orphan-hygiene is the mitigation for that class of
-  accident.
 - `bay dock close` / dock teardown — recording the full dock is
   out of proportion with the muscle-memory use case, and the
   queue is per-dock so the queue itself goes with the dock.
