@@ -14,7 +14,7 @@ import (
 )
 
 func newEditCmd() *cobra.Command {
-	var dockScope, bayScope bool
+	var dockScope bool
 	var editorFlag, splitDir string
 	var window, pane bool
 
@@ -64,7 +64,6 @@ Editor resolution order:
 	}
 
 	cmd.Flags().BoolVar(&dockScope, "dock", false, "dock-scoped editor (all bays)")
-	cmd.Flags().BoolVar(&bayScope, "bay", false, "bay-scoped editor (default)")
 	cmd.Flags().StringVar(&editorFlag, "editor", "", "editor command (overrides config for this invocation)")
 	cmd.Flags().StringVar(&splitDir, "split", "", "split direction (h or v)")
 	cmd.Flags().BoolVar(&pane, "pane", false, "split into current window (default; shorthand for --split v)")

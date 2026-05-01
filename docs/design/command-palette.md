@@ -169,7 +169,7 @@ them.
 - **Parametric workspace creates** (`--branch`, `--dir`, named
   workspaces, `--description` at create time) — drop to shell for
   these edge cases.
-- **Dock / repo management** (`dock new`, `repo add`, etc.) — shell
+- **Dock management** (`dock new`, `dock close`, etc.) — shell
   territory. Too many flags for a palette flow.
 - **Set default editor / start or stop monitor / show config path /
   clear description** — too niche.

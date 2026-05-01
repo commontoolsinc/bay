@@ -16,7 +16,7 @@ func newTreeCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "tree",
-		Short: "Show full hierarchy (repos, docks, bays, surfaces)",
+		Short: "Show full hierarchy (docks, bays, surfaces)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
@@ -52,15 +52,13 @@ func newTreeCmd() *cobra.Command {
 
 			// Print advice for stale or missing bays visible in the output.
 			hasStale, hasMissing := false, false
-			for _, repo := range view.Repos {
-				for _, d := range repo.Docks {
-					for _, ws := range d.Workspaces {
-						if ws.SyncStatus == manifest.SyncStatusStale {
-							hasStale = true
-						}
-						if ws.SyncStatus == manifest.SyncStatusMissing {
-							hasMissing = true
-						}
+			for _, d := range view.Docks {
+				for _, ws := range d.Workspaces {
+					if ws.SyncStatus == manifest.SyncStatusStale {
+						hasStale = true
+					}
+					if ws.SyncStatus == manifest.SyncStatusMissing {
+						hasMissing = true
 					}
 				}
 			}

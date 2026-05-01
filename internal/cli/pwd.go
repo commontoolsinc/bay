@@ -47,9 +47,6 @@ func newPwdCmd() *cobra.Command {
 
 func formatPWD(ctx *engine.Context) string {
 	parts := make([]string, 0, 5)
-	if ctx.Repo != "" {
-		parts = append(parts, labelValue("repo", ctx.Repo))
-	}
 	if ctx.Dock != "" {
 		parts = append(parts, labelValue("dock", ctx.Dock))
 	}

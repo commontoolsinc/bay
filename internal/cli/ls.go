@@ -10,9 +10,10 @@ func filterDirtyWorkspaces(docks []engine.DockInfo) []engine.DockInfo {
 	var result []engine.DockInfo
 	for _, d := range docks {
 		filtered := engine.DockInfo{
-			Name:  d.Name,
-			Agent: d.Agent,
-			Repo:  d.Repo,
+			Name:        d.Name,
+			Agent:       d.Agent,
+			Path:        d.Path,
+			WorktreeDir: d.WorktreeDir,
 		}
 		for _, ws := range d.Workspaces {
 			if ws.Dirty {
@@ -41,11 +42,9 @@ func inferListFocus(eng *engine.Engine) ListFocus {
 	}
 	switch {
 	case ctx.WorkspaceID != "":
-		return ListFocus{Kind: FocusWorkspace, Repo: ctx.Repo, Dock: ctx.Dock, WorkspaceID: ctx.WorkspaceID}
+		return ListFocus{Kind: FocusWorkspace, Dock: ctx.Dock, WorkspaceID: ctx.WorkspaceID}
 	case ctx.Dock != "":
-		return ListFocus{Kind: FocusDock, Repo: ctx.Repo, Dock: ctx.Dock}
-	case ctx.Repo != "":
-		return ListFocus{Kind: FocusRepo, Repo: ctx.Repo}
+		return ListFocus{Kind: FocusDock, Dock: ctx.Dock}
 	default:
 		return ListFocus{Kind: FocusAll}
 	}

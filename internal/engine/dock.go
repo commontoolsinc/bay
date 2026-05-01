@@ -4,25 +4,20 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
-// RepoInfo holds summary information about a repo.
-type RepoInfo struct {
-	Name        string `json:"name"`
-	Path        string `json:"path"`
-	WorktreeDir string `json:"worktree_dir"`
-}
-
 // DockInfo holds summary information about a dock.
 type DockInfo struct {
-	Name       string          `json:"name"`
-	Agent      string          `json:"agent,omitempty"`
-	Repo       string          `json:"repo,omitempty"`
-	Surfaces   []SurfaceInfo   `json:"surfaces,omitempty"` // dock-level surfaces
-	Workspaces []WorkspaceInfo `json:"bays"`
+	Name        string          `json:"name"`
+	Agent       string          `json:"agent,omitempty"`
+	Path        string          `json:"path,omitempty"`
+	WorktreeDir string          `json:"worktree_dir,omitempty"`
+	Surfaces    []SurfaceInfo   `json:"surfaces,omitempty"` // dock-level surfaces
+	Workspaces  []WorkspaceInfo `json:"bays"`
 }
 
 // SurfaceInfo holds runtime information about a tracked surface.
@@ -57,15 +52,37 @@ type WorkspaceInfo struct {
 }
 
 // DockNew creates a new dock configuration and tmux session.
-func (e *Engine) DockNew(name, repo, agent, terminal string) error {
+func (e *Engine) DockNew(name, path, worktreeDir, agent, terminal string) error {
 	if err := ValidateName(name); err != nil {
 		return err
+	}
+	if path == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("cannot determine current directory")
+		}
+		path = cwd
+	}
+	path = config.NormalizePath(path)
+	if worktreeDir != "" {
+		worktreeDir = config.NormalizePath(worktreeDir)
 	}
 
 	if agent != "" {
 		if _, ok := e.Config.ResolveAgent(agent); !ok {
 			return fmt.Errorf("unknown agent %q", agent)
 		}
+	}
+
+	m, err := e.LoadManifest()
+	if err != nil {
+		return err
+	}
+	if m.FindDock(name) != nil {
+		return fmt.Errorf("dock %q already exists", name)
+	}
+	if err := validateDockCheckoutPath(m, path); err != nil {
+		return err
 	}
 
 	exists, err := e.Tmux.HasSession(name)
@@ -80,8 +97,38 @@ func (e *Engine) DockNew(name, repo, agent, terminal string) error {
 		return err
 	}
 
+	// Roll back tmux/terminal/config side effects if the manifest update
+	// fails — otherwise a losing race against a concurrent dock create on
+	// the same path leaves a stray session, terminal process, or config entry.
+	var host *manifest.GUIAttrs
+	var previousDockCfg config.DockConfig
+	hadDockCfg := false
+	success := false
+	defer func() {
+		if success {
+			return
+		}
+		_ = e.Tmux.KillSession(name)
+		if host != nil && host.PID != 0 {
+			if proc, err := os.FindProcess(host.PID); err == nil {
+				_ = proc.Kill()
+			}
+		}
+		if terminal != "" {
+			if hadDockCfg {
+				e.Config.Docks[name] = previousDockCfg
+			} else {
+				delete(e.Config.Docks, name)
+			}
+			if e.configPath != "" {
+				_ = config.Save(e.configPath, e.Config)
+			}
+		}
+	}()
+
 	// Save terminal override to config if set.
 	if terminal != "" {
+		previousDockCfg, hadDockCfg = e.Config.Docks[name]
 		e.Config.Docks[name] = config.DockConfig{Terminal: terminal}
 		if e.configPath != "" {
 			if err := config.Save(e.configPath, e.Config); err != nil {
@@ -91,7 +138,6 @@ func (e *Engine) DockNew(name, repo, agent, terminal string) error {
 	}
 
 	// Record host terminal if configured.
-	var host *manifest.GUIAttrs
 	if terminal != "" {
 		host = &manifest.GUIAttrs{AppCommand: terminal}
 		// Attempt to launch the terminal. Best-effort — don't fail dock creation.
@@ -100,23 +146,56 @@ func (e *Engine) DockNew(name, repo, agent, terminal string) error {
 		}
 	}
 
-	return e.withManifest(func(m *manifest.Manifest) error {
-		// Validate repo reference against manifest repos.
-		if repo != "" {
-			if m.FindRepo(repo) == nil {
-				return fmt.Errorf("unknown repo %q", repo)
-			}
-		}
-		if m.FindDock(name) != nil {
-			return fmt.Errorf("dock %q already exists", name)
+	if err := e.withManifest(func(m *manifest.Manifest) error {
+		if err := validateDockCheckoutPath(m, path); err != nil {
+			return err
 		}
 		return m.AddDock(manifest.Dock{
-			Name:  name,
-			Repo:  repo,
-			Agent: agent,
-			Host:  host,
+			Name:        name,
+			Path:        path,
+			WorktreeDir: worktreeDir,
+			Agent:       agent,
+			Host:        host,
 		})
-	})
+	}); err != nil {
+		return err
+	}
+	success = true
+	return nil
+}
+
+func validateDockCheckoutPath(m *manifest.Manifest, path string) error {
+	expanded := config.ExpandPath(path)
+	info, err := os.Stat(expanded)
+	if err != nil {
+		return fmt.Errorf("checkout path %q: %w", expanded, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("checkout path %q is not a directory", expanded)
+	}
+	gitPath := filepath.Join(expanded, ".git")
+	gitInfo, err := os.Stat(gitPath)
+	if err != nil {
+		return fmt.Errorf("checkout path %q is not a main git checkout (missing .git directory)", expanded)
+	}
+	if !gitInfo.IsDir() {
+		return fmt.Errorf("checkout path %q is a git worktree; create docks from the main checkout", expanded)
+	}
+
+	canonical := config.CanonicalPath(expanded)
+	for i := range m.Docks {
+		dock := &m.Docks[i]
+		if dock.Path != "" && config.CanonicalPath(dock.Path) == canonical {
+			return fmt.Errorf("checkout path %q is already owned by dock %q", expanded, dock.Name)
+		}
+		for j := range dock.Workspaces {
+			ws := &dock.Workspaces[j]
+			if ws.Path != "" && config.CanonicalPath(ws.Path) == canonical {
+				return fmt.Errorf("checkout path %q is already registered as bay %s:%s", expanded, dock.Name, ws.ID)
+			}
+		}
+	}
+	return nil
 }
 
 // launchTerminal launches a terminal app attached to a tmux session.
@@ -251,9 +330,10 @@ func (e *Engine) List() ([]DockInfo, error) {
 		dock := &m.Docks[i]
 		agent := e.resolvedDockAgent(dock.Name, m)
 		info := DockInfo{
-			Name:  dock.Name,
-			Agent: agent,
-			Repo:  dock.Repo,
+			Name:        dock.Name,
+			Agent:       agent,
+			Path:        dock.Path,
+			WorktreeDir: dock.EffectiveWorktreeDir(),
 		}
 		waitingWindows, _ := e.Tmux.WaitingOrBellWindowIDs(dock.Name)
 

@@ -172,7 +172,7 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 			Title:   "Open editor (bay)",
 			Section: palette.SectionCreateSurface,
 			Needs:   palette.ScopeInWorkspace,
-			Hotkey:  h.Lookup("bay edit --bay"),
+			Hotkey:  h.Lookup("bay edit"),
 			Action: func() (string, error) {
 				return "", runEditCreate(env.Engine, "self", "", split)
 			},
@@ -291,7 +291,7 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 				if err != nil {
 					return "", err
 				}
-				text := FormatWorkspaceShow(env.Ctx.Repo, env.Ctx.Dock, info, false)
+				text := FormatWorkspaceShow(env.Ctx.Dock, info, false)
 				palette.Notice(env.In, env.Out, text)
 				return "", nil
 			},

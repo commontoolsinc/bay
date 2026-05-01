@@ -25,9 +25,9 @@ func testEngine(t *testing.T) (*Engine, string) {
 		Docks: map[string]config.DockConfig{},
 	}
 
-	// Create repo directory
+	// Create checkout directory
 	repoDir := filepath.Join(dir, "repos", "labs")
-	os.MkdirAll(repoDir, 0o755)
+	makeCheckout(t, repoDir)
 
 	configPath := filepath.Join(dir, "config.toml")
 	manifestPath := filepath.Join(dir, "manifest.json")
@@ -39,18 +39,23 @@ func testEngine(t *testing.T) (*Engine, string) {
 
 	eng := New(cfg, configPath, manifestPath, archivePath, mockTmux, mockGit)
 
-	// Set up repos and docks in the manifest (they now live there, not config).
+	// Set up docks in the manifest (they now own their checkout path).
 	manifest.Save(manifestPath, &manifest.Manifest{
 		Version: manifest.CurrentVersion,
-		Repos: []manifest.Repo{
-			{Name: "labs", Path: filepath.Join(dir, "repos", "labs")},
-		},
 		Docks: []manifest.Dock{
-			{Name: "labs", Repo: "labs", Agent: "claude", Workspaces: []manifest.Workspace{}},
+			{Name: "labs", Path: repoDir, Agent: "claude", Workspaces: []manifest.Workspace{}},
 		},
 	})
 
 	return eng, dir
+}
+
+func makeCheckout(t *testing.T, path string) string {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(path, ".git"), 0o755); err != nil {
+		t.Fatalf("creating checkout %s: %v", path, err)
+	}
+	return path
 }
 
 func TestValidateName(t *testing.T) {
@@ -154,9 +159,10 @@ func TestAbbreviateBranch(t *testing.T) {
 }
 
 func TestDockNew(t *testing.T) {
-	eng, _ := testEngine(t)
+	eng, dir := testEngine(t)
+	researchDir := makeCheckout(t, filepath.Join(dir, "repos", "research"))
 
-	err := eng.DockNew("research", "labs", "claude", "")
+	err := eng.DockNew("research", researchDir, "", "claude", "")
 	if err != nil {
 		t.Fatalf("DockNew failed: %v", err)
 	}
@@ -177,10 +183,10 @@ func TestDockNew(t *testing.T) {
 }
 
 func TestDockNew_DuplicateName(t *testing.T) {
-	eng, _ := testEngine(t)
+	eng, dir := testEngine(t)
 
 	// labs already exists in config
-	err := eng.DockNew("labs", "labs", "claude", "")
+	err := eng.DockNew("labs", filepath.Join(dir, "repos", "labs"), "", "claude", "")
 	if err == nil {
 		t.Error("expected error for duplicate dock name")
 	}
@@ -189,9 +195,134 @@ func TestDockNew_DuplicateName(t *testing.T) {
 func TestDockNew_InvalidName(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	err := eng.DockNew("bad name", "", "", "")
+	err := eng.DockNew("bad name", "", "", "", "")
 	if err == nil {
 		t.Error("expected error for invalid name")
+	}
+}
+
+func TestDockNew_DuplicateCheckoutHasNoSideEffects(t *testing.T) {
+	eng, dir := testEngine(t)
+	eng.configPath = filepath.Join(dir, "config.toml")
+	if err := config.Save(eng.configPath, eng.Config); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	oldLaunchTerminal := launchTerminal
+	launchTerminal = func(terminal, session string) (int, error) {
+		t.Fatalf("launchTerminal should not run for invalid dock checkout")
+		return 0, nil
+	}
+	defer func() { launchTerminal = oldLaunchTerminal }()
+
+	err := eng.DockNew("research", filepath.Join(dir, "repos", "labs"), "", "claude", "ghostty")
+	if err == nil {
+		t.Fatal("expected error for duplicate checkout path")
+	}
+	if !strings.Contains(err.Error(), "already owned by dock") {
+		t.Fatalf("error = %q, want duplicate checkout message", err)
+	}
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if mockTmux.HasSessionCalled("research") {
+		t.Error("invalid dock checkout should not create a tmux session")
+	}
+	if _, ok := eng.Config.Docks["research"]; ok {
+		t.Error("invalid dock checkout should not mutate in-memory dock config")
+	}
+	saved, err := config.Load(eng.configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if _, ok := saved.Docks["research"]; ok {
+		t.Error("invalid dock checkout should not persist dock config")
+	}
+}
+
+func TestDockNew_RollbackRestoresExistingConfig(t *testing.T) {
+	eng, dir := testEngine(t)
+	eng.configPath = filepath.Join(dir, "config.toml")
+	original := config.DockConfig{Agent: "codex", Terminal: "iterm2"}
+	eng.Config.Docks["research"] = original
+	if err := config.Save(eng.configPath, eng.Config); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	researchDir := makeCheckout(t, filepath.Join(dir, "repos", "research"))
+
+	oldLaunchTerminal := launchTerminal
+	launchTerminal = func(terminal, session string) (int, error) {
+		m, err := eng.LoadManifest()
+		if err != nil {
+			t.Fatalf("LoadManifest: %v", err)
+		}
+		m.Docks = append(m.Docks, manifest.Dock{Name: "other", Path: researchDir})
+		if err := manifest.Save(eng.manifestPath, m); err != nil {
+			t.Fatalf("SaveManifest: %v", err)
+		}
+		return 0, nil
+	}
+	defer func() { launchTerminal = oldLaunchTerminal }()
+
+	err := eng.DockNew("research", researchDir, "", "claude", "ghostty")
+	if err == nil {
+		t.Fatal("expected error for duplicate checkout introduced before manifest save")
+	}
+	if !strings.Contains(err.Error(), "already owned by dock") {
+		t.Fatalf("error = %q, want duplicate checkout message", err)
+	}
+
+	got, ok := eng.Config.Docks["research"]
+	if !ok || got.Agent != original.Agent || got.Terminal != original.Terminal {
+		t.Fatalf("in-memory dock config = %#v, want %#v", got, original)
+	}
+	saved, err := config.Load(eng.configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	got, ok = saved.Docks["research"]
+	if !ok || got.Agent != original.Agent || got.Terminal != original.Terminal {
+		t.Fatalf("persisted dock config = %#v, want %#v", got, original)
+	}
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if exists, _ := mockTmux.HasSession("research"); exists {
+		t.Error("failed dock creation should roll back tmux session")
+	}
+}
+
+func TestDockNew_DefaultConfigSavesTerminal(t *testing.T) {
+	dir := t.TempDir()
+	checkout := makeCheckout(t, filepath.Join(dir, "repos", "research"))
+	cfg := config.DefaultConfig()
+	eng := New(
+		cfg,
+		filepath.Join(dir, "config.toml"),
+		filepath.Join(dir, "manifest.json"),
+		filepath.Join(dir, "archive.json"),
+		tmux.NewMock(),
+		git.NewMock(),
+	)
+
+	oldLaunchTerminal := launchTerminal
+	launchTerminal = func(terminal, session string) (int, error) {
+		if terminal != "ghostty" || session != "research" {
+			t.Fatalf("launchTerminal(%q, %q)", terminal, session)
+		}
+		return 4242, nil
+	}
+	defer func() { launchTerminal = oldLaunchTerminal }()
+
+	if err := eng.DockNew("research", checkout, "", "", "ghostty"); err != nil {
+		t.Fatalf("DockNew: %v", err)
+	}
+	if got := eng.Config.Docks["research"].Terminal; got != "ghostty" {
+		t.Errorf("in-memory terminal = %q, want ghostty", got)
+	}
+	saved, err := config.Load(eng.configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if got := saved.Docks["research"].Terminal; got != "ghostty" {
+		t.Errorf("persisted terminal = %q, want ghostty", got)
 	}
 }
 
@@ -199,6 +330,7 @@ func TestDockNew_LaunchesHostTerminal(t *testing.T) {
 	eng, dir := testEngine(t)
 	eng.configPath = filepath.Join(dir, "config.toml")
 	config.Save(eng.configPath, eng.Config)
+	researchDir := makeCheckout(t, filepath.Join(dir, "repos", "research"))
 
 	oldLaunchTerminal := launchTerminal
 	launchTerminal = func(terminal, session string) (int, error) {
@@ -210,7 +342,7 @@ func TestDockNew_LaunchesHostTerminal(t *testing.T) {
 	defer func() { launchTerminal = oldLaunchTerminal }()
 
 	// Pass terminal name directly to DockNew.
-	err := eng.DockNew("research", "labs", "claude", "ghostty")
+	err := eng.DockNew("research", researchDir, "", "claude", "ghostty")
 	if err != nil {
 		t.Fatalf("DockNew: %v", err)
 	}
@@ -1207,7 +1339,7 @@ func withZeroGrace() func() {
 	return func() { orphanGraceSeconds = prev }
 }
 
-// Regression: SurfaceClose, WsClose, DockClose, and RepoRemove must
+// Regression: SurfaceClose, WsClose, and DockClose must
 // persist their manifest mutations BEFORE issuing any tmux kill, so that
 // bay invoked from inside a pane being killed doesn't leave the manifest
 // half-updated when tmux SIGHUPs the process. The hook on the mock fires
@@ -1369,32 +1501,6 @@ func TestDockClose_NonForceFailure_KillsAlreadyRemovedWorkspaceWindows(t *testin
 		if c.Method == "KillSession" {
 			t.Errorf("KillSession called on non-force partial failure: %v", c)
 		}
-	}
-}
-
-func TestRepoRemove_PersistsManifestBeforeKill(t *testing.T) {
-	eng, _ := testEngine(t)
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
-		t.Fatalf("WsNew: %v", err)
-	}
-
-	mockTmux := eng.Tmux.(*tmux.Mock)
-	mockTmux.OnKill = func(method, target string) {
-		m, err := manifest.Load(eng.manifestPath)
-		if err != nil {
-			t.Errorf("loading manifest in kill hook: %v", err)
-			return
-		}
-		if m.FindRepo("labs") != nil {
-			t.Errorf("manifest still references repo 'labs' at the moment of %s(%s) — kill happened before manifest update", method, target)
-		}
-		if m.FindDock("labs") != nil {
-			t.Errorf("manifest still references dock 'labs' at the moment of %s(%s) — kill happened before manifest update", method, target)
-		}
-	}
-
-	if err := eng.RepoRemove("labs", true); err != nil {
-		t.Fatalf("RepoRemove: %v", err)
 	}
 }
 
@@ -1640,11 +1746,12 @@ func TestDockNew_SavesConfig(t *testing.T) {
 	// Regression: DockNew modified config in memory but didn't save to disk
 	eng, dir := testEngine(t)
 	eng.configPath = filepath.Join(dir, "config.toml")
+	researchDir := makeCheckout(t, filepath.Join(dir, "repos", "research"))
 
 	// Save initial config so there's a file to overwrite
 	config.Save(eng.configPath, eng.Config)
 
-	eng.DockNew("research", "labs", "claude", "")
+	eng.DockNew("research", researchDir, "", "claude", "")
 
 	// Verify dock in manifest
 	m, _ := eng.LoadManifest()
@@ -1958,158 +2065,9 @@ func TestWsNew_DuplicateDisplayName(t *testing.T) {
 	}
 }
 
-func TestRepoAdd_Local(t *testing.T) {
-	eng, dir := testEngine(t)
-	eng.configPath = filepath.Join(dir, "config.toml")
-	config.Save(eng.configPath, eng.Config)
+// --- DockInit tests ---
 
-	repoDir := filepath.Join(dir, "new-repo")
-	os.MkdirAll(repoDir, 0o755)
-
-	err := eng.RepoAdd("newrepo", repoDir, "", "", false)
-	if err != nil {
-		t.Fatalf("RepoAdd failed: %v", err)
-	}
-
-	// Verify repo added to manifest
-	m, _ := eng.LoadManifest()
-	repo := m.FindRepo("newrepo")
-	if repo == nil {
-		t.Error("repo not added to manifest")
-	}
-
-	// Path should be normalized (absolute)
-	if repo != nil {
-		savedPath := repo.Path
-		if savedPath != repoDir && savedPath != config.NormalizePath(repoDir) {
-			t.Errorf("saved path = %q, want normalized form of %q", savedPath, repoDir)
-		}
-	}
-}
-
-func TestRepoAdd_CloneURL(t *testing.T) {
-	eng, dir := testEngine(t)
-	eng.configPath = filepath.Join(dir, "config.toml")
-	config.Save(eng.configPath, eng.Config)
-
-	destPath := filepath.Join(dir, "cloned-repo")
-	// Path must NOT exist for clone
-	err := eng.RepoAdd("cloned", destPath, "", "git@github.com:org/repo.git", false)
-	if err != nil {
-		t.Fatalf("RepoAdd with clone failed: %v", err)
-	}
-
-	// Verify Clone was called
-	mockGit := eng.Git.(*git.Mock)
-	cloneCalls := mockGit.Calls("Clone")
-	if len(cloneCalls) != 1 {
-		t.Fatalf("expected 1 Clone call, got %d", len(cloneCalls))
-	}
-	if cloneCalls[0].Args[0] != "git@github.com:org/repo.git" {
-		t.Errorf("clone URL = %q", cloneCalls[0].Args[0])
-	}
-}
-
-func TestRepoAdd_CloneIntoExistingDir(t *testing.T) {
-	eng, dir := testEngine(t)
-
-	existingDir := filepath.Join(dir, "already-here")
-	os.MkdirAll(existingDir, 0o755)
-
-	err := eng.RepoAdd("bad", existingDir, "", "git@github.com:org/repo.git", false)
-	if err == nil {
-		t.Fatal("expected error cloning into existing directory")
-	}
-	if !strings.Contains(err.Error(), "already exists") {
-		t.Errorf("error = %q, want 'already exists' message", err)
-	}
-}
-
-func TestRepoRemove_InUse(t *testing.T) {
-	eng, _ := testEngine(t)
-
-	err := eng.RepoRemove("labs", false)
-	if err == nil {
-		t.Fatal("expected error removing repo in use by dock")
-	}
-	inUse, ok := err.(*RepoInUseError)
-	if !ok {
-		t.Fatalf("expected *RepoInUseError, got %T: %v", err, err)
-	}
-	if inUse.RepoName != "labs" {
-		t.Errorf("RepoName = %q, want labs", inUse.RepoName)
-	}
-	if len(inUse.AffectedDocks) != 1 || inUse.AffectedDocks[0].Name != "labs" {
-		t.Errorf("AffectedDocks = %v, want [{labs}]", inUse.AffectedDocks)
-	}
-}
-
-func TestRepoRemove_Force(t *testing.T) {
-	eng, dir := testEngine(t)
-	eng.configPath = filepath.Join(dir, "config.toml")
-	config.Save(eng.configPath, eng.Config)
-
-	// labs repo is used by labs dock — force should remove both
-	err := eng.RepoRemove("labs", true)
-	if err != nil {
-		t.Fatalf("force remove failed: %v", err)
-	}
-	m, _ := eng.LoadManifest()
-	if m.FindRepo("labs") != nil {
-		t.Error("repo should be removed from manifest")
-	}
-	if m.FindDock("labs") != nil {
-		t.Error("dock should be removed from manifest with --force")
-	}
-}
-
-func TestRepoAdd_NotGitRepo(t *testing.T) {
-	eng, dir := testEngine(t)
-	eng.configPath = filepath.Join(dir, "config.toml")
-	config.Save(eng.configPath, eng.Config)
-
-	plainDir := filepath.Join(dir, "not-a-repo")
-	os.MkdirAll(plainDir, 0o755)
-
-	// With force, should succeed even if not a git repo
-	err := eng.RepoAdd("plain", plainDir, "", "", true)
-	if err != nil {
-		t.Fatalf("RepoAdd with --force should succeed: %v", err)
-	}
-	m, _ := eng.LoadManifest()
-	if m.FindRepo("plain") == nil {
-		t.Error("repo should be added to manifest with --force")
-	}
-}
-
-func TestRepoAdd_DuplicateName(t *testing.T) {
-	eng, _ := testEngine(t)
-
-	// "labs" already exists in the test config
-	err := eng.RepoAdd("labs", "/some/path", "", "", false)
-	if err == nil {
-		t.Error("expected error for duplicate repo name")
-	}
-	if !strings.Contains(err.Error(), "already exists") {
-		t.Errorf("error = %q, want 'already exists'", err)
-	}
-}
-
-func TestRepoRemove_NotFound(t *testing.T) {
-	eng, _ := testEngine(t)
-
-	err := eng.RepoRemove("nonexistent", false)
-	if err == nil {
-		t.Error("expected error for nonexistent repo")
-	}
-	if !strings.Contains(err.Error(), "not found") {
-		t.Errorf("error = %q, want 'not found'", err)
-	}
-}
-
-// --- RepoInit tests ---
-
-func TestRepoInit_AppendsAwarenessLine(t *testing.T) {
+func TestDockInit_AppendsAwarenessLine(t *testing.T) {
 	eng, dir := testEngine(t)
 
 	repoDir := filepath.Join(dir, "repos", "labs")
@@ -2122,9 +2080,9 @@ func TestRepoInit_AppendsAwarenessLine(t *testing.T) {
 	projectFile := filepath.Join(repoDir, "CLAUDE.md")
 	os.WriteFile(projectFile, []byte("# My Project\n"), 0o644)
 
-	err := eng.RepoInit("labs")
+	err := eng.DockInit("labs")
 	if err != nil {
-		t.Fatalf("RepoInit: %v", err)
+		t.Fatalf("DockInit: %v", err)
 	}
 
 	data, _ := os.ReadFile(projectFile)
@@ -2133,7 +2091,7 @@ func TestRepoInit_AppendsAwarenessLine(t *testing.T) {
 	}
 }
 
-func TestRepoInit_IdempotentIfAlreadyPresent(t *testing.T) {
+func TestDockInit_IdempotentIfAlreadyPresent(t *testing.T) {
 	eng, dir := testEngine(t)
 
 	repoDir := filepath.Join(dir, "repos", "labs")
@@ -2145,9 +2103,9 @@ func TestRepoInit_IdempotentIfAlreadyPresent(t *testing.T) {
 	projectFile := filepath.Join(repoDir, "CLAUDE.md")
 	os.WriteFile(projectFile, []byte("# My Project\nRun bay agent-guide for commands.\n"), 0o644)
 
-	err := eng.RepoInit("labs")
+	err := eng.DockInit("labs")
 	if err != nil {
-		t.Fatalf("RepoInit: %v", err)
+		t.Fatalf("DockInit: %v", err)
 	}
 
 	// Should not double-append.
@@ -2157,14 +2115,14 @@ func TestRepoInit_IdempotentIfAlreadyPresent(t *testing.T) {
 	}
 }
 
-func TestRepoInit_CreatesWorktreeinclude(t *testing.T) {
+func TestDockInit_CreatesWorktreeinclude(t *testing.T) {
 	eng, dir := testEngine(t)
 
 	repoDir := filepath.Join(dir, "repos", "labs")
 
-	err := eng.RepoInit("labs")
+	err := eng.DockInit("labs")
 	if err != nil {
-		t.Fatalf("RepoInit: %v", err)
+		t.Fatalf("DockInit: %v", err)
 	}
 
 	wtInclude := filepath.Join(repoDir, ".worktreeinclude")
@@ -2173,16 +2131,16 @@ func TestRepoInit_CreatesWorktreeinclude(t *testing.T) {
 	}
 }
 
-func TestRepoInit_SkipsWorktreeincludeIfExists(t *testing.T) {
+func TestDockInit_SkipsWorktreeincludeIfExists(t *testing.T) {
 	eng, dir := testEngine(t)
 
 	repoDir := filepath.Join(dir, "repos", "labs")
 	wtInclude := filepath.Join(repoDir, ".worktreeinclude")
 	os.WriteFile(wtInclude, []byte(".env\n"), 0o644)
 
-	err := eng.RepoInit("labs")
+	err := eng.DockInit("labs")
 	if err != nil {
-		t.Fatalf("RepoInit: %v", err)
+		t.Fatalf("DockInit: %v", err)
 	}
 
 	// Existing content should be preserved.
@@ -2192,24 +2150,24 @@ func TestRepoInit_SkipsWorktreeincludeIfExists(t *testing.T) {
 	}
 }
 
-func TestRepoInit_UnknownRepo(t *testing.T) {
+func TestDockInit_UnknownDock(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	err := eng.RepoInit("nonexistent")
+	err := eng.DockInit("nonexistent")
 	if err == nil {
-		t.Error("expected error for unknown repo")
+		t.Error("expected error for unknown dock")
 	}
 }
 
-func TestRepoSync_CopiesToAllWorktrees(t *testing.T) {
+func TestDockSync_CopiesToAllWorktrees(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	m, _ := eng.LoadManifest()
-	repo := m.FindRepo("labs")
-	repoPath := repo.Path
-	wtDir := repo.EffectiveWorktreeDir()
+	dock := m.FindDock("labs")
+	repoPath := dock.Path
+	wtDir := dock.EffectiveWorktreeDir()
 
-	// Two worktree-shaped dirs under the worktree parent — RepoSync scans
+	// Two worktree-shaped dirs under the worktree parent — DockSync scans
 	// the parent and syncs every subdir reporting as a git repo.
 	os.MkdirAll(filepath.Join(wtDir, "w1"), 0o755)
 	os.MkdirAll(filepath.Join(wtDir, "w2"), 0o755)
@@ -2221,9 +2179,9 @@ func TestRepoSync_CopiesToAllWorktrees(t *testing.T) {
 	mockGit := eng.Git.(*git.Mock)
 	mockGit.SetExcludeMatches(repoPath, ".worktreeinclude", nil, []string{"local.env"})
 
-	count, err := eng.RepoSync("labs")
+	count, err := eng.DockSync("labs")
 	if err != nil {
-		t.Fatalf("RepoSync: %v", err)
+		t.Fatalf("DockSync: %v", err)
 	}
 	if count != 2 {
 		t.Errorf("count = %d, want 2", count)
@@ -2241,7 +2199,7 @@ func TestRepoSync_CopiesToAllWorktrees(t *testing.T) {
 	}
 
 	// Validation/expansion must happen once across the whole sync, not
-	// once per worktree — this is the contract RepoSync relies on to
+	// once per worktree — this is the contract DockSync relies on to
 	// avoid an N-fold git-subprocess fan-out.
 	if calls := mockGit.Calls("ExpandExcludes"); len(calls) != 1 {
 		t.Errorf("ExpandExcludes called %d times, want 1 (validate-once)", len(calls))
@@ -2253,8 +2211,8 @@ func TestWsClose_CleansEmptyWorktreeDir(t *testing.T) {
 
 	// Create a real worktree parent directory to simulate the filesystem
 	m, _ := eng.LoadManifest()
-	repo := m.FindRepo("labs")
-	wtDir := repo.EffectiveWorktreeDir()
+	dock := m.FindDock("labs")
+	wtDir := dock.EffectiveWorktreeDir()
 	wsDir := filepath.Join(wtDir, "w1")
 	os.MkdirAll(wsDir, 0o755)
 
@@ -2360,8 +2318,8 @@ func TestWsClose_KeepsNonEmptyWorktreeDir(t *testing.T) {
 
 	// Create the worktree parent dir with a subdirectory to simulate w2 still there
 	m, _ := eng.LoadManifest()
-	repo := m.FindRepo("labs")
-	wtDir := repo.EffectiveWorktreeDir()
+	dock := m.FindDock("labs")
+	wtDir := dock.EffectiveWorktreeDir()
 	os.MkdirAll(filepath.Join(wtDir, "w2"), 0o755)
 
 	// Close w1 — parent dir should remain because w2 dir exists
@@ -2430,10 +2388,11 @@ func TestPlaceholder_CreatedOnLastWsClose(t *testing.T) {
 
 func TestPlaceholder_NotCleanedIfUsed(t *testing.T) {
 	// If the user has typed in the placeholder, it should not be cleaned up.
-	eng, _ := testEngine(t)
+	eng, dir := testEngine(t)
+	researchDir := makeCheckout(t, filepath.Join(dir, "repos", "research"))
 
 	// Manually create session with placeholder (simulating DockNew)
-	eng.DockNew("research", "labs", "claude", "")
+	eng.DockNew("research", researchDir, "", "claude", "")
 
 	mockTmux := eng.Tmux.(*tmux.Mock)
 
@@ -2711,7 +2670,7 @@ func TestCurrentContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CurrentContext failed: %v", err)
 	}
-	if ctx.Repo != "labs" || ctx.Dock != "labs" || ctx.WorkspaceID != "w1" {
+	if ctx.Dock != "labs" || ctx.WorkspaceID != "w1" {
 		t.Fatalf("unexpected context: %#v", ctx)
 	}
 	if ctx.Surface != "agent" {
@@ -2722,7 +2681,7 @@ func TestCurrentContext(t *testing.T) {
 	}
 }
 
-func TestCurrentContext_OutsideTmuxStillResolvesRepoAndWorkspace(t *testing.T) {
+func TestCurrentContext_OutsideTmuxStillResolvesDockAndWorkspace(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	ws, err := eng.WsNew(WsNewOptions{Dock: "labs", Shell: true})
@@ -2743,7 +2702,7 @@ func TestCurrentContext_OutsideTmuxStillResolvesRepoAndWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CurrentContext failed: %v", err)
 	}
-	if ctx.Repo != "labs" || ctx.WorkspaceID != "w1" {
+	if ctx.Dock != "labs" || ctx.WorkspaceID != "w1" {
 		t.Fatalf("unexpected context: %#v", ctx)
 	}
 	if ctx.Surface != "" || ctx.SurfaceID != 0 {
@@ -3469,7 +3428,7 @@ func TestWsClose_RemoveWorktreeFailurePreservesWorkspaceState(t *testing.T) {
 	os.MkdirAll(ws.Path, 0o755)
 
 	m, _ := eng.LoadManifest()
-	repoPath := config.ExpandPath(m.FindRepo("labs").Path)
+	repoPath := config.ExpandPath(m.FindDock("labs").Path)
 	mockGit := eng.Git.(*git.Mock)
 	if err := mockGit.RemoveWorktree(repoPath, ws.Path, true); err != nil {
 		t.Fatalf("preparing RemoveWorktree failure: %v", err)
@@ -3494,7 +3453,7 @@ func TestWsClose_RemoveWorktreeFailurePreservesWorkspaceState(t *testing.T) {
 	}
 }
 
-func TestRepoRemove_ForceRemovesManifestDock(t *testing.T) {
+func TestDockClose_RemovesManifestDock(t *testing.T) {
 	eng, dir := testEngine(t)
 	eng.configPath = filepath.Join(dir, "config.toml")
 	if err := config.Save(eng.configPath, eng.Config); err != nil {
@@ -3507,8 +3466,8 @@ func TestRepoRemove_ForceRemovesManifestDock(t *testing.T) {
 	}
 	os.MkdirAll(ws.Path, 0o755)
 
-	if err := eng.RepoRemove("labs", true); err != nil {
-		t.Fatalf("RepoRemove failed: %v", err)
+	if err := eng.DockClose("labs", true); err != nil {
+		t.Fatalf("DockClose failed: %v", err)
 	}
 
 	m, err := eng.LoadManifest()

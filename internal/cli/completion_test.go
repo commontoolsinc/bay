@@ -68,7 +68,7 @@ func TestCompletionsRegistered(t *testing.T) {
 	withCompletions := []string{
 		"close", "show", "rename",
 		"go",
-		"dock close", "dock recover", "dock tree",
+		"dock close", "dock init", "dock recover", "dock tree",
 		// surface verbs (sf X form) — close/show/rename target
 		// existing surfaces by name.
 		"surface close", "surface show", "surface rename",
@@ -297,7 +297,7 @@ func TestDockFlagCompletions(t *testing.T) {
 	dir := t.TempDir()
 	m := manifest.New()
 	m.Docks = []manifest.Dock{
-		{Name: "labs", Repo: "labs"},
+		{Name: "labs", Path: "/p/labs"},
 		{Name: "research"},
 	}
 	origXDG := os.Getenv("XDG_DATA_HOME")
@@ -437,7 +437,7 @@ func TestDockCompletions(t *testing.T) {
 	// Write a manifest file with docks
 	m := manifest.New()
 	m.Docks = []manifest.Dock{
-		{Name: "dev", Repo: "labs", Agent: "claude", Workspaces: []manifest.Workspace{}},
+		{Name: "dev", Path: "/p/labs", Agent: "claude", Workspaces: []manifest.Workspace{}},
 		{Name: "research", Agent: "claude", Workspaces: []manifest.Workspace{}},
 	}
 

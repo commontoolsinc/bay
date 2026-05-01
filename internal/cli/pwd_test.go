@@ -9,12 +9,11 @@ import (
 
 func TestFormatPWD_OmitsMissingLevels(t *testing.T) {
 	out := stripANSI(formatPWD(&engine.Context{
-		Repo:      "bay",
 		Dock:      "api",
 		Workspace: "auth-fix",
 	}))
 
-	if !strings.Contains(out, "repo bay") || !strings.Contains(out, "dock api") || !strings.Contains(out, "bay auth-fix") {
+	if !strings.Contains(out, "dock api") || !strings.Contains(out, "bay auth-fix") {
 		t.Fatalf("unexpected pwd output: %q", out)
 	}
 	if strings.Contains(out, "surface") {
@@ -24,14 +23,13 @@ func TestFormatPWD_OmitsMissingLevels(t *testing.T) {
 
 func TestFormatPWD_IncludesSurface(t *testing.T) {
 	out := stripANSI(formatPWD(&engine.Context{
-		Repo:      "bay",
 		Dock:      "api",
 		Workspace: "auth-fix",
 		Surface:   "agent",
 		SurfaceID: 2,
 	}))
 
-	for _, want := range []string{"repo bay", "dock api", "bay auth-fix", "surface agent"} {
+	for _, want := range []string{"dock api", "bay auth-fix", "surface agent"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("pwd output missing %q: %q", want, out)
 		}

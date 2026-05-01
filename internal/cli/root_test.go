@@ -13,7 +13,7 @@ func TestNewRootCmd(t *testing.T) {
 	// Verify all subcommands are registered (including hidden ones).
 	// add-prompt was removed entirely — see TestAddPrompt_RemovedEntirely.
 	expected := map[string]bool{
-		"dock": false, "repo": false, "surface": false,
+		"dock": false, "surface": false,
 		"new": false, "close": false, "clean-review": false, "show": false, "rename": false, "describe": false,
 		"go": false, "ls": false, "next": false, "prev": false, "tree": false, "pwd": false,
 		"recover": false, "doctor": false, "setup": false, "monitor": false, "version": false,
@@ -114,21 +114,11 @@ func TestSurfaceAlias(t *testing.T) {
 	}
 }
 
-func TestRepoSubcommands(t *testing.T) {
+func TestRepoCommandRemoved(t *testing.T) {
 	root := NewRootCmd("test")
-	repo, _, err := root.Find([]string{"repo"})
-	if err != nil {
-		t.Fatalf("finding repo: %v", err)
-	}
-
-	expected := []string{"add", "ls", "show", "remove", "init"}
-	found := map[string]bool{}
-	for _, cmd := range repo.Commands() {
-		found[cmd.Name()] = true
-	}
-	for _, name := range expected {
-		if !found[name] {
-			t.Errorf("repo subcommand %q not found", name)
+	for _, cmd := range root.Commands() {
+		if cmd.Name() == "repo" {
+			t.Fatal("repo command should not be registered")
 		}
 	}
 }
@@ -140,7 +130,7 @@ func TestDockSubcommands(t *testing.T) {
 		t.Fatalf("finding dock: %v", err)
 	}
 
-	expected := []string{"new", "ls", "show", "tree", "rename", "close", "recover"}
+	expected := []string{"new", "ls", "show", "tree", "rename", "close", "recover", "sync"}
 	found := map[string]bool{}
 	for _, cmd := range dock.Commands() {
 		found[cmd.Name()] = true

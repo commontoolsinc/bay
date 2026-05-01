@@ -10,20 +10,17 @@ import (
 	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
-// twoDockFixture extends testNavEngine with a second repo "labs2" and dock
+// twoDockFixture extends testNavEngine with a second checkout and dock
 // "labs2" so tests can exercise cross-dock ambiguity and dock-qualified names.
 func twoDockFixture(t *testing.T) *engine.Engine {
 	t.Helper()
 	eng, _, _, dir := testNavEngine(t)
 
 	labs2Dir := filepath.Join(dir, "repos", "labs2")
-	if err := os.MkdirAll(labs2Dir, 0o755); err != nil {
-		t.Fatalf("mkdir labs2 repo: %v", err)
+	if err := os.MkdirAll(filepath.Join(labs2Dir, ".git"), 0o755); err != nil {
+		t.Fatalf("mkdir labs2 checkout: %v", err)
 	}
-	if err := eng.RepoAdd("labs2", labs2Dir, "", "", true); err != nil {
-		t.Fatalf("RepoAdd labs2: %v", err)
-	}
-	if err := eng.DockNew("labs2", "labs2", "claude", ""); err != nil {
+	if err := eng.DockNew("labs2", labs2Dir, "", "claude", ""); err != nil {
 		t.Fatalf("DockNew labs2: %v", err)
 	}
 	return eng

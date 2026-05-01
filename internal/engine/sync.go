@@ -324,11 +324,9 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 		// Delete the local branch if the probe determined it was pushed.
 		// Without this, the branch name is lost once metadata is cleared,
 		// and closeWorkspaceState can never clean it up.
-		if update.branchSafeToDelete && ws.Worktree.Repo != "" {
-			if repo := m.FindRepo(ws.Worktree.Repo); repo != nil {
-				repoPath := config.ExpandPath(repo.Path)
-				_ = e.Git.DeleteBranch(repoPath, update.detachedBranch)
-			}
+		if update.branchSafeToDelete && dock.Path != "" {
+			repoPath := config.ExpandPath(dock.Path)
+			_ = e.Git.DeleteBranch(repoPath, update.detachedBranch)
 		}
 		ws.Worktree.Branch = ""
 		ws.Worktree.PR = ""

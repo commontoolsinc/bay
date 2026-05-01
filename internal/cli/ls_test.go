@@ -24,7 +24,11 @@ func testListEngine(t *testing.T) (*engine.Engine, string) {
 	}
 
 	repoDir := filepath.Join(dir, "repos", "labs")
-	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	webDir := filepath.Join(dir, "repos", "web")
+	if err := os.MkdirAll(filepath.Join(webDir, ".git"), 0o755); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
 
@@ -35,12 +39,9 @@ func testListEngine(t *testing.T) (*engine.Engine, string) {
 	manifestPath := filepath.Join(dir, "manifest.json")
 	manifest.Save(manifestPath, &manifest.Manifest{
 		Version: manifest.CurrentVersion,
-		Repos: []manifest.Repo{
-			{Name: "labs", Path: repoDir},
-		},
 		Docks: []manifest.Dock{
-			{Name: "labs", Repo: "labs", Agent: "claude", Workspaces: []manifest.Workspace{}},
-			{Name: "web", Repo: "labs", Agent: "claude", Workspaces: []manifest.Workspace{}},
+			{Name: "labs", Path: repoDir, Agent: "claude", Workspaces: []manifest.Workspace{}},
+			{Name: "web", Path: webDir, Agent: "claude", Workspaces: []manifest.Workspace{}},
 		},
 	})
 
@@ -95,12 +96,12 @@ func TestInferListFocus_WorkspaceContext(t *testing.T) {
 	})
 
 	focus := inferListFocus(eng)
-	if focus.Kind != FocusWorkspace || focus.Dock != "labs" || focus.Repo != "labs" || focus.WorkspaceID != ws.ID {
+	if focus.Kind != FocusWorkspace || focus.Dock != "labs" || focus.WorkspaceID != ws.ID {
 		t.Fatalf("unexpected focus: %#v", focus)
 	}
 }
 
-func TestInferListFocus_RepoContext(t *testing.T) {
+func TestInferListFocus_DockCheckoutContext(t *testing.T) {
 	eng, dir := testListEngine(t)
 
 	repoPath := filepath.Join(dir, "repos", "labs")
@@ -112,7 +113,7 @@ func TestInferListFocus_RepoContext(t *testing.T) {
 	})
 
 	focus := inferListFocus(eng)
-	if focus.Kind != FocusRepo || focus.Repo != "labs" {
+	if focus.Kind != FocusDock || focus.Dock != "labs" {
 		t.Fatalf("unexpected focus: %#v", focus)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/commontoolsinc/bay/internal/config"
+	gitpkg "github.com/commontoolsinc/bay/internal/git"
 	"github.com/commontoolsinc/bay/internal/manifest"
 	tmuxpkg "github.com/commontoolsinc/bay/internal/tmux"
 	"github.com/spf13/cobra"
@@ -118,17 +119,10 @@ func registerCompletions(root *cobra.Command) {
 		}
 	}
 
-	// Dock commands: dock close, dock recover, dock tree, dock show, dock rename.
-	for _, path := range []string{"dock close", "dock recover", "dock tree", "dock show", "dock rename"} {
+	// Dock commands: dock close, dock init, dock recover, dock sync, dock tree, dock show, dock rename.
+	for _, path := range []string{"dock close", "dock init", "dock recover", "dock sync", "dock tree", "dock show", "dock rename"} {
 		if cmd := findCmd(root, path); cmd != nil {
 			cmd.ValidArgsFunction = dockCompl
-		}
-	}
-
-	// Repo commands: repo remove, repo show.
-	for _, path := range []string{"repo remove", "repo show"} {
-		if cmd := findCmd(root, path); cmd != nil {
-			cmd.ValidArgsFunction = repoCompletionsFunc()
 		}
 	}
 
@@ -139,18 +133,16 @@ func registerCompletions(root *cobra.Command) {
 
 	// bay new — positional is the new bay's display name (free
 	// text, no completion). Flags carry completions for the things bay
-	// can suggest: --dock, --agent, --repo.
+	// can suggest: --dock, --agent, --branch.
 	if cmd := findCmd(root, "new"); cmd != nil {
 		cmd.RegisterFlagCompletionFunc("dock", dockFlagCompl)
 		cmd.RegisterFlagCompletionFunc("agent", agentFlagCompletions)
-		cmd.RegisterFlagCompletionFunc("repo", repoCompletions)
 		cmd.RegisterFlagCompletionFunc("branch", branchCompletions)
 	}
 	// surface new is now a parent with shell/agent/cmd/edit subcommands
 	// Flag completions are registered on those subcommands below.
 	if cmd := findCmd(root, "dock new"); cmd != nil {
 		cmd.RegisterFlagCompletionFunc("agent", agentFlagCompletions)
-		cmd.RegisterFlagCompletionFunc("repo", repoCompletions)
 	}
 
 	// --bay and --dock flag completions on every surface verb that
@@ -330,13 +322,13 @@ func surfaceCandidates(m *manifest.Manifest, tc tmuxpkg.Interface, includeSelf b
 	return completions
 }
 
-// dockCandidates returns dock name candidates with repo/agent descriptions.
+// dockCandidates returns dock name candidates with checkout/agent descriptions.
 func dockCandidates(m *manifest.Manifest) []string {
 	var completions []string
 	for _, dock := range m.Docks {
 		var parts []string
-		if dock.Repo != "" {
-			parts = append(parts, "repo="+dock.Repo)
+		if dock.Path != "" {
+			parts = append(parts, "path="+dock.Path)
 		}
 		if dock.Agent != "" {
 			parts = append(parts, "agent="+dock.Agent)
@@ -499,29 +491,6 @@ func agentArgCompletions(cmd *cobra.Command, args []string, toComplete string) (
 	return agentFlagCompletions(cmd, args, toComplete)
 }
 
-// repoCompletionsFunc returns a ValidArgsFunction for repo name positional args.
-func repoCompletionsFunc() func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		if len(args) > 0 {
-			return nil, cobra.ShellCompDirectiveNoFileComp
-		}
-		return repoCompletions(cmd, args, toComplete)
-	}
-}
-
-// repoCompletions returns repo names from manifest.
-func repoCompletions(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	m := loadManifestForCompletions()
-	if m == nil {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
-	var completions []string
-	for _, repo := range m.Repos {
-		completions = append(completions, repo.Name+"\t"+repo.Path)
-	}
-	return completions, cobra.ShellCompDirectiveNoFileComp
-}
-
 // splitCompletions returns valid pane split directions.
 func splitCompletions(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	return []string{
@@ -586,34 +555,29 @@ func branchCompletions(cmd *cobra.Command, args []string, toComplete string) ([]
 	return completions, cobra.ShellCompDirectiveNoFileComp
 }
 
-// repoPathForCompletion resolves a repo path for completion context.
+// repoPathForCompletion resolves a checkout path for completion context.
 // It checks the --dock flag, then falls back to the CWD git root.
 func repoPathForCompletion(cmd *cobra.Command, m *manifest.Manifest) string {
-	// Try --dock flag → dock's repo.
+	// Try --dock flag → dock checkout.
 	if dockFlag, err := cmd.Flags().GetString("dock"); err == nil && dockFlag != "" && m != nil {
-		if dock := m.FindDock(dockFlag); dock != nil && dock.Repo != "" {
-			if repo := m.FindRepo(dock.Repo); repo != nil {
-				return config.ExpandPath(repo.Path)
-			}
+		if dock := m.FindDock(dockFlag); dock != nil && dock.Path != "" {
+			return config.ExpandPath(dock.Path)
 		}
 	}
 
-	// Try current tmux session → dock's repo.
+	// Try current tmux session → dock checkout.
 	if m != nil {
 		if sess, err := tmuxpkg.NewReal().CurrentSession(); err == nil {
-			if dock := m.FindDock(sess); dock != nil && dock.Repo != "" {
-				if repo := m.FindRepo(dock.Repo); repo != nil {
-					return config.ExpandPath(repo.Path)
-				}
+			if dock := m.FindDock(sess); dock != nil && dock.Path != "" {
+				return config.ExpandPath(dock.Path)
 			}
 		}
 	}
 
 	// Fall back to CWD git root.
 	if cwd, err := os.Getwd(); err == nil {
-		gitCmd := exec.Command("git", "-C", cwd, "rev-parse", "--show-toplevel")
-		if out, err := gitCmd.Output(); err == nil {
-			return strings.TrimSpace(string(out))
+		if root, err := gitpkg.NewReal().RepoRoot(cwd); err == nil {
+			return root
 		}
 	}
 

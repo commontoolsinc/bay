@@ -32,7 +32,7 @@ func TestBayEdit_NoLongerHasShowFlag(t *testing.T) {
 	}
 }
 
-func TestBayEdit_HasScopeFlags(t *testing.T) {
+func TestBayEdit_HasDockScopeFlagOnly(t *testing.T) {
 	root := NewRootCmd("test")
 	cmd, _, err := root.Find([]string{"edit"})
 	if err != nil {
@@ -41,8 +41,8 @@ func TestBayEdit_HasScopeFlags(t *testing.T) {
 	if cmd.Flags().Lookup("dock") == nil {
 		t.Error("bay edit missing --dock flag")
 	}
-	if cmd.Flags().Lookup("bay") == nil {
-		t.Error("bay edit missing --bay flag")
+	if cmd.Flags().Lookup("bay") != nil {
+		t.Error("bay edit still has no-op --bay flag")
 	}
 }
 

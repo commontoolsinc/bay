@@ -542,17 +542,16 @@ func TestCheckOnce_RenamesWindowOnBranchChange(t *testing.T) {
 	winID, _ := mock.NewWindow("dev", "w1", wtPath)
 
 	m := manifest.New()
-	m.Repos = []manifest.Repo{{Name: "dev", Path: filepath.Join(dir, "repo")}}
 	m.Docks = []manifest.Dock{
 		{
 			Name: "dev",
-			Repo: "dev",
+			Path: filepath.Join(dir, "repo"),
 			Workspaces: []manifest.Workspace{
 				{
 					Name:     "w1",
 					Type:     manifest.WorkspaceTypeWorktree,
 					Path:     wtPath,
-					Worktree: &manifest.WorktreeAttrs{Repo: "dev", Branch: ""},
+					Worktree: &manifest.WorktreeAttrs{Branch: ""},
 					Surfaces: []manifest.Surface{
 						{
 							ID: 1, Name: "shell", Type: manifest.SurfaceTypeShell,

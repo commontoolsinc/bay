@@ -16,7 +16,7 @@ import (
 )
 
 // CurrentVersion is the manifest schema version.
-const CurrentVersion = 5
+const CurrentVersion = 6
 
 // WorkspaceType constants.
 const (
@@ -51,38 +51,42 @@ type WorkspaceType string
 type SurfaceType string
 type SurfaceBackend string
 
-// Repo represents a managed git repository.
+// Repo is the legacy pre-v6 representation of a managed git checkout.
+// It is kept only so v5 manifests can be migrated into dock-owned paths.
 type Repo struct {
 	Name        string `json:"name"`
 	Path        string `json:"path"`
 	WorktreeDir string `json:"worktree_dir,omitempty"`
 }
 
-// EffectiveWorktreeDir returns the worktree directory, defaulting to {path}-worktrees.
-func (r Repo) EffectiveWorktreeDir() string {
-	if r.WorktreeDir != "" {
-		return config.ExpandPath(r.WorktreeDir)
-	}
-	return config.ExpandPath(r.Path) + "-worktrees"
-}
-
 // Manifest is the top-level structure persisted as JSON.
 type Manifest struct {
 	Version int    `json:"version"`
-	Repos   []Repo `json:"repos"`
+	Repos   []Repo `json:"repos,omitempty"`
 	Docks   []Dock `json:"docks"`
 }
 
 // Dock represents a tmux session and its associated terminal window.
 type Dock struct {
-	Name          string              `json:"name"`                 // unique; matches config key and tmux session name
-	Repo          string              `json:"repo,omitempty"`       // default repo for workspaces
+	Name          string              `json:"name"`           // unique; matches config key and tmux session name
+	Path          string              `json:"path,omitempty"` // git checkout this dock owns
+	WorktreeDir   string              `json:"worktree_dir,omitempty"`
+	Repo          string              `json:"repo,omitempty"`       // legacy v5 default repo; migrated to Path/WorktreeDir
 	Agent         string              `json:"agent,omitempty"`      // default agent
 	AgentArgs     map[string][]string `json:"agent_args,omitempty"` // per-agent args
 	Host          *GUIAttrs           `json:"host,omitempty"`       // terminal window hosting this dock's tmux session; nil if unmanaged
 	Surfaces      []Surface           `json:"surfaces,omitempty"`   // dock-level surfaces (e.g., dock-scoped editor)
 	Workspaces    []Workspace         `json:"bays"`
 	ClosedEntries []ClosedEntry       `json:"closed_entries,omitempty"` // undo-close queue (see docs/design/undo-close.md)
+}
+
+// EffectiveWorktreeDir returns the dock's worktree directory, defaulting to
+// {path}-worktrees.
+func (d Dock) EffectiveWorktreeDir() string {
+	if d.WorktreeDir != "" {
+		return config.ExpandPath(d.WorktreeDir)
+	}
+	return config.ExpandPath(d.Path) + "-worktrees"
 }
 
 // UnmarshalJSON accepts both the v5 `bays` field and the legacy v4
@@ -125,7 +129,7 @@ type Workspace struct {
 
 // WorktreeAttrs holds git worktree metadata. Only present for worktree workspaces.
 type WorktreeAttrs struct {
-	Repo        string `json:"repo"` // repo config key
+	Repo        string `json:"repo,omitempty"` // legacy v5 repo key; migrated to parent dock
 	Branch      string `json:"branch"`
 	PR          string `json:"pr,omitempty"`            // PR number (display-only)
 	PRCheckedAt int64  `json:"pr_checked_at,omitempty"` // unix seconds of last gh pr view; 0 = never
@@ -422,7 +426,6 @@ func (d *Dock) RemoveClosedEntryAt(closedAt int64) bool {
 func New() *Manifest {
 	return &Manifest{
 		Version: CurrentVersion,
-		Repos:   []Repo{},
 		Docks:   []Dock{},
 	}
 }
@@ -434,9 +437,6 @@ func Parse(data []byte) (*Manifest, error) {
 	var m Manifest
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, fmt.Errorf("parsing manifest: %w", err)
-	}
-	if m.Repos == nil {
-		m.Repos = []Repo{}
 	}
 	if m.Docks == nil {
 		m.Docks = []Dock{}
@@ -453,7 +453,6 @@ func Parse(data []byte) (*Manifest, error) {
 				ws.DeprecatedStatus = ""
 			}
 		}
-		m.Version = CurrentVersion
 	}
 
 	// Fill in workspace IDs. Runs unconditionally:
@@ -465,11 +464,72 @@ func Parse(data []byte) (*Manifest, error) {
 	for i := range m.Docks {
 		AssignWorkspaceIDs(&m.Docks[i])
 	}
-	if m.Version < CurrentVersion {
-		m.Version = CurrentVersion
+
+	// v5 renamed dock.workspaces to dock.bays. Dock.UnmarshalJSON handles
+	// both forms, so v4→v5 is a pure decode rename with no migration body.
+	if m.Version < 6 {
+		if err := migrateV5ToV6(&m); err != nil {
+			return nil, err
+		}
 	}
+	m.Version = CurrentVersion
 
 	return &m, nil
+}
+
+func migrateV5ToV6(m *Manifest) error {
+	repos := map[string]Repo{}
+	for _, repo := range m.Repos {
+		repos[repo.Name] = repo
+	}
+
+	docksByRepo := map[string][]string{}
+	for i := range m.Docks {
+		dock := &m.Docks[i]
+		if dock.Repo != "" {
+			docksByRepo[dock.Repo] = append(docksByRepo[dock.Repo], dock.Name)
+		}
+	}
+	var conflicts []string
+	for repoName, dockNames := range docksByRepo {
+		if len(dockNames) > 1 {
+			conflicts = append(conflicts, fmt.Sprintf("repo %q is used by docks %s", repoName, strings.Join(dockNames, ", ")))
+		}
+	}
+	if len(conflicts) > 0 {
+		sort.Strings(conflicts)
+		return fmt.Errorf("cannot migrate manifest v5 to v6: multiple docks share one repo; close or recreate conflicting docks first: %s", strings.Join(conflicts, "; "))
+	}
+
+	for i := range m.Docks {
+		dock := &m.Docks[i]
+		if dock.Path == "" {
+			if dock.Repo == "" {
+				return fmt.Errorf("cannot migrate manifest v5 to v6: dock %q has no repo checkout", dock.Name)
+			}
+			repo, ok := repos[dock.Repo]
+			if !ok {
+				return fmt.Errorf("cannot migrate manifest v5 to v6: dock %q references unknown repo %q", dock.Name, dock.Repo)
+			}
+			dock.Path = repo.Path
+			dock.WorktreeDir = repo.WorktreeDir
+		}
+		for j := range dock.Workspaces {
+			ws := &dock.Workspaces[j]
+			if ws.Worktree == nil || ws.Worktree.Repo == "" || ws.Worktree.Repo == dock.Repo {
+				continue
+			}
+			return fmt.Errorf("cannot migrate manifest v5 to v6: cross-repo bay %s:%s uses repo %q but dock uses repo %q; close or recreate the bay in a dock for repo %q before upgrading", dock.Name, ws.ID, ws.Worktree.Repo, dock.Repo, ws.Worktree.Repo)
+		}
+		dock.Repo = ""
+		for j := range dock.Workspaces {
+			if dock.Workspaces[j].Worktree != nil {
+				dock.Workspaces[j].Worktree.Repo = ""
+			}
+		}
+	}
+	m.Repos = nil
+	return nil
 }
 
 // Load reads and parses a manifest file.
@@ -617,38 +677,6 @@ func AllWorkspaces(m *Manifest) []WorkspaceRef {
 type WorkspaceRef struct {
 	Dock      string
 	Workspace *Workspace
-}
-
-// --- Repo operations ---
-
-// FindRepo returns a pointer to the repo with the given name, or nil.
-func (m *Manifest) FindRepo(name string) *Repo {
-	for i := range m.Repos {
-		if m.Repos[i].Name == name {
-			return &m.Repos[i]
-		}
-	}
-	return nil
-}
-
-// AddRepo adds a repo. Returns an error if a repo with the same name exists.
-func (m *Manifest) AddRepo(r Repo) error {
-	if m.FindRepo(r.Name) != nil {
-		return fmt.Errorf("repo %q already exists", r.Name)
-	}
-	m.Repos = append(m.Repos, r)
-	return nil
-}
-
-// RemoveRepo removes a repo by name.
-func (m *Manifest) RemoveRepo(name string) error {
-	for i := range m.Repos {
-		if m.Repos[i].Name == name {
-			m.Repos = append(m.Repos[:i], m.Repos[i+1:]...)
-			return nil
-		}
-	}
-	return fmt.Errorf("repo %q not found", name)
 }
 
 // --- Dock operations ---
