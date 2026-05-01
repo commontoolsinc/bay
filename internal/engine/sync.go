@@ -63,16 +63,45 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 		return nil
 	}
 
-	// Resolve session ownership once per dock, so the per-workspace
+	// Resolve session ownership once per dock so the per-workspace
 	// probe and the dock-surface cleanup below don't each spawn
 	// `tmux show-options` per workspace. Captured before the parallel
 	// fanout so the read is unsynchronized (the map is only read from
-	// goroutines, never mutated).
+	// goroutines after this loop, never mutated).
+	//
+	// This pass also opportunistically tags legacy docks (manifest
+	// SessionID empty AND tmux marker empty). Without that, an upgraded
+	// dock that hasn't been recovered yet stays in the (empty, empty)
+	// → owned branch and a future tmux restart would still strip its
+	// surfaces — exactly the bug session-identity is meant to fix.
 	dockOwned := make(map[string]bool, len(m.Docks))
+	legacyBackfill := map[string]string{}
 	for i := range m.Docks {
 		dock := &m.Docks[i]
-		exists, owned := e.verifySessionOwnership(dock)
-		dockOwned[dock.Name] = exists && owned
+		exists, _ := e.Tmux.HasSession(dock.Name)
+		if !exists {
+			continue
+		}
+		marker, _ := e.Tmux.GetSessionOption(dock.Name, sessionIDOption)
+		if marker == "" && dock.SessionID == "" {
+			id := newSessionID()
+			if err := e.Tmux.SetSessionOption(dock.Name, sessionIDOption, id); err == nil {
+				marker = id
+				dock.SessionID = id
+				legacyBackfill[dock.Name] = id
+			}
+		}
+		dockOwned[dock.Name] = marker != "" && marker == dock.SessionID
+	}
+	if len(legacyBackfill) > 0 {
+		_ = e.withManifest(func(m *manifest.Manifest) error {
+			for name, id := range legacyBackfill {
+				if d := m.FindDock(name); d != nil && d.SessionID == "" {
+					d.SessionID = id
+				}
+			}
+			return nil
+		})
 	}
 
 	type probeJob struct {

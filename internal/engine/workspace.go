@@ -142,11 +142,16 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		}
 	}
 
-	// Ensure tmux session exists. In normal operation this is a no-op
-	// (marker on the live session matches dock.SessionID); the rare
-	// branch where ensureSession returns a different ID gets persisted
-	// alongside the new workspace below.
-	sessionID, err := e.ensureSession(dockName, dock.SessionID)
+	// Ensure tmux session exists. We split the two cases: when WsNew
+	// itself creates the session (no surfaces existed yet), the new
+	// SessionID is safe to persist alongside the new workspace. When
+	// the session was already present we deliberately leave the
+	// SessionID alone — existing workspaces may hold pane IDs from a
+	// dead tmux instance, and persisting a new SessionID here would
+	// defeat the gate's mismatched-marker preservation and let the
+	// next SyncAll strip them. The user runs `bay recover` to
+	// reconcile after a restart.
+	sessionID, sessionCreated, err := e.ensureSessionForWorkspace(dockName, dock.SessionID)
 	if err != nil {
 		rollbackWorktree()
 		return nil, err
@@ -216,10 +221,10 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
 
-		// Backfill session identity if ensureSession resolved to a
-		// different UUID than the manifest had recorded (legacy or
-		// post-restart state).
-		if dock.SessionID != sessionID {
+		// Persist SessionID only when WsNew created the session
+		// itself. See ensureSessionForWorkspace's comment for why
+		// adopting an existing session's marker is unsafe here.
+		if sessionCreated && dock.SessionID == "" {
 			dock.SessionID = sessionID
 		}
 

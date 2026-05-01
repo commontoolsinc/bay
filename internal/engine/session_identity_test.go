@@ -408,3 +408,95 @@ func TestSyncAll_NoMidRecoverCleanup(t *testing.T) {
 		t.Errorf("mid-recover race: surfaces stripped, got %d, want 1 (preserved)", got)
 	}
 }
+
+// --- WsNew with foreign session ---
+
+// TestWsNew_DoesNotPersistSessionIDWhenSessionExists locks in the
+// fix for the post-restart `bay new` race: when the live session
+// exists but bay didn't create it, WsNew must NOT write a new
+// SessionID into the manifest, even if ensureSession-style logic
+// would have minted one. Persisting here would let the next SyncAll
+// see (matching marker → owned) and strip pre-existing workspaces'
+// stale pane IDs.
+func TestWsNew_DoesNotPersistSessionIDWhenSessionExists(t *testing.T) {
+	eng, _ := testEngine(t)
+	seedSurfaceWorkspace(t, eng, "labs", "old-bay")
+	setSessionID(t, eng, "labs", "pre-crash-uuid")
+
+	// Simulate a same-name session that came back up empty after a
+	// tmux restart — no marker.
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if err := mockTmux.NewSession("labs"); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+
+	m, _ := eng.LoadManifest()
+	dock := m.FindDock("labs")
+	if dock.SessionID != "pre-crash-uuid" {
+		t.Errorf("WsNew clobbered SessionID: got %q, want pre-crash-uuid", dock.SessionID)
+	}
+	// Original workspace's surface must survive — the gate's
+	// mismatched-marker preservation is what keeps recover viable.
+	if got := surfaceCount(t, eng, "labs", "old-bay"); got != 1 {
+		t.Errorf("pre-existing surface stripped after WsNew: got %d, want 1", got)
+	}
+}
+
+// --- legacy backfill ---
+
+// TestSyncAll_BackfillsLegacySessionID covers fix #2: an upgraded
+// dock with empty SessionID and an untagged tmux session must be
+// proactively tagged on the next SyncAll, so a future tmux restart
+// can't fall through the (empty, empty) → owned branch.
+func TestSyncAll_BackfillsLegacySessionID(t *testing.T) {
+	eng, _ := testEngine(t)
+	// Pre-rollout state: manifest with no SessionID, untagged session.
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if err := mockTmux.NewSession("labs"); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+	withDeterministicSessionID(t, "backfill-uuid")
+
+	eng.SyncAll()
+
+	m, _ := eng.LoadManifest()
+	dock := m.FindDock("labs")
+	if dock.SessionID != "backfill-uuid" {
+		t.Errorf("legacy SessionID not backfilled: got %q, want backfill-uuid", dock.SessionID)
+	}
+	marker, _ := mockTmux.GetSessionOption("labs", sessionIDOption)
+	if marker != "backfill-uuid" {
+		t.Errorf("tmux marker not set during backfill: got %q, want backfill-uuid", marker)
+	}
+}
+
+// TestSyncAll_DoesNotBackfillWhenManifestSet verifies the backfill
+// only fires for the (empty, empty) legacy state — a manifest with a
+// SessionID but a foreign/untagged tmux session must continue to
+// preserve surfaces (mismatched-marker branch), not get clobbered by
+// a fresh backfill.
+func TestSyncAll_DoesNotBackfillWhenManifestSet(t *testing.T) {
+	eng, _ := testEngine(t)
+	setSessionID(t, eng, "labs", "manifest-uuid")
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if err := mockTmux.NewSession("labs"); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+	// No marker on the live session.
+
+	eng.SyncAll()
+
+	m, _ := eng.LoadManifest()
+	dock := m.FindDock("labs")
+	if dock.SessionID != "manifest-uuid" {
+		t.Errorf("non-legacy SessionID was changed: got %q, want manifest-uuid", dock.SessionID)
+	}
+	marker, _ := mockTmux.GetSessionOption("labs", sessionIDOption)
+	if marker != "" {
+		t.Errorf("tmux marker should remain empty on mismatched manifest: got %q", marker)
+	}
+}
