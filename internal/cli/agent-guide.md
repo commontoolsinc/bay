@@ -46,14 +46,14 @@ through to a cross-dock search (which errors on ambiguity).
 
 A bay also has a **path** — the on-disk working directory. For
 worktree bays bay assigns sequential subdirs (`w1`, `w2`, `w3`,
-...) under the repo's worktree dir. The path is independent of the
+...) under the dock's worktree dir. The path is independent of the
 ID: closing and recreating a bay can leave gaps in the directory
 sequence even while IDs continue numerically. The path basename is
 not a stable identifier.
 
 A **dock** is a named tmux session grouping related bays. Each
-dock has a default agent type and optionally a default repo and host
-terminal.
+dock owns one local git checkout and can have a default agent type
+and host terminal.
 
 A **surface** is the unit of navigation — anything you can focus and
 jump to. Surfaces replace the old window/pane hierarchy. Each surface
@@ -98,7 +98,7 @@ close`), `self` additionally matches the current tmux pane ID to
 identify which surface within the bay.
 
 Commands an agent inside a bay typically uses:
-- `bay pwd` — confirm bay context (repo, dock, bay, surface)
+- `bay pwd` — confirm bay context (dock, bay, surface)
 - `bay show self` — check own bay metadata
 - `bay ls` — see what other bays are doing
 - `bay close self` — shut down when work is complete
@@ -138,7 +138,6 @@ Returns the current bay context:
 
 ```json
 {
-  "repo": "labs",
   "dock": "labs",
   "bay_id": "w1",
   "bay": "auth-fix",
@@ -149,7 +148,6 @@ Returns the current bay context:
 ```
 
 Fields:
-- `repo` — repo config key.
 - `dock` — dock name (tmux session).
 - `bay_id` — bay ID (`w<N>`, the stable handle).
 - `bay` — bay Name (display label, may be empty).
@@ -185,48 +183,41 @@ Use `bay tree --json` for the global hierarchy:
 {
   "focus": {
     "kind": "bay",
-    "repo": "labs",
     "dock": "labs",
     "bay_id": "w1"
   },
   "recursive": true,
-  "repos": [
+  "docks": [
     {
       "name": "labs",
       "path": "~/projects/labs",
-      "docks": [
+      "agent": "claude",
+      "bays": [
         {
-          "name": "labs",
-          "repo": "labs",
-          "agent": "claude",
-          "bays": [
+          "id": "w1",
+          "name": "auth-fix",
+          "type": "worktree",
+          "path": "~/projects/labs-worktrees/w1",
+          "branch": "feature/auth-fix",
+          "dirty": false,
+          "merged": false,
+          "sync_status": "ok",
+          "surface_count": 2,
+          "surfaces": [
             {
-              "id": "w1",
-              "name": "auth-fix",
-              "type": "worktree",
-              "path": "~/projects/labs-worktrees/w1",
-              "branch": "feature/auth-fix",
-              "dirty": false,
-              "merged": false,
-              "sync_status": "ok",
-              "surface_count": 2,
-              "surfaces": [
-                {
-                  "id": 1,
-                  "name": "agent",
-                  "type": "agent",
-                  "backend": "tmux-pane",
-                  "agent": "claude",
-                  "status": "ok"
-                },
-                {
-                  "id": 2,
-                  "name": "shell",
-                  "type": "shell",
-                  "backend": "tmux-pane",
-                  "status": "ok"
-                }
-              ]
+              "id": 1,
+              "name": "agent",
+              "type": "agent",
+              "backend": "tmux-pane",
+              "agent": "claude",
+              "status": "ok"
+            },
+            {
+              "id": 2,
+              "name": "shell",
+              "type": "shell",
+              "backend": "tmux-pane",
+              "status": "ok"
             }
           ]
         }
@@ -255,7 +246,6 @@ Use `bay tree --json --rows` for denormalized rows across the hierarchy
 ```json
 [
   {
-    "repo": "labs",
     "dock": "labs",
     "bay_name": "auth-fix",
     "bay_branch": "feature/auth-fix",
@@ -281,7 +271,6 @@ current dock.
   "id": "w1",
   "name": "auth-fix",
   "description": "Login flow fixes",
-  "repo": "labs",
   "dock": "labs",
   "type": "worktree",
   "path": "/Users/dev/projects/labs-worktrees/w1",
@@ -354,7 +343,6 @@ qualified form: `id:surface-name` or `dock:id:surface-name`.
 | `bay surface tree` (none) | n/a — surfaces are leaves; use `bay surface show` |
 | `bay dock ls [name]` | current dock from tmux session, or all docks |
 | `bay dock tree [name]` | current dock from tmux session |
-| `bay repo tree [name]` | repo at current CWD |
 | `bay go [query]` | bays in current dock |
 | `bay surface go [query]` | surfaces in current bay |
 | `bay edit [id]` | current bay |
@@ -363,17 +351,17 @@ qualified form: `id:surface-name` or `dock:id:surface-name`.
 ## Commands
 
 The central bay commands live at the top level. Subordinate concepts
-use explicit nouns: `surface`/`sf`, `dock`, and `repo`. Top-level
+use explicit nouns: `surface`/`sf` and `dock`. Top-level
 shorthands exist for frequent surface creation.
 
 ### Bay commands
 
-#### `bay new [name] [--dock DOCK] [--repo NAME] [--dir PATH] [--branch NAME] [--agent [TYPE]] [--description TEXT]`
+#### `bay new [name] [--dock DOCK] [--dir PATH] [--branch NAME] [--agent [TYPE]] [--description TEXT]`
 
 Create a bay with its first surface. The positional names the
 new bay; `--dock` selects which dock to create it in. `--dock`
 defaults to the current tmux session if it is a bay dock, or
-auto-bootstraps from CWD (creates a dock and repo automatically).
+auto-bootstraps from CWD (creates a dock automatically).
 
 Default behavior opens a shell. Use `--agent` for the dock's default
 agent, or `--agent TYPE` for a specific one. Or create the bay
@@ -386,7 +374,6 @@ first and add an agent with `bay agent`.
 bay new                                  # auto-bootstrap from CWD
 bay new auth-fix                         # named bay in current dock
 bay new auth-fix --dock labs             # named bay in a specific dock
-bay new auth-fix --repo ct-server        # using a different repo
 bay new auth-fix --dir ~/projects/foo    # external bay
 bay new auth-fix --branch fix-auth       # checkout or create branch
 bay new auth-fix --agent                 # with dock's default agent
@@ -731,7 +718,7 @@ bay ls -s
 
 #### `bay tree [--json] [--rows] [-l] [--dirty]`
 
-Show the full hierarchy: repos, docks, bays, surfaces.
+Show the full hierarchy: docks, bays, surfaces.
 
 ```
 bay tree
@@ -757,9 +744,9 @@ resume args (e.g., `--continue`), starts the monitor. Idempotent.
 
 #### `bay doctor`
 
-Health checks: config validity, repo accessibility, agent availability,
+Health checks: config validity, dock checkout accessibility, agent availability,
 manifest consistency, monitor status, tmux keybindings, bay awareness
-in repos.
+in dock checkouts.
 
 #### `bay monitor start|stop|status`
 
@@ -786,30 +773,21 @@ Waiting detection uses three mechanisms, all feeding into
 ### Dock management
 
 ```
-bay dock new <name> [--repo NAME] [--agent TYPE] [--terminal APP]
+bay dock new [name] [--path PATH] [--worktree-dir PATH] [--agent TYPE] [--terminal APP]
 bay dock ls [name] [--json] [--rows]
 bay dock show <name>
 bay dock close <name> [--force]
 bay dock recover <name>
+bay dock sync [name]
 ```
 
-### Repo management
-
-```
-bay repo ls [--json]
-bay repo tree [name]
-bay repo show <name>
-bay repo add <name> <path>
-bay repo remove <name> [--force]
-bay repo init [name]
-```
-
-`bay repo init` sets up bay awareness: appends a one-liner to each
+`bay dock new` sets up bay awareness: appends a one-liner to each
 agent's project file (e.g., `CLAUDE.local.md`) pointing to `bay agent-guide`,
-and creates `.worktreeinclude` if missing.
+and creates `.worktreeinclude` if missing. `bay dock sync` copies
+`.worktreeinclude` matches from the checkout into existing worktrees.
 
 `.worktreeinclude` uses gitignore syntax. Each pattern is resolved by
-git; matching files are copied from the repo root into new worktrees.
+git; matching files are copied from the dock checkout into new worktrees.
 Bay refuses to sync matches that are tracked in git or not covered by
 `.gitignore` (refusals are logged to stderr; valid matches are still
 copied) — only files that cannot be checked in are copied.
@@ -910,7 +888,7 @@ bay new update-deps --dock labs
 bay ls
 ```
 
-Each bay gets its own worktree. They share the same repo but
+Each bay gets its own worktree. They share the same dock checkout but
 work on independent branches.
 
 ### Recover after reboot
@@ -930,5 +908,5 @@ From any git repo directory, with no prior bay configuration:
 bay new
 ```
 
-Bay auto-detects the repo, creates a dock, probes for an agent on
+Bay auto-detects the checkout, creates a dock, probes for an agent on
 PATH, and opens a bay. No config file needed for basic usage.

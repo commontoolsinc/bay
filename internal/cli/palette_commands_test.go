@@ -79,7 +79,6 @@ func TestDetectScope(t *testing.T) {
 	}{
 		{"nil ctx", nil, palette.ScopeAnywhere},
 		{"empty ctx", &engine.Context{}, palette.ScopeAnywhere},
-		{"repo only", &engine.Context{Repo: "bay"}, palette.ScopeAnywhere},
 		{"dock only", &engine.Context{Dock: "bay"}, palette.ScopeInDock},
 		{"workspace", &engine.Context{Dock: "bay", Workspace: "auth-fix"}, palette.ScopeInWorkspace},
 		{"surface", &engine.Context{Dock: "bay", Workspace: "w", Surface: "shell"}, palette.ScopeInWorkspace},

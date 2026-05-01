@@ -137,8 +137,6 @@ func NewRootCmd(version string) *cobra.Command {
 	// Infrastructure commands
 	dockCmd := newDockCmd()
 	dockCmd.GroupID = "infra"
-	repoCmd := newRepoCmd()
-	repoCmd.GroupID = "infra"
 	setupCmd := newSetupCmd()
 	setupCmd.GroupID = "infra"
 	recoverCmd := newRecoverCmd()
@@ -174,7 +172,6 @@ func NewRootCmd(version string) *cobra.Command {
 		pwdCmd,
 		statusLineCmd,
 		dockCmd,
-		repoCmd,
 		configCmd,
 		setupCmd,
 		recoverCmd,

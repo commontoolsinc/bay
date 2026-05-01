@@ -314,7 +314,7 @@ most recent entry and recreates the surface in its parent bay.
 // the tmux toast, an Option+Z press that finds an empty queue would be a
 // silent no-op and the user would keep pressing.
 func runSurfaceRestore(eng *engine.Engine, list bool) error {
-	dockName, _, err := resolveCurrentDock(eng)
+	dockName, err := resolveCurrentDock(eng)
 	if err != nil {
 		return err
 	}

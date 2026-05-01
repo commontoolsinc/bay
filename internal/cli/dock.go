@@ -2,8 +2,11 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/engine"
 	"github.com/spf13/cobra"
 )
@@ -23,32 +26,48 @@ func newDockCmd() *cobra.Command {
 		newDockRenameCmd(),
 		newDockCloseCmd(),
 		newDockRecoverCmd(),
+		newDockSyncCmd(),
 	)
 
 	return cmd
 }
 
 func newDockNewCmd() *cobra.Command {
-	var repo, agent, terminal string
+	var path, worktreeDir, agent, terminal string
 
 	cmd := &cobra.Command{
-		Use:   "new <name>",
+		Use:   "new [name]",
 		Short: "Create a new dock",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
 			if err != nil {
 				return err
 			}
-			if err := eng.DockNew(args[0], repo, agent, terminal); err != nil {
+			name := ""
+			if len(args) > 0 {
+				name = args[0]
+			}
+			if name == "" {
+				if path != "" {
+					name = filepath.Base(config.ExpandPath(path))
+				} else if cwd, cwdErr := os.Getwd(); cwdErr == nil {
+					name = filepath.Base(cwd)
+				}
+			}
+			if err := eng.DockNew(name, path, worktreeDir, agent, terminal); err != nil {
 				return err
 			}
-			fmt.Printf("Dock %q created.\n", args[0])
+			if initErr := eng.DockInit(name); initErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: dock checkout setup failed: %v\n", initErr)
+			}
+			fmt.Printf("Dock %q created.\n", name)
 			return nil
 		},
 	}
 
-	cmd.Flags().StringVar(&repo, "repo", "", "default repo for bays")
+	cmd.Flags().StringVar(&path, "path", "", "checkout path (default: current directory)")
+	cmd.Flags().StringVar(&worktreeDir, "worktree-dir", "", "worktree directory (default: <path>-worktrees)")
 	cmd.Flags().StringVar(&agent, "agent", "", "default agent type")
 	cmd.Flags().StringVar(&terminal, "terminal", "", "host terminal app (e.g. ghostty, iterm2)")
 
@@ -81,10 +100,10 @@ func newDockLsCmd() *cobra.Command {
 				if dock == nil {
 					return fmt.Errorf("dock %q not found", args[0])
 				}
-				focus = ListFocus{Kind: FocusDock, Repo: dock.Repo, Dock: dock.Name}
+				focus = ListFocus{Kind: FocusDock, Dock: dock.Name}
 			} else if sess, sessionErr := eng.Tmux.CurrentSession(); sessionErr == nil {
 				if dock := findDock(docks, sess); dock != nil {
-					focus = ListFocus{Kind: FocusDock, Repo: dock.Repo, Dock: dock.Name}
+					focus = ListFocus{Kind: FocusDock, Dock: dock.Name}
 				}
 			}
 
@@ -150,8 +169,9 @@ func newDockShowCmd() *cobra.Command {
 
 			var rows []showRow
 			rows = append(rows, showRow{"dock", name})
-			if mDock.Repo != "" {
-				rows = append(rows, showRow{"repo", mDock.Repo})
+			if mDock.Path != "" {
+				rows = append(rows, showRow{"path", mDock.Path})
+				rows = append(rows, showRow{"worktree dir", mDock.EffectiveWorktreeDir()})
 			}
 			if agent := eng.Config.ResolvedDockAgent(name, mDock.Agent); agent != "" {
 				rows = append(rows, showRow{"agent", agent})
@@ -220,18 +240,15 @@ func newDockTreeCmd() *cobra.Command {
 				return err
 			}
 
-			repo := ""
 			m, _ := eng.LoadManifest()
 			if m != nil {
-				if dock := m.FindDock(dockName); dock != nil {
-					repo = dock.Repo
-				} else {
+				if dock := m.FindDock(dockName); dock == nil {
 					return fmt.Errorf("dock %q not found", dockName)
 				}
 			}
 
 			view := BuildListView(docks, ListViewOptions{
-				Focus:     ListFocus{Kind: FocusDock, Repo: repo, Dock: dockName},
+				Focus:     ListFocus{Kind: FocusDock, Dock: dockName},
 				Recursive: true,
 			})
 
@@ -316,6 +333,37 @@ func newDockRecoverCmd() *cobra.Command {
 			}
 			printRecoveryWarnings(result.Warnings)
 			fmt.Printf("Attach with: tmux attach -t %s\n", args[0])
+			return nil
+		},
+	}
+}
+
+func newDockSyncCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "sync [name]",
+		Short: "Sync dock checkout files to existing bay worktrees",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine()
+			if err != nil {
+				return err
+			}
+
+			var name string
+			if len(args) > 0 {
+				name = args[0]
+			} else {
+				name, err = resolveCurrentDock(eng)
+				if err != nil {
+					return err
+				}
+			}
+
+			count, err := eng.DockSync(name)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Synced %d worktree(s) for dock %q.\n", count, name)
 			return nil
 		},
 	}

@@ -1,9 +1,10 @@
 # Repo/dock merge - design plan
 
 Captured 2026-04-29. Updated 2026-04-30 after the
-workspace-to-bay UX rename landed. No repo/dock merge code has been
-written. This doc proposes collapsing the `Repo` and `Dock` concepts
-into a single `Dock` entity that owns its checkout.
+workspace-to-bay UX rename landed. Implemented on the
+`impl/dock-checkout-merge` branch. This doc records the plan for
+collapsing the `Repo` and `Dock` concepts into a single `Dock` entity
+that owns its checkout.
 
 Terminology note: this doc uses **bay** for the user-facing concept.
 The current Go implementation still has internal names like

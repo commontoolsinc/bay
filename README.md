@@ -8,7 +8,7 @@ For developers who work on multiple branches simultaneously and use tmux as thei
 
 ```
 cd ~/projects/myproject
-bay new                      # auto-bootstrap repo/dock + create worktree
+bay new                      # auto-bootstrap dock + create worktree
 bay new --agent              # new worktree with the dock's default agent
 bay edit                        # open editor for current bay
 bay shell                       # split a shell into the current bay

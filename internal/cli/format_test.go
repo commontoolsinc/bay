@@ -12,7 +12,6 @@ func testDocks() []engine.DockInfo {
 	return []engine.DockInfo{
 		{
 			Name: "api",
-			Repo: "bay",
 			Workspaces: []engine.WorkspaceInfo{
 				{
 					ID:           "w1",
@@ -45,7 +44,6 @@ func testDocks() []engine.DockInfo {
 		},
 		{
 			Name: "web",
-			Repo: "bay",
 			Workspaces: []engine.WorkspaceInfo{
 				{
 					Name:         "landing",
@@ -59,7 +57,6 @@ func testDocks() []engine.DockInfo {
 		},
 		{
 			Name: "ops",
-			Repo: "other",
 			Workspaces: []engine.WorkspaceInfo{
 				{
 					Name:         "deploy",
@@ -75,10 +72,10 @@ func testDocks() []engine.DockInfo {
 	}
 }
 
-func TestBuildListView_DefaultIncludesRepos(t *testing.T) {
+func TestBuildListView_DefaultIncludesDocks(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{})
-	if len(view.Repos) != 2 {
-		t.Fatalf("repos = %d, want 2", len(view.Repos))
+	if len(view.Docks) != 3 {
+		t.Fatalf("docks = %d, want 3", len(view.Docks))
 	}
 	if view.Focus.Kind != FocusAll {
 		t.Fatalf("focus = %q, want %q", view.Focus.Kind, FocusAll)
@@ -124,7 +121,6 @@ func TestFormatListView_AlignsMetaColumnsAcrossRows(t *testing.T) {
 	docks := []engine.DockInfo{
 		{
 			Name: "api",
-			Repo: "bay",
 			Workspaces: []engine.WorkspaceInfo{
 				{Name: "w1", SurfaceCount: 1, SyncStatus: "ok"},
 				{Name: "login-bug", Branch: "fix/login-bug", Dirty: true, SurfaceCount: 1, SyncStatus: "ok"},
@@ -133,7 +129,7 @@ func TestFormatListView_AlignsMetaColumnsAcrossRows(t *testing.T) {
 		},
 	}
 	view := BuildListView(docks, ListViewOptions{
-		Focus: ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
+		Focus: ListFocus{Kind: FocusDock, Dock: "api"},
 	})
 	out := stripANSI(FormatListView(view, false, false))
 
@@ -161,7 +157,7 @@ func TestFormatListView_AlignsMetaColumnsAcrossRows(t *testing.T) {
 // fix that turns a key=value run-on into a scannable column.
 func TestFormatListView_AlignsWorkspaceMetaWithinDock(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
-		Focus: ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
+		Focus: ListFocus{Kind: FocusDock, Dock: "api"},
 	})
 	out := stripANSI(FormatListView(view, false, false))
 
@@ -202,7 +198,6 @@ func TestFormatListView_AlignsSurfaceMetaAcrossDock(t *testing.T) {
 	docks := []engine.DockInfo{
 		{
 			Name: "api",
-			Repo: "bay",
 			Workspaces: []engine.WorkspaceInfo{
 				{
 					Name: "auth-fix",
@@ -221,7 +216,7 @@ func TestFormatListView_AlignsSurfaceMetaAcrossDock(t *testing.T) {
 		},
 	}
 	view := BuildListView(docks, ListViewOptions{
-		Focus:     ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
+		Focus:     ListFocus{Kind: FocusDock, Dock: "api"},
 		Recursive: true,
 	})
 	out := stripANSI(FormatListView(view, false, false))
@@ -251,7 +246,7 @@ func TestFormatListView_AlignsSurfaceMetaAcrossDock(t *testing.T) {
 
 func TestBuildListView_DockFocusStopsAtWorkspacesByDefault(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
-		Focus: ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
+		Focus: ListFocus{Kind: FocusDock, Dock: "api"},
 	})
 	out := stripANSI(FormatListView(view, false, false))
 
@@ -268,12 +263,11 @@ func TestBuildListView_DockFocusStopsAtWorkspacesByDefault(t *testing.T) {
 
 func TestBuildListView_WorkspaceFocusShowsFullTree(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
-		Focus: ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "w1"},
+		Focus: ListFocus{Kind: FocusWorkspace, Dock: "api", WorkspaceID: "w1"},
 	})
 	out := stripANSI(FormatListView(view, false, false))
 
 	for _, want := range []string{
-		"rp bay",
 		"dk api",
 		"bay auth-fix",
 		"sf agent",
@@ -289,7 +283,7 @@ func TestBuildListView_WorkspaceFocusShowsFullTree(t *testing.T) {
 
 func TestBuildListView_WorkspaceFocusRestrictsToDock(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
-		Focus: ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "w1"},
+		Focus: ListFocus{Kind: FocusWorkspace, Dock: "api", WorkspaceID: "w1"},
 	})
 	out := stripANSI(FormatListView(view, false, false))
 
@@ -300,7 +294,7 @@ func TestBuildListView_WorkspaceFocusRestrictsToDock(t *testing.T) {
 
 func TestFormatListView_SuppressesSyncOKAndShowsStale(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
-		Focus: ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
+		Focus: ListFocus{Kind: FocusDock, Dock: "api"},
 	})
 	out := stripANSI(FormatListView(view, false, false))
 
@@ -320,7 +314,7 @@ func TestFormatWorkspaceShow_RendersMultiLineDescription(t *testing.T) {
 		Path:        "~/x",
 		SyncStatus:  "ok",
 	}
-	out := stripANSI(FormatWorkspaceShow("bay", "api", ws, false))
+	out := stripANSI(FormatWorkspaceShow("api", ws, false))
 	// First line is shown inline with the description label; each body
 	// line is on its own row indented to the value column.
 	for _, want := range []string{
@@ -349,10 +343,9 @@ func TestFormatWorkspaceShow_IncludesDefaultAgentAndSurfaces(t *testing.T) {
 		},
 	}
 
-	out := stripANSI(FormatWorkspaceShow("bay", "api", ws, false))
+	out := stripANSI(FormatWorkspaceShow("api", ws, false))
 	for _, want := range []string{
 		"bay auth-fix",
-		"repo bay",
 		"dock api",
 		"default agent codex",
 		"surface agent",
@@ -394,25 +387,25 @@ func TestWorkspaceMetaCols_ShowsIDOnlyWhenDifferent(t *testing.T) {
 // surfaces the ID row only when it adds information.
 func TestFormatWorkspaceShow_IncludesIDWhenDifferent(t *testing.T) {
 	wsSame := &engine.WorkspaceInfo{ID: "w1", Name: "w1", Type: "worktree", SyncStatus: "ok"}
-	if strings.Contains(stripANSI(FormatWorkspaceShow("bay", "api", wsSame, false)), "id w1") {
+	if strings.Contains(stripANSI(FormatWorkspaceShow("api", wsSame, false)), "id w1") {
 		t.Error("ID row should be omitted when ID matches Name")
 	}
 
 	wsDiff := &engine.WorkspaceInfo{ID: "w1", Name: "auth-fix", Type: "worktree", SyncStatus: "ok"}
-	if !strings.Contains(stripANSI(FormatWorkspaceShow("bay", "api", wsDiff, false)), "id w1") {
+	if !strings.Contains(stripANSI(FormatWorkspaceShow("api", wsDiff, false)), "id w1") {
 		t.Error("ID row should appear when ID differs from Name")
 	}
 }
 
 func TestLabelValueFormatsHumanReadableLabels(t *testing.T) {
-	if got := stripANSI(labelValue("repo", "bay")); got != "repo bay" {
-		t.Fatalf("labelValue() = %q, want %q", got, "repo bay")
+	if got := stripANSI(labelValue("dock", "api")); got != "dock api" {
+		t.Fatalf("labelValue() = %q, want %q", got, "dock api")
 	}
 }
 
 func TestFormatListRows_DenormalizesSurfaceRows(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
-		Focus:     ListFocus{Kind: FocusWorkspace, Repo: "bay", Dock: "api", WorkspaceID: "w1"},
+		Focus:     ListFocus{Kind: FocusWorkspace, Dock: "api", WorkspaceID: "w1"},
 		Recursive: true,
 	})
 	rows := ListRows(view)
@@ -434,23 +427,23 @@ func TestFormatListRows_DenormalizesSurfaceRows(t *testing.T) {
 	}
 }
 
-func TestBuildListView_FocusRepoFiltersRepos(t *testing.T) {
+func TestBuildListView_FocusDockFiltersDocks(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
-		Focus: ListFocus{Kind: FocusRepo, Repo: "bay"},
+		Focus: ListFocus{Kind: FocusDock, Dock: "api"},
 	})
 	out := stripANSI(FormatListView(view, false, false))
 
-	if !strings.Contains(out, "rp bay") {
-		t.Fatalf("repo-focused output missing target repo:\n%s", out)
+	if !strings.Contains(out, "dk api") {
+		t.Fatalf("dock-focused output missing target dock:\n%s", out)
 	}
-	if strings.Contains(out, "rp other") {
-		t.Fatalf("repo-focused output should not include other repos:\n%s", out)
+	if strings.Contains(out, "dk web") || strings.Contains(out, "dk ops") {
+		t.Fatalf("dock-focused output should not include other docks:\n%s", out)
 	}
 }
 
 func TestFormatListView_ShowsWaitingIndicator(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
-		Focus: ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
+		Focus: ListFocus{Kind: FocusDock, Dock: "api"},
 	})
 	out := stripANSI(FormatListView(view, false, false))
 
@@ -461,7 +454,7 @@ func TestFormatListView_ShowsWaitingIndicator(t *testing.T) {
 
 func TestFormatListView_HighlightsCurrentContext(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
-		Focus: ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
+		Focus: ListFocus{Kind: FocusDock, Dock: "api"},
 	})
 	view.CurrentDock = "api"
 	view.CurrentWsID = "w1"
@@ -482,7 +475,7 @@ func TestFormatListView_HighlightsCurrentContext(t *testing.T) {
 
 func TestFormatListView_NoHighlightWithoutContext(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
-		Focus: ListFocus{Kind: FocusDock, Repo: "bay", Dock: "api"},
+		Focus: ListFocus{Kind: FocusDock, Dock: "api"},
 	})
 	// No CurrentDock/CurrentWs set.
 
@@ -538,7 +531,7 @@ func TestDescStrMaxForWidth(t *testing.T) {
 	}
 }
 
-func TestFormatDockTree_IncludesNoRepoDocks(t *testing.T) {
+func TestFormatDockTree_IncludesDocksWithoutBays(t *testing.T) {
 	docks := []engine.DockInfo{
 		{
 			Name: "tools",
@@ -549,10 +542,7 @@ func TestFormatDockTree_IncludesNoRepoDocks(t *testing.T) {
 	}
 
 	out := stripANSI(FormatListView(BuildListView(docks, ListViewOptions{}), false, false))
-	if !strings.Contains(out, "rp (no repo)") {
-		t.Fatalf("missing synthetic no-repo container:\n%s", out)
-	}
 	if !strings.Contains(out, "dk tools") {
-		t.Fatalf("missing no-repo dock:\n%s", out)
+		t.Fatalf("missing dock:\n%s", out)
 	}
 }

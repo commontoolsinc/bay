@@ -105,7 +105,11 @@ func (m MonitorConfig) EffectiveInterval() int {
 
 // DefaultConfig returns an empty config with initialized maps.
 func DefaultConfig() *Config {
-	return &Config{}
+	return &Config{
+		Agents:  make(map[string]AgentConfig),
+		Editors: make(map[string]EditorConfig),
+		Docks:   make(map[string]DockConfig),
+	}
 }
 
 // DefaultConfigDir returns the default config directory.
@@ -148,6 +152,9 @@ func Parse(data string) (*Config, error) {
 	}
 	if cfg.Agents == nil {
 		cfg.Agents = make(map[string]AgentConfig)
+	}
+	if cfg.Editors == nil {
+		cfg.Editors = make(map[string]EditorConfig)
 	}
 	if cfg.Docks == nil {
 		cfg.Docks = make(map[string]DockConfig)

@@ -5,7 +5,7 @@ package cli
 // file so the parent command code stays focused.
 const configHelpText = `Bay Configuration — ~/.config/bay/config.toml
 
-Bay's config file holds user preferences. Repos, docks, and bays
+Bay's config file holds user preferences. Docks and bays
 are tracked automatically in the manifest (~/.local/share/bay/manifest.json).
 A config file is only needed for customization — bay works without one.
 
@@ -28,7 +28,7 @@ CUSTOM AGENTS (optional)
   command = "my-agent-cli"
   args = ["--flag", "value"]      # default args for this agent
   resume_args = "--continue"      # added on recovery
-  project_file = ".my-agent.md"   # checked by 'bay repo init'
+  project_file = ".my-agent.md"   # checked when creating a dock
 
 CUSTOM EDITORS (optional)
 

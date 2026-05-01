@@ -953,7 +953,7 @@ func configureEditor(reader *bufio.Reader, configPath string) {
 
 const baySkillContent = `---
 name: bay
-description: Bay management — git worktrees and tmux windows. Use when creating, managing, or navigating bays, docks, or repos.
+description: Bay management — git worktrees and tmux windows. Use when creating, managing, or navigating bays, docks, or surfaces.
 ---
 
 !` + "`bay agent-guide`" + `

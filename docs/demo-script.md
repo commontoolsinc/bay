@@ -205,6 +205,6 @@ bay dk tree
 - If someone asks about editors: "bay edit opens your bay in
   Cursor, VS Code, nvim, whatever you use. Terminal editors get
   tracked as surfaces; GUI editors just launch."
-- If someone asks about multiple repos: "One dock can hold bays
-  from different repos. `bay new --repo backend` alongside your
-  frontend bays."
+- If someone asks about multiple checkouts: "Each dock owns one
+  checkout. Create a separate dock with `bay dock new backend --path
+  ~/projects/backend`."

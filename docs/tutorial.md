@@ -16,9 +16,9 @@ This tutorial walks through the full lifecycle in about 10 minutes.
 
 **You'll need:** bay (install with `go install ./cmd/bay`), tmux, and git.
 
-**Cleaning up:** When you're done, `bay repo remove bay-tutorial --force`
+**Cleaning up:** When you're done, `bay dock close bay-tutorial --force`
 removes all bays and bay state. Then `rm -rf /tmp/bay-tutorial`
-removes the repo itself.
+removes the checkout itself.
 
 ---
 
@@ -49,12 +49,11 @@ bay ls
 ```
 
 ```
-rp bay-tutorial
-  dk bay-tutorial *
-    bay w1 *  n=1
+dk bay-tutorial *
+  bay w1 *  n=1
 ```
 
-One repo, one dock, one bay with a shell surface. Everything
+One dock, one bay with a shell surface. Everything
 you do from here — creating more bays, adding shells,
 navigating — happens inside this session.
 
@@ -109,12 +108,11 @@ bay ls
 ```
 
 ```
-rp bay-tutorial
-  dk bay-tutorial *
-    bay w1             n=1
-    bay login-bug      br=fix/login-bug  n=1
-    bay auth-refactor  br=fix/auth-refactor  n=1
-    bay review *       n=1
+dk bay-tutorial *
+  bay w1             n=1
+  bay login-bug      br=fix/login-bug  n=1
+  bay auth-refactor  br=fix/auth-refactor  n=1
+  bay review *       n=1
 ```
 
 Four bays in creation order. The two with `--branch` show their
@@ -162,12 +160,11 @@ bay tree
 ```
 
 ```
-rp bay-tutorial
-  dk bay-tutorial *
-    bay login-bug *  br=fix/login-bug  id=w1
-      sf shell *    ty=shell
-      sf shell-2    ty=shell
-      sf monitor    ty=cmd
+dk bay-tutorial *
+  bay login-bug *  br=fix/login-bug  id=w1
+    sf shell *    ty=shell
+    sf shell-2    ty=shell
+    sf monitor    ty=cmd
 ```
 
 The `id=w1` column shows the bay's stable handle. It only
@@ -221,21 +218,20 @@ bay tree
 ```
 
 ```
-rp bay-tutorial
-  dk bay-tutorial *
-    bay login-bug *  br=fix/login-bug
-      sf shell    ty=shell
-      sf monitor  ty=cmd
-    bay review
-      sf agent    ty=agent ag=claude
-      sf shell    ty=shell
+dk bay-tutorial *
+  bay login-bug *  br=fix/login-bug
+    sf shell    ty=shell
+    sf monitor  ty=cmd
+  bay review
+    sf agent    ty=agent ag=claude
+    sf shell    ty=shell
 ```
 
 Other useful commands:
 
-- `bay pwd` — where am I? (repo, dock, bay, surface)
+- `bay pwd` — where am I? (dock, bay, surface)
 - `bay show` — detailed info about the current bay
-- `bay doctor` — health checks (keybindings, agents, repos)
+- `bay doctor` — health checks (keybindings, agents, dock checkouts)
 
 ## 7. Clean up
 
@@ -287,14 +283,14 @@ not tracked — reopen them with `bay edit`.
 It's optional — everything works without it, but the keybindings make
 navigation instant.
 
-**Multiple repos:** `bay repo add backend ~/projects/backend` registers
-another repo. Create bays from it with `bay new --repo backend`.
+**Multiple checkouts:** create a separate dock for another checkout:
+`bay dock new backend --path ~/projects/backend`.
 
-**Agent awareness:** `bay repo init` adds a one-liner to your project's
+**Agent awareness:** new docks add a one-liner to your project's
 `CLAUDE.local.md` (or equivalent) so agents know about bay commands.
 
 **Explicit control:** The zero-config flow creates docks automatically.
-For more control: `bay dock new myproject --repo myproject`.
+For more control: `bay dock new myproject --path ~/projects/myproject`.
 
 **Status line:** Add `#(bay status-line full --window #{window_id})` to
 your tmux `status-right` to always see your current bay label, branch,

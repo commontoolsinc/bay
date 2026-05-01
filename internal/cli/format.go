@@ -29,14 +29,12 @@ type FocusKind string
 
 const (
 	FocusAll       FocusKind = "all"
-	FocusRepo      FocusKind = "repo"
 	FocusDock      FocusKind = "dock"
 	FocusWorkspace FocusKind = "bay"
 )
 
 type ListFocus struct {
 	Kind        FocusKind `json:"kind"`
-	Repo        string    `json:"repo,omitempty"`
 	Dock        string    `json:"dock,omitempty"`
 	WorkspaceID string    `json:"bay_id,omitempty"`
 }
@@ -46,19 +44,13 @@ type ListViewOptions struct {
 	Recursive bool
 }
 
-type RepoInfo struct {
-	Name  string            `json:"name"`
-	Path  string            `json:"path,omitempty"`
-	Docks []engine.DockInfo `json:"docks"`
-}
-
 type ListView struct {
-	Focus          ListFocus  `json:"focus"`
-	Recursive      bool       `json:"recursive"`
-	Repos          []RepoInfo `json:"repos"`
-	CurrentDock    string     `json:"-"` // for highlighting; not serialized
-	CurrentWsID    string     `json:"-"`
-	CurrentSurface string     `json:"-"`
+	Focus          ListFocus         `json:"focus"`
+	Recursive      bool              `json:"recursive"`
+	Docks          []engine.DockInfo `json:"docks"`
+	CurrentDock    string            `json:"-"` // for highlighting; not serialized
+	CurrentWsID    string            `json:"-"`
+	CurrentSurface string            `json:"-"`
 }
 
 // SetCurrentContext populates the current dock/workspace/surface for highlighting.
@@ -77,7 +69,6 @@ func (v *ListView) SetCurrentContext(eng *engine.Engine) {
 }
 
 type ListRow struct {
-	Repo                string `json:"repo"`
 	Dock                string `json:"dock,omitempty"`
 	WorkspaceName       string `json:"bay_name,omitempty"`
 	WorkspaceBranch     string `json:"bay_branch,omitempty"`
@@ -93,8 +84,7 @@ type ListRow struct {
 	SurfaceStatus       string `json:"surface_status,omitempty"`
 }
 
-// BuildListView builds the repo -> dock -> workspace hierarchy from DockInfo data.
-// Repos and dock-repo assignments come from the DockInfo.Repo field (set by engine.List).
+// BuildListView builds the dock -> workspace hierarchy from DockInfo data.
 func BuildListView(docks []engine.DockInfo, opts ListViewOptions) ListView {
 	focus := opts.Focus
 	if focus.Kind == "" {
@@ -102,96 +92,19 @@ func BuildListView(docks []engine.DockInfo, opts ListViewOptions) ListView {
 	}
 	recursive := opts.Recursive || focus.Kind == FocusWorkspace
 
-	// Group docks by repo.
 	dockMap := map[string]engine.DockInfo{}
-	repoSet := map[string]bool{}
-	dockToRepo := map[string]string{}
 	for _, dock := range docks {
 		dockMap[dock.Name] = dock
-		repo := dock.Repo
-		if repo == "" {
-			repo = "(no repo)"
-		}
-		repoSet[repo] = true
-		dockToRepo[dock.Name] = repo
 	}
 
-	repoNames := make([]string, 0, len(repoSet))
-	for name := range repoSet {
-		repoNames = append(repoNames, name)
-	}
-	sort.Strings(repoNames)
-
-	assignedDocks := map[string]bool{}
 	view := ListView{Focus: focus, Recursive: recursive}
-
-	for _, repoName := range repoNames {
-		if repoName == "(no repo)" {
-			continue // handled below
-		}
-		if (focus.Kind == FocusRepo || focus.Kind == FocusDock || focus.Kind == FocusWorkspace) && focus.Repo != "" && focus.Repo != repoName {
-			continue
-		}
-		repoInfo := RepoInfo{Name: repoName}
-
-		var dockNames []string
-		for dockName, repo := range dockToRepo {
-			if repo == repoName {
-				dockNames = append(dockNames, dockName)
-			}
-		}
-		sort.Strings(dockNames)
-
-		for _, dockName := range dockNames {
-			if (focus.Kind == FocusDock || focus.Kind == FocusWorkspace) && focus.Dock != "" && focus.Dock != dockName {
-				continue
-			}
-			assignedDocks[dockName] = true
-			dock := dockMap[dockName]
-			filtered := dock
-			filtered.Workspaces = nil
-
-			for _, ws := range dock.Workspaces {
-				if focus.Kind == FocusWorkspace && focus.WorkspaceID != "" && focus.WorkspaceID != ws.ID {
-					continue
-				}
-				filtered.Workspaces = append(filtered.Workspaces, trimWorkspace(ws, recursive))
-			}
-
-			if focus.Kind == FocusWorkspace && len(filtered.Workspaces) == 0 {
-				continue
-			}
-			repoInfo.Docks = append(repoInfo.Docks, filtered)
-		}
-
-		if focus.Kind == FocusRepo && len(repoInfo.Docks) == 0 {
-			continue
-		}
-		if focus.Kind == FocusAll && len(repoInfo.Docks) == 0 {
-			repoInfo.Docks = []engine.DockInfo{}
-		}
-		if len(repoInfo.Docks) > 0 || focus.Kind == FocusAll || focus.Kind == FocusRepo {
-			view.Repos = append(view.Repos, repoInfo)
-		}
+	var dockNames []string
+	for dockName := range dockMap {
+		dockNames = append(dockNames, dockName)
 	}
+	sort.Strings(dockNames)
 
-	// Orphan docks (no repo).
-	orphanRepo := RepoInfo{Name: "(no repo)"}
-	var orphanNames []string
-	for dockName, repo := range dockToRepo {
-		if assignedDocks[dockName] {
-			continue
-		}
-		if focus.Kind == FocusRepo {
-			continue
-		}
-		if repo != "(no repo)" {
-			continue
-		}
-		orphanNames = append(orphanNames, dockName)
-	}
-	sort.Strings(orphanNames)
-	for _, dockName := range orphanNames {
+	for _, dockName := range dockNames {
 		if (focus.Kind == FocusDock || focus.Kind == FocusWorkspace) && focus.Dock != "" && focus.Dock != dockName {
 			continue
 		}
@@ -207,10 +120,7 @@ func BuildListView(docks []engine.DockInfo, opts ListViewOptions) ListView {
 		if focus.Kind == FocusWorkspace && len(filtered.Workspaces) == 0 {
 			continue
 		}
-		orphanRepo.Docks = append(orphanRepo.Docks, filtered)
-	}
-	if len(orphanRepo.Docks) > 0 {
-		view.Repos = append(view.Repos, orphanRepo)
+		view.Docks = append(view.Docks, filtered)
 	}
 
 	return view
@@ -240,40 +150,36 @@ func printListViewJSON(view ListView, rows bool) error {
 
 func ListRows(view ListView) []ListRow {
 	var rows []ListRow
-	for _, repo := range view.Repos {
-		for _, dock := range repo.Docks {
-			for _, ws := range dock.Workspaces {
-				if len(ws.Surfaces) == 0 {
-					rows = append(rows, ListRow{
-						Repo:                repo.Name,
-						Dock:                dock.Name,
-						WorkspaceName:       ws.Name,
-						WorkspaceBranch:     ws.Branch,
-						WorkspaceDirty:      ws.Dirty,
-						WorkspacePending:    ws.Pending,
-						WorkspaceSyncStatus: ws.SyncStatus,
-						WorkspaceWaiting:    ws.Waiting,
-					})
-					continue
-				}
-				for _, s := range ws.Surfaces {
-					rows = append(rows, ListRow{
-						Repo:                repo.Name,
-						Dock:                dock.Name,
-						WorkspaceName:       ws.Name,
-						WorkspaceBranch:     ws.Branch,
-						WorkspaceDirty:      ws.Dirty,
-						WorkspacePending:    ws.Pending,
-						WorkspaceSyncStatus: ws.SyncStatus,
-						WorkspaceWaiting:    ws.Waiting,
-						SurfaceID:           s.ID,
-						SurfaceName:         s.Name,
-						SurfaceType:         s.Type,
-						SurfaceAgent:        s.Agent,
-						SurfaceCommand:      s.Command,
-						SurfaceStatus:       s.Status,
-					})
-				}
+	for _, dock := range view.Docks {
+		for _, ws := range dock.Workspaces {
+			if len(ws.Surfaces) == 0 {
+				rows = append(rows, ListRow{
+					Dock:                dock.Name,
+					WorkspaceName:       ws.Name,
+					WorkspaceBranch:     ws.Branch,
+					WorkspaceDirty:      ws.Dirty,
+					WorkspacePending:    ws.Pending,
+					WorkspaceSyncStatus: ws.SyncStatus,
+					WorkspaceWaiting:    ws.Waiting,
+				})
+				continue
+			}
+			for _, s := range ws.Surfaces {
+				rows = append(rows, ListRow{
+					Dock:                dock.Name,
+					WorkspaceName:       ws.Name,
+					WorkspaceBranch:     ws.Branch,
+					WorkspaceDirty:      ws.Dirty,
+					WorkspacePending:    ws.Pending,
+					WorkspaceSyncStatus: ws.SyncStatus,
+					WorkspaceWaiting:    ws.Waiting,
+					SurfaceID:           s.ID,
+					SurfaceName:         s.Name,
+					SurfaceType:         s.Type,
+					SurfaceAgent:        s.Agent,
+					SurfaceCommand:      s.Command,
+					SurfaceStatus:       s.Status,
+				})
 			}
 		}
 	}
@@ -636,113 +542,104 @@ func nonDescRowWidth(prefixAlign int, colWidths []int) int {
 func FormatListView(view ListView, long, short bool) string {
 	termWidth := detectStdoutWidth()
 	var b strings.Builder
-	for _, repo := range view.Repos {
-		p, _ := indentedPrefix(0, "rp", repo.Name, short)
+	for _, dock := range view.Docks {
+		dockMarker := ""
+		if dock.Name == view.CurrentDock {
+			dockMarker = " *"
+		}
+		p, _ := indentedPrefix(0, "dk", dock.Name+dockMarker, short)
 		fmt.Fprintln(&b, p)
-		if len(repo.Docks) == 0 {
-			p, _ := indentedPrefix(1, "", "(no docks)", short)
+
+		// Dock-level surfaces (e.g., dock editor).
+		if len(dock.Surfaces) > 0 {
+			var dockSfRows []alignedRow
+			for _, s := range dock.Surfaces {
+				sfP, sfW := indentedPrefix(1, "sf", s.Name, short)
+				dockSfRows = append(dockSfRows, alignedRow{
+					prefix:      sfP,
+					prefixWidth: sfW,
+					metaCols:    surfaceMetaCols(s, long, short),
+				})
+			}
+			dockSfAlign := alignWidth(dockSfRows)
+			dockSfColWidths := alignColumnWidths(dockSfRows)
+			for _, sr := range dockSfRows {
+				writeAlignedLine(&b, sr.prefix, sr.prefixWidth, sr.metaCols, dockSfAlign, dockSfColWidths)
+			}
+		}
+
+		if len(dock.Workspaces) == 0 && len(dock.Surfaces) == 0 {
+			p, _ := indentedPrefix(1, "", "(no bays)", short)
 			fmt.Fprintln(&b, p)
 			continue
 		}
-		for _, dock := range repo.Docks {
-			dockMarker := ""
-			if dock.Name == view.CurrentDock {
-				dockMarker = " *"
-			}
-			p, _ := indentedPrefix(1, "dk", dock.Name+dockMarker, short)
-			fmt.Fprintln(&b, p)
-			// Dock-level surfaces (e.g., dock editor).
-			if len(dock.Surfaces) > 0 {
-				var dockSfRows []alignedRow
-				for _, s := range dock.Surfaces {
-					sfP, sfW := indentedPrefix(2, "sf", s.Name, short)
-					dockSfRows = append(dockSfRows, alignedRow{
-						prefix:      sfP,
-						prefixWidth: sfW,
-						metaCols:    surfaceMetaCols(s, long, short),
-					})
-				}
-				dockSfAlign := alignWidth(dockSfRows)
-				dockSfColWidths := alignColumnWidths(dockSfRows)
-				for _, sr := range dockSfRows {
-					writeAlignedLine(&b, sr.prefix, sr.prefixWidth, sr.metaCols, dockSfAlign, dockSfColWidths)
-				}
-			}
+		if len(dock.Workspaces) == 0 {
+			continue
+		}
+		showChildren := view.Recursive || view.Focus.Kind == FocusWorkspace
 
-			if len(dock.Workspaces) == 0 && len(dock.Surfaces) == 0 {
-				p, _ := indentedPrefix(2, "", "(no bays)", short)
-				fmt.Fprintln(&b, p)
+		wsRows := make([]alignedRow, len(dock.Workspaces))
+		var allSfRows []alignedRow
+		for i, ws := range dock.Workspaces {
+			isCurrentWs := dock.Name == view.CurrentDock && ws.ID == view.CurrentWsID
+			wsName := ws.Name
+			if isCurrentWs {
+				wsName += " *"
+			}
+			p, w := indentedPrefix(1, "bay", wsName, short)
+			wsRows[i] = alignedRow{
+				prefix:      p,
+				prefixWidth: w,
+				metaCols:    workspaceMetaCols(ws, !showChildren, short),
+			}
+			if !showChildren {
 				continue
 			}
-			if len(dock.Workspaces) == 0 {
-				continue
+			sfRows := make([]alignedRow, len(ws.Surfaces))
+			for j, s := range ws.Surfaces {
+				sName := s.Name
+				if isCurrentWs && s.Name == view.CurrentSurface {
+					sName += " *"
+				}
+				sfP, sfW := indentedPrefix(2, "sf", sName, short)
+				sfRows[j] = alignedRow{
+					prefix:      sfP,
+					prefixWidth: sfW,
+					metaCols:    surfaceMetaCols(s, long, short),
+				}
 			}
-			showChildren := view.Recursive || view.Focus.Kind == FocusWorkspace
+			wsRows[i].surfaceRows = sfRows
+			allSfRows = append(allSfRows, sfRows...)
+		}
 
-			wsRows := make([]alignedRow, len(dock.Workspaces))
-			var allSfRows []alignedRow
+		wsAlign := alignWidth(wsRows)
+		wsColWidths := alignColumnWidths(wsRows)
+
+		// Fit description column (index 0) to terminal width by shrinking
+		// too-long rows in place. No-op when no workspace has a description.
+		if wsColWidths[0] > 0 {
+			strMax := descStrMaxForWidth(termWidth, nonDescRowWidth(wsAlign, wsColWidths), short)
+			shrunk := false
 			for i, ws := range dock.Workspaces {
-				isCurrentWs := dock.Name == view.CurrentDock && ws.ID == view.CurrentWsID
-				wsName := ws.Name
-				if isCurrentWs {
-					wsName += " *"
-				}
-				p, w := indentedPrefix(2, "bay", wsName, short)
-				wsRows[i] = alignedRow{
-					prefix:      p,
-					prefixWidth: w,
-					metaCols:    workspaceMetaCols(ws, !showChildren, short),
-				}
-				if !showChildren {
+				first := engine.DescriptionFirstLine(ws.Description)
+				if first == "" || len(first) <= strMax {
 					continue
 				}
-				sfRows := make([]alignedRow, len(ws.Surfaces))
-				for j, s := range ws.Surfaces {
-					sName := s.Name
-					if isCurrentWs && s.Name == view.CurrentSurface {
-						sName += " *"
-					}
-					sfP, sfW := indentedPrefix(3, "sf", sName, short)
-					sfRows[j] = alignedRow{
-						prefix:      sfP,
-						prefixWidth: sfW,
-						metaCols:    surfaceMetaCols(s, long, short),
-					}
-				}
-				wsRows[i].surfaceRows = sfRows
-				allSfRows = append(allSfRows, sfRows...)
+				wsRows[i].metaCols[0] = descField(first, strMax, short)
+				shrunk = true
 			}
-
-			wsAlign := alignWidth(wsRows)
-			wsColWidths := alignColumnWidths(wsRows)
-
-			// Fit description column (index 0) to terminal width by
-			// shrinking too-long rows in place. No-op when no workspace
-			// has a description (wsColWidths[0] is 0).
-			if wsColWidths[0] > 0 {
-				strMax := descStrMaxForWidth(termWidth, nonDescRowWidth(wsAlign, wsColWidths), short)
-				shrunk := false
-				for i, ws := range dock.Workspaces {
-					first := engine.DescriptionFirstLine(ws.Description)
-					if first == "" || len(first) <= strMax {
-						continue
-					}
-					wsRows[i].metaCols[0] = descField(first, strMax, short)
-					shrunk = true
-				}
-				if shrunk {
-					wsColWidths = alignColumnWidths(wsRows)
-				}
+			if shrunk {
+				wsColWidths = alignColumnWidths(wsRows)
 			}
+		}
 
-			sfAlign := alignWidth(allSfRows)
-			sfColWidths := alignColumnWidths(allSfRows)
+		sfAlign := alignWidth(allSfRows)
+		sfColWidths := alignColumnWidths(allSfRows)
 
-			for _, wsRow := range wsRows {
-				writeAlignedLine(&b, wsRow.prefix, wsRow.prefixWidth, wsRow.metaCols, wsAlign, wsColWidths)
-				for _, sr := range wsRow.surfaceRows {
-					writeAlignedLine(&b, sr.prefix, sr.prefixWidth, sr.metaCols, sfAlign, sfColWidths)
-				}
+		for _, wsRow := range wsRows {
+			writeAlignedLine(&b, wsRow.prefix, wsRow.prefixWidth, wsRow.metaCols, wsAlign, wsColWidths)
+			for _, sr := range wsRow.surfaceRows {
+				writeAlignedLine(&b, sr.prefix, sr.prefixWidth, sr.metaCols, sfAlign, sfColWidths)
 			}
 		}
 	}
@@ -784,7 +681,7 @@ func writeAlignedRows(b *strings.Builder, rows []showRow, minWidth int) {
 	}
 }
 
-func FormatWorkspaceShow(repoName, dockName string, ws *engine.WorkspaceInfo, long bool) string {
+func FormatWorkspaceShow(dockName string, ws *engine.WorkspaceInfo, long bool) string {
 	var b strings.Builder
 
 	var rows []showRow
@@ -803,7 +700,6 @@ func FormatWorkspaceShow(repoName, dockName string, ws *engine.WorkspaceInfo, lo
 			}
 		}
 	}
-	rows = append(rows, showRow{"repo", repoName})
 	rows = append(rows, showRow{"dock", dockName})
 	if ws.Type != "" && ws.Type != "worktree" {
 		rows = append(rows, showRow{"type", ws.Type})
@@ -885,7 +781,7 @@ func FormatSurfaceList(surfaces []engine.SurfaceInfo, currentSurface string, sho
 	return b.String()
 }
 
-// FormatFullTree formats the full repo -> dock -> workspace hierarchy.
+// FormatFullTree formats the full dock -> workspace hierarchy.
 func FormatFullTree(docks []engine.DockInfo) string {
 	return FormatListView(BuildListView(docks, ListViewOptions{}), false, false)
 }
@@ -894,44 +790,7 @@ func FormatFullTree(docks []engine.DockInfo) string {
 func FormatDockTree(docks []engine.DockInfo) string {
 	focus := ListFocus{Kind: FocusAll}
 	if len(docks) == 1 {
-		focus = ListFocus{Kind: FocusDock, Repo: docks[0].Repo, Dock: docks[0].Name}
+		focus = ListFocus{Kind: FocusDock, Dock: docks[0].Name}
 	}
 	return FormatListView(BuildListView(docks, ListViewOptions{Focus: focus}), false, false)
-}
-
-// FormatRepoTree formats repos with their docks (from manifest data).
-func FormatRepoTree(repos []engine.RepoInfo, docks []engine.DockInfo) string {
-	var b strings.Builder
-	for _, repo := range repos {
-		fmt.Fprintf(&b, "%s  %s  (worktrees: %s)\n", repo.Name, repo.Path, repo.WorktreeDir)
-		var dockNames []string
-		for _, dock := range docks {
-			if dock.Repo == repo.Name {
-				dockNames = append(dockNames, dock.Name)
-			}
-		}
-		sort.Strings(dockNames)
-		if len(dockNames) > 0 {
-			fmt.Fprintf(&b, "  docks: %s\n", strings.Join(dockNames, ", "))
-		}
-	}
-	return b.String()
-}
-
-// FormatSubtreeForRemoval formats the repo -> dock -> workspace hierarchy
-// for items that would be removed. Used by repo remove's error message.
-func FormatSubtreeForRemoval(repoName string, docks []engine.DockInfo) string {
-	view := BuildListView(docks, ListViewOptions{
-		Focus: ListFocus{Kind: FocusRepo, Repo: repoName},
-	})
-	return indentBlock(FormatListView(view, false, false), 1)
-}
-
-func indentBlock(s string, depth int) string {
-	prefix := strings.Repeat("  ", depth)
-	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
-	for i, line := range lines {
-		lines[i] = prefix + line
-	}
-	return strings.Join(lines, "\n") + "\n"
 }

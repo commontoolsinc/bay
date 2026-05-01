@@ -14,7 +14,6 @@ import (
 // WsNewOptions are options for creating a new workspace.
 type WsNewOptions struct {
 	Dock         string // dock name (required)
-	Repo         string // repo name override (optional, defaults to dock's repo)
 	Dir          string // external directory (makes it external type)
 	Name         string // display name override
 	Description  string // short free-form label shown in picker/ls/tree
@@ -44,10 +43,6 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	var wsPath string
 	var worktreeAttrs *manifest.WorktreeAttrs
 	var branchExists bool
-	repoName := opts.Repo
-	if repoName == "" {
-		repoName = dock.Repo
-	}
 
 	nameExplicit := opts.Name != ""
 	displayName := opts.Name
@@ -87,16 +82,12 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	} else {
 		// Worktree workspace.
 		wsType = manifest.WorkspaceTypeWorktree
-		if repoName == "" {
-			return nil, fmt.Errorf("dock %q has no default repo; specify --repo or --dir", dockName)
+		if dock.Path == "" {
+			return nil, fmt.Errorf("dock %q has no checkout; specify --dir for an external bay", dockName)
 		}
-		repo := m.FindRepo(repoName)
-		if repo == nil {
-			return nil, fmt.Errorf("unknown repo %q", repoName)
-		}
-		worktreeAttrs = &manifest.WorktreeAttrs{Repo: repoName}
+		worktreeAttrs = &manifest.WorktreeAttrs{}
 
-		wtDir := repo.EffectiveWorktreeDir()
+		wtDir := dock.EffectiveWorktreeDir()
 		if err := os.MkdirAll(wtDir, 0o755); err != nil {
 			return nil, fmt.Errorf("creating worktree dir: %w", err)
 		}
@@ -105,7 +96,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		// work pivots, but the on-disk directory stays stable.
 		wsPath = filepath.Join(wtDir, nextWorkspaceDir(wtDir, dock))
 
-		repoPath := config.ExpandPath(repo.Path)
+		repoPath := config.ExpandPath(dock.Path)
 
 		// Only fetch when --branch is used so the common case (no branch)
 		// stays fast. The detached worktree uses origin/<default> which
@@ -145,12 +136,9 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 
 	// rollbackWorktree cleans up a worktree on failure.
 	rollbackWorktree := func() {
-		if wsType == manifest.WorkspaceTypeWorktree && repoName != "" {
-			repo := m.FindRepo(repoName)
-			if repo != nil {
-				repoPath := config.ExpandPath(repo.Path)
-				_ = e.Git.RemoveWorktree(repoPath, wsPath, true)
-			}
+		if wsType == manifest.WorkspaceTypeWorktree && dock.Path != "" {
+			repoPath := config.ExpandPath(dock.Path)
+			_ = e.Git.RemoveWorktree(repoPath, wsPath, true)
 		}
 	}
 
@@ -333,11 +321,6 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 // the manifest update first, the worst case is that bay dies between
 // the manifest write and the kill — leaving the manifest correct and
 // the pane briefly orphaned (next bay invocation will skip it).
-//
-// Callers: WsClose (kills the returned IDs immediately), DockClose
-// (collects across all workspaces and uses KillSession at the end),
-// RepoRemove (collects across all docks), WsCloseByStatus (collects
-// across all targets).
 func (e *Engine) closeWorkspaceState(dockName, wsID string, force bool) ([]string, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
@@ -411,24 +394,20 @@ func (e *Engine) closeWorkspaceState(dockName, wsID string, force bool) ([]strin
 	// Remove worktree from disk. This is destructive of the worktree
 	// directory (and may invalidate the shell's CWD), but does not
 	// kill bay's process.
-	if ws.Type == manifest.WorkspaceTypeWorktree && ws.Worktree != nil && ws.Worktree.Repo != "" {
-		repo := m.FindRepo(ws.Worktree.Repo)
-		if repo != nil {
-			repoPath := config.ExpandPath(repo.Path)
-			if err := e.Git.RemoveWorktree(repoPath, ws.Path, force); err != nil {
-				if !force {
-					return nil, fmt.Errorf("removing worktree: %w", err)
-				}
+	if ws.Type == manifest.WorkspaceTypeWorktree && ws.Worktree != nil && dock.Path != "" {
+		repoPath := config.ExpandPath(dock.Path)
+		if err := e.Git.RemoveWorktree(repoPath, ws.Path, force); err != nil {
+			if !force {
+				return nil, fmt.Errorf("removing worktree: %w", err)
 			}
-			// Delete the local branch now that the worktree is gone.
-			// git refuses to delete a branch checked out in a worktree,
-			// so this must come after RemoveWorktree.
-			if branchSafeToDelete {
-				_ = e.Git.DeleteBranch(repoPath, ws.Worktree.Branch)
-			}
-			wtDir := repo.EffectiveWorktreeDir()
-			_ = os.Remove(wtDir)
 		}
+		// Delete the local branch now that the worktree is gone.
+		// git refuses to delete a branch checked out in a worktree,
+		// so this must come after RemoveWorktree.
+		if branchSafeToDelete {
+			_ = e.Git.DeleteBranch(repoPath, ws.Worktree.Branch)
+		}
+		_ = os.Remove(dock.EffectiveWorktreeDir())
 	}
 
 	// Archive the workspace. Disambiguate name if it already exists

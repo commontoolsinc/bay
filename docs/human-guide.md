@@ -52,7 +52,7 @@ cd ~/projects/myproject
 bay new
 ```
 
-Bay auto-detects the repo, creates a dock (tmux session), probes for an
+Bay auto-detects the checkout, creates a dock (tmux session), probes for an
 agent on your PATH, and opens a bay. If this is your first time,
 it writes a minimal config for next time.
 
@@ -70,13 +70,12 @@ or Codex is installed, it also installs hooks so tmux highlights the tab
 when an agent needs permission or finishes a turn — Option+R then jumps
 straight to it.
 
-### Explicit repo and dock
+### Explicit dock
 
-For more control, register a repo and create a named dock:
+For more control, create a named dock for a checkout:
 
 ```
-bay repo add myproject ~/projects/myproject
-bay dock new dev --repo myproject --agent claude
+bay dock new dev --path ~/projects/myproject --agent claude
 tmux attach -t dev
 bay new
 ```
@@ -140,35 +139,21 @@ Dock (tmux session)
 jump to. You don't think in "tmux windows and panes"; you think "agent",
 "editor", "shell". That is what a surface is.
 
-### Repos
-
-A **repo** is a local git checkout that bay creates worktrees from.
-
-```
-bay repo add myproject ~/projects/myproject
-bay repo add myproject ~/projects/myproject --url git@github.com:org/repo.git
-bay repo add myproject ~/projects/myproject --worktree-dir ~/wt/myproject
-bay repo ls
-bay repo show myproject
-bay repo remove myproject
-bay repo remove myproject --force    # also removes docks using this repo
-```
-
 ### Docks
 
 A **dock** is a named tmux session that groups related bays. You
 might have a `dev` dock for one project and an `ops` dock for another.
-Each dock has defaults: which repo to use, and optionally which agent to
-launch and which terminal to use.
+Each dock owns one local git checkout and has optional defaults for
+agent and terminal.
 
 When a dock is created, its tmux session starts with a placeholder `~`
 window. This disappears when you create your first bay and
 reappears when you close your last.
 
 ```
-bay dock new dev --repo myproject
-bay dock new dev --repo myproject --agent claude
-bay dock new dev --repo myproject --terminal ghostty
+bay dock new dev --path ~/projects/myproject
+bay dock new dev --path ~/projects/myproject --agent claude
+bay dock new dev --path ~/projects/myproject --terminal ghostty
 bay dock ls
 bay dock show dev
 bay dock close dev
@@ -179,7 +164,7 @@ bay dock close dev --force
 
 A **bay** is a working directory with metadata. Two types:
 
-- **Worktree** -- bay creates a git worktree from a configured repo.
+- **Worktree** -- bay creates a git worktree from the dock's checkout.
   Bay owns the lifecycle: creation, safety checks on close, cleanup.
   This is the default.
 - **External** -- bay points at an existing directory you own. Bay
@@ -334,13 +319,13 @@ type a Name where bay expects an ID, the error names the ID for you:
 ## Configuration
 
 Bay's config lives at `~/.config/bay/config.toml`. It holds user
-preferences and optional overrides — not instance state. Repos, docks,
-and bays are tracked in the manifest (`~/.local/share/bay/manifest.json`).
+preferences and optional overrides — not instance state. Docks and bays
+are tracked in the manifest (`~/.local/share/bay/manifest.json`).
 
 ### Zero-config behavior
 
 No config file is needed. `bay new` auto-bootstraps: it detects the
-CWD git repo, creates a dock, probes for agents and editors on PATH,
+CWD git checkout, creates a dock, probes for agents and editors on PATH,
 and starts working. A config file is only needed to set preferences.
 
 ### Defaults
@@ -385,15 +370,11 @@ codex = ["--model", "o3"]                      # per-dock agent args override
 
 ## Agent integration
 
-### Bay awareness via `bay repo init`
+### Bay awareness
 
 Instead of generating per-bay config files, bay uses a lightweight
-awareness model. Run `bay repo init` to set up a repo:
-
-```
-bay repo init myproject     # by name
-bay repo init               # infer from CWD
-```
+awareness model. New docks run this setup automatically for their
+checkout.
 
 This does two things:
 1. For each built-in agent with a project file (e.g., `CLAUDE.local.md`
@@ -403,15 +384,14 @@ This does two things:
 2. Creates `.worktreeinclude` if missing, so gitignored files (`.env`,
    etc.) get copied to new worktrees.
 
-`bay repo add` calls `repo init` automatically. `bay doctor` flags
-repos missing bay awareness.
+`bay doctor` flags dock checkouts missing bay awareness.
 
 ### .worktreeinclude
 
 Bay reads `.worktreeinclude` as a **gitignore-format** file — each line
 is a pattern (globs, negations, directory rules) resolved by git itself.
 At worktree creation time, bay expands the patterns and copies matching
-files from the repo root into the new worktree.
+files from the dock checkout into the new worktree.
 
 To protect against accidentally spraying checked-in files across
 worktrees, bay refuses to sync any match that is **tracked in git** or
@@ -434,7 +414,7 @@ aid, not just a label. Expect them to:
   diff. They should update when the *situation* changes, not on
   every pause.
 
-`bay repo init` installs the pointer to `bay agent-guide` which tells
+The dock setup installs the pointer to `bay agent-guide` which tells
 agents how. For a stronger nudge, paste the block below into your
 user-global agent instructions (for Claude Code, `~/.claude/CLAUDE.md`):
 
@@ -510,7 +490,6 @@ bay new [name] --agent                   # first surface is agent, not shell
 bay new [name] --agent=codex             # specific agent type
 bay new [name] --dock <d>                # target a specific dock
 bay new [name] --branch <b>              # checkout or create branch
-bay new [name] --repo <r>                # override dock's repo
 bay new [name] --dir <path>              # external bay
 bay new [name] --description "<text>"    # set description at creation time
 bay new [name] -q                        # suppress output (scripting)
@@ -611,28 +590,11 @@ All pickers are built-in. They support fuzzy
 matching: type a query to filter, single match jumps directly, multiple
 matches open an interactive picker.
 
-### Repos
-
-```
-bay repo add <name> <path>                  # register existing local repo
-bay repo add <name> <path> --url <git-url>  # clone then register
-bay repo add <name> <path> --force          # skip git repo check
-bay repo ls                                 # list repos and their docks
-bay repo ls --json                          # machine-readable repo list
-bay repo tree [name]                        # full tree for a repo (default: current)
-bay repo show <name>                        # detailed repo info
-bay repo remove <name>                      # remove (shows what --force would delete)
-bay repo remove <name> --force              # remove repo + all its docks
-bay repo init [name]                        # set up bay awareness (idempotent)
-```
-
-`rp` is an alias for `repo`.
-
 ### Docks
 
 ```
-bay dock new <name> --repo <r>              # create dock + tmux session
-bay dock new <name> --repo <r> --agent <a>  # with default agent
+bay dock new <name> --path <path>           # create dock + tmux session
+bay dock new <name> --path <path> --agent <a>  # with default agent
 bay dock new <name> --terminal <t>          # with host terminal
 bay dock ls [name]                          # list dock contents (default: current)
 bay dock ls --json                          # machine-readable dock view
@@ -641,6 +603,7 @@ bay dock rename [old] <new>                 # rename (defaults to current dock)
 bay dock close <name>                       # close all bays + kill session
 bay dock close <name> --force               # skip safety checks
 bay dock recover <name>                     # recover a single dock
+bay dock sync [name]                        # copy .worktreeinclude files to worktrees
 ```
 
 `dk` is an alias for `dock`.
@@ -880,7 +843,7 @@ restart is needed.
 
 ### Merge detection
 
-The monitor performs activity-gated `git fetch` for repos with recent
+The monitor performs activity-gated `git fetch` for checkouts with recent
 bay activity (within the last couple of hours). After fetching, it
 checks if bay branches have been merged into main. When a merge is
 detected:
@@ -890,7 +853,7 @@ detected:
 - `bay ls` and pickers highlight merged bays.
 - Navigating to a merged bay shows a suggestion to close it.
 
-No fetches happen for idle repos or bays without recent activity.
+No fetches happen for idle checkouts or bays without recent activity.
 
 ### PR detection
 
@@ -917,27 +880,25 @@ to manage it directly.
 `bay pwd` shows your current location:
 
 ```
-repo myproject / dock dev / bay auth-fix / surface agent
+dock dev / bay auth-fix / surface agent
 ```
 
 `bay ls` lists bays in the current dock:
 
 ```
-rp myproject
-  dk dev
-    bay auth-fix  br=feature/auth  n=3
-    bay perf-fix  br=fix/perf      n=1
+dk dev
+  bay auth-fix  br=feature/auth  n=3
+  bay perf-fix  br=fix/perf      n=1
 ```
 
 `bay tree` shows the full hierarchy:
 
 ```
-rp myproject
-  dk dev
-    bay auth-fix  br=feature/auth  n=3
-    bay w2                         n=1
-  dk staging
-    bay deploy    br=release/v2    merged  n=1
+dk dev
+  bay auth-fix  br=feature/auth  n=3
+  bay w2                         n=1
+dk staging
+  bay deploy    br=release/v2    merged  n=1
 ```
 
 Use `bay tree -l` for tmux IDs. Use `bay ls -s` for compact bay-list
@@ -950,7 +911,7 @@ output without labels or key names.
 ```
 bay pwd --json | jq '.bay_id'
 bay ls --json | jq '.[] | select(.pending)'
-bay tree --json | jq '.repos[].docks[].bays[] | select(.pending)'
+bay tree --json | jq '.docks[].bays[] | select(.pending)'
 bay tree --json --rows | jq '.[] | select(.bay_waiting)'
 bay show w1 --json | jq '.branch'
 ```
@@ -1035,26 +996,24 @@ bay dock recover dev
 
 Or run `bay recover` from inside a dock to recover just that dock.
 
-## Cross-repo bays
+## Multiple checkouts
 
-A dock has a default repo, but you can override per bay:
+Each dock owns one checkout. Use a separate dock for another checkout:
 
 ```
-bay repo add frontend ~/projects/frontend
-bay repo add backend ~/projects/backend
-bay dock new feature-work --repo frontend --agent claude
+bay dock new frontend --path ~/projects/frontend --agent claude
+bay dock new backend --path ~/projects/backend --agent claude
 
-bay new ui-changes --dock feature-work          # uses frontend
-bay new api-changes --dock feature-work --repo backend
+bay new ui-changes --dock frontend
+bay new api-changes --dock backend
 ```
 
-Both bays live in the same tmux session. Navigate between them
-with `bay go`, see them together in `bay ls`.
+Each dock has its own tmux session and worktree directory.
 
 ## Shell completions
 
 `bay setup` prints a snippet for your shell rc file. Tab completion
-covers bay IDs, dock names, repo names, agent types, and
+covers bay IDs, dock names, agent types, and
 surface names.
 
 Add to your `.zshrc` or `.bashrc`:
@@ -1106,9 +1065,9 @@ project_file = ".myagent.md"
 
 Then reference it with `--agent myagent` or set it as a dock default.
 
-**"Two docks use the same repo -- is that okay?"**
-Yes. They share the same worktree directory but each bay gets its
-own subdirectory.
+**"Can two docks use the same checkout?"**
+No. A checkout belongs to one dock; create another local checkout if
+you need a separate dock.
 
 **"How do I update my keybindings after a bay upgrade?"**
 Run `bay setup` again. It replaces the bay keybinding block in
@@ -1139,7 +1098,6 @@ use Cmd+Tab or your OS window manager to switch to them.
 
 | Short | Long |
 |-------|------|
-| `rp` | `repo` |
 | `dk` | `dock` |
 | `sf` | `surface` |
 | `ls` | `list` |

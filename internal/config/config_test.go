@@ -76,6 +76,9 @@ func TestDefaultConfig_IsEmpty(t *testing.T) {
 	if cfg.DefaultAgent != "" || cfg.DefaultEditor != "" {
 		t.Error("DefaultConfig should have no defaults set")
 	}
+	if cfg.Agents == nil || cfg.Editors == nil || cfg.Docks == nil {
+		t.Error("DefaultConfig maps should be initialized, not nil")
+	}
 }
 
 func TestEffectiveInterval_DefaultsTo3(t *testing.T) {
@@ -90,7 +93,7 @@ func TestParse_EmptyConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
-	if cfg.Agents == nil || cfg.Docks == nil {
+	if cfg.Agents == nil || cfg.Editors == nil || cfg.Docks == nil {
 		t.Error("maps should be initialized, not nil")
 	}
 }
