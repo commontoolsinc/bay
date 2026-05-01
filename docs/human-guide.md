@@ -1005,6 +1005,12 @@ name is preserved in the manifest for navigation and completion —
 only the tmux window title is truncated. Names expand again when
 bays are closed.
 
+When sibling bays in a dock share a hyphen-separated prefix (e.g.
+`codex-home-mail-account-filter` and `codex-lane-scheduler-phase1`),
+the shared prefix is replaced with a leading `…` so the unique tail
+of each name stays visible: `w1.…home-mail-…` and `w2.…lane-sched…`
+instead of two tabs that both crop to `codex-`.
+
 ## Recovery
 
 Bay is designed for everything to be reconstructable after a reboot.
