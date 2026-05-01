@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/commontoolsinc/bay/internal/manifest"
+	"github.com/commontoolsinc/bay/internal/tmux"
 )
 
 func TestMaxTabNameLen(t *testing.T) {
@@ -153,6 +154,125 @@ func TestTruncateWorkspaceCompactLabel(t *testing.T) {
 				t.Errorf("TruncateWorkspaceCompactLabel(maxLen=%d) = %q, want %q", tt.maxLen, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestCommonHyphenPrefixes(t *testing.T) {
+	tests := []struct {
+		name  string
+		names []string
+		want  []string
+	}{
+		{"empty", nil, []string{}},
+		{"single name", []string{"codex-foo"}, []string{""}},
+		{
+			"mixed dock still strips matching siblings",
+			[]string{"codex-home-mail-account-filter", "codex-lane-scheduler-phase1", "agents-md-split"},
+			[]string{"codex", "codex", ""},
+		},
+		{
+			"prefers most specific sibling prefix",
+			[]string{"codex-feature-x", "codex-feature-y", "codex-bug-z"},
+			[]string{"codex-feature", "codex-feature", "codex"},
+		},
+		{
+			"ignores names without a remaining tail",
+			[]string{"codex", "codex-a", "other-a"},
+			[]string{"", "", ""},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := commonHyphenPrefixes(tt.names)
+			if len(got) != len(tt.want) {
+				t.Fatalf("commonHyphenPrefixes(%v) length = %d, want %d", tt.names, len(got), len(tt.want))
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("commonHyphenPrefixes(%v)[%d] = %q, want %q", tt.names, i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestTruncateWorkspaceCompactLabelWithSiblings(t *testing.T) {
+	wsHome := &manifest.Workspace{Name: "codex-home-mail-account-filter", Path: "/tmp/bay-worktrees/w1"}
+	wsLane := &manifest.Workspace{Name: "codex-lane-scheduler-phase1", Path: "/tmp/bay-worktrees/w2"}
+	wsAgents := &manifest.Workspace{Name: "agents-md-split", Path: "/tmp/bay-worktrees/w4"}
+	wsBare := &manifest.Workspace{Name: "codex", Path: "/tmp/bay-worktrees/w1"}
+	tests := []struct {
+		name   string
+		ws     *manifest.Workspace
+		maxLen int
+		prefix string
+		want   string
+	}{
+		{"empty prefix falls through", wsHome, 10, "", "w1.codex-h"},
+		{"strip prefix tight budget", wsHome, 10, "codex", "w1.…home-…"},
+		{"strip prefix tight budget lane", wsLane, 10, "codex", "w2.…lane-…"},
+		{"strip prefix loose budget shows full tail", wsHome, 30, "codex", "w1.…home-mail-account-filter"},
+		{"prefix not present falls through", wsAgents, 10, "codex", "w4.agents-"},
+		{"name equals prefix not stripped", wsBare, 6, "codex", "w1.cod"},
+		{"label fits returns as-is", wsHome, 100, "codex", "w1.codex-home-mail-account-filter"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := TruncateWorkspaceCompactLabelWithSiblings(tt.ws, tt.maxLen, tt.prefix)
+			if got != tt.want {
+				t.Errorf("TruncateWorkspaceCompactLabelWithSiblings(%q, %d, %q) = %q, want %q",
+					tt.ws.Name, tt.maxLen, tt.prefix, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRefreshDockWindowNames_StripsSharedPrefixInMixedDock(t *testing.T) {
+	mockTmux := tmux.NewMock()
+	mockTmux.SetClientWidth(92)
+	mockTmux.SetStatusReservedCells(50)
+	eng := &Engine{Tmux: mockTmux}
+	dock := &manifest.Dock{Workspaces: []manifest.Workspace{
+		{
+			Name: "codex-home-mail-account-filter",
+			Path: "/tmp/bay-worktrees/w1",
+			Surfaces: []manifest.Surface{
+				{Name: "agent", Tmux: &manifest.TmuxAttrs{WindowID: "@1", LayoutGroup: 1}},
+			},
+		},
+		{
+			Name: "codex-lane-scheduler-phase1",
+			Path: "/tmp/bay-worktrees/w2",
+			Surfaces: []manifest.Surface{
+				{Name: "agent", Tmux: &manifest.TmuxAttrs{WindowID: "@2", LayoutGroup: 1}},
+			},
+		},
+		{
+			Name: "agents-md-split",
+			Path: "/tmp/bay-worktrees/w4",
+			Surfaces: []manifest.Surface{
+				{Name: "agent", Tmux: &manifest.TmuxAttrs{WindowID: "@3", LayoutGroup: 1}},
+			},
+		},
+	}}
+
+	eng.refreshDockWindowNames(dock)
+
+	got := map[string]string{}
+	for _, call := range mockTmux.Calls {
+		if call.Method == "RenameWindow" && len(call.Args) == 2 {
+			got[call.Args[0]] = call.Args[1]
+		}
+	}
+	want := map[string]string{
+		"@1": "w1.…home-…",
+		"@2": "w2.…lane-…",
+		"@3": "w4.agents-",
+	}
+	for windowID, wantName := range want {
+		if got[windowID] != wantName {
+			t.Errorf("RenameWindow(%s) = %q, want %q; calls: %v", windowID, got[windowID], wantName, mockTmux.Calls)
+		}
 	}
 }
 
