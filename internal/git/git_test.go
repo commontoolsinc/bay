@@ -251,6 +251,101 @@ func TestReal_HasUnpushedCommits_UnpushedMergeCommitIsUnsafe(t *testing.T) {
 	}
 }
 
+func TestReal_WorktreeMatchesRecoverableRef_AllowsLocalReviewRefTree(t *testing.T) {
+	repo := newRealGitRepo(t)
+
+	runGit(t, repo, "checkout", "-b", "feature")
+	writeRepoFile(t, repo, "feature.txt", "feature\n")
+	runGit(t, repo, "add", "feature.txt")
+	runGit(t, repo, "commit", "-m", "feature")
+	runGit(t, repo, "update-ref", "refs/bay/review-heads/github/123", "feature")
+
+	runGit(t, repo, "checkout", "main")
+	runGit(t, repo, "cherry-pick", "--no-commit", "feature")
+	runGit(t, repo, "branch", "-D", "feature")
+
+	matches, ref, err := NewReal().WorktreeMatchesRecoverableRef(repo)
+	if err != nil {
+		t.Fatalf("WorktreeMatchesRecoverableRef failed: %v", err)
+	}
+	if !matches {
+		t.Fatal("cherry-picked review tree should match local review ref")
+	}
+	if ref != "refs/bay/review-heads/github/123" {
+		t.Fatalf("matched ref = %q, want local review ref", ref)
+	}
+}
+
+func TestReal_WorktreeMatchesRecoverableRef_BlocksExtraUntrackedFile(t *testing.T) {
+	repo := newRealGitRepo(t)
+
+	runGit(t, repo, "checkout", "-b", "feature")
+	writeRepoFile(t, repo, "feature.txt", "feature\n")
+	runGit(t, repo, "add", "feature.txt")
+	runGit(t, repo, "commit", "-m", "feature")
+	runGit(t, repo, "update-ref", "refs/bay/review-heads/github/123", "feature")
+
+	runGit(t, repo, "checkout", "main")
+	runGit(t, repo, "cherry-pick", "--no-commit", "feature")
+	runGit(t, repo, "branch", "-D", "feature")
+	writeRepoFile(t, repo, "notes.txt", "local notes\n")
+
+	matches, _, err := NewReal().WorktreeMatchesRecoverableRef(repo)
+	if err != nil {
+		t.Fatalf("WorktreeMatchesRecoverableRef failed: %v", err)
+	}
+	if matches {
+		t.Fatal("extra untracked file should prevent recoverable-ref match")
+	}
+}
+
+func TestReal_WorktreeMatchesRecoverableRef_BlocksStagedOnlyUserEdit(t *testing.T) {
+	repo := newRealGitRepo(t)
+
+	runGit(t, repo, "checkout", "-b", "feature")
+	writeRepoFile(t, repo, "feature.txt", "feature\n")
+	runGit(t, repo, "add", "feature.txt")
+	runGit(t, repo, "commit", "-m", "feature")
+	runGit(t, repo, "update-ref", "refs/bay/review-heads/github/123", "feature")
+
+	runGit(t, repo, "checkout", "main")
+	runGit(t, repo, "cherry-pick", "--no-commit", "feature")
+	runGit(t, repo, "branch", "-D", "feature")
+	writeRepoFile(t, repo, "README.md", "staged local edit\n")
+	runGit(t, repo, "add", "README.md")
+	writeRepoFile(t, repo, "README.md", "initial\n")
+
+	matches, _, err := NewReal().WorktreeMatchesRecoverableRef(repo)
+	if err != nil {
+		t.Fatalf("WorktreeMatchesRecoverableRef failed: %v", err)
+	}
+	if matches {
+		t.Fatal("staged-only user edit should prevent recoverable-ref match")
+	}
+}
+
+func TestReal_DiscardWorktreeChanges_RemovesTrackedAndUntrackedChanges(t *testing.T) {
+	repo := newRealGitRepo(t)
+
+	writeRepoFile(t, repo, "README.md", "modified\n")
+	writeRepoFile(t, repo, "notes.txt", "local notes\n")
+
+	if err := NewReal().DiscardWorktreeChanges(repo); err != nil {
+		t.Fatalf("DiscardWorktreeChanges: %v", err)
+	}
+
+	dirty, err := NewReal().IsDirty(repo)
+	if err != nil {
+		t.Fatalf("IsDirty: %v", err)
+	}
+	if dirty {
+		t.Fatal("worktree should be clean after discard")
+	}
+	if _, err := os.Stat(filepath.Join(repo, "notes.txt")); !os.IsNotExist(err) {
+		t.Fatalf("notes.txt should be removed, stat err=%v", err)
+	}
+}
+
 func TestMock_CurrentBranch(t *testing.T) {
 	m := NewMock()
 	m.SetBranch("/repo", "feature-x")

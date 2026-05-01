@@ -232,7 +232,7 @@ func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string,
 			if msg, err := lastSurfaceCloseRefusal(eng, ws); err != nil {
 				return err
 			} else if msg != "" {
-				notify(eng, msg)
+				notifyFor(eng, msg, 5000)
 				return nil
 			}
 			if !confirmLastSurfaceClose(eng.Tmux.DisplayMessage, dockName, wsName) {
@@ -257,12 +257,12 @@ func lastSurfaceCloseRefusal(eng *engine.Engine, ws *manifest.Workspace) (string
 		return "", nil
 	}
 
-	dirty, err := eng.Git.IsDirty(ws.Path)
+	dirty, err := eng.HasBlockingDirtyChanges(ws)
 	if err != nil {
-		return "", fmt.Errorf("checking bay state: %w", err)
+		return "", err
 	}
 	if dirty {
-		return fmt.Sprintf("%s: bay kept (uncommitted changes).", ws.Name), nil
+		return fmt.Sprintf("%s: bay kept (local changes may be work in progress).", ws.Name), nil
 	}
 
 	unpushed, err := eng.HasUnlandedCommits(ws)
@@ -350,7 +350,11 @@ func runSurfaceRestore(eng *engine.Engine, list bool) error {
 // DisplayMessage delays run-shell's exit, which delays tmux's redraw of
 // the freshly-created pane. Advisory toasts must never block visible work.
 func notify(eng *engine.Engine, msg string) {
-	_ = eng.Tmux.DisplayMessageAsync(msg, 2500)
+	notifyFor(eng, msg, 2500)
+}
+
+func notifyFor(eng *engine.Engine, msg string, durationMs int) {
+	_ = eng.Tmux.DisplayMessageAsync(msg, durationMs)
 	fmt.Fprintln(os.Stderr, msg)
 }
 

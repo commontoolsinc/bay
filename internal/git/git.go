@@ -18,6 +18,14 @@ type Interface interface {
 
 	// State checks
 	IsDirty(path string) (bool, error)
+	// WorktreeMatchesRecoverableRef reports whether the current working tree
+	// content exactly matches a commit reachable from a durable ref that bay
+	// can recover later. Implementations must include non-ignored untracked
+	// files and staged-only changes in the comparison.
+	WorktreeMatchesRecoverableRef(path string) (matches bool, ref string, err error)
+	// DiscardWorktreeChanges resets tracked files to HEAD and removes
+	// non-ignored untracked files. Callers must perform safety checks first.
+	DiscardWorktreeChanges(path string) error
 	// HasUnpushedCommits reports whether closing the worktree would discard
 	// committed work. The real implementation treats pushed remote branches
 	// and patch-equivalent commits on the default branch as safe.
