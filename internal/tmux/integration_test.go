@@ -95,6 +95,24 @@ func (s *integrationServer) mustCmd(args ...string) string {
 	return out
 }
 
+func (s *integrationServer) realImplementation(t *testing.T) *Real {
+	t.Helper()
+	realTmux, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Fatalf("find tmux: %v", err)
+	}
+	wrapperDir := t.TempDir()
+	wrapperPath := filepath.Join(wrapperDir, "tmux")
+	script := "#!/bin/sh\nexec \"$TMUX_REAL_BIN\" -S \"$TMUX_SOCKET_PATH\" \"$@\"\n"
+	if err := os.WriteFile(wrapperPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write tmux wrapper: %v", err)
+	}
+	t.Setenv("TMUX_REAL_BIN", realTmux)
+	t.Setenv("TMUX_SOCKET_PATH", s.socketPath)
+	t.Setenv("PATH", wrapperDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return NewReal()
+}
+
 func (s *integrationServer) killServer() {
 	_ = exec.Command("tmux", "-S", s.socketPath, "kill-server").Run()
 }
@@ -285,49 +303,38 @@ func TestIntegration_StackedCloseRestoreSequence(t *testing.T) {
 // that would let the prefix-match bug back in.
 func TestIntegration_SessionOptionsTargetExact(t *testing.T) {
 	s := startTmux(t)
-	s.newDetachedSession("loom")
 	s.newDetachedSession("loom-old")
+	r := s.realImplementation(t)
 
-	// Resolve $session_id for "loom" via the same list-sessions
-	// query that resolveSessionTarget uses.
-	rawList := s.mustCmd("list-sessions", "-F", "#{session_id}\t#{session_name}")
-	loomID := ""
-	loomOldID := ""
-	for _, line := range strings.Split(rawList, "\n") {
-		parts := strings.SplitN(line, "\t", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		switch parts[1] {
-		case "loom":
-			loomID = parts[0]
-		case "loom-old":
-			loomOldID = parts[0]
-		}
+	// The prefix-match bug is easiest to catch when only the longer
+	// sibling exists: a bare `-t loom` would silently target
+	// "loom-old". Real.SetSessionOption must resolve exact names first
+	// and reject the missing target instead.
+	if err := r.SetSessionOption("loom", "@bay-test-marker", "WRONG"); err == nil {
+		t.Fatal("SetSessionOption(\"loom\") succeeded while only loom-old exists")
 	}
-	if loomID == "" || loomOldID == "" {
-		t.Fatalf("missing session ids in list-sessions output: %q", rawList)
+	if got, err := r.GetSessionOption("loom-old", "@bay-test-marker"); err != nil || got != "" {
+		t.Fatalf("loom-old marker after failed loom write = %q, err=%v; want empty", got, err)
 	}
 
-	// readOption mimics bay's GetSessionOption error-swallowing:
-	// tmux returns non-zero with "invalid option" when the option is
-	// unset; treat that as the empty marker.
-	readOption := func(target, key string) string {
-		out, err := s.tmuxCmd("show-options", "-t", target, "-v", key)
-		if err != nil {
-			return ""
-		}
-		return out
+	if err := r.SetSessionOption("loom-old", "@bay-test-marker", "VALUE-OLD"); err != nil {
+		t.Fatalf("SetSessionOption(\"loom-old\"): %v", err)
+	}
+	if got, err := r.GetSessionOption("loom", "@bay-test-marker"); err != nil || got != "" {
+		t.Fatalf("GetSessionOption(\"loom\") = %q, err=%v; want empty while loom is absent", got, err)
 	}
 
-	// Write the marker on "loom" via $session_id and read it back from
-	// both sessions. Only "loom" should carry the value.
-	s.mustCmd("set-option", "-t", loomID, "@bay-test-marker", "VALUE-LOOM")
-
-	if got := readOption(loomID, "@bay-test-marker"); got != "VALUE-LOOM" {
-		t.Errorf("loom marker = %q, want VALUE-LOOM", got)
+	if err := r.NewSession("loom"); err != nil {
+		t.Fatalf("NewSession(\"loom\"): %v", err)
 	}
-	if got := readOption(loomOldID, "@bay-test-marker"); got != "" {
-		t.Errorf("loom-old marker = %q, want empty (would mean prefix-match contamination)", got)
+	if err := r.SetSessionOption("loom", "@bay-test-marker", "VALUE-LOOM"); err != nil {
+		t.Fatalf("SetSessionOption(\"loom\"): %v", err)
+	}
+
+	if got, err := r.GetSessionOption("loom", "@bay-test-marker"); err != nil || got != "VALUE-LOOM" {
+		t.Errorf("loom marker = %q, err=%v; want VALUE-LOOM", got, err)
+	}
+	if got, err := r.GetSessionOption("loom-old", "@bay-test-marker"); err != nil || got != "VALUE-OLD" {
+		t.Errorf("loom-old marker = %q, err=%v; want VALUE-OLD", got, err)
 	}
 }
