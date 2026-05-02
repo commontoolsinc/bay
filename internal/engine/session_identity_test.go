@@ -544,29 +544,103 @@ func TestSyncAll_BackfillsLegacySessionID(t *testing.T) {
 	}
 }
 
-func TestSyncAll_BackfillsLegacySessionIDWhenRecordedSurfacesLive(t *testing.T) {
+// TestSyncAll_DoesNotBackfillLegacyWhenSurfacesRecorded covers the
+// ID-collision concern: tmux pane/window IDs are server-local and
+// reset on restart, so a fresh same-name session may have low-numbered
+// IDs that happen to match the manifest's records. Whether or not the
+// recorded IDs are "alive" in the live server is therefore not proof
+// of session continuity. When the dock has any recorded surfaces, the
+// legacy backfill must refuse — the dock stays unowned, surfaces are
+// preserved, and the user runs `bay recover` to reconcile.
+func TestSyncAll_DoesNotBackfillLegacyWhenSurfacesRecorded(t *testing.T) {
 	eng, _ := testEngine(t)
+	// Seed a workspace with surface tmux attrs that happen to be
+	// LIVE in the mock — the worst-case "ID collision" simulation.
 	seedLiveSurfaceWorkspace(t, eng, "labs", "auth-fix")
-	withDeterministicSessionID(t, "live-backfill-uuid")
 
 	eng.SyncAll()
 
 	m, _ := eng.LoadManifest()
 	dock := m.FindDock("labs")
-	if dock.SessionID != "live-backfill-uuid" {
-		t.Errorf("legacy live SessionID not backfilled: got %q, want live-backfill-uuid", dock.SessionID)
+	if dock.SessionID != "" {
+		t.Errorf("legacy SessionID backfilled despite recorded surfaces: got %q, want empty", dock.SessionID)
 	}
 	mockTmux := eng.Tmux.(*tmux.Mock)
 	marker, _ := mockTmux.GetSessionOption("labs", sessionIDOption)
-	if marker != "live-backfill-uuid" {
-		t.Errorf("tmux marker not set during live backfill: got %q, want live-backfill-uuid", marker)
+	if marker != "" {
+		t.Errorf("tmux marker set despite recorded surfaces: got %q, want empty", marker)
 	}
 	if got := surfaceCount(t, eng, "labs", "auth-fix"); got != 1 {
-		t.Errorf("live surface count after backfill: got %d, want 1", got)
+		t.Errorf("surface stripped: got %d, want 1 (preserved)", got)
 	}
 }
 
-func TestSyncAll_DoesNotBackfillLegacySessionIDWhenRecordedSurfacesStale(t *testing.T) {
+// TestRecover_InvalidatesStaleTmuxIDsOnSessionTakeover covers the
+// safety property that recover doesn't reconcile against foreign
+// panes that happen to share IDs with manifest records. After a tmux
+// server restart, any recorded pane/window ID may belong to a
+// genuinely different window in the new server (allocation resets
+// from @0/%0). Recover detects the takeover via applyRecoveredSessionID
+// and clears the recorded IDs so the loop recreates rather than
+// reconciles.
+func TestRecover_InvalidatesStaleTmuxIDsOnSessionTakeover(t *testing.T) {
+	eng, _ := testEngine(t)
+	setSessionID(t, eng, "labs", "pre-crash-uuid")
+
+	// Seed a workspace whose recorded IDs were issued by a different
+	// (now-dead) tmux server.
+	wsPath := t.TempDir()
+	err := eng.withManifest(func(m *manifest.Manifest) error {
+		dock := m.FindDock("labs")
+		dock.Workspaces = append(dock.Workspaces, manifest.Workspace{
+			ID:   "w1",
+			Name: "auth-fix",
+			Type: manifest.WorkspaceTypeWorktree,
+			Path: wsPath,
+			Surfaces: []manifest.Surface{
+				{
+					ID:      1,
+					Name:    "shell",
+					Type:    manifest.SurfaceTypeShell,
+					Backend: manifest.SurfaceBackendTmux,
+					Tmux: &manifest.TmuxAttrs{
+						WindowID:    "@5",
+						PaneID:      "%9",
+						LayoutGroup: 1,
+					},
+				},
+			},
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	// Simulate server takeover: a new same-name session with no marker.
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if err := mockTmux.NewSession("labs"); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	if _, err := eng.DockRecover("labs"); err != nil {
+		t.Fatalf("DockRecover: %v", err)
+	}
+
+	m, _ := eng.LoadManifest()
+	ws := m.FindDock("labs").FindWorkspaceByID("w1")
+	if ws.Surfaces[0].Tmux.WindowID == "@5" {
+		t.Errorf("WindowID retained pre-takeover value @5 — recover reconciled against potential foreign window")
+	}
+	if ws.Surfaces[0].Tmux.PaneID == "%9" {
+		t.Errorf("PaneID retained pre-takeover value %%9 — recover reconciled against potential foreign pane")
+	}
+}
+
+// TestSyncAll_DoesNotBackfillLegacyWhenSurfacesStale exercises the
+// other half of the same rule with stale (non-live) recorded IDs —
+// also no backfill. Same policy regardless of liveness.
+func TestSyncAll_DoesNotBackfillLegacyWhenSurfacesStale(t *testing.T) {
 	eng, _ := testEngine(t)
 	seedSurfaceWorkspace(t, eng, "labs", "auth-fix")
 	mockTmux := eng.Tmux.(*tmux.Mock)

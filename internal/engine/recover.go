@@ -41,6 +41,13 @@ func (e *Engine) Recover() ([]RecoverResult, error) {
 		if err != nil {
 			return nil, err
 		}
+		if sessionIDChanged {
+			// Server restart or session takeover — recorded pane/window
+			// IDs may collide with foreign panes/windows in the new
+			// server. Force the recover loop to recreate from scratch
+			// rather than reconcile against potentially-stale IDs.
+			invalidateRecordedTmuxAttrs(dock)
+		}
 
 		outcome := e.recoverDockWorkspaces(dock, m)
 		if sessionIDChanged {
@@ -85,6 +92,11 @@ func (e *Engine) DockRecover(name string) (RecoverResult, error) {
 	sessionIDChanged, err := e.applyRecoveredSessionID(dock)
 	if err != nil {
 		return RecoverResult{}, err
+	}
+	if sessionIDChanged {
+		// See Recover() for why we drop recorded IDs on a session
+		// takeover.
+		invalidateRecordedTmuxAttrs(dock)
 	}
 
 	outcome := e.recoverDockWorkspaces(dock, m)

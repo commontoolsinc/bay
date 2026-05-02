@@ -70,11 +70,14 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 	// goroutines after this loop, never mutated).
 	//
 	// This pass also opportunistically tags legacy docks (manifest
-	// SessionID empty AND tmux marker empty), but only when the live
-	// session still matches the manifest's recorded tmux surfaces. If
-	// those surfaces are stale, this may be a fresh same-name session
-	// after a tmux restart, so cleanup stays disabled until recover
-	// reconciles pane IDs.
+	// SessionID empty AND tmux marker empty) BUT only when the dock
+	// holds no recorded tmux surfaces. Tmux pane/window IDs are
+	// server-local and reset on restart, so a fresh same-name session
+	// can have low-numbered IDs that collide with the manifest's
+	// records — "ID exists in the live server" doesn't actually prove
+	// the session is the one bay set up. Refusing to backfill when
+	// surfaces are recorded leaves the dock in unowned state (cleanup
+	// skipped, surfaces preserved) until `bay recover` reconciles.
 	dockOwned := make(map[string]bool, len(m.Docks))
 	legacyBackfill := map[string]string{}
 	for i := range m.Docks {
@@ -84,14 +87,12 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 			continue
 		}
 		marker, _ := e.Tmux.GetSessionOption(dock.Name, sessionIDOption)
-		if marker == "" && dock.SessionID == "" {
-			if !dockHasRecordedTmuxSurfaces(dock) || e.recordedTmuxSurfacesLive(dock) {
-				id := newSessionID()
-				if err := e.Tmux.SetSessionOption(dock.Name, sessionIDOption, id); err == nil {
-					marker = id
-					dock.SessionID = id
-					legacyBackfill[dock.Name] = id
-				}
+		if marker == "" && dock.SessionID == "" && !dockHasRecordedTmuxSurfaces(dock) {
+			id := newSessionID()
+			if err := e.Tmux.SetSessionOption(dock.Name, sessionIDOption, id); err == nil {
+				marker = id
+				dock.SessionID = id
+				legacyBackfill[dock.Name] = id
 			}
 		}
 		dockOwned[dock.Name] = marker != "" && marker == dock.SessionID
