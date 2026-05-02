@@ -7,17 +7,17 @@ import (
 	"github.com/commontoolsinc/bay/internal/tmux"
 )
 
-// seedSurfaceWorkspace adds a workspace with one surface whose recorded
-// PaneID does not exist in the mock tmux server. With normal cleanup
-// enabled (matching marker), SyncAll would mark the surface dead and
-// strip it. The tests below toggle the marker state to verify the
-// gate's owned/preserve decisions.
-func seedSurfaceWorkspace(t *testing.T, eng *Engine, dockName, wsName string) {
+// seedSurfaceBay adds a bay with one surface whose recorded PaneID
+// does not exist in the mock tmux server. With normal cleanup enabled
+// (matching marker), SyncAll would mark the surface dead and strip
+// it. The tests below toggle the marker state to verify the gate's
+// owned/preserve decisions.
+func seedSurfaceBay(t *testing.T, eng *Engine, dockName, bayName string) {
 	t.Helper()
 	err := eng.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)
 		dock.Bays = append(dock.Bays, manifest.Bay{
-			Name: wsName,
+			Name: bayName,
 			Type: manifest.BayTypeWorktree,
 			Surfaces: []manifest.Surface{
 				{
@@ -35,17 +35,17 @@ func seedSurfaceWorkspace(t *testing.T, eng *Engine, dockName, wsName string) {
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("seed surface workspace: %v", err)
+		t.Fatalf("seed surface bay: %v", err)
 	}
 }
 
-func seedLiveSurfaceWorkspace(t *testing.T, eng *Engine, dockName, wsName string) {
+func seedLiveSurfaceBay(t *testing.T, eng *Engine, dockName, bayName string) {
 	t.Helper()
 	mockTmux := eng.Tmux.(*tmux.Mock)
 	if err := mockTmux.NewSession(dockName); err != nil {
 		t.Fatalf("seed session: %v", err)
 	}
-	windowID, err := mockTmux.NewWindow(dockName, wsName, "")
+	windowID, err := mockTmux.NewWindow(dockName, bayName, "")
 	if err != nil {
 		t.Fatalf("seed window: %v", err)
 	}
@@ -58,7 +58,7 @@ func seedLiveSurfaceWorkspace(t *testing.T, eng *Engine, dockName, wsName string
 	err = eng.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)
 		dock.Bays = append(dock.Bays, manifest.Bay{
-			Name: wsName,
+			Name: bayName,
 			Type: manifest.BayTypeWorktree,
 			Surfaces: []manifest.Surface{
 				{
@@ -76,7 +76,7 @@ func seedLiveSurfaceWorkspace(t *testing.T, eng *Engine, dockName, wsName string
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("seed live surface workspace: %v", err)
+		t.Fatalf("seed live surface bay: %v", err)
 	}
 }
 
@@ -93,8 +93,8 @@ func setSessionID(t *testing.T, eng *Engine, dockName, sessionID string) {
 	}
 }
 
-// surfaceCount returns the surface count for a workspace.
-func surfaceCount(t *testing.T, eng *Engine, dockName, wsName string) int {
+// surfaceCount returns the surface count for a bay.
+func surfaceCount(t *testing.T, eng *Engine, dockName, bayName string) int {
 	t.Helper()
 	m, err := eng.LoadManifest()
 	if err != nil {
@@ -104,11 +104,11 @@ func surfaceCount(t *testing.T, eng *Engine, dockName, wsName string) int {
 	if dock == nil {
 		t.Fatalf("dock %q missing", dockName)
 	}
-	ws := dock.FindBay(wsName)
-	if ws == nil {
-		t.Fatalf("workspace %q missing", wsName)
+	bay := dock.FindBay(bayName)
+	if bay == nil {
+		t.Fatalf("bay %q missing", bayName)
 	}
-	return len(ws.Surfaces)
+	return len(bay.Surfaces)
 }
 
 // --- gate matrix ---
@@ -120,7 +120,7 @@ func surfaceCount(t *testing.T, eng *Engine, dockName, wsName string) int {
 // SyncAll must NOT strip surfaces — recover hasn't run yet.
 func TestSyncAll_PreservesSurfacesAfterServerRestart(t *testing.T) {
 	eng, _ := testEngine(t)
-	seedSurfaceWorkspace(t, eng, "labs", "auth-fix")
+	seedSurfaceBay(t, eng, "labs", "auth-fix")
 	setSessionID(t, eng, "labs", "old-session-uuid")
 
 	// Tmux has the dock's session name but no @bay-session-id marker
@@ -143,7 +143,7 @@ func TestSyncAll_PreservesSurfacesAfterServerRestart(t *testing.T) {
 // A probe that fires in this window must not strip surfaces.
 func TestSyncAll_PreservesSurfacesWhenMarkerSetButManifestEmpty(t *testing.T) {
 	eng, _ := testEngine(t)
-	seedSurfaceWorkspace(t, eng, "labs", "auth-fix")
+	seedSurfaceBay(t, eng, "labs", "auth-fix")
 	// Manifest SessionID stays empty (testEngine seeds it that way) —
 	// simulates pre-merge state during recover.
 
@@ -174,7 +174,7 @@ func TestSyncAll_PreservesSurfacesWhenMarkerSetButManifestEmpty(t *testing.T) {
 // kept the old one.
 func TestSyncAll_PreservesSurfacesOnMismatchedMarker(t *testing.T) {
 	eng, _ := testEngine(t)
-	seedSurfaceWorkspace(t, eng, "labs", "auth-fix")
+	seedSurfaceBay(t, eng, "labs", "auth-fix")
 	setSessionID(t, eng, "labs", "manifest-uuid")
 
 	mockTmux := eng.Tmux.(*tmux.Mock)
@@ -198,7 +198,7 @@ func TestSyncAll_PreservesSurfacesOnMismatchedMarker(t *testing.T) {
 // get stripped as before.
 func TestSyncAll_StripsDeadSurfacesWhenMarkerMatches(t *testing.T) {
 	eng, _ := testEngine(t)
-	seedSurfaceWorkspace(t, eng, "labs", "auth-fix")
+	seedSurfaceBay(t, eng, "labs", "auth-fix")
 	setSessionID(t, eng, "labs", "shared-uuid")
 
 	mockTmux := eng.Tmux.(*tmux.Mock)
@@ -223,7 +223,7 @@ func TestSyncAll_StripsDeadSurfacesWhenMarkerMatches(t *testing.T) {
 // so recover remains possible.
 func TestSyncAll_PreservesStaleSurfacesInLegacyEmptyState(t *testing.T) {
 	eng, _ := testEngine(t)
-	seedSurfaceWorkspace(t, eng, "labs", "auth-fix")
+	seedSurfaceBay(t, eng, "labs", "auth-fix")
 	// SessionID stays empty.
 
 	mockTmux := eng.Tmux.(*tmux.Mock)
@@ -243,7 +243,7 @@ func TestSyncAll_PreservesStaleSurfacesInLegacyEmptyState(t *testing.T) {
 // existing protection — verified to still work after the rewrite.
 func TestSyncAll_PreservesSurfacesWhenSessionFullyDead(t *testing.T) {
 	eng, _ := testEngine(t)
-	seedSurfaceWorkspace(t, eng, "labs", "auth-fix")
+	seedSurfaceBay(t, eng, "labs", "auth-fix")
 	setSessionID(t, eng, "labs", "any-uuid")
 	// No tmux session at all.
 
@@ -432,7 +432,7 @@ func TestDockNew_PopulatesSessionID(t *testing.T) {
 // mismatched → owned=false → preserve.
 func TestSyncAll_NoMidRecoverCleanup(t *testing.T) {
 	eng, _ := testEngine(t)
-	seedSurfaceWorkspace(t, eng, "labs", "auth-fix")
+	seedSurfaceBay(t, eng, "labs", "auth-fix")
 	setSessionID(t, eng, "labs", "pre-crash-uuid")
 
 	mockTmux := eng.Tmux.(*tmux.Mock)
@@ -458,11 +458,11 @@ func TestSyncAll_NoMidRecoverCleanup(t *testing.T) {
 // exists but bay didn't create it, BayNew must NOT write a new
 // SessionID into the manifest, even if ensureSession-style logic
 // would have minted one. Persisting here would let the next SyncAll
-// see (matching marker → owned) and strip pre-existing workspaces'
+// see (matching marker → owned) and strip pre-existing bays'
 // stale pane IDs.
 func TestBayNew_DoesNotPersistSessionIDWhenSessionExists(t *testing.T) {
 	eng, _ := testEngine(t)
-	seedSurfaceWorkspace(t, eng, "labs", "old-bay")
+	seedSurfaceBay(t, eng, "labs", "old-bay")
 	setSessionID(t, eng, "labs", "pre-crash-uuid")
 
 	// Simulate a same-name session that came back up empty after a
@@ -481,7 +481,7 @@ func TestBayNew_DoesNotPersistSessionIDWhenSessionExists(t *testing.T) {
 	if dock.SessionID != "pre-crash-uuid" {
 		t.Errorf("BayNew clobbered SessionID: got %q, want pre-crash-uuid", dock.SessionID)
 	}
-	// Original workspace's surface must survive — the gate's
+	// Original bay's surface must survive — the gate's
 	// mismatched-marker preservation is what keeps recover viable.
 	if got := surfaceCount(t, eng, "labs", "old-bay"); got != 1 {
 		t.Errorf("pre-existing surface stripped after BayNew: got %d, want 1", got)
@@ -490,7 +490,7 @@ func TestBayNew_DoesNotPersistSessionIDWhenSessionExists(t *testing.T) {
 
 func TestBayNew_DoesNotPersistSessionIDWhenCreatingSessionWithLegacySurfaces(t *testing.T) {
 	eng, _ := testEngine(t)
-	seedSurfaceWorkspace(t, eng, "labs", "old-bay")
+	seedSurfaceBay(t, eng, "labs", "old-bay")
 	// Manifest SessionID stays empty, and tmux has no session at all.
 	withDeterministicSessionID(t, "created-session-uuid")
 
@@ -554,9 +554,9 @@ func TestSyncAll_BackfillsLegacySessionID(t *testing.T) {
 // preserved, and the user runs `bay recover` to reconcile.
 func TestSyncAll_DoesNotBackfillLegacyWhenSurfacesRecorded(t *testing.T) {
 	eng, _ := testEngine(t)
-	// Seed a workspace with surface tmux attrs that happen to be
-	// LIVE in the mock — the worst-case "ID collision" simulation.
-	seedLiveSurfaceWorkspace(t, eng, "labs", "auth-fix")
+	// Seed a bay with surface tmux attrs that happen to be LIVE in
+	// the mock — the worst-case "ID collision" simulation.
+	seedLiveSurfaceBay(t, eng, "labs", "auth-fix")
 
 	eng.SyncAll()
 
@@ -587,16 +587,16 @@ func TestRecover_InvalidatesStaleTmuxIDsOnSessionTakeover(t *testing.T) {
 	eng, _ := testEngine(t)
 	setSessionID(t, eng, "labs", "pre-crash-uuid")
 
-	// Seed a workspace whose recorded IDs were issued by a different
+	// Seed a bay whose recorded IDs were issued by a different
 	// (now-dead) tmux server.
-	wsPath := t.TempDir()
+	bayPath := t.TempDir()
 	err := eng.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock("labs")
 		dock.Bays = append(dock.Bays, manifest.Bay{
 			ID:   "w1",
 			Name: "auth-fix",
 			Type: manifest.BayTypeWorktree,
-			Path: wsPath,
+			Path: bayPath,
 			Surfaces: []manifest.Surface{
 				{
 					ID:      1,
@@ -642,7 +642,7 @@ func TestRecover_InvalidatesStaleTmuxIDsOnSessionTakeover(t *testing.T) {
 // also no backfill. Same policy regardless of liveness.
 func TestSyncAll_DoesNotBackfillLegacyWhenSurfacesStale(t *testing.T) {
 	eng, _ := testEngine(t)
-	seedSurfaceWorkspace(t, eng, "labs", "auth-fix")
+	seedSurfaceBay(t, eng, "labs", "auth-fix")
 	mockTmux := eng.Tmux.(*tmux.Mock)
 	if err := mockTmux.NewSession("labs"); err != nil {
 		t.Fatalf("seed session: %v", err)
