@@ -137,8 +137,8 @@ type WorktreeAttrs struct {
 }
 
 // IsMerged reports whether this bay's branch has been merged into the default branch.
-func (bay *Bay) IsMerged() bool {
-	return bay.Worktree != nil && bay.Worktree.Merged
+func (b *Bay) IsMerged() bool {
+	return b.Worktree != nil && b.Worktree.Merged
 }
 
 // IsBayID reports whether s matches the canonical bay ID
@@ -814,9 +814,9 @@ func (d *Dock) RemoveDockSurface(name string) error {
 // --- Surface operations ---
 
 // NextSurfaceID returns the next surface ID (max+1) for the bay.
-func (bay *Bay) NextSurfaceID() int {
+func (b *Bay) NextSurfaceID() int {
 	max := 0
-	for _, s := range bay.Surfaces {
+	for _, s := range b.Surfaces {
 		if s.ID > max {
 			max = s.ID
 		}
@@ -825,44 +825,44 @@ func (bay *Bay) NextSurfaceID() int {
 }
 
 // FindSurface returns a pointer to the surface with the given name, or nil.
-func (bay *Bay) FindSurface(name string) *Surface {
-	for i := range bay.Surfaces {
-		if bay.Surfaces[i].Name == name {
-			return &bay.Surfaces[i]
+func (b *Bay) FindSurface(name string) *Surface {
+	for i := range b.Surfaces {
+		if b.Surfaces[i].Name == name {
+			return &b.Surfaces[i]
 		}
 	}
 	return nil
 }
 
 // FindSurfaceByID returns a pointer to the surface with the given ID, or nil.
-func (bay *Bay) FindSurfaceByID(id int) *Surface {
-	for i := range bay.Surfaces {
-		if bay.Surfaces[i].ID == id {
-			return &bay.Surfaces[i]
+func (b *Bay) FindSurfaceByID(id int) *Surface {
+	for i := range b.Surfaces {
+		if b.Surfaces[i].ID == id {
+			return &b.Surfaces[i]
 		}
 	}
 	return nil
 }
 
 // AddSurface adds a surface with an auto-assigned ID. Returns the assigned ID.
-func (bay *Bay) AddSurface(s Surface) (int, error) {
-	if bay.FindSurface(s.Name) != nil {
-		return 0, fmt.Errorf("surface %q already exists in bay %q", s.Name, bay.Name)
+func (b *Bay) AddSurface(s Surface) (int, error) {
+	if b.FindSurface(s.Name) != nil {
+		return 0, fmt.Errorf("surface %q already exists in bay %q", s.Name, b.Name)
 	}
-	s.ID = bay.NextSurfaceID()
-	bay.Surfaces = append(bay.Surfaces, s)
+	s.ID = b.NextSurfaceID()
+	b.Surfaces = append(b.Surfaces, s)
 	return s.ID, nil
 }
 
 // RemoveSurface removes a surface by name.
-func (bay *Bay) RemoveSurface(name string) error {
-	for i := range bay.Surfaces {
-		if bay.Surfaces[i].Name == name {
-			bay.Surfaces = append(bay.Surfaces[:i], bay.Surfaces[i+1:]...)
+func (b *Bay) RemoveSurface(name string) error {
+	for i := range b.Surfaces {
+		if b.Surfaces[i].Name == name {
+			b.Surfaces = append(b.Surfaces[:i], b.Surfaces[i+1:]...)
 			return nil
 		}
 	}
-	return fmt.Errorf("surface %q not found in bay %q", name, bay.Name)
+	return fmt.Errorf("surface %q not found in bay %q", name, b.Name)
 }
 
 // --- Bay resolution ---
