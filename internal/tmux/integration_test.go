@@ -268,3 +268,66 @@ func TestIntegration_StackedCloseRestoreSequence(t *testing.T) {
 		t.Errorf("after restore, pane order = %v, want %v", got, want)
 	}
 }
+
+// TestIntegration_SessionOptionsTargetExact pins the workaround for a
+// tmux quirk that motivated resolveSessionTarget in real.go: on tmux
+// 3.6a, set-option / show-options reject the "=name" exact-match
+// prefix that has-session and rename-session honor. Targeting by bare
+// name then prefix-matches sibling sessions, so writing to "loom"
+// when only "loom-old" exists silently writes to "loom-old". The
+// $session_id form ($1, $2, ...) is unambiguous; bay's real impl
+// resolves the name to that ID via list-sessions before issuing
+// option commands.
+//
+// If a future tmux version restores `=name` semantics for option
+// commands, this test still passes (the $id approach also works);
+// the test fails only if tmux's targeting semantics regress in a way
+// that would let the prefix-match bug back in.
+func TestIntegration_SessionOptionsTargetExact(t *testing.T) {
+	s := startTmux(t)
+	s.newDetachedSession("loom")
+	s.newDetachedSession("loom-old")
+
+	// Resolve $session_id for "loom" via the same list-sessions
+	// query that resolveSessionTarget uses.
+	rawList := s.mustCmd("list-sessions", "-F", "#{session_id}\t#{session_name}")
+	loomID := ""
+	loomOldID := ""
+	for _, line := range strings.Split(rawList, "\n") {
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		switch parts[1] {
+		case "loom":
+			loomID = parts[0]
+		case "loom-old":
+			loomOldID = parts[0]
+		}
+	}
+	if loomID == "" || loomOldID == "" {
+		t.Fatalf("missing session ids in list-sessions output: %q", rawList)
+	}
+
+	// readOption mimics bay's GetSessionOption error-swallowing:
+	// tmux returns non-zero with "invalid option" when the option is
+	// unset; treat that as the empty marker.
+	readOption := func(target, key string) string {
+		out, err := s.tmuxCmd("show-options", "-t", target, "-v", key)
+		if err != nil {
+			return ""
+		}
+		return out
+	}
+
+	// Write the marker on "loom" via $session_id and read it back from
+	// both sessions. Only "loom" should carry the value.
+	s.mustCmd("set-option", "-t", loomID, "@bay-test-marker", "VALUE-LOOM")
+
+	if got := readOption(loomID, "@bay-test-marker"); got != "VALUE-LOOM" {
+		t.Errorf("loom marker = %q, want VALUE-LOOM", got)
+	}
+	if got := readOption(loomOldID, "@bay-test-marker"); got != "" {
+		t.Errorf("loom-old marker = %q, want empty (would mean prefix-match contamination)", got)
+	}
+}
