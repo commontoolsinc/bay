@@ -231,9 +231,9 @@ lifetime."
   That doc should be updated to reflect this when this proposal lands.
 - `workspace-lifecycle-config.md`: bay/workspace prepare commands are
   already dock-level, so this change is neutral for that proposal.
-- A separate **home bay** design (the canonical-checkout bay concept)
-  was the trigger for this discussion. The home-bay design is
-  decoupled and works against either model;
+- `home-bay.md`: a separate **home bay** design (the
+  canonical-checkout bay concept) was the trigger for this discussion.
+  The home-bay design is decoupled and works against either model;
   it gets simpler post-merge because every dock has exactly one
   canonical checkout.
 
