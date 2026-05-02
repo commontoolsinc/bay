@@ -63,6 +63,63 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 		return nil
 	}
 
+	// Resolve session ownership once per dock so the per-bay
+	// probe and the dock-surface cleanup below don't each spawn
+	// `tmux show-options` per bay. Captured before the parallel
+	// fanout so the read is unsynchronized (the map is only read from
+	// goroutines after this loop, never mutated).
+	//
+	// This pass also opportunistically tags legacy docks (manifest
+	// SessionID empty AND tmux marker empty) BUT only when the dock
+	// holds no recorded tmux surfaces. Tmux pane/window IDs are
+	// server-local and reset on restart, so a fresh same-name session
+	// can have low-numbered IDs that collide with the manifest's
+	// records — "ID exists in the live server" doesn't actually prove
+	// the session is the one bay set up. Refusing to backfill when
+	// surfaces are recorded leaves the dock in unowned state (cleanup
+	// skipped, surfaces preserved) until `bay recover` reconciles.
+	dockOwned := make(map[string]bool, len(m.Docks))
+	legacyBackfill := map[string]string{}
+	for i := range m.Docks {
+		dock := &m.Docks[i]
+		exists, _ := e.Tmux.HasSession(dock.Name)
+		if !exists {
+			continue
+		}
+		marker, _ := e.Tmux.GetSessionOption(dock.Name, sessionIDOption)
+		if marker == "" && dock.SessionID == "" && !dockHasRecordedTmuxSurfaces(dock) {
+			id := newSessionID()
+			if err := e.Tmux.SetSessionOption(dock.Name, sessionIDOption, id); err == nil {
+				marker = id
+				dock.SessionID = id
+				legacyBackfill[dock.Name] = id
+			}
+		}
+		dockOwned[dock.Name] = marker != "" && marker == dock.SessionID
+	}
+	if len(legacyBackfill) > 0 {
+		applied := map[string]bool{}
+		err := e.withManifest(func(m *manifest.Manifest) error {
+			for name, id := range legacyBackfill {
+				if d := m.FindDock(name); d != nil {
+					switch d.SessionID {
+					case "":
+						d.SessionID = id
+						applied[name] = true
+					case id:
+						applied[name] = true
+					}
+				}
+			}
+			return nil
+		})
+		for name := range legacyBackfill {
+			if err != nil || !applied[name] {
+				dockOwned[name] = false
+			}
+		}
+	}
+
 	type probeJob struct {
 		dock *manifest.Dock
 		bay  *manifest.Bay
@@ -89,7 +146,7 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 		go func(i int, job probeJob) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			if update, ok := e.probeBaySync(job.dock, job.bay); ok {
+			if update, ok := e.probeBaySync(job.dock, job.bay, dockOwned[job.dock.Name]); ok {
 				results[i] = update
 				valid[i] = true
 			}
@@ -125,14 +182,15 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 			discoveredClosed = append(discoveredClosed, closedEntries...)
 		}
 
-		// Clean up dead dock-level surfaces.
+		// Clean up dead dock-level surfaces only when the session
+		// identity precompute above proved this is bay's current
+		// session.
 		for i := range m.Docks {
 			dock := &m.Docks[i]
 			if len(dock.Surfaces) == 0 {
 				continue
 			}
-			sessionAlive, _ := e.Tmux.HasSession(dock.Name)
-			if !sessionAlive {
+			if !dockOwned[dock.Name] {
 				continue
 			}
 			live := dock.Surfaces[:0]
@@ -203,7 +261,7 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 	return discoveredClosed
 }
 
-func (e *Engine) probeBaySync(dock *manifest.Dock, bay *manifest.Bay) (baySyncUpdate, bool) {
+func (e *Engine) probeBaySync(dock *manifest.Dock, bay *manifest.Bay, sessionOwned bool) (baySyncUpdate, bool) {
 	update := baySyncUpdate{
 		dockName:   dock.Name,
 		originalID: bay.ID,
@@ -260,13 +318,13 @@ func (e *Engine) probeBaySync(dock *manifest.Dock, bay *manifest.Bay) (baySyncUp
 		}
 	}
 
-	// Only clean up dead surfaces if the dock's tmux session is alive.
-	// If the session is gone (reboot, manual kill), the surfaces are
-	// needed for `bay recover` to know what to recreate. Stripping
-	// them here would leave bays with surfaces=0 and recover
-	// would report "nothing to recover."
-	sessionAlive, _ := e.Tmux.HasSession(dock.Name)
-	if sessionAlive {
+	// Only clean up dead surfaces if the dock's tmux session is alive
+	// AND it's the session bay set up. If the session is gone, foreign,
+	// or in-flight (e.g., a recover that hasn't persisted new pane IDs
+	// yet), the surfaces are needed for `bay recover` to know what to
+	// recreate. Stripping them here would leave bays with surfaces=0 and
+	// recover would report "nothing to recover."
+	if sessionOwned {
 		update.deadSurfaceIDs = e.deadSurfaceIDs(bay)
 	}
 	if !update.branchChanged && !update.branchDetached && !update.prChanged && !update.merged && len(update.deadSurfaceIDs) == 0 {

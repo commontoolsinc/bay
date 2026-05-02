@@ -142,8 +142,17 @@ func (e *Engine) BayNew(opts BayNewOptions) (*manifest.Bay, error) {
 		}
 	}
 
-	// Ensure tmux session exists.
-	if err := e.ensureSession(dockName); err != nil {
+	// Ensure tmux session exists. We split the two cases: when the
+	// session was already present we deliberately leave the SessionID
+	// alone — existing bays may hold pane IDs from a dead tmux
+	// instance, and persisting a new SessionID here would defeat the
+	// gate's mismatched-marker preservation and let the next SyncAll
+	// strip them. The user runs `bay recover` to reconcile after a
+	// restart. When BayNew creates the session, persisting is still safe
+	// only if this dock did not already have recorded tmux surfaces.
+	persistCreatedSessionID := !dockHasRecordedTmuxSurfaces(dock)
+	sessionID, sessionCreated, err := e.ensureSessionForBay(dockName, dock.SessionID)
+	if err != nil {
 		rollbackWorktree()
 		return nil, err
 	}
@@ -210,6 +219,13 @@ func (e *Engine) BayNew(opts BayNewOptions) (*manifest.Bay, error) {
 		dock := m.FindDock(dockName)
 		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
+		}
+
+		// Persist SessionID only when BayNew created the session
+		// itself. See ensureSessionForBay's comment for why
+		// adopting an existing session's marker is unsafe here.
+		if sessionCreated && persistCreatedSessionID && dock.SessionID == "" {
+			dock.SessionID = sessionID
 		}
 
 		finalName = displayName

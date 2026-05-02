@@ -65,6 +65,60 @@ func (r *Real) RenameSession(oldName string, newName string) error {
 	return runSilent("rename-session", "-t", exactSession(oldName), newName)
 }
 
+// resolveSessionTarget returns a tmux $session_id suitable for use
+// with set-option and show-options. Those commands ignore the "=name"
+// exact-match prefix that other tmux commands respect (verified on
+// tmux 3.6a), so a bare name target like "loom" would prefix-match a
+// sibling "loom-old" and silently write to the wrong session. The
+// $session_id format ($1, $2, ...) is unambiguous.
+//
+// Returns "" with nil error when no session of that name exists; the
+// option callers map that to "no marker" semantics.
+func resolveSessionTarget(name string) (string, error) {
+	out, err := run("list-sessions", "-F", "#{session_id}\t#{session_name}")
+	if err != nil {
+		// No server / no sessions — propagate as "not found."
+		return "", nil
+	}
+	for _, line := range strings.Split(out, "\n") {
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) == 2 && parts[1] == name {
+			return parts[0], nil
+		}
+	}
+	return "", nil
+}
+
+func (r *Real) SetSessionOption(session string, option string, value string) error {
+	target, err := resolveSessionTarget(session)
+	if err != nil {
+		return fmt.Errorf("resolving session %q: %w", session, err)
+	}
+	if target == "" {
+		return fmt.Errorf("session %q not found", session)
+	}
+	return runSilent("set-option", "-t", target, option, value)
+}
+
+// GetSessionOption deviates from GetWindowOption's error-propagating
+// shape: tmux exits non-zero when the option is unset (and on some
+// versions also when the session is gone), but for the
+// session-identity caller the empty marker IS the answer, not a
+// failure. Returning ("", nil) keeps the gate decision compact at
+// the cost of conflating "unset" with "session disappeared mid-call"
+// — which is fine because callers guard with HasSession first.
+func (r *Real) GetSessionOption(session string, option string) (string, error) {
+	target, err := resolveSessionTarget(session)
+	if err != nil || target == "" {
+		return "", nil
+	}
+	out, err := run("show-options", "-t", target, "-v", option)
+	if err != nil {
+		return "", nil
+	}
+	return out, nil
+}
+
 func (r *Real) ListSessions() ([]Session, error) {
 	out, err := run("list-sessions", "-F", "#{session_name}")
 	if err != nil {

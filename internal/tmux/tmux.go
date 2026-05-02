@@ -9,6 +9,11 @@ type Interface interface {
 	KillSession(name string) error
 	RenameSession(oldName string, newName string) error
 	ListSessions() ([]Session, error)
+	SetSessionOption(session string, option string, value string) error
+	// GetSessionOption returns the value of a session-scoped user option.
+	// Returns "" with nil error when the option is unset (the normal
+	// "untagged" state for an existing session).
+	GetSessionOption(session string, option string) (string, error)
 
 	// Windows
 	NewWindow(session string, name string, cwd string) (string, error) // returns tmux window ID like "@4"

@@ -93,7 +93,8 @@ func (e *Engine) DockNew(name, path, worktreeDir, agent, terminal string) error 
 		return fmt.Errorf("tmux session %q already exists and is not a bay dock", name)
 	}
 
-	if err := e.ensureSession(name); err != nil {
+	sessionID, err := e.ensureSession(name, "")
+	if err != nil {
 		return err
 	}
 
@@ -156,6 +157,7 @@ func (e *Engine) DockNew(name, path, worktreeDir, agent, terminal string) error 
 			WorktreeDir: worktreeDir,
 			Agent:       agent,
 			Host:        host,
+			SessionID:   sessionID,
 		})
 	}); err != nil {
 		return err

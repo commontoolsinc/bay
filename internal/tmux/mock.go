@@ -202,9 +202,10 @@ type Mock struct {
 	mu    sync.Mutex
 	Calls []Call
 
-	sessions map[string]bool
-	windows  map[string]*mockWindow // keyed by window ID
-	panes    map[string]*mockPane   // keyed by pane ID
+	sessions       map[string]bool
+	sessionOptions map[string]map[string]string // session name -> option key -> value
+	windows        map[string]*mockWindow       // keyed by window ID
+	panes          map[string]*mockPane         // keyed by pane ID
 
 	windowCounter int
 	paneCounter   int
@@ -233,9 +234,10 @@ type Mock struct {
 // NewMock creates a new Mock with initialized state.
 func NewMock() *Mock {
 	return &Mock{
-		sessions: make(map[string]bool),
-		windows:  make(map[string]*mockWindow),
-		panes:    make(map[string]*mockPane),
+		sessions:       make(map[string]bool),
+		sessionOptions: make(map[string]map[string]string),
+		windows:        make(map[string]*mockWindow),
+		panes:          make(map[string]*mockPane),
 	}
 }
 
@@ -297,6 +299,7 @@ func (m *Mock) KillSession(name string) error {
 		}
 	}
 	delete(m.sessions, name)
+	delete(m.sessionOptions, name)
 	return nil
 }
 
@@ -310,6 +313,10 @@ func (m *Mock) RenameSession(oldName string, newName string) error {
 	}
 	delete(m.sessions, oldName)
 	m.sessions[newName] = true
+	if opts, ok := m.sessionOptions[oldName]; ok {
+		m.sessionOptions[newName] = opts
+		delete(m.sessionOptions, oldName)
+	}
 	// Update all windows belonging to this session.
 	for _, w := range m.windows {
 		if w.session == oldName {
@@ -332,6 +339,31 @@ func (m *Mock) ListSessions() ([]Session, error) {
 		return result[i].Name < result[j].Name
 	})
 	return result, nil
+}
+
+func (m *Mock) SetSessionOption(session string, option string, value string) error {
+	m.record("SetSessionOption", session, option, value)
+	if !m.sessions[session] {
+		return fmt.Errorf("session %q not found", session)
+	}
+	opts, ok := m.sessionOptions[session]
+	if !ok {
+		opts = make(map[string]string)
+		m.sessionOptions[session] = opts
+	}
+	opts[option] = value
+	return nil
+}
+
+func (m *Mock) GetSessionOption(session string, option string) (string, error) {
+	m.record("GetSessionOption", session, option)
+	if !m.sessions[session] {
+		return "", nil
+	}
+	if opts, ok := m.sessionOptions[session]; ok {
+		return opts[option], nil
+	}
+	return "", nil
 }
 
 // --- Windows ---
@@ -790,6 +822,7 @@ func (m *Mock) DisplayMessages() []string {
 func (m *Mock) Reset() {
 	m.Calls = nil
 	m.sessions = make(map[string]bool)
+	m.sessionOptions = make(map[string]map[string]string)
 	m.windows = make(map[string]*mockWindow)
 	m.panes = make(map[string]*mockPane)
 	m.windowCounter = 0

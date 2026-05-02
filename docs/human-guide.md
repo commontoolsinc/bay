@@ -1016,6 +1016,14 @@ Recovery is idempotent -- run it multiple times safely. It detects and
 reuses existing tmux state. Panes with live foreground processes are
 left alone.
 
+### After a tmux crash
+
+If tmux dies and a fresh empty session of the same name comes back up
+(e.g., your terminal auto-attaches and creates one), bay's monitor
+won't mistake it for the original — it tags every session it manages
+with an identity marker and refuses to clean up surfaces against a
+session it doesn't recognize. Run `bay recover` to rebuild and re-tag.
+
 ### After closing your terminal
 
 Same thing: `bay recover`. The tmux sessions may still be alive (tmux

@@ -95,6 +95,24 @@ func (s *integrationServer) mustCmd(args ...string) string {
 	return out
 }
 
+func (s *integrationServer) realImplementation(t *testing.T) *Real {
+	t.Helper()
+	realTmux, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Fatalf("find tmux: %v", err)
+	}
+	wrapperDir := t.TempDir()
+	wrapperPath := filepath.Join(wrapperDir, "tmux")
+	script := "#!/bin/sh\nexec \"$TMUX_REAL_BIN\" -S \"$TMUX_SOCKET_PATH\" \"$@\"\n"
+	if err := os.WriteFile(wrapperPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write tmux wrapper: %v", err)
+	}
+	t.Setenv("TMUX_REAL_BIN", realTmux)
+	t.Setenv("TMUX_SOCKET_PATH", s.socketPath)
+	t.Setenv("PATH", wrapperDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return NewReal()
+}
+
 func (s *integrationServer) killServer() {
 	_ = exec.Command("tmux", "-S", s.socketPath, "kill-server").Run()
 }
@@ -266,5 +284,57 @@ func TestIntegration_StackedCloseRestoreSequence(t *testing.T) {
 	want = []string{root, middle, restored}
 	if !slices.Equal(got, want) {
 		t.Errorf("after restore, pane order = %v, want %v", got, want)
+	}
+}
+
+// TestIntegration_SessionOptionsTargetExact pins the workaround for a
+// tmux quirk that motivated resolveSessionTarget in real.go: on tmux
+// 3.6a, set-option / show-options reject the "=name" exact-match
+// prefix that has-session and rename-session honor. Targeting by bare
+// name then prefix-matches sibling sessions, so writing to "loom"
+// when only "loom-old" exists silently writes to "loom-old". The
+// $session_id form ($1, $2, ...) is unambiguous; bay's real impl
+// resolves the name to that ID via list-sessions before issuing
+// option commands.
+//
+// If a future tmux version restores `=name` semantics for option
+// commands, this test still passes (the $id approach also works);
+// the test fails only if tmux's targeting semantics regress in a way
+// that would let the prefix-match bug back in.
+func TestIntegration_SessionOptionsTargetExact(t *testing.T) {
+	s := startTmux(t)
+	s.newDetachedSession("loom-old")
+	r := s.realImplementation(t)
+
+	// The prefix-match bug is easiest to catch when only the longer
+	// sibling exists: a bare `-t loom` would silently target
+	// "loom-old". Real.SetSessionOption must resolve exact names first
+	// and reject the missing target instead.
+	if err := r.SetSessionOption("loom", "@bay-test-marker", "WRONG"); err == nil {
+		t.Fatal("SetSessionOption(\"loom\") succeeded while only loom-old exists")
+	}
+	if got, err := r.GetSessionOption("loom-old", "@bay-test-marker"); err != nil || got != "" {
+		t.Fatalf("loom-old marker after failed loom write = %q, err=%v; want empty", got, err)
+	}
+
+	if err := r.SetSessionOption("loom-old", "@bay-test-marker", "VALUE-OLD"); err != nil {
+		t.Fatalf("SetSessionOption(\"loom-old\"): %v", err)
+	}
+	if got, err := r.GetSessionOption("loom", "@bay-test-marker"); err != nil || got != "" {
+		t.Fatalf("GetSessionOption(\"loom\") = %q, err=%v; want empty while loom is absent", got, err)
+	}
+
+	if err := r.NewSession("loom"); err != nil {
+		t.Fatalf("NewSession(\"loom\"): %v", err)
+	}
+	if err := r.SetSessionOption("loom", "@bay-test-marker", "VALUE-LOOM"); err != nil {
+		t.Fatalf("SetSessionOption(\"loom\"): %v", err)
+	}
+
+	if got, err := r.GetSessionOption("loom", "@bay-test-marker"); err != nil || got != "VALUE-LOOM" {
+		t.Errorf("loom marker = %q, err=%v; want VALUE-LOOM", got, err)
+	}
+	if got, err := r.GetSessionOption("loom-old", "@bay-test-marker"); err != nil || got != "VALUE-OLD" {
+		t.Errorf("loom-old marker = %q, err=%v; want VALUE-OLD", got, err)
 	}
 }

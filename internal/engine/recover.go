@@ -37,11 +37,22 @@ func (e *Engine) Recover() ([]RecoverResult, error) {
 	for i := range m.Docks {
 		dock := &m.Docks[i]
 
-		if err := e.ensureSession(dock.Name); err != nil {
+		sessionIDChanged, err := e.applyRecoveredSessionID(dock)
+		if err != nil {
 			return nil, err
+		}
+		if sessionIDChanged {
+			// Server restart or session takeover — recorded pane/window
+			// IDs may collide with foreign panes/windows in the new
+			// server. Force the recover loop to recreate from scratch
+			// rather than reconcile against potentially-stale IDs.
+			invalidateRecordedTmuxAttrs(dock)
 		}
 
 		outcome := e.recoverDockBays(dock, m)
+		if sessionIDChanged {
+			outcome.changed = true
+		}
 		e.cleanPlaceholders(dock.Name)
 		e.recoverDockHostTerminal(dock, &outcome)
 		e.refreshDockWindowNames(dock)
@@ -78,11 +89,20 @@ func (e *Engine) DockRecover(name string) (RecoverResult, error) {
 		return RecoverResult{}, fmt.Errorf("unknown dock %q in manifest", name)
 	}
 
-	if err := e.ensureSession(name); err != nil {
+	sessionIDChanged, err := e.applyRecoveredSessionID(dock)
+	if err != nil {
 		return RecoverResult{}, err
+	}
+	if sessionIDChanged {
+		// See Recover() for why we drop recorded IDs on a session
+		// takeover.
+		invalidateRecordedTmuxAttrs(dock)
 	}
 
 	outcome := e.recoverDockBays(dock, m)
+	if sessionIDChanged {
+		outcome.changed = true
+	}
 	e.recoverDockSurfaces(dock, &outcome)
 	e.cleanPlaceholders(name)
 	e.recoverDockHostTerminal(dock, &outcome)
@@ -404,6 +424,24 @@ func (e *Engine) recoverDockHostTerminal(dock *manifest.Dock, outcome *recoverOu
 	}
 }
 
+// applyRecoveredSessionID resolves the live tmux session's identity
+// against the dock's stored SessionID and writes the result onto the
+// in-memory recovered dock. Returns true when the stored ID moved, so
+// the caller can flag the recover outcome dirty even if no other
+// state changed. The manifest write happens later in
+// mergeRecoveredDockState — see docs/design/session-identity.md for
+// why ensureSession's tmux side and the manifest write must straddle
+// the per-dock recover work.
+func (e *Engine) applyRecoveredSessionID(dock *manifest.Dock) (bool, error) {
+	sessionID, err := e.ensureSession(dock.Name, dock.SessionID)
+	if err != nil {
+		return false, err
+	}
+	changed := dock.SessionID != sessionID
+	dock.SessionID = sessionID
+	return changed, nil
+}
+
 func (e *Engine) mergeRecoveredDockState(recovered *manifest.Dock) error {
 	return e.withManifestMaybe(func(m *manifest.Manifest) (bool, error) {
 		dock := m.FindDock(recovered.Name)
@@ -416,6 +454,11 @@ func (e *Engine) mergeRecoveredDockState(recovered *manifest.Dock) error {
 
 func mergeRecoveredDockRuntimeState(dst, src *manifest.Dock) bool {
 	changed := false
+
+	if src.SessionID != "" && dst.SessionID != src.SessionID {
+		dst.SessionID = src.SessionID
+		changed = true
+	}
 
 	if src.Host != nil {
 		if dst.Host == nil {
