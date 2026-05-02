@@ -41,9 +41,9 @@ func TestKeybindingsIncludeSurfaceNavigation(t *testing.T) {
 		"M-h", "M-l", // prev/next window (tmux-native)
 		"M-j", "M-k", // pane down/up (tmux-native)
 		"M-H", "M-L", "M-J", "M-K", // pane left/right + shift-mirror of j/k
-		"M-g", // workspace picker
+		"M-g", // bay picker
 		"M-a", // create agent
-		"M-c", // create workspace
+		"M-c", // create bay
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("keybindings missing %q", want)
@@ -65,7 +65,7 @@ func TestCheckManifestConsistency(t *testing.T) {
 	m.Docks = []manifest.Dock{
 		{
 			Name: "labs",
-			Workspaces: []manifest.Workspace{
+			Bays: []manifest.Bay{
 				{
 					Name: "dup",
 					Surfaces: []manifest.Surface{

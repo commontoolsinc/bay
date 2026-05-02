@@ -1,4 +1,4 @@
-// Package nav provides fuzzy workspace navigation for "bay go" and "bay ws go".
+// Package nav provides fuzzy bay navigation for "bay go" and "bay ws go".
 package nav
 
 import (
@@ -9,7 +9,7 @@ import (
 	"github.com/commontoolsinc/bay/internal/tmux"
 )
 
-// Entry represents a navigable workspace.
+// Entry represents a navigable bay.
 type Entry struct {
 	DockName    string
 	WsName      string
@@ -18,13 +18,13 @@ type Entry struct {
 	PR          string
 	Pending     bool
 	Waiting     bool
-	// TmuxWindowID of any surface in this workspace (for focusing).
+	// TmuxWindowID of any surface in this bay (for focusing).
 	TmuxWindowID string
 	SurfaceCount int
 }
 
 // CollectEntries builds a list of all navigation entries from the manifest.
-// Each workspace becomes one entry.
+// Each bay becomes one entry.
 func CollectEntries(m *manifest.Manifest, tc tmux.Interface) []Entry {
 	var entries []Entry
 
@@ -43,19 +43,19 @@ func CollectEntries(m *manifest.Manifest, tc tmux.Interface) []Entry {
 
 		waitingWindows, _ := tc.WaitingOrBellWindowIDs(dockName)
 
-		for i := range dock.Workspaces {
-			ws := &dock.Workspaces[i]
+		for i := range dock.Bays {
+			bay := &dock.Bays[i]
 
 			branch := ""
 			pr := ""
-			if ws.Worktree != nil {
-				branch = ws.Worktree.Branch
-				pr = ws.Worktree.PR
+			if bay.Worktree != nil {
+				branch = bay.Worktree.Branch
+				pr = bay.Worktree.PR
 			}
 
 			var tmuxWindowID string
 			waiting := false
-			for _, s := range ws.Surfaces {
+			for _, s := range bay.Surfaces {
 				if s.Tmux != nil && s.Tmux.WindowID != "" {
 					if tmuxWindowID == "" {
 						tmuxWindowID = s.Tmux.WindowID
@@ -71,14 +71,14 @@ func CollectEntries(m *manifest.Manifest, tc tmux.Interface) []Entry {
 
 			entries = append(entries, Entry{
 				DockName:     dockName,
-				WsName:       ws.Name,
-				Description:  ws.Description,
+				WsName:       bay.Name,
+				Description:  bay.Description,
 				Branch:       branch,
 				PR:           pr,
-				Pending:      ws.Worktree != nil && ws.Worktree.Branch != "" && !ws.IsMerged(),
+				Pending:      bay.Worktree != nil && bay.Worktree.Branch != "" && !bay.IsMerged(),
 				TmuxWindowID: tmuxWindowID,
 				Waiting:      waiting,
-				SurfaceCount: len(ws.Surfaces),
+				SurfaceCount: len(bay.Surfaces),
 			})
 		}
 	}
@@ -146,9 +146,9 @@ func NextWaiting(entries []Entry, currentWindowID string) (*Entry, int) {
 	return nil, -1
 }
 
-// --- Surface-level navigation (intra-workspace) ---
+// --- Surface-level navigation (intra-bay) ---
 
-// SurfaceEntry represents a navigable surface within a workspace.
+// SurfaceEntry represents a navigable surface within a bay.
 type SurfaceEntry struct {
 	ID       int
 	Name     string
@@ -159,12 +159,12 @@ type SurfaceEntry struct {
 	Current  bool // true if this is the currently focused surface
 }
 
-// CollectSurfaces builds a list of surface entries for a workspace.
+// CollectSurfaces builds a list of surface entries for a bay.
 // waitingWindows is a pre-computed set of window IDs waiting by either
 // @bay-waiting or tmux's native bell flag.
-func CollectSurfaces(ws *manifest.Workspace, currentPaneID string, waitingWindows map[string]bool) []SurfaceEntry {
+func CollectSurfaces(bay *manifest.Bay, currentPaneID string, waitingWindows map[string]bool) []SurfaceEntry {
 	var entries []SurfaceEntry
-	for _, s := range ws.Surfaces {
+	for _, s := range bay.Surfaces {
 		e := SurfaceEntry{
 			ID:   s.ID,
 			Name: s.Name,

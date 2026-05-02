@@ -37,11 +37,11 @@ func newTopNewSurfaceCmd(spec topNewCmdSpec) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			dockName, wsName, err := resolveSurfaceWorkspace(eng, wsFlag, dockFlag)
+			dockName, bayName, err := resolveSurfaceBay(eng, wsFlag, dockFlag)
 			if err != nil {
 				return err
 			}
-			return runSurfaceNew(eng, dockName, wsName, opts)
+			return runSurfaceNew(eng, dockName, bayName, opts)
 		},
 	}
 
@@ -205,10 +205,10 @@ func editTargetFromArgs(args []string, wsFlag, dockFlag string) (string, error) 
 	return wsFlag, nil
 }
 
-// resolveSurfaceWorkspace resolves the (dock, ws) for a surface-creation
+// resolveSurfaceBay resolves the (dock, ws) for a surface-creation
 // command. With no flags it uses the current bay; with --bay it looks up the
 // bay by ID (with --dock to disambiguate).
-func resolveSurfaceWorkspace(eng *engine.Engine, wsFlag, dockFlag string) (string, string, error) {
+func resolveSurfaceBay(eng *engine.Engine, wsFlag, dockFlag string) (string, string, error) {
 	if wsFlag == "" && dockFlag == "" {
 		return eng.ResolveSelf()
 	}
@@ -216,7 +216,7 @@ func resolveSurfaceWorkspace(eng *engine.Engine, wsFlag, dockFlag string) (strin
 		return "", "", fmt.Errorf("--dock requires --bay")
 	}
 	if dockFlag != "" {
-		return eng.ResolveWorkspace(dockFlag + ":" + wsFlag)
+		return eng.ResolveBay(dockFlag + ":" + wsFlag)
 	}
 	return resolveBareWs(eng, wsFlag)
 }

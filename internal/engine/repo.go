@@ -132,11 +132,11 @@ func (e *Engine) DockSync(name string) (int, error) {
 		if !entry.IsDir() {
 			continue
 		}
-		wsPath := filepath.Join(wtDir, entry.Name())
-		if !e.Git.IsGitRepo(wsPath) {
+		bayPath := filepath.Join(wtDir, entry.Name())
+		if !e.Git.IsGitRepo(bayPath) {
 			continue
 		}
-		if err := copyWorktreeIncludeFiles(repoPath, wsPath, toCopy); err != nil {
+		if err := copyWorktreeIncludeFiles(repoPath, bayPath, toCopy); err != nil {
 			return count, err
 		}
 		count++

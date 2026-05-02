@@ -57,7 +57,7 @@ func TestRunSurfaceClose_NonAgentSkipsPrompt(t *testing.T) {
 	}
 
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
+	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "extra", SplitDir: "v"}); err != nil {
@@ -68,8 +68,8 @@ func TestRunSurfaceClose_NonAgentSkipsPrompt(t *testing.T) {
 		t.Fatalf("runSurfaceClose: %v", err)
 	}
 
-	ws, _ := eng.WsShow("labs", "w1")
-	for _, s := range ws.Surfaces {
+	bay, _ := eng.BayShow("labs", "w1")
+	for _, s := range bay.Surfaces {
 		if s.Name == "extra" {
 			t.Errorf("extra shell surface should be closed (no prompt for non-agent)")
 		}
@@ -84,7 +84,7 @@ func TestRunSurfaceClose_DeclinedKeepsAgentSurface(t *testing.T) {
 	confirmAgentClose = func(name string) bool { return false }
 
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
+	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "claude", Agent: "claude", SplitDir: "v"}); err != nil {
@@ -95,9 +95,9 @@ func TestRunSurfaceClose_DeclinedKeepsAgentSurface(t *testing.T) {
 		t.Fatalf("runSurfaceClose declined: expected nil error, got %v", err)
 	}
 
-	ws, _ := eng.WsShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "w1")
 	foundAgent := false
-	for _, s := range ws.Surfaces {
+	for _, s := range bay.Surfaces {
 		if s.Name == "claude" {
 			foundAgent = true
 			break
@@ -115,7 +115,7 @@ func TestRunSurfaceClose_ConfirmedClosesAgentSurface(t *testing.T) {
 	confirmAgentClose = func(name string) bool { return true }
 
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
+	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "claude", Agent: "claude", SplitDir: "v"}); err != nil {
@@ -126,8 +126,8 @@ func TestRunSurfaceClose_ConfirmedClosesAgentSurface(t *testing.T) {
 		t.Fatalf("runSurfaceClose confirmed: %v", err)
 	}
 
-	ws, _ := eng.WsShow("labs", "w1")
-	for _, s := range ws.Surfaces {
+	bay, _ := eng.BayShow("labs", "w1")
+	for _, s := range bay.Surfaces {
 		if s.Name == "claude" {
 			t.Error("agent surface should be closed after user confirmed the prompt")
 		}
@@ -145,7 +145,7 @@ func TestRunSurfaceClose_ForceSkipsConfirmEntirely(t *testing.T) {
 	}
 
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
+	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "claude", Agent: "claude", SplitDir: "v"}); err != nil {
@@ -156,8 +156,8 @@ func TestRunSurfaceClose_ForceSkipsConfirmEntirely(t *testing.T) {
 		t.Fatalf("runSurfaceClose force: %v", err)
 	}
 
-	ws, _ := eng.WsShow("labs", "w1")
-	for _, s := range ws.Surfaces {
+	bay, _ := eng.BayShow("labs", "w1")
+	for _, s := range bay.Surfaces {
 		if s.Name == "claude" {
 			t.Error("agent surface should be closed when force=true")
 		}

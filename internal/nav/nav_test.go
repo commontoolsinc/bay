@@ -7,13 +7,13 @@ import (
 	"github.com/commontoolsinc/bay/internal/tmux"
 )
 
-// buildTestManifest creates a manifest with two docks and several workspaces.
+// buildTestManifest creates a manifest with two docks and several bays.
 func buildTestManifest() *manifest.Manifest {
 	m := manifest.New()
 	m.Docks = []manifest.Dock{
 		{
 			Name: "labs",
-			Workspaces: []manifest.Workspace{
+			Bays: []manifest.Bay{
 				{
 					Name:     "mem-refactor",
 					Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "feature/refactor-memory-access", PR: "234"},
@@ -33,7 +33,7 @@ func buildTestManifest() *manifest.Manifest {
 		},
 		{
 			Name: "core",
-			Workspaces: []manifest.Workspace{
+			Bays: []manifest.Bay{
 				{
 					Name:     "nav-feature",
 					Worktree: &manifest.WorktreeAttrs{Repo: "core", Branch: "feature/nav-support"},
@@ -73,8 +73,8 @@ func TestCollectEntries(t *testing.T) {
 
 	entries := CollectEntries(m, tc)
 
-	// We expect 3 entries: one per workspace.
-	// labs has 2 workspaces, core has 1.
+	// We expect 3 entries: one per bay.
+	// labs has 2 bays, core has 1.
 	if len(entries) != 3 {
 		t.Fatalf("expected 3 entries, got %d", len(entries))
 	}
@@ -350,17 +350,17 @@ func TestFormatEntry(t *testing.T) {
 		Waiting:      false,
 	}
 
-	// FormatEntry was moved to the CLI picker layer (ws.go pickWorkspace).
+	// FormatEntry was moved to the CLI picker layer (ws.go pickBay).
 	// Entry fields are tested indirectly via the picker tests.
 	_ = e // verify the entry builds without error
 }
 
 // --- Surface-level navigation tests ---
 
-func buildSurfaceWorkspace() *manifest.Workspace {
+func buildSurfaceBay() *manifest.Bay {
 	agent := "claude"
 	cmd := "npm test"
-	return &manifest.Workspace{
+	return &manifest.Bay{
 		Name: "auth-fix",
 		Path: "/projects/auth-fix",
 		Surfaces: []manifest.Surface{
@@ -372,9 +372,9 @@ func buildSurfaceWorkspace() *manifest.Workspace {
 }
 
 func TestCollectSurfaces(t *testing.T) {
-	ws := buildSurfaceWorkspace()
+	bay := buildSurfaceBay()
 
-	entries := CollectSurfaces(ws, "%2", nil)
+	entries := CollectSurfaces(bay, "%2", nil)
 
 	if len(entries) != 3 {
 		t.Fatalf("expected 3 surface entries, got %d", len(entries))
@@ -391,9 +391,9 @@ func TestCollectSurfaces(t *testing.T) {
 }
 
 func TestCollectSurfaces_NoCurrent(t *testing.T) {
-	ws := buildSurfaceWorkspace()
+	bay := buildSurfaceBay()
 
-	entries := CollectSurfaces(ws, "%999", nil)
+	entries := CollectSurfaces(bay, "%999", nil)
 
 	for _, e := range entries {
 		if e.Current {
@@ -403,8 +403,8 @@ func TestCollectSurfaces_NoCurrent(t *testing.T) {
 }
 
 func TestNextSurface(t *testing.T) {
-	ws := buildSurfaceWorkspace()
-	entries := CollectSurfaces(ws, "%1", nil) // current = agent (index 0)
+	bay := buildSurfaceBay()
+	entries := CollectSurfaces(bay, "%1", nil) // current = agent (index 0)
 
 	next, idx := NextSurface(entries)
 	if next == nil || next.Name != "shell" || idx != 1 {
@@ -413,9 +413,9 @@ func TestNextSurface(t *testing.T) {
 }
 
 func TestNextSurface_WrapsAround(t *testing.T) {
-	ws := buildSurfaceWorkspace()
+	bay := buildSurfaceBay()
 	// Current = tests (index 2, last). Next should wrap to agent (index 0).
-	entries := CollectSurfaces(ws, "%3", nil)
+	entries := CollectSurfaces(bay, "%3", nil)
 
 	next, idx := NextSurface(entries)
 	if next == nil || next.Name != "agent" || idx != 0 {
@@ -424,8 +424,8 @@ func TestNextSurface_WrapsAround(t *testing.T) {
 }
 
 func TestPrevSurface(t *testing.T) {
-	ws := buildSurfaceWorkspace()
-	entries := CollectSurfaces(ws, "%2", nil) // current = shell (index 1)
+	bay := buildSurfaceBay()
+	entries := CollectSurfaces(bay, "%2", nil) // current = shell (index 1)
 
 	prev, idx := PrevSurface(entries)
 	if prev == nil || prev.Name != "agent" || idx != 0 {
@@ -434,8 +434,8 @@ func TestPrevSurface(t *testing.T) {
 }
 
 func TestPrevSurface_WrapsAround(t *testing.T) {
-	ws := buildSurfaceWorkspace()
-	entries := CollectSurfaces(ws, "%1", nil) // current = agent (index 0, first)
+	bay := buildSurfaceBay()
+	entries := CollectSurfaces(bay, "%1", nil) // current = agent (index 0, first)
 
 	prev, idx := PrevSurface(entries)
 	if prev == nil || prev.Name != "tests" || idx != 2 {
@@ -444,8 +444,8 @@ func TestPrevSurface_WrapsAround(t *testing.T) {
 }
 
 func TestNextSurface_NoCurrent(t *testing.T) {
-	ws := buildSurfaceWorkspace()
-	entries := CollectSurfaces(ws, "%999", nil) // no match
+	bay := buildSurfaceBay()
+	entries := CollectSurfaces(bay, "%999", nil) // no match
 
 	next, idx := NextSurface(entries)
 	if next == nil || next.Name != "agent" || idx != 0 {

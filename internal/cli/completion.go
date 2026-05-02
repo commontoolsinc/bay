@@ -83,11 +83,11 @@ func findCmd(root *cobra.Command, path string) *cobra.Command {
 }
 
 func registerCompletions(root *cobra.Command) {
-	wsCompl := workspaceCompletions()
+	bayCompl := bayCompletions()
 	sfCompl := surfaceCompletions()
 	dockCompl := dockCompletions()
 	goCompl := goCompletions()
-	wsFlagCompl := workspaceFlagCompletions()
+	bayFlagCompl := bayFlagCompletions()
 	dockFlagCompl := dockFlagCompletions()
 
 	// Bay-target positional: bay verbs operate on bays.
@@ -99,7 +99,7 @@ func registerCompletions(root *cobra.Command) {
 		"surface new edit",
 	} {
 		if cmd := findCmd(root, path); cmd != nil {
-			cmd.ValidArgsFunction = wsCompl
+			cmd.ValidArgsFunction = bayCompl
 		}
 	}
 
@@ -146,7 +146,7 @@ func registerCompletions(root *cobra.Command) {
 	}
 
 	// --bay and --dock flag completions on every surface verb that
-	// supports them. Workspace commands get --dock too. The bay new
+	// supports them. Bay commands get --dock too. The bay new
 	// <kind> commands also get --split for symmetry with sf new.
 	for _, path := range []string{
 		"surface close", "surface show", "surface rename",
@@ -154,7 +154,7 @@ func registerCompletions(root *cobra.Command) {
 		"surface new shell", "surface new agent", "surface new cmd",
 	} {
 		if cmd := findCmd(root, path); cmd != nil {
-			cmd.RegisterFlagCompletionFunc("bay", wsFlagCompl)
+			cmd.RegisterFlagCompletionFunc("bay", bayFlagCompl)
 			cmd.RegisterFlagCompletionFunc("dock", dockFlagCompl)
 		}
 	}
@@ -213,7 +213,7 @@ func addCandidate(completions *[]string, seen map[string]bool, val, desc string)
 	}
 }
 
-// addQualifiedCandidate emits a workspace identifier in both bare and
+// addQualifiedCandidate emits a bay identifier in both bare and
 // dock-qualified forms. The two forms get separate descriptions because
 // the qualified form's dock prefix is already visible in the candidate
 // text, so its description doesn't need to repeat the dock name.
@@ -222,38 +222,38 @@ func addQualifiedCandidate(completions *[]string, seen map[string]bool, dock, va
 	addCandidate(completions, seen, dock+":"+val, qualifiedDesc)
 }
 
-// workspaceCandidates returns workspace identifier candidates: each
-// workspace as ID and dock:ID, plus the "self" keyword.
+// bayCandidates returns bay identifier candidates: each
+// bay as ID and dock:ID, plus the "self" keyword.
 //
 // Names are strictly not CLI keys under the strict resolver, so they
 // aren't emitted as candidate values — but the friendly Name is woven
 // into each ID candidate's description so the user can see, for
 // example, that `w1` is "auth-fix".
-func workspaceCandidates(m *manifest.Manifest) []string {
+func bayCandidates(m *manifest.Manifest) []string {
 	seen := make(map[string]bool)
 	var completions []string
-	for _, ref := range manifest.AllWorkspaces(m) {
-		ws := ref.Workspace
+	for _, ref := range manifest.AllBays(m) {
+		bay := ref.Bay
 
 		// Branch/PR fragment for the description.
 		extras := ""
-		if ws.Worktree != nil {
-			if ws.Worktree.Branch != "" {
-				extras += " " + ws.Worktree.Branch
+		if bay.Worktree != nil {
+			if bay.Worktree.Branch != "" {
+				extras += " " + bay.Worktree.Branch
 			}
-			if ws.Worktree.PR != "" {
-				extras += " #" + ws.Worktree.PR
+			if bay.Worktree.PR != "" {
+				extras += " #" + bay.Worktree.PR
 			}
 		}
 
 		nameSuffix := ""
-		if ws.Name != "" {
-			nameSuffix = " " + ws.Name
+		if bay.Name != "" {
+			nameSuffix = " " + bay.Name
 		}
 		// Bare form's description names the dock so the user can tell
 		// which dock owns this ID; the qualified form drops the dock
 		// since the candidate text already shows it.
-		addQualifiedCandidate(&completions, seen, ref.Dock, ws.ID,
+		addQualifiedCandidate(&completions, seen, ref.Dock, bay.ID,
 			ref.Dock+nameSuffix+extras,
 			strings.TrimSpace(nameSuffix+extras))
 	}
@@ -262,9 +262,9 @@ func workspaceCandidates(m *manifest.Manifest) []string {
 }
 
 // surfaceCandidates returns surface identifier candidates: each surface in
-// two qualified forms (ws:name and dock:ws:name). Bare names are deliberately
-// omitted because they collide across workspaces and would suggest a surface
-// from one workspace while the resolver picks one from another.
+// two qualified forms (bay:name and dock:bay:name). Bare names are deliberately
+// omitted because they collide across bays and would suggest a surface
+// from one bay while the resolver picks one from another.
 //
 // includeSelf controls whether the "self" keyword is appended; callers should
 // pass false when the user has already typed a colon (qualified `self` is
@@ -276,18 +276,18 @@ func surfaceCandidates(m *manifest.Manifest, tc tmuxpkg.Interface, includeSelf b
 		addCandidate(&completions, seen, "self", "current surface")
 	}
 
-	// Determine current workspace for bare-name completions.
+	// Determine current bay for bare-name completions.
 	var currentDock, currentWs string
 	if session, err := tc.CurrentSession(); err == nil {
 		currentDock = session
 		if winID, err := tc.CurrentWindowID(); err == nil {
-			for _, ref := range manifest.AllWorkspaces(m) {
+			for _, ref := range manifest.AllBays(m) {
 				if ref.Dock != session {
 					continue
 				}
-				for _, s := range ref.Workspace.Surfaces {
+				for _, s := range ref.Bay.Surfaces {
 					if s.Tmux != nil && s.Tmux.WindowID == winID {
-						currentWs = ref.Workspace.Name
+						currentWs = ref.Bay.Name
 						break
 					}
 				}
@@ -306,17 +306,17 @@ func surfaceCandidates(m *manifest.Manifest, tc tmuxpkg.Interface, includeSelf b
 		}
 	}
 
-	// Workspace surfaces.
-	for _, ref := range manifest.AllWorkspaces(m) {
-		ws := ref.Workspace
-		for _, s := range ws.Surfaces {
-			desc := string(s.Type) + " in " + ref.Dock + ":" + ws.Name
-			// Bare name for surfaces in the current workspace.
-			if ref.Dock == currentDock && ws.Name == currentWs {
+	// Bay surfaces.
+	for _, ref := range manifest.AllBays(m) {
+		bay := ref.Bay
+		for _, s := range bay.Surfaces {
+			desc := string(s.Type) + " in " + ref.Dock + ":" + bay.Name
+			// Bare name for surfaces in the current bay.
+			if ref.Dock == currentDock && bay.Name == currentWs {
 				addCandidate(&completions, seen, s.Name, desc)
 			}
-			addCandidate(&completions, seen, ws.Name+":"+s.Name, desc)
-			addCandidate(&completions, seen, ref.Dock+":"+ws.Name+":"+s.Name, desc)
+			addCandidate(&completions, seen, bay.Name+":"+s.Name, desc)
+			addCandidate(&completions, seen, ref.Dock+":"+bay.Name+":"+s.Name, desc)
 		}
 	}
 	return completions
@@ -354,9 +354,9 @@ func agentCandidates(cfg *config.Config) []string {
 
 // --- Positional completers (with len(args) > 0 short-circuit) ---
 
-// workspaceCompletions returns a positional completer for workspace
+// bayCompletions returns a positional completer for bay
 // identifiers.
-func workspaceCompletions() func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+func bayCompletions() func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
 			return nil, cobra.ShellCompDirectiveNoFileComp
@@ -365,7 +365,7 @@ func workspaceCompletions() func(cmd *cobra.Command, args []string, toComplete s
 		if m == nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-		return workspaceCandidates(m), cobra.ShellCompDirectiveNoFileComp
+		return bayCandidates(m), cobra.ShellCompDirectiveNoFileComp
 	}
 }
 
@@ -401,7 +401,7 @@ func dockCompletions() func(cmd *cobra.Command, args []string, toComplete string
 	}
 }
 
-// goCompletions returns workspace names, branches, PR numbers for bay go.
+// goCompletions returns bay names, branches, PR numbers for bay go.
 func goCompletions() func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
@@ -427,16 +427,16 @@ func goCompletions() func(cmd *cobra.Command, args []string, toComplete string) 
 			}
 		}
 
-		for _, ref := range manifest.AllWorkspaces(m) {
-			ws := ref.Workspace
-			add(ws.Name, ref.Dock)
+		for _, ref := range manifest.AllBays(m) {
+			bay := ref.Bay
+			add(bay.Name, ref.Dock)
 			add(ref.Dock, "dock")
-			if ws.Worktree != nil {
-				if ws.Worktree.Branch != "" {
-					add(ws.Worktree.Branch, ref.Dock+" "+ws.Name)
+			if bay.Worktree != nil {
+				if bay.Worktree.Branch != "" {
+					add(bay.Worktree.Branch, ref.Dock+" "+bay.Name)
 				}
-				if ws.Worktree.PR != "" {
-					add("#"+ws.Worktree.PR, ref.Dock+" "+ws.Name)
+				if bay.Worktree.PR != "" {
+					add("#"+bay.Worktree.PR, ref.Dock+" "+bay.Name)
 				}
 			}
 		}
@@ -447,20 +447,20 @@ func goCompletions() func(cmd *cobra.Command, args []string, toComplete string) 
 
 // --- Flag completers (no args guard, since flag values aren't positionals) ---
 
-// workspaceFlagCompletions returns a flag-value completer for workspace
+// bayFlagCompletions returns a flag-value completer for bay
 // identifiers (used for --bay on surface verbs).
-func workspaceFlagCompletions() func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+func bayFlagCompletions() func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		m := loadManifestForCompletions()
 		if m == nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-		return workspaceCandidates(m), cobra.ShellCompDirectiveNoFileComp
+		return bayCandidates(m), cobra.ShellCompDirectiveNoFileComp
 	}
 }
 
 // dockFlagCompletions returns a flag-value completer for dock names (used
-// for --dock on workspace and surface verbs).
+// for --dock on bay and surface verbs).
 func dockFlagCompletions() func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		m := loadManifestForCompletions()
@@ -472,7 +472,7 @@ func dockFlagCompletions() func(cmd *cobra.Command, args []string, toComplete st
 }
 
 // agentFlagCompletions returns a flag-value completer for agent types (used
-// for --agent on ws new, surface new, dock new).
+// for --agent on bay new, surface new, dock new).
 func agentFlagCompletions(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	cfg := loadConfigForCompletions()
 	if cfg == nil {
@@ -501,7 +501,7 @@ func splitCompletions(cmd *cobra.Command, args []string, toComplete string) ([]s
 
 // branchCompletions returns local and remote branch names for the
 // --branch flag, filtering out the default branch and branches already
-// checked out in a bay workspace.
+// checked out in a bay bay.
 func branchCompletions(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	m := loadManifestForCompletions()
 	repoPath := repoPathForCompletion(cmd, m)
@@ -518,12 +518,12 @@ func branchCompletions(cmd *cobra.Command, args []string, toComplete string) ([]
 		}
 	}
 
-	// Collect branches already in use by bay workspaces.
+	// Collect branches already in use by bay bays.
 	inUse := map[string]bool{}
 	if m != nil {
-		for _, ref := range manifest.AllWorkspaces(m) {
-			if ref.Workspace.Worktree != nil && ref.Workspace.Worktree.Branch != "" {
-				inUse[ref.Workspace.Worktree.Branch] = true
+		for _, ref := range manifest.AllBays(m) {
+			if ref.Bay.Worktree != nil && ref.Bay.Worktree.Branch != "" {
+				inUse[ref.Bay.Worktree.Branch] = true
 			}
 		}
 	}

@@ -92,8 +92,8 @@ func detectScope(ctx *engine.Context) palette.Scope {
 	if ctx == nil {
 		return palette.ScopeAnywhere
 	}
-	if ctx.WorkspaceID != "" || ctx.Workspace != "" {
-		return palette.ScopeInWorkspace
+	if ctx.BayID != "" || ctx.Bay != "" {
+		return palette.ScopeInBay
 	}
 	if ctx.Dock != "" {
 		return palette.ScopeInDock

@@ -46,7 +46,7 @@ func mkEntry(id, title string, sec Section, needs Scope, hotkey string, action f
 func TestRun_EscapeClosesWithoutAction(t *testing.T) {
 	called := false
 	entries := []Entry{
-		mkEntry("go-ws", "Go to workspace", SectionNavigation, ScopeInDock, "M-G",
+		mkEntry("go-ws", "Go to bay", SectionNavigation, ScopeInDock, "M-G",
 			func() (string, error) { called = true; return "", nil }),
 	}
 	in := feedKeys(t, "\x1b")
@@ -55,7 +55,7 @@ func TestRun_EscapeClosesWithoutAction(t *testing.T) {
 	defer out.Close()
 
 	err := Run(RunOptions{
-		Scope:   ScopeInWorkspace,
+		Scope:   ScopeInBay,
 		Mode:    ModeWindow,
 		Entries: func(Mode) []Entry { return entries },
 		In:      in,
@@ -134,7 +134,7 @@ func TestRun_HidesEntriesBelowScope(t *testing.T) {
 	entries := []Entry{
 		mkEntry("edit-config", "Edit config", SectionAdmin, ScopeAnywhere, "",
 			func() (string, error) { calls = append(calls, "edit-config"); return "", nil }),
-		mkEntry("go-sf", "Go to surface", SectionNavigation, ScopeInWorkspace, "",
+		mkEntry("go-sf", "Go to surface", SectionNavigation, ScopeInBay, "",
 			func() (string, error) { calls = append(calls, "go-sf"); return "", nil }),
 	}
 	// Just Enter — should land on the only visible entry (edit-config)
@@ -199,7 +199,7 @@ func TestRun_RecordsSuccessToRecents(t *testing.T) {
 	rec := LoadRecents(filepath.Join(dir, "recents.json"))
 
 	entries := []Entry{
-		mkEntry("go-ws", "Go to workspace", SectionNavigation, ScopeAnywhere, "",
+		mkEntry("go-ws", "Go to bay", SectionNavigation, ScopeAnywhere, "",
 			func() (string, error) { return "", nil }),
 	}
 	in := feedKeys(t, "\r")
@@ -388,7 +388,7 @@ func TestRun_RecentsEntryAlsoShownInItsSection(t *testing.T) {
 	rec.Record("go-ws", "")
 
 	entries := []Entry{
-		mkEntry("go-ws", "Go to workspace", SectionNavigation, ScopeAnywhere, "",
+		mkEntry("go-ws", "Go to bay", SectionNavigation, ScopeAnywhere, "",
 			func() (string, error) { return "", nil }),
 		mkEntry("other", "Other", SectionNavigation, ScopeAnywhere, "",
 			func() (string, error) { return "", nil }),
@@ -551,16 +551,16 @@ func TestFuzzyScore_EmptyQueryMatchesEverything(t *testing.T) {
 }
 
 func TestFuzzyScore_PrefersWordBoundaryOverFirstMatch(t *testing.T) {
-	// "nw" against "New workspace": greedy takes the 'w' in "New" and
-	// misses the word-boundary 'w' in "workspace". DP must find the
+	// "nw" against "New worktree": greedy takes the 'w' in "New" and
+	// misses the word-boundary 'w' in "worktree". DP must find the
 	// better alignment.
-	ws, ok1 := fuzzyScore("New workspace", "nw")
+	wt, ok1 := fuzzyScore("New worktree", "nw")
 	sh, ok2 := fuzzyScore("New shell", "nw")
 	if !ok1 || !ok2 {
 		t.Fatalf("both should match; ok1=%v ok2=%v", ok1, ok2)
 	}
-	if ws <= sh {
-		t.Errorf("New workspace (%d) should outrank New shell (%d) for 'nw'", ws, sh)
+	if wt <= sh {
+		t.Errorf("New worktree (%d) should outrank New shell (%d) for 'nw'", wt, sh)
 	}
 }
 

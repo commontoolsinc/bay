@@ -24,7 +24,7 @@ func TestMaxTabNameLen(t *testing.T) {
 		{"normal 8 ws", 100, 50, 8, 3},                         // (50/8)-4=2, clamped to 3
 		{"narrow terminal", 60, 50, 5, 3},                      // (10/5)-4<0, clamped to 3
 		{"heavy status overflows", 100, 140, 3, 3},             // available<0, clamped to 3
-		{"zero workspaces", 100, 50, 0, 20},                    // edge case
+		{"zero bays", 100, 50, 0, 20},                          // edge case
 	}
 
 	for _, tt := range tests {
@@ -87,55 +87,55 @@ func TestTruncateTabName(t *testing.T) {
 	}
 }
 
-func TestWorkspaceCompactLabel(t *testing.T) {
+func TestBayCompactLabel(t *testing.T) {
 	tests := []struct {
 		name string
-		ws   *manifest.Workspace
+		bay  *manifest.Bay
 		want string
 	}{
 		{
 			name: "renamed worktree",
-			ws:   &manifest.Workspace{Name: "auth-fix", Path: "/tmp/bay-worktrees/w4"},
+			bay:  &manifest.Bay{Name: "auth-fix", Path: "/tmp/bay-worktrees/w4"},
 			want: "w4.auth-fix",
 		},
 		{
 			name: "unnamed worktree",
-			ws:   &manifest.Workspace{Name: "", Path: "/tmp/bay-worktrees/w4"},
+			bay:  &manifest.Bay{Name: "", Path: "/tmp/bay-worktrees/w4"},
 			want: "w4",
 		},
 		{
 			name: "name equals dir",
-			ws:   &manifest.Workspace{Name: "w4", Path: "/tmp/bay-worktrees/w4"},
+			bay:  &manifest.Bay{Name: "w4", Path: "/tmp/bay-worktrees/w4"},
 			want: "w4",
 		},
 		{
 			name: "external path name equals dir",
-			ws:   &manifest.Workspace{Name: "notes", Path: "/Users/me/notes"},
+			bay:  &manifest.Bay{Name: "notes", Path: "/Users/me/notes"},
 			want: "notes",
 		},
 		{
 			name: "external path distinct name",
-			ws:   &manifest.Workspace{Name: "research", Path: "/Users/me/notes"},
+			bay:  &manifest.Bay{Name: "research", Path: "/Users/me/notes"},
 			want: "notes.research",
 		},
 		{
 			name: "missing path",
-			ws:   &manifest.Workspace{Name: "scratch"},
+			bay:  &manifest.Bay{Name: "scratch"},
 			want: "scratch",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := WorkspaceCompactLabel(tt.ws); got != tt.want {
-				t.Errorf("WorkspaceCompactLabel() = %q, want %q", got, tt.want)
+			if got := BayCompactLabel(tt.bay); got != tt.want {
+				t.Errorf("BayCompactLabel() = %q, want %q", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestTruncateWorkspaceCompactLabel(t *testing.T) {
-	ws := &manifest.Workspace{Name: "auth-fix", Path: "/tmp/bay-worktrees/w4"}
+func TestTruncateBayCompactLabel(t *testing.T) {
+	bay := &manifest.Bay{Name: "auth-fix", Path: "/tmp/bay-worktrees/w4"}
 	tests := []struct {
 		maxLen int
 		want   string
@@ -150,8 +150,8 @@ func TestTruncateWorkspaceCompactLabel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.want, func(t *testing.T) {
-			if got := TruncateWorkspaceCompactLabel(ws, tt.maxLen); got != tt.want {
-				t.Errorf("TruncateWorkspaceCompactLabel(maxLen=%d) = %q, want %q", tt.maxLen, got, tt.want)
+			if got := TruncateBayCompactLabel(bay, tt.maxLen); got != tt.want {
+				t.Errorf("TruncateBayCompactLabel(maxLen=%d) = %q, want %q", tt.maxLen, got, tt.want)
 			}
 		})
 	}
@@ -196,14 +196,14 @@ func TestCommonHyphenPrefixes(t *testing.T) {
 	}
 }
 
-func TestTruncateWorkspaceCompactLabelWithSiblings(t *testing.T) {
-	wsHome := &manifest.Workspace{Name: "codex-home-mail-account-filter", Path: "/tmp/bay-worktrees/w1"}
-	wsLane := &manifest.Workspace{Name: "codex-lane-scheduler-phase1", Path: "/tmp/bay-worktrees/w2"}
-	wsAgents := &manifest.Workspace{Name: "agents-md-split", Path: "/tmp/bay-worktrees/w4"}
-	wsBare := &manifest.Workspace{Name: "codex", Path: "/tmp/bay-worktrees/w1"}
+func TestTruncateBayCompactLabelWithSiblings(t *testing.T) {
+	wsHome := &manifest.Bay{Name: "codex-home-mail-account-filter", Path: "/tmp/bay-worktrees/w1"}
+	wsLane := &manifest.Bay{Name: "codex-lane-scheduler-phase1", Path: "/tmp/bay-worktrees/w2"}
+	wsAgents := &manifest.Bay{Name: "agents-md-split", Path: "/tmp/bay-worktrees/w4"}
+	wsBare := &manifest.Bay{Name: "codex", Path: "/tmp/bay-worktrees/w1"}
 	tests := []struct {
 		name   string
-		ws     *manifest.Workspace
+		bay    *manifest.Bay
 		maxLen int
 		prefix string
 		want   string
@@ -218,10 +218,10 @@ func TestTruncateWorkspaceCompactLabelWithSiblings(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := TruncateWorkspaceCompactLabelWithSiblings(tt.ws, tt.maxLen, tt.prefix)
+			got := TruncateBayCompactLabelWithSiblings(tt.bay, tt.maxLen, tt.prefix)
 			if got != tt.want {
-				t.Errorf("TruncateWorkspaceCompactLabelWithSiblings(%q, %d, %q) = %q, want %q",
-					tt.ws.Name, tt.maxLen, tt.prefix, got, tt.want)
+				t.Errorf("TruncateBayCompactLabelWithSiblings(%q, %d, %q) = %q, want %q",
+					tt.bay.Name, tt.maxLen, tt.prefix, got, tt.want)
 			}
 		})
 	}
@@ -232,7 +232,7 @@ func TestRefreshDockWindowNames_StripsSharedPrefixInMixedDock(t *testing.T) {
 	mockTmux.SetClientWidth(92)
 	mockTmux.SetStatusReservedCells(50)
 	eng := &Engine{Tmux: mockTmux}
-	dock := &manifest.Dock{Workspaces: []manifest.Workspace{
+	dock := &manifest.Dock{Bays: []manifest.Bay{
 		{
 			Name: "codex-home-mail-account-filter",
 			Path: "/tmp/bay-worktrees/w1",
@@ -276,31 +276,31 @@ func TestRefreshDockWindowNames_StripsSharedPrefixInMixedDock(t *testing.T) {
 	}
 }
 
-func TestNextWorkspaceDir(t *testing.T) {
+func TestNextBayDir(t *testing.T) {
 	wtDir := t.TempDir()
 
 	// Empty dir, empty dock → w1.
-	if got := nextWorkspaceDir(wtDir, &manifest.Dock{}); got != "w1" {
+	if got := nextBayDir(wtDir, &manifest.Dock{}); got != "w1" {
 		t.Errorf("empty: got %q, want w1", got)
 	}
 
 	// w1 exists on disk → w2.
 	os.MkdirAll(filepath.Join(wtDir, "w1"), 0o755)
-	if got := nextWorkspaceDir(wtDir, &manifest.Dock{}); got != "w2" {
+	if got := nextBayDir(wtDir, &manifest.Dock{}); got != "w2" {
 		t.Errorf("w1 on disk: got %q, want w2", got)
 	}
 
 	// Manifest claims w2 but disk doesn't have it → w3 (avoids collision
-	// with the path the manifest-claimed workspace would recreate).
-	dock := &manifest.Dock{Workspaces: []manifest.Workspace{
+	// with the path the manifest-claimed bay would recreate).
+	dock := &manifest.Dock{Bays: []manifest.Bay{
 		{Name: "feat-foo", Path: filepath.Join(wtDir, "w2")},
 	}}
-	if got := nextWorkspaceDir(wtDir, dock); got != "w3" {
+	if got := nextBayDir(wtDir, dock); got != "w3" {
 		t.Errorf("w1 on disk + w2 in manifest: got %q, want w3", got)
 	}
 
-	// Workspace name differs from path basename — verifying decoupling.
-	if dock.Workspaces[0].Name == filepath.Base(dock.Workspaces[0].Path) {
+	// Bay name differs from path basename — verifying decoupling.
+	if dock.Bays[0].Name == filepath.Base(dock.Bays[0].Path) {
 		t.Error("test precondition: name should not equal basename")
 	}
 }

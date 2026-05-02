@@ -10,34 +10,34 @@ import (
 
 // uniqueSurfaceName returns a name that doesn't collide with existing surfaces.
 // If "shell" is taken, tries "shell-2", "shell-3", etc.
-func uniqueSurfaceName(ws *manifest.Workspace, name string) string {
-	if ws.FindSurface(name) == nil {
+func uniqueSurfaceName(bay *manifest.Bay, name string) string {
+	if bay.FindSurface(name) == nil {
 		return name
 	}
 	for i := 2; ; i++ {
 		candidate := fmt.Sprintf("%s-%d", name, i)
-		if ws.FindSurface(candidate) == nil {
+		if bay.FindSurface(candidate) == nil {
 			return candidate
 		}
 	}
 }
 
-func (e *Engine) preferredSplitTarget(ws *manifest.Workspace) *manifest.Surface {
+func (e *Engine) preferredSplitTarget(bay *manifest.Bay) *manifest.Surface {
 	if paneID, err := e.Tmux.CurrentPaneID(); err == nil {
-		for i := range ws.Surfaces {
-			s := &ws.Surfaces[i]
+		for i := range bay.Surfaces {
+			s := &bay.Surfaces[i]
 			if s.Tmux != nil && s.Tmux.PaneID == paneID {
 				return s
 			}
 		}
 	}
-	if ws.LastFocused != 0 {
-		if s := ws.FindSurfaceByID(ws.LastFocused); s != nil && s.Tmux != nil && s.Tmux.WindowID != "" {
+	if bay.LastFocused != 0 {
+		if s := bay.FindSurfaceByID(bay.LastFocused); s != nil && s.Tmux != nil && s.Tmux.WindowID != "" {
 			return s
 		}
 	}
-	for i := len(ws.Surfaces) - 1; i >= 0; i-- {
-		s := &ws.Surfaces[i]
+	for i := len(bay.Surfaces) - 1; i >= 0; i-- {
+		s := &bay.Surfaces[i]
 		if s.Tmux != nil && s.Tmux.WindowID != "" {
 			return s
 		}
@@ -45,7 +45,7 @@ func (e *Engine) preferredSplitTarget(ws *manifest.Workspace) *manifest.Surface 
 	return nil
 }
 
-func closedEntryForSurface(wsID string, s *manifest.Surface, closedAt int64) (manifest.ClosedEntry, bool) {
+func closedEntryForSurface(bayID string, s *manifest.Surface, closedAt int64) (manifest.ClosedEntry, bool) {
 	if s.Backend != manifest.SurfaceBackendTmux {
 		return manifest.ClosedEntry{}, false
 	}
@@ -53,9 +53,9 @@ func closedEntryForSurface(wsID string, s *manifest.Surface, closedAt int64) (ma
 		ClosedAt: closedAt,
 		Kind:     manifest.ClosedKindSurface,
 		Surface: &manifest.ClosedSurface{
-			Workspace: wsID,
-			Name:      s.Name,
-			Type:      s.Type,
+			Bay:  bayID,
+			Name: s.Name,
+			Type: s.Type,
 		},
 	}
 	if s.Agent != nil {
@@ -82,12 +82,12 @@ func closedEntryForSurface(wsID string, s *manifest.Surface, closedAt int64) (ma
 // the last pane, restore it" (the common case). Splitting against the
 // first surface instead would place the new pane next to the root and
 // visually insert it into the middle of the stack.
-func lastSurfaceInLayoutGroup(ws *manifest.Workspace, layoutGroup int) *manifest.Surface {
+func lastSurfaceInLayoutGroup(bay *manifest.Bay, layoutGroup int) *manifest.Surface {
 	if layoutGroup == 0 {
 		return nil
 	}
-	for i := len(ws.Surfaces) - 1; i >= 0; i-- {
-		s := &ws.Surfaces[i]
+	for i := len(bay.Surfaces) - 1; i >= 0; i-- {
+		s := &bay.Surfaces[i]
 		if s.Tmux != nil && s.Tmux.LayoutGroup == layoutGroup && s.Tmux.PaneID != "" {
 			return s
 		}
@@ -101,9 +101,9 @@ func lastSurfaceInLayoutGroup(ws *manifest.Workspace, layoutGroup int) *manifest
 // created with SplitDir="h", the group is horizontally split and the
 // restored root pane should be inserted with -h. Defaults to "v" if no
 // sibling has a recorded split (single-pane window).
-func inferRestoreAxis(ws *manifest.Workspace, layoutGroup int) string {
-	for i := range ws.Surfaces {
-		s := &ws.Surfaces[i]
+func inferRestoreAxis(bay *manifest.Bay, layoutGroup int) string {
+	for i := range bay.Surfaces {
+		s := &bay.Surfaces[i]
 		if s.Tmux == nil || s.Tmux.LayoutGroup != layoutGroup {
 			continue
 		}
@@ -141,10 +141,10 @@ type SurfaceAddOptions struct {
 	Resume bool
 }
 
-// SurfaceAdd adds a new surface to a workspace.
+// SurfaceAdd adds a new surface to a bay.
 func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 	dockName := opts.DockName
-	wsID := opts.WsName
+	bayID := opts.WsName
 	surfaceType := opts.Type
 	name := opts.Name
 	agent := opts.Agent
@@ -159,9 +159,9 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 	if dock == nil {
 		return fmt.Errorf("unknown dock %q", dockName)
 	}
-	ws := dock.FindWorkspaceByID(wsID)
-	if ws == nil {
-		return fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
+	bay := dock.FindBayByID(bayID)
+	if bay == nil {
+		return fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
 	}
 
 	// Determine the layout group — find an existing tmux window to split into,
@@ -173,8 +173,8 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 	splitBefore := false
 	splitAxis := splitDir
 
-	if opts.RestoreLayoutGroup > 0 && len(ws.Surfaces) > 0 {
-		if sibling := lastSurfaceInLayoutGroup(ws, opts.RestoreLayoutGroup); sibling != nil && sibling.Tmux != nil {
+	if opts.RestoreLayoutGroup > 0 && len(bay.Surfaces) > 0 {
+		if sibling := lastSurfaceInLayoutGroup(bay, opts.RestoreLayoutGroup); sibling != nil && sibling.Tmux != nil {
 			tmuxWindowID = sibling.Tmux.WindowID
 			tmuxSplitTargetID = sibling.Tmux.PaneID
 			layoutGroup = sibling.Tmux.LayoutGroup
@@ -185,14 +185,14 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 				// recorded splits yet. SplitFrom stays 0 — the restored
 				// surface is the new root.
 				splitBefore = true
-				splitAxis = inferRestoreAxis(ws, opts.RestoreLayoutGroup)
+				splitAxis = inferRestoreAxis(bay, opts.RestoreLayoutGroup)
 			} else {
 				// Split child: parent is whichever sibling we land against.
 				splitFromSurface = sibling.ID
 			}
 		}
-	} else if splitDir != "" && len(ws.Surfaces) > 0 {
-		if parent := e.preferredSplitTarget(ws); parent != nil {
+	} else if splitDir != "" && len(bay.Surfaces) > 0 {
+		if parent := e.preferredSplitTarget(bay); parent != nil {
 			tmuxWindowID = parent.Tmux.WindowID
 			tmuxSplitTargetID = parent.Tmux.PaneID
 			layoutGroup = parent.Tmux.LayoutGroup
@@ -209,7 +209,7 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 		if targetID == "" {
 			targetID = tmuxWindowID
 		}
-		newPaneID, splitErr := e.Tmux.SplitWindow(targetID, splitAxis, ws.Path, splitBefore)
+		newPaneID, splitErr := e.Tmux.SplitWindow(targetID, splitAxis, bay.Path, splitBefore)
 		if splitErr != nil {
 			return fmt.Errorf("splitting window: %w", splitErr)
 		}
@@ -219,20 +219,20 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 		}
 	} else {
 		// Create a new tmux window. Secondary windows get a ":surfacename"
-		// tab name; the first window keeps the workspace compact label.
-		windowName := workspaceWindowLabel(ws)
-		if len(ws.Surfaces) > 0 {
+		// tab name; the first window keeps the bay compact label.
+		windowName := bayWindowLabel(bay)
+		if len(bay.Surfaces) > 0 {
 			windowName = ":" + name
 		}
-		winID, err := e.Tmux.NewWindow(dockName, windowName, ws.Path)
+		winID, err := e.Tmux.NewWindow(dockName, windowName, bay.Path)
 		if err != nil {
 			return fmt.Errorf("creating tmux window: %w", err)
 		}
 		e.cleanPlaceholders(dockName)
-		e.positionNewWindow(dockName, winID, wsID, nil)
+		e.positionNewWindow(dockName, winID, bayID, nil)
 
 		tmuxWindowID = winID
-		layoutGroup = nextLayoutGroup(ws)
+		layoutGroup = nextLayoutGroup(bay)
 
 		panes, _ := e.Tmux.ListPanes(winID)
 		if len(panes) > 0 {
@@ -255,12 +255,12 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 	agentArgs := e.resolvedAgentArgs(dockName, agent, m2)
 
 	// Launch the surface process.
-	surface, err := e.launchSurfaceInTmux(tmuxPaneID, dockName, surfaceType, agent, cmd, ws.Path, agentArgs, opts.Resume)
+	surface, err := e.launchSurfaceInTmux(tmuxPaneID, dockName, surfaceType, agent, cmd, bay.Path, agentArgs, opts.Resume)
 	if err != nil {
 		rollbackSurface()
 		return err
 	}
-	surface.Name = uniqueSurfaceName(ws, name)
+	surface.Name = uniqueSurfaceName(bay, name)
 	surface.Tmux.PaneID = tmuxPaneID
 	surface.Tmux.WindowID = tmuxWindowID
 	surface.Tmux.LayoutGroup = layoutGroup
@@ -273,21 +273,21 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 			rollbackSurface()
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws := dock.FindWorkspaceByID(wsID)
-		if ws == nil {
+		bay := dock.FindBayByID(bayID)
+		if bay == nil {
 			rollbackSurface()
-			return fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
+			return fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
 		}
 
-		surface.Name = uniqueSurfaceName(ws, name)
-		if _, err := ws.AddSurface(surface); err != nil {
+		surface.Name = uniqueSurfaceName(bay, name)
+		if _, err := bay.AddSurface(surface); err != nil {
 			rollbackSurface()
 			return err
 		}
-		ws.LastActive = time.Now().Unix()
+		bay.LastActive = time.Now().Unix()
 		// Adding a surface cancels any scheduled auto-close — the user
-		// clearly wants this workspace to live.
-		ws.PendingCloseAt = 0
+		// clearly wants this bay to live.
+		bay.PendingCloseAt = 0
 		return nil
 	})
 	if err != nil {
@@ -333,16 +333,16 @@ func (e *Engine) DockSurfaceClose(dockName, surfaceName string) error {
 	return nil
 }
 
-// SurfaceClose removes a surface from a workspace.
+// SurfaceClose removes a surface from a bay.
 //
 // The manifest update happens BEFORE the destructive tmux kill so that
 // when bay is invoked from inside the pane being closed, the user-visible
 // state is already correct by the time tmux SIGHUPs bay. See also
-// SurfaceRestart and the closeWorkspaceState helper for the same pattern.
+// SurfaceRestart and the closeBayState helper for the same pattern.
 //
 // Records an undo-close entry on the dock's queue so `bay sf restore`
 // (Option+Z) can recreate the surface. Skipped for non-tmux-backed surfaces.
-func (e *Engine) SurfaceClose(dockName, wsID, surfaceName string, force bool) error {
+func (e *Engine) SurfaceClose(dockName, bayID, surfaceName string, force bool) error {
 	var windowIDToKill, paneIDToKill string
 	wsEmpty := false
 
@@ -351,19 +351,19 @@ func (e *Engine) SurfaceClose(dockName, wsID, surfaceName string, force bool) er
 		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws := dock.FindWorkspaceByID(wsID)
-		if ws == nil {
-			return fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
+		bay := dock.FindBayByID(bayID)
+		if bay == nil {
+			return fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
 		}
-		s := ws.FindSurface(surfaceName)
+		s := bay.FindSurface(surfaceName)
 		if s == nil {
-			return fmt.Errorf("surface %q not found in bay %q", surfaceName, wsID)
+			return fmt.Errorf("surface %q not found in bay %q", surfaceName, bayID)
 		}
 
 		// Capture what we'll kill before the surface is removed from
 		// the in-memory manifest (RemoveSurface invalidates s).
 		if s.Tmux != nil && s.Tmux.WindowID != "" {
-			if countSurfacesInLayoutGroup(ws, s.Tmux.LayoutGroup) <= 1 {
+			if countSurfacesInLayoutGroup(bay, s.Tmux.LayoutGroup) <= 1 {
 				windowIDToKill = s.Tmux.WindowID
 			} else if s.Tmux.PaneID != "" {
 				paneIDToKill = s.Tmux.PaneID
@@ -371,15 +371,15 @@ func (e *Engine) SurfaceClose(dockName, wsID, surfaceName string, force bool) er
 		}
 
 		// Queue an undo entry (tmux-backed surfaces only).
-		if entry, ok := closedEntryForSurface(wsID, s, time.Now().Unix()); ok {
+		if entry, ok := closedEntryForSurface(bayID, s, time.Now().Unix()); ok {
 			dock.PushClosedEntry(entry)
 		}
 
-		if err := ws.RemoveSurface(s.Name); err != nil {
+		if err := bay.RemoveSurface(s.Name); err != nil {
 			return err
 		}
-		ws.LastActive = time.Now().Unix()
-		wsEmpty = len(ws.Surfaces) == 0
+		bay.LastActive = time.Now().Unix()
+		wsEmpty = len(bay.Surfaces) == 0
 		return nil
 	})
 	if err != nil {
@@ -396,12 +396,12 @@ func (e *Engine) SurfaceClose(dockName, wsID, surfaceName string, force bool) er
 		_ = e.Tmux.KillPane(paneIDToKill)
 	}
 
-	// Workspace became empty. With force, close immediately; without,
+	// Bay became empty. With force, close immediately; without,
 	// schedule the grace-windowed auto-close (see orphan-hygiene.md).
 	if wsEmpty {
 		if force {
-			if err := e.WsClose(dockName, wsID, force); err != nil {
-				return fmt.Errorf("surface closed, but bay %q not removed: %w", wsID, err)
+			if err := e.BayClose(dockName, bayID, force); err != nil {
+				return fmt.Errorf("surface closed, but bay %q not removed: %w", bayID, err)
 			}
 			return nil
 		}
@@ -410,12 +410,12 @@ func (e *Engine) SurfaceClose(dockName, wsID, surfaceName string, force bool) er
 			if dock == nil {
 				return nil
 			}
-			ws := dock.FindWorkspaceByID(wsID)
-			if ws == nil {
+			bay := dock.FindBayByID(bayID)
+			if bay == nil {
 				return nil
 			}
-			if ws.PendingCloseAt == 0 {
-				ws.PendingCloseAt = time.Now().Unix() + orphanGraceSeconds
+			if bay.PendingCloseAt == 0 {
+				bay.PendingCloseAt = time.Now().Unix() + orphanGraceSeconds
 			}
 			return nil
 		})
@@ -536,8 +536,8 @@ func sameClosedEntry(a, b manifest.ClosedEntry) bool {
 // success so the caller can render user-visible feedback. Returns
 // ErrNothingToRestore (with nil entry) if the queue is empty after pruning.
 //
-// If the parent workspace no longer exists (typical when the grace window
-// elapsed and the workspace was closed), the stale entry is discarded
+// If the parent bay no longer exists (typical when the grace window
+// elapsed and the bay was closed), the stale entry is discarded
 // silently and ErrNothingToRestore is returned — pretending the queue was
 // empty is the right UX for the Option+Z muscle-memory case.
 //
@@ -547,8 +547,8 @@ func (e *Engine) SurfaceRestore(dockName string) (*manifest.ClosedEntry, error) 
 	var entry *manifest.ClosedEntry
 	var nothingToRestore bool
 
-	// Peek + workspace-existence check in a single manifest pass: if the
-	// parent workspace is gone, drop the stale entry here so we don't
+	// Peek + bay-existence check in a single manifest pass: if the
+	// parent bay is gone, drop the stale entry here so we don't
 	// reacquire the lock just to remove it.
 	err := e.withManifestMaybe(func(m *manifest.Manifest) (bool, error) {
 		dock := m.FindDock(dockName)
@@ -564,7 +564,7 @@ func (e *Engine) SurfaceRestore(dockName string) (*manifest.ClosedEntry, error) 
 			return pruned, nil
 		}
 		if entry.Kind == manifest.ClosedKindSurface && entry.Surface != nil &&
-			dock.FindWorkspaceByID(entry.Surface.Workspace) == nil {
+			dock.FindBayByID(entry.Surface.Bay) == nil {
 			nothingToRestore = true
 			dock.RemoveClosedEntryAt(entry.ClosedAt)
 			return true, nil
@@ -605,9 +605,9 @@ func (e *Engine) dropClosedEntry(dockName string, closedAt int64) error {
 }
 
 // restoreSurfaceEntry handles Kind == ClosedKindSurface. It recreates the
-// surface via SurfaceAdd (which also clears any pending workspace
+// surface via SurfaceAdd (which also clears any pending bay
 // auto-close from orphan-hygiene) and drops the entry on success.
-// The parent-workspace check has already happened in SurfaceRestore.
+// The parent-bay check has already happened in SurfaceRestore.
 func (e *Engine) restoreSurfaceEntry(dockName string, entry *manifest.ClosedEntry) error {
 	cs := entry.Surface
 	if cs == nil {
@@ -622,7 +622,7 @@ func (e *Engine) restoreSurfaceEntry(dockName string, entry *manifest.ClosedEntr
 	// If the entire layout group is gone, SurfaceAdd creates a new window.
 	if addErr := e.SurfaceAdd(SurfaceAddOptions{
 		DockName:           dockName,
-		WsName:             cs.Workspace,
+		WsName:             cs.Bay,
 		Type:               cs.Type,
 		Name:               cs.Name,
 		Agent:              cs.Agent,
@@ -640,8 +640,8 @@ func (e *Engine) restoreSurfaceEntry(dockName string, entry *manifest.ClosedEntr
 	return e.dropClosedEntry(dockName, entry.ClosedAt)
 }
 
-// SurfaceRename renames a surface within a workspace.
-func (e *Engine) SurfaceRename(dockName, wsID, oldName, newName string) error {
+// SurfaceRename renames a surface within a bay.
+func (e *Engine) SurfaceRename(dockName, bayID, oldName, newName string) error {
 	if err := ValidateName(newName); err != nil {
 		return err
 	}
@@ -651,33 +651,33 @@ func (e *Engine) SurfaceRename(dockName, wsID, oldName, newName string) error {
 		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws := dock.FindWorkspaceByID(wsID)
-		if ws == nil {
-			return fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
+		bay := dock.FindBayByID(bayID)
+		if bay == nil {
+			return fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
 		}
-		s := ws.FindSurface(oldName)
+		s := bay.FindSurface(oldName)
 		if s == nil {
-			return fmt.Errorf("surface %q not found in bay %q", oldName, wsID)
+			return fmt.Errorf("surface %q not found in bay %q", oldName, bayID)
 		}
-		if existing := ws.FindSurface(newName); existing != nil {
-			return fmt.Errorf("surface name %q already in use in bay %q", newName, wsID)
+		if existing := bay.FindSurface(newName); existing != nil {
+			return fmt.Errorf("surface name %q already in use in bay %q", newName, bayID)
 		}
 		s.Name = newName
-		ws.LastActive = time.Now().Unix()
+		bay.LastActive = time.Now().Unix()
 
 		// Update tmux window names if this surface could be a tab owner
 		// (i.e. it lives in a secondary layout group).
 		if s.Tmux != nil && s.Tmux.LayoutGroup > 1 {
-			e.updateWindowNames(ws, "")
+			e.updateWindowNames(bay, "")
 		}
 		return nil
 	})
 }
 
-// nextLayoutGroup returns the next layout group number for a workspace.
-func nextLayoutGroup(ws *manifest.Workspace) int {
+// nextLayoutGroup returns the next layout group number for a bay.
+func nextLayoutGroup(bay *manifest.Bay) int {
 	max := 0
-	for _, s := range ws.Surfaces {
+	for _, s := range bay.Surfaces {
 		if s.Tmux != nil && s.Tmux.LayoutGroup > max {
 			max = s.Tmux.LayoutGroup
 		}
@@ -686,9 +686,9 @@ func nextLayoutGroup(ws *manifest.Workspace) int {
 }
 
 // countSurfacesInLayoutGroup counts surfaces sharing a layout group.
-func countSurfacesInLayoutGroup(ws *manifest.Workspace, group int) int {
+func countSurfacesInLayoutGroup(bay *manifest.Bay, group int) int {
 	count := 0
-	for _, s := range ws.Surfaces {
+	for _, s := range bay.Surfaces {
 		if s.Tmux != nil && s.Tmux.LayoutGroup == group {
 			count++
 		}

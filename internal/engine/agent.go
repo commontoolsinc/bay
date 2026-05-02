@@ -30,7 +30,7 @@ func (e *Engine) DefaultAgent(dockName string) string {
 	return e.resolvedDockAgent(dockName, m)
 }
 
-func (e *Engine) resolveWorkspaceAgent(dockName string, m *manifest.Manifest, requested string, requireAgent bool) (string, error) {
+func (e *Engine) resolveBayAgent(dockName string, m *manifest.Manifest, requested string, requireAgent bool) (string, error) {
 	if requested != "" {
 		if err := e.validateAgentName(requested); err != nil {
 			return "", err

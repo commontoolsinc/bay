@@ -190,7 +190,7 @@ type bayKeybinding struct {
 // canonicalLine() appends "|| true" to bay-invoking bindings so they are
 // silent in non-bay tmux sessions. Without it, tmux run-shell displays
 // 'bay ... returned 1' in the status line when bay exits with an error
-// (e.g., "not in a bay workspace"). Stderr is already invisible in
+// (e.g., "not in a bay bay"). Stderr is already invisible in
 // run-shell, so only the exit code needs masking.
 //
 // Navigation bindings are tmux-native so they work everywhere, including
@@ -1042,7 +1042,7 @@ var agentHookSpecs = map[string]agentHookSpec{
 // installReadySignaling bundles the turn-complete signal: hooks for any
 // supported agent on PATH plus the tmux auto-clear hook. One prompt,
 // all-or-nothing — the pieces only work as a unit (without auto-clear,
-// flags get sticky and Option-R keeps landing on visited workspaces).
+// flags get sticky and Option-R keeps landing on visited bays).
 // Each piece is independently idempotent, so repeat runs are safe.
 func installReadySignaling(reader *bufio.Reader) {
 	home, err := os.UserHomeDir()

@@ -106,17 +106,17 @@ func runDoctor(eng *engine.Engine, w io.Writer) {
 					}
 				}
 			}
-			for j := range dock.Workspaces {
-				ws := &dock.Workspaces[j]
-				if ws.Worktree != nil && ws.Worktree.Branch != "" {
+			for j := range dock.Bays {
+				bay := &dock.Bays[j]
+				if bay.Worktree != nil && bay.Worktree.Branch != "" {
 					worktreesWithBranches++
 				}
-				if ws.Path == "" {
+				if bay.Path == "" {
 					continue
 				}
-				wsPath := config.ExpandPath(ws.Path)
-				if _, err := os.Stat(wsPath); err != nil {
-					fmt.Fprintf(w, "[WARN] bay %s:%s path missing: %s\n", dock.Name, ws.Name, wsPath)
+				bayPath := config.ExpandPath(bay.Path)
+				if _, err := os.Stat(bayPath); err != nil {
+					fmt.Fprintf(w, "[WARN] bay %s:%s path missing: %s\n", dock.Name, bay.Name, bayPath)
 					missingCount++
 					ok = false
 				}
@@ -234,28 +234,28 @@ func checkManifestConsistency(m *manifest.Manifest, cfg *config.Config) []string
 	for i := range m.Docks {
 		dock := &m.Docks[i]
 		seenNames := map[string]bool{}
-		for j := range dock.Workspaces {
-			ws := &dock.Workspaces[j]
-			if ws.Name != "" {
-				if seenNames[ws.Name] {
-					warnings = append(warnings, fmt.Sprintf("dock %s has duplicate bay name %q", dock.Name, ws.Name))
+		for j := range dock.Bays {
+			bay := &dock.Bays[j]
+			if bay.Name != "" {
+				if seenNames[bay.Name] {
+					warnings = append(warnings, fmt.Sprintf("dock %s has duplicate bay name %q", dock.Name, bay.Name))
 				}
-				seenNames[ws.Name] = true
+				seenNames[bay.Name] = true
 			}
 
 			seenSurfaceIDs := map[int]bool{}
 			seenSurfaceNames := map[string]bool{}
-			for _, s := range ws.Surfaces {
+			for _, s := range bay.Surfaces {
 				if seenSurfaceIDs[s.ID] {
-					warnings = append(warnings, fmt.Sprintf("bay %s:%s has duplicate surface id %d", dock.Name, ws.Name, s.ID))
+					warnings = append(warnings, fmt.Sprintf("bay %s:%s has duplicate surface id %d", dock.Name, bay.Name, s.ID))
 				}
 				seenSurfaceIDs[s.ID] = true
 				if seenSurfaceNames[s.Name] {
-					warnings = append(warnings, fmt.Sprintf("bay %s:%s has duplicate surface name %q", dock.Name, ws.Name, s.Name))
+					warnings = append(warnings, fmt.Sprintf("bay %s:%s has duplicate surface name %q", dock.Name, bay.Name, s.Name))
 				}
 				seenSurfaceNames[s.Name] = true
 				for _, e := range s.Validate() {
-					warnings = append(warnings, fmt.Sprintf("bay %s:%s: %s", dock.Name, ws.Name, e))
+					warnings = append(warnings, fmt.Sprintf("bay %s:%s: %s", dock.Name, bay.Name, e))
 				}
 			}
 		}

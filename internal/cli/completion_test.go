@@ -107,7 +107,7 @@ func TestCreateVerbs_PositionalsAreFreeText(t *testing.T) {
 
 func TestSurfaceCommands_UseSurfaceCompletions(t *testing.T) {
 	// surface close/show/rename
-	// must use sfCompl, not wsCompl. Set up a manifest with one workspace and
+	// must use sfCompl, not wsCompl. Set up a manifest with one bay and
 	// one surface, and verify the completer returns the surface name.
 	dir := t.TempDir()
 
@@ -115,7 +115,7 @@ func TestSurfaceCommands_UseSurfaceCompletions(t *testing.T) {
 	m.Docks = []manifest.Dock{
 		{
 			Name: "labs",
-			Workspaces: []manifest.Workspace{
+			Bays: []manifest.Bay{
 				{
 					Name: "w1",
 					Surfaces: []manifest.Surface{
@@ -164,7 +164,7 @@ func TestSurfaceCompletions(t *testing.T) {
 	m.Docks = []manifest.Dock{
 		{
 			Name: "labs",
-			Workspaces: []manifest.Workspace{
+			Bays: []manifest.Bay{
 				{
 					Name: "w1",
 					Surfaces: []manifest.Surface{
@@ -201,7 +201,7 @@ func TestSurfaceCompletions(t *testing.T) {
 
 	// Both qualified forms for each surface, plus the self keyword. Bare
 	// names ("agent", "shell") are deliberately omitted — they collide
-	// across workspaces and would mislead users.
+	// across bays and would mislead users.
 	for _, expected := range []string{
 		"self",
 		"w1:agent", "w1:shell",
@@ -228,7 +228,7 @@ func TestSurfaceCompletions_NoSelfAfterColon(t *testing.T) {
 	// (qualified self is always literal, not a keyword).
 	dir := t.TempDir()
 	m := manifest.New()
-	m.Docks = []manifest.Dock{{Name: "labs", Workspaces: []manifest.Workspace{{Name: "w1"}}}}
+	m.Docks = []manifest.Dock{{Name: "labs", Bays: []manifest.Bay{{Name: "w1"}}}}
 
 	origXDG := os.Getenv("XDG_DATA_HOME")
 	os.Setenv("XDG_DATA_HOME", dir)
@@ -259,7 +259,7 @@ func TestBayFlagCompletions(t *testing.T) {
 	dir := t.TempDir()
 	m := manifest.New()
 	m.Docks = []manifest.Dock{
-		{Name: "labs", Workspaces: []manifest.Workspace{{Name: "w1"}, {Name: "w2"}}},
+		{Name: "labs", Bays: []manifest.Bay{{Name: "w1"}, {Name: "w2"}}},
 	}
 	origXDG := os.Getenv("XDG_DATA_HOME")
 	os.Setenv("XDG_DATA_HOME", dir)
@@ -268,14 +268,14 @@ func TestBayFlagCompletions(t *testing.T) {
 	os.MkdirAll(bayDir, 0o755)
 	manifest.Save(filepath.Join(bayDir, "manifest.json"), m)
 
-	fn := workspaceFlagCompletions()
+	fn := bayFlagCompletions()
 	// Pass non-empty args — flag completers must NOT short-circuit on args.
 	completions, directive := fn(nil, []string{"some-positional"}, "")
 	if directive != cobra.ShellCompDirectiveNoFileComp {
 		t.Errorf("directive = %d, want NoFileComp", directive)
 	}
 	if len(completions) == 0 {
-		t.Error("workspaceFlagCompletions returned no completions even with non-empty args")
+		t.Error("bayFlagCompletions returned no completions even with non-empty args")
 	}
 	// Should contain w1 and w2.
 	hasValue := func(prefix string) bool {
@@ -359,7 +359,7 @@ func TestFlagCompletions_DockOnBayNew(t *testing.T) {
 	}
 }
 
-func TestWorkspaceCompletions(t *testing.T) {
+func TestBayCompletions(t *testing.T) {
 	// Set up a manifest with test data in a temp dir
 	dir := t.TempDir()
 	manifestPath := filepath.Join(dir, "manifest.json")
@@ -368,7 +368,7 @@ func TestWorkspaceCompletions(t *testing.T) {
 	m.Docks = []manifest.Dock{
 		{
 			Name: "labs",
-			Workspaces: []manifest.Workspace{
+			Bays: []manifest.Bay{
 				{
 					Name:     "mem-refactor",
 					Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "feature/refactor-memory", PR: "234"},
@@ -392,14 +392,14 @@ func TestWorkspaceCompletions(t *testing.T) {
 	data, _ := os.ReadFile(manifestPath)
 	os.WriteFile(filepath.Join(bayDir, "manifest.json"), data, 0o644)
 
-	fn := workspaceCompletions()
+	fn := bayCompletions()
 	completions, directive := fn(nil, nil, "")
 
 	if directive != cobra.ShellCompDirectiveNoFileComp {
 		t.Errorf("directive = %d, want ShellCompDirectiveNoFileComp(%d)", directive, cobra.ShellCompDirectiveNoFileComp)
 	}
 
-	// Should contain workspace names, qualified names, and "self"
+	// Should contain bay names, qualified names, and "self"
 	hasValue := func(prefix string) bool {
 		for _, c := range completions {
 			if strings.HasPrefix(c, prefix) {
@@ -423,10 +423,10 @@ func TestWorkspaceCompletions(t *testing.T) {
 		}
 	}
 
-	// Branch/PR should NOT be in workspace completions.
+	// Branch/PR should NOT be in bay completions.
 	for _, notExpected := range []string{"feature/refactor-memory", "#234"} {
 		if hasValue(notExpected) {
-			t.Errorf("workspace completions should not include %q (only in goCompletions)", notExpected)
+			t.Errorf("bay completions should not include %q (only in goCompletions)", notExpected)
 		}
 	}
 }
@@ -437,8 +437,8 @@ func TestDockCompletions(t *testing.T) {
 	// Write a manifest file with docks
 	m := manifest.New()
 	m.Docks = []manifest.Dock{
-		{Name: "dev", Path: "/p/labs", Agent: "claude", Workspaces: []manifest.Workspace{}},
-		{Name: "research", Agent: "claude", Workspaces: []manifest.Workspace{}},
+		{Name: "dev", Path: "/p/labs", Agent: "claude", Bays: []manifest.Bay{}},
+		{Name: "research", Agent: "claude", Bays: []manifest.Bay{}},
 	}
 
 	origXDG := os.Getenv("XDG_DATA_HOME")
@@ -479,22 +479,22 @@ func TestSplitCompletions(t *testing.T) {
 	}
 }
 
-// TestWorkspaceCandidates_EmitsIDAndName covers the Phase 4 behavior: each
-// workspace contributes both ID and Name forms (plus dock-qualified versions),
+// TestBayCandidates_EmitsIDAndName covers the Phase 4 behavior: each
+// bay contributes both ID and Name forms (plus dock-qualified versions),
 // so users can complete from either prefix. Descriptions cross-reference the
 // other identifier.
-func TestWorkspaceCandidates_EmitsIDAndName(t *testing.T) {
+func TestBayCandidates_EmitsIDAndName(t *testing.T) {
 	m := manifest.New()
 	m.Docks = []manifest.Dock{{
 		Name: "labs",
-		Workspaces: []manifest.Workspace{{
+		Bays: []manifest.Bay{{
 			ID:       "w1",
 			Name:     "auth-fix",
 			Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "fix/auth"},
 		}},
 	}}
 
-	got := workspaceCandidates(m)
+	got := bayCandidates(m)
 
 	// Under strict resolution, only IDs (and dock:IDs) are candidate
 	// values. The friendly Name is woven into descriptions.
@@ -520,19 +520,19 @@ func TestWorkspaceCandidates_EmitsIDAndName(t *testing.T) {
 	}
 }
 
-// TestWorkspaceCandidates_DedupesWhenIDMatchesName covers the auto-named case
-// where the workspace's ID and Name are identical (e.g. w1) — only one
+// TestBayCandidates_DedupesWhenIDMatchesName covers the auto-named case
+// where the bay's ID and Name are identical (e.g. w1) — only one
 // candidate per form should appear, not two duplicates.
-func TestWorkspaceCandidates_DedupesWhenIDMatchesName(t *testing.T) {
+func TestBayCandidates_DedupesWhenIDMatchesName(t *testing.T) {
 	m := manifest.New()
 	m.Docks = []manifest.Dock{{
 		Name: "labs",
-		Workspaces: []manifest.Workspace{{
+		Bays: []manifest.Bay{{
 			ID:   "w1",
 			Name: "w1",
 		}},
 	}}
-	got := workspaceCandidates(m)
+	got := bayCandidates(m)
 	count := 0
 	for _, c := range got {
 		val, _, _ := strings.Cut(c, "\t")
@@ -545,19 +545,19 @@ func TestWorkspaceCandidates_DedupesWhenIDMatchesName(t *testing.T) {
 	}
 }
 
-// TestWorkspaceCandidates_HandlesEmptyName covers workspaces without a Name
+// TestBayCandidates_HandlesEmptyName covers bays without a Name
 // (sticky-once-set hasn't fired yet): only ID candidates are emitted, no
 // empty-string Name candidates.
-func TestWorkspaceCandidates_HandlesEmptyName(t *testing.T) {
+func TestBayCandidates_HandlesEmptyName(t *testing.T) {
 	m := manifest.New()
 	m.Docks = []manifest.Dock{{
 		Name: "labs",
-		Workspaces: []manifest.Workspace{{
+		Bays: []manifest.Bay{{
 			ID:   "w7",
 			Name: "",
 		}},
 	}}
-	got := workspaceCandidates(m)
+	got := bayCandidates(m)
 	hasID := false
 	for _, c := range got {
 		val, _, _ := strings.Cut(c, "\t")
@@ -565,16 +565,16 @@ func TestWorkspaceCandidates_HandlesEmptyName(t *testing.T) {
 			hasID = true
 		}
 		if val == "" {
-			t.Errorf("empty-Name workspace should not produce empty candidate; got %v", got)
+			t.Errorf("empty-Name bay should not produce empty candidate; got %v", got)
 		}
 	}
 	if !hasID {
-		t.Errorf("expected w7 candidate from empty-Name workspace; got %v", got)
+		t.Errorf("expected w7 candidate from empty-Name bay; got %v", got)
 	}
 }
 
-func TestWorkspaceCompletions_SecondArgReturnsNone(t *testing.T) {
-	fn := workspaceCompletions()
+func TestBayCompletions_SecondArgReturnsNone(t *testing.T) {
+	fn := bayCompletions()
 	completions, _ := fn(nil, []string{"w1"}, "")
 	if len(completions) != 0 {
 		t.Errorf("expected no completions for second arg, got %d", len(completions))

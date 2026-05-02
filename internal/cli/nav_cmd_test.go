@@ -36,7 +36,7 @@ func testNavEngine(t *testing.T) (*engine.Engine, *tmux.Mock, *git.Mock, string)
 	manifest.Save(manifestPath, &manifest.Manifest{
 		Version: manifest.CurrentVersion,
 		Docks: []manifest.Dock{
-			{Name: "labs", Path: repoDir, Agent: "claude", Workspaces: []manifest.Workspace{}},
+			{Name: "labs", Path: repoDir, Agent: "claude", Bays: []manifest.Bay{}},
 		},
 	})
 
@@ -149,19 +149,19 @@ func TestFocusSurface_SkipsEmptyIDs(t *testing.T) {
 func TestSurfaceCycle_Forward(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 
-	ws, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true})
+	bay, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true})
 	if err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
-	os.MkdirAll(ws.Path, 0o755)
+	os.MkdirAll(bay.Path, 0o755)
 	// Add a second surface.
 	eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"})
 
-	ws, _ = eng.WsShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", "w1")
 
 	// ResolveSelf uses tmux window ID fallback when CWD doesn't match.
-	mockTmux.SetCurrentWindowID(ws.Surfaces[0].Tmux.WindowID)
-	mockTmux.SetCurrentPaneID(ws.Surfaces[0].Tmux.PaneID)
+	mockTmux.SetCurrentWindowID(bay.Surfaces[0].Tmux.WindowID)
+	mockTmux.SetCurrentPaneID(bay.Surfaces[0].Tmux.PaneID)
 
 	mockTmux.Calls = nil
 	if err := surfaceCycle(eng, true); err != nil {
@@ -171,7 +171,7 @@ func TestSurfaceCycle_Forward(t *testing.T) {
 	// Should have selected the second surface's pane.
 	foundSelect := false
 	for _, call := range mockTmux.Calls {
-		if call.Method == "SelectPane" && call.Args[0] == ws.Surfaces[1].Tmux.PaneID {
+		if call.Method == "SelectPane" && call.Args[0] == bay.Surfaces[1].Tmux.PaneID {
 			foundSelect = true
 		}
 	}
@@ -183,18 +183,18 @@ func TestSurfaceCycle_Forward(t *testing.T) {
 func TestSurfaceCycle_Backward(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 
-	ws, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true})
+	bay, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true})
 	if err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
-	os.MkdirAll(ws.Path, 0o755)
+	os.MkdirAll(bay.Path, 0o755)
 	eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"})
 
-	ws, _ = eng.WsShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", "w1")
 
 	// Current = second surface (index 1). Prev should go to first (index 0).
-	mockTmux.SetCurrentWindowID(ws.Surfaces[1].Tmux.WindowID)
-	mockTmux.SetCurrentPaneID(ws.Surfaces[1].Tmux.PaneID)
+	mockTmux.SetCurrentWindowID(bay.Surfaces[1].Tmux.WindowID)
+	mockTmux.SetCurrentPaneID(bay.Surfaces[1].Tmux.PaneID)
 
 	mockTmux.Calls = nil
 	if err := surfaceCycle(eng, false); err != nil {
@@ -203,7 +203,7 @@ func TestSurfaceCycle_Backward(t *testing.T) {
 
 	foundSelect := false
 	for _, call := range mockTmux.Calls {
-		if call.Method == "SelectPane" && call.Args[0] == ws.Surfaces[0].Tmux.PaneID {
+		if call.Method == "SelectPane" && call.Args[0] == bay.Surfaces[0].Tmux.PaneID {
 			foundSelect = true
 		}
 	}
@@ -215,15 +215,15 @@ func TestSurfaceCycle_Backward(t *testing.T) {
 func TestSurfaceCycle_NoFlashOnSingleSurface(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 
-	ws, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true})
+	bay, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true})
 	if err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
-	os.MkdirAll(ws.Path, 0o755)
-	ws, _ = eng.WsShow("labs", "w1")
+	os.MkdirAll(bay.Path, 0o755)
+	bay, _ = eng.BayShow("labs", "w1")
 
-	mockTmux.SetCurrentWindowID(ws.Surfaces[0].Tmux.WindowID)
-	mockTmux.SetCurrentPaneID(ws.Surfaces[0].Tmux.PaneID)
+	mockTmux.SetCurrentWindowID(bay.Surfaces[0].Tmux.WindowID)
+	mockTmux.SetCurrentPaneID(bay.Surfaces[0].Tmux.PaneID)
 
 	mockTmux.Calls = nil
 	if err := surfaceCycle(eng, true); err != nil {
@@ -231,7 +231,7 @@ func TestSurfaceCycle_NoFlashOnSingleSurface(t *testing.T) {
 	}
 
 	if msgs := mockTmux.DisplayMessages(); len(msgs) != 0 {
-		t.Errorf("expected no DisplayMessage calls on single-surface workspace, got %d: %v", len(msgs), msgs)
+		t.Errorf("expected no DisplayMessage calls on single-surface bay, got %d: %v", len(msgs), msgs)
 	}
 }
 
@@ -240,13 +240,13 @@ func TestSurfaceCycle_NoFlashOnSingleSurface(t *testing.T) {
 func TestSurfaceGo_QueryFilter(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 
-	ws, _ := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true})
-	os.MkdirAll(ws.Path, 0o755)
+	bay, _ := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true})
+	os.MkdirAll(bay.Path, 0o755)
 	eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"})
-	ws, _ = eng.WsShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", "w1")
 
-	mockTmux.SetCurrentWindowID(ws.Surfaces[0].Tmux.WindowID)
-	mockTmux.SetCurrentPaneID(ws.Surfaces[0].Tmux.PaneID)
+	mockTmux.SetCurrentWindowID(bay.Surfaces[0].Tmux.WindowID)
+	mockTmux.SetCurrentPaneID(bay.Surfaces[0].Tmux.PaneID)
 
 	mockTmux.Calls = nil
 	// Query "agent" should match the agent surface and jump to it.
@@ -256,7 +256,7 @@ func TestSurfaceGo_QueryFilter(t *testing.T) {
 
 	foundSelect := false
 	for _, call := range mockTmux.Calls {
-		if call.Method == "SelectPane" && call.Args[0] == ws.Surfaces[1].Tmux.PaneID {
+		if call.Method == "SelectPane" && call.Args[0] == bay.Surfaces[1].Tmux.PaneID {
 			foundSelect = true
 		}
 	}
@@ -268,14 +268,14 @@ func TestSurfaceGo_QueryFilter(t *testing.T) {
 func TestSurfaceGo_NextWaitingIncludesBellWindow(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 
-	ws, _ := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true})
-	os.MkdirAll(ws.Path, 0o755)
+	bay, _ := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true})
+	os.MkdirAll(bay.Path, 0o755)
 	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "codex"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
-	ws, _ = eng.WsShow("labs", "w1")
-	shell := ws.Surfaces[0]
-	agent := ws.Surfaces[1]
+	bay, _ = eng.BayShow("labs", "w1")
+	shell := bay.Surfaces[0]
+	agent := bay.Surfaces[1]
 
 	mockTmux.SetCurrentWindowID(shell.Tmux.WindowID)
 	mockTmux.SetCurrentPaneID(shell.Tmux.PaneID)
@@ -338,11 +338,11 @@ func findSubstring(s, sub string) bool {
 func TestWsCycle_Forward(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 
-	eng.WsNew(engine.WsNewOptions{Dock: "labs"})
-	eng.WsNew(engine.WsNewOptions{Dock: "labs"})
+	eng.BayNew(engine.BayNewOptions{Dock: "labs"})
+	eng.BayNew(engine.BayNewOptions{Dock: "labs"})
 
-	// Set tmux context to first workspace's window.
-	ws1, _ := eng.WsShow("labs", "w1")
+	// Set tmux context to first bay's window.
+	ws1, _ := eng.BayShow("labs", "w1")
 	mockTmux.SetCurrentSession("labs")
 	mockTmux.SetCurrentWindowID(ws1.Surfaces[0].Tmux.WindowID)
 
@@ -352,7 +352,7 @@ func TestWsCycle_Forward(t *testing.T) {
 	}
 
 	// Should switch to w2's window.
-	ws2, _ := eng.WsShow("labs", "w2")
+	ws2, _ := eng.BayShow("labs", "w2")
 	foundSelect := false
 	for _, call := range mockTmux.Calls {
 		if call.Method == "SelectWindow" && call.Args[0] == ws2.Surfaces[0].Tmux.WindowID {
@@ -360,19 +360,19 @@ func TestWsCycle_Forward(t *testing.T) {
 		}
 	}
 	if !foundSelect {
-		t.Error("expected SelectWindow for second workspace")
+		t.Error("expected SelectWindow for second bay")
 	}
 }
 
 func TestWsCycle_Backward(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 
-	eng.WsNew(engine.WsNewOptions{Dock: "labs"})
-	eng.WsNew(engine.WsNewOptions{Dock: "labs"})
+	eng.BayNew(engine.BayNewOptions{Dock: "labs"})
+	eng.BayNew(engine.BayNewOptions{Dock: "labs"})
 
 	// Current = w2. Prev should go to w1.
-	ws1, _ := eng.WsShow("labs", "w1")
-	ws2, _ := eng.WsShow("labs", "w2")
+	ws1, _ := eng.BayShow("labs", "w1")
+	ws2, _ := eng.BayShow("labs", "w2")
 	mockTmux.SetCurrentSession("labs")
 	mockTmux.SetCurrentWindowID(ws2.Surfaces[0].Tmux.WindowID)
 
@@ -388,16 +388,16 @@ func TestWsCycle_Backward(t *testing.T) {
 		}
 	}
 	if !foundSelect {
-		t.Error("expected SelectWindow for first workspace")
+		t.Error("expected SelectWindow for first bay")
 	}
 }
 
-func TestWsCycle_NoFlashOnSingleWorkspace(t *testing.T) {
+func TestWsCycle_NoFlashOnSingleBay(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 
-	eng.WsNew(engine.WsNewOptions{Dock: "labs"})
+	eng.BayNew(engine.BayNewOptions{Dock: "labs"})
 
-	ws1, _ := eng.WsShow("labs", "w1")
+	ws1, _ := eng.BayShow("labs", "w1")
 	mockTmux.SetCurrentSession("labs")
 	mockTmux.SetCurrentWindowID(ws1.Surfaces[0].Tmux.WindowID)
 
@@ -407,7 +407,7 @@ func TestWsCycle_NoFlashOnSingleWorkspace(t *testing.T) {
 	}
 
 	if msgs := mockTmux.DisplayMessages(); len(msgs) != 0 {
-		t.Errorf("expected no DisplayMessage calls on single-workspace dock, got %d: %v", len(msgs), msgs)
+		t.Errorf("expected no DisplayMessage calls on single-bay dock, got %d: %v", len(msgs), msgs)
 	}
 }
 
@@ -416,20 +416,20 @@ func TestWsCycle_NoFlashOnSingleWorkspace(t *testing.T) {
 func TestWsRename_SelfResolution(t *testing.T) {
 	eng := selfFixture(t) // dock=labs, ws=w1, current surface=second
 
-	dockName, wsID, err := resolveWsArg(eng, "self", "")
+	dockName, bayID, err := resolveWsArg(eng, "self", "")
 	if err != nil {
 		t.Fatalf("resolveWsArg self: %v", err)
 	}
-	if err := eng.WsRename(dockName, wsID, "renamed-ws"); err != nil {
+	if err := eng.BayRename(dockName, bayID, "renamed-ws"); err != nil {
 		t.Fatalf("WsRename: %v", err)
 	}
 
-	ws, err := eng.WsShow("labs", wsID)
+	bay, err := eng.BayShow("labs", bayID)
 	if err != nil {
 		t.Fatalf("WsShow after rename: %v", err)
 	}
-	if ws.Name != "renamed-ws" {
-		t.Errorf("bay name = %q, want renamed-ws", ws.Name)
+	if bay.Name != "renamed-ws" {
+		t.Errorf("bay name = %q, want renamed-ws", bay.Name)
 	}
 }
 
@@ -563,7 +563,7 @@ func TestAutoBootstrap_SkipsExistingDock(t *testing.T) {
 	manifest.Save(manifestPath, &manifest.Manifest{
 		Version: manifest.CurrentVersion,
 		Docks: []manifest.Dock{
-			{Name: "myproject", Path: resolvedRepo, Workspaces: []manifest.Workspace{}},
+			{Name: "myproject", Path: resolvedRepo, Bays: []manifest.Bay{}},
 		},
 	})
 
@@ -615,7 +615,7 @@ func TestAutoBootstrap_ReusesExistingDockByCheckoutPath(t *testing.T) {
 	manifest.Save(manifestPath, &manifest.Manifest{
 		Version: manifest.CurrentVersion,
 		Docks: []manifest.Dock{
-			{Name: "dev", Path: resolvedRepo, Workspaces: []manifest.Workspace{}},
+			{Name: "dev", Path: resolvedRepo, Bays: []manifest.Bay{}},
 		},
 	})
 

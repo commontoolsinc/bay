@@ -13,16 +13,16 @@ import (
 // syncProbeConcurrency caps the number of concurrent probe goroutines in
 // SyncAll. Each probe shells out (CurrentBranch, optional PRForBranch via
 // gh, IsMergedIntoDefault) — gh is the slowest at ~500ms, so bounding keeps
-// display latency reasonable on docks with many fresh workspaces.
+// display latency reasonable on docks with many fresh bays.
 const syncProbeConcurrency = 10
 
-// orphanGraceSeconds is how long a newly-emptied workspace lingers
+// orphanGraceSeconds is how long a newly-emptied bay lingers
 // before auto-close finalizes. The user can cancel by re-adding a
 // surface (bay sf new --bay <id>) during this window. Var (not
 // const) so tests can set it to 0 to exercise immediate finalization.
 var orphanGraceSeconds int64 = 60
 
-type workspaceSyncUpdate struct {
+type baySyncUpdate struct {
 	dockName           string
 	originalID         string
 	path               string
@@ -39,12 +39,12 @@ type workspaceSyncUpdate struct {
 }
 
 // SyncAll checks git branches, PR numbers, merge status, and tmux surface state
-// for all workspaces and updates the manifest if anything changed. It returns
-// undo-close entries discovered from dead workspace surfaces during this sync
+// for all bays and updates the manifest if anything changed. It returns
+// undo-close entries discovered from dead bay surfaces during this sync
 // pass; callers that don't care can ignore the return value.
 //
 // The probe phase runs in parallel (bounded to syncProbeConcurrency) so that
-// fresh docks with many workspaces don't pay N × ~500ms gh latency on first
+// fresh docks with many bays don't pay N × ~500ms gh latency on first
 // display. Probes only read the manifest, so the parallelism is safe.
 func (e *Engine) SyncAll() []manifest.ClosedEntry {
 	return e.syncAll(true)
@@ -65,20 +65,20 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 
 	type probeJob struct {
 		dock *manifest.Dock
-		ws   *manifest.Workspace
+		bay  *manifest.Bay
 	}
 	var jobs []probeJob
 	for i := range m.Docks {
 		dock := &m.Docks[i]
-		for j := range dock.Workspaces {
-			jobs = append(jobs, probeJob{dock: dock, ws: &dock.Workspaces[j]})
+		for j := range dock.Bays {
+			jobs = append(jobs, probeJob{dock: dock, bay: &dock.Bays[j]})
 		}
 	}
 	if len(jobs) == 0 {
 		return nil
 	}
 
-	results := make([]workspaceSyncUpdate, len(jobs))
+	results := make([]baySyncUpdate, len(jobs))
 	valid := make([]bool, len(jobs))
 
 	sem := make(chan struct{}, syncProbeConcurrency)
@@ -89,7 +89,7 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 		go func(i int, job probeJob) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			if update, ok := e.probeWorkspaceSync(job.dock, job.ws); ok {
+			if update, ok := e.probeBaySync(job.dock, job.bay); ok {
 				results[i] = update
 				valid[i] = true
 			}
@@ -97,7 +97,7 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 	}
 	wg.Wait()
 
-	var updates []workspaceSyncUpdate
+	var updates []baySyncUpdate
 	for i, ok := range valid {
 		if ok {
 			updates = append(updates, results[i])
@@ -110,15 +110,15 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 
 	var dockNames []string
 	var discoveredClosed []manifest.ClosedEntry
-	// Workspaces whose PendingCloseAt has expired — finalize via
+	// Bays whose PendingCloseAt has expired — finalize via
 	// WsClose after the lock releases (WsClose acquires its own lock).
-	type orphanCandidate struct{ dock, ws string }
+	type orphanCandidate struct{ dock, bay string }
 	var toFinalize []orphanCandidate
 
 	syncErr := e.withManifestMaybe(func(m *manifest.Manifest) (bool, error) {
 		changed := false
 		for _, update := range updates {
-			updateChanged, closedEntries := e.applyWorkspaceSyncUpdate(m, update, enforceClosedQueueCap)
+			updateChanged, closedEntries := e.applyBaySyncUpdate(m, update, enforceClosedQueueCap)
 			if updateChanged {
 				changed = true
 			}
@@ -149,24 +149,24 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 			dock.Surfaces = live
 		}
 
-		// Scan for pending-close workspaces: clear the flag if a
+		// Scan for pending-close bays: clear the flag if a
 		// surface was re-added since scheduling (user saved it);
 		// collect the expired ones for post-lock finalization.
 		now := time.Now().Unix()
 		for di := range m.Docks {
 			dock := &m.Docks[di]
-			for wi := range dock.Workspaces {
-				ws := &dock.Workspaces[wi]
-				if ws.PendingCloseAt == 0 {
+			for wi := range dock.Bays {
+				bay := &dock.Bays[wi]
+				if bay.PendingCloseAt == 0 {
 					continue
 				}
-				if len(ws.Surfaces) > 0 {
-					ws.PendingCloseAt = 0
+				if len(bay.Surfaces) > 0 {
+					bay.PendingCloseAt = 0
 					changed = true
 					continue
 				}
-				if ws.PendingCloseAt <= now {
-					toFinalize = append(toFinalize, orphanCandidate{dock.Name, ws.ID})
+				if bay.PendingCloseAt <= now {
+					toFinalize = append(toFinalize, orphanCandidate{dock.Name, bay.ID})
 				}
 			}
 		}
@@ -188,11 +188,11 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 	// it on gate failures to stop retrying every sync pass (a
 	// permanent orphan is on the user to resolve).
 	for _, o := range toFinalize {
-		if stillEmpty, err := e.workspaceIsEmpty(o.dock, o.ws); err != nil || !stillEmpty {
+		if stillEmpty, err := e.bayIsEmpty(o.dock, o.bay); err != nil || !stillEmpty {
 			continue
 		}
-		if err := e.WsClose(o.dock, o.ws, false); err != nil {
-			e.clearPendingClose(o.dock, o.ws)
+		if err := e.BayClose(o.dock, o.bay, false); err != nil {
+			e.clearPendingClose(o.dock, o.bay)
 		}
 	}
 
@@ -203,31 +203,31 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 	return discoveredClosed
 }
 
-func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace) (workspaceSyncUpdate, bool) {
-	update := workspaceSyncUpdate{
+func (e *Engine) probeBaySync(dock *manifest.Dock, bay *manifest.Bay) (baySyncUpdate, bool) {
+	update := baySyncUpdate{
 		dockName:   dock.Name,
-		originalID: ws.ID,
-		path:       ws.Path,
+		originalID: bay.ID,
+		path:       bay.Path,
 	}
 
-	if ws.Path != "" && ws.Worktree != nil {
-		wsPath := config.ExpandPath(ws.Path)
-		if _, err := os.Stat(wsPath); err == nil {
-			branch, err := e.Git.CurrentBranch(wsPath)
-			if err == nil && branch != "" && branch != ws.Worktree.Branch {
+	if bay.Path != "" && bay.Worktree != nil {
+		bayPath := config.ExpandPath(bay.Path)
+		if _, err := os.Stat(bayPath); err == nil {
+			branch, err := e.Git.CurrentBranch(bayPath)
+			if err == nil && branch != "" && branch != bay.Worktree.Branch {
 				update.branch = branch
 				update.branchChanged = true
-			} else if err == nil && branch == "" && ws.Worktree.Branch != "" {
+			} else if err == nil && branch == "" && bay.Worktree.Branch != "" {
 				update.branchDetached = true
-				update.detachedBranch = ws.Worktree.Branch
+				update.detachedBranch = bay.Worktree.Branch
 				// Check now (in the probe) so the apply phase doesn't
 				// hold the manifest lock during a shell-out.
-				if unpushed, upErr := e.HasUnlandedCommits(ws); upErr == nil && !unpushed {
+				if unpushed, upErr := e.HasUnlandedCommits(bay); upErr == nil && !unpushed {
 					update.branchSafeToDelete = true
 				}
 			}
 
-			branchForChecks := ws.Worktree.Branch
+			branchForChecks := bay.Worktree.Branch
 			if update.branchChanged {
 				branchForChecks = update.branch
 			}
@@ -238,9 +238,9 @@ func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace)
 			// after the first check is eventually picked up.
 			now := time.Now().Unix()
 			shouldCheckPR := branchForChecks != "" &&
-				(update.branchChanged || ws.Worktree.NeedsPRCheck(now))
+				(update.branchChanged || bay.Worktree.NeedsPRCheck(now))
 			if shouldCheckPR {
-				pr, err := e.Git.PRForBranch(wsPath, branchForChecks)
+				pr, err := e.Git.PRForBranch(bayPath, branchForChecks)
 				if err == nil {
 					update.pr = pr
 					update.prBranch = branchForChecks
@@ -251,8 +251,8 @@ func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace)
 			// flag says merged — the flag belongs to the old branch.
 			// Apply clears it below; this probe then re-populates it for
 			// the new branch when appropriate.
-			if branchForChecks != "" && (update.branchChanged || !ws.IsMerged()) {
-				merged, err := e.Git.IsMergedIntoDefault(wsPath, branchForChecks)
+			if branchForChecks != "" && (update.branchChanged || !bay.IsMerged()) {
+				merged, err := e.Git.IsMergedIntoDefault(bayPath, branchForChecks)
 				if err == nil && merged {
 					update.merged = true
 				}
@@ -263,77 +263,77 @@ func (e *Engine) probeWorkspaceSync(dock *manifest.Dock, ws *manifest.Workspace)
 	// Only clean up dead surfaces if the dock's tmux session is alive.
 	// If the session is gone (reboot, manual kill), the surfaces are
 	// needed for `bay recover` to know what to recreate. Stripping
-	// them here would leave workspaces with surfaces=0 and recover
+	// them here would leave bays with surfaces=0 and recover
 	// would report "nothing to recover."
 	sessionAlive, _ := e.Tmux.HasSession(dock.Name)
 	if sessionAlive {
-		update.deadSurfaceIDs = e.deadSurfaceIDs(ws)
+		update.deadSurfaceIDs = e.deadSurfaceIDs(bay)
 	}
 	if !update.branchChanged && !update.branchDetached && !update.prChanged && !update.merged && len(update.deadSurfaceIDs) == 0 {
-		return workspaceSyncUpdate{}, false
+		return baySyncUpdate{}, false
 	}
 	return update, true
 }
 
-func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspaceSyncUpdate, enforceClosedQueueCap bool) (bool, []manifest.ClosedEntry) {
+func (e *Engine) applyBaySyncUpdate(m *manifest.Manifest, update baySyncUpdate, enforceClosedQueueCap bool) (bool, []manifest.ClosedEntry) {
 	dock := m.FindDock(update.dockName)
 	if dock == nil {
 		return false, nil
 	}
 
-	ws := findWorkspaceByPath(dock, update.path)
-	if ws == nil {
-		ws = dock.FindWorkspaceByID(update.originalID)
+	bay := findBayByPath(dock, update.path)
+	if bay == nil {
+		bay = dock.FindBayByID(update.originalID)
 	}
-	if ws == nil {
+	if bay == nil {
 		return false, nil
 	}
 	changed := false
 	var discoveredClosed []manifest.ClosedEntry
-	if update.branchChanged && ws.Worktree != nil && ws.Worktree.Branch != update.branch {
-		ws.Worktree.Branch = update.branch
+	if update.branchChanged && bay.Worktree != nil && bay.Worktree.Branch != update.branch {
+		bay.Worktree.Branch = update.branch
 		// Cached PR belongs to the old branch — invalidate it. The probe
 		// will already have queried gh for the new branch (via the
 		// branchChanged bypass) and may set PR below. If the probe's
 		// query failed transiently, the cleared state means future syncs
 		// treat this as fresh and try again, rather than displaying the
 		// wrong PR.
-		ws.Worktree.PR = ""
-		ws.Worktree.PRCheckedAt = 0
+		bay.Worktree.PR = ""
+		bay.Worktree.PRCheckedAt = 0
 		// Merged belongs to the old branch too. Without this, a worktree
 		// that gets reused after its prior branch was merged stays stuck
 		// at Merged=true — blocking PR detection and display until the
-		// workspace is recreated.
-		ws.Worktree.Merged = false
+		// bay is recreated.
+		bay.Worktree.Merged = false
 		changed = true
 		// Sticky-once-set: only fill Name from the branch when it's a
 		// placeholder (empty or auto-assigned w<N>). User-set Names are
 		// stable — live branch info is on right-status, so the tab label
 		// doesn't need to follow.
-		if isPlaceholderName(ws.Name) {
-			newName := uniqueWorkspaceName(dock, ws, abbreviateBranch(update.branch))
-			if newName != ws.Name {
-				ws.Name = newName
-				e.updateWindowNames(ws, "")
+		if isPlaceholderName(bay.Name) {
+			newName := uniqueBayName(dock, bay, abbreviateBranch(update.branch))
+			if newName != bay.Name {
+				bay.Name = newName
+				e.updateWindowNames(bay, "")
 				changed = true
 			}
 		}
 	}
 
-	if update.branchDetached && ws.Worktree != nil && ws.Worktree.Branch != "" {
+	if update.branchDetached && bay.Worktree != nil && bay.Worktree.Branch != "" {
 		// Delete the local branch if the probe determined it was pushed.
 		// Without this, the branch name is lost once metadata is cleared,
-		// and closeWorkspaceState can never clean it up.
+		// and closeBayState can never clean it up.
 		if update.branchSafeToDelete && dock.Path != "" {
 			repoPath := config.ExpandPath(dock.Path)
 			_ = e.Git.DeleteBranch(repoPath, update.detachedBranch)
 		}
-		ws.Worktree.Branch = ""
-		ws.Worktree.PR = ""
-		ws.Worktree.PRCheckedAt = 0
+		bay.Worktree.Branch = ""
+		bay.Worktree.PR = ""
+		bay.Worktree.PRCheckedAt = 0
 		// No branch → no meaningful "merged" status; clear so the flag
 		// doesn't resurrect when the worktree gets a new branch later.
-		ws.Worktree.Merged = false
+		bay.Worktree.Merged = false
 		changed = true
 		// Name stays sticky: a previously-set Name persists even after the
 		// branch is gone. The display may be slightly stale relative to the
@@ -342,26 +342,26 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 		// they want the label to follow.
 	}
 
-	if update.prChanged && ws.Worktree != nil && ws.Worktree.Branch == update.prBranch && ws.Worktree.PR == "" {
-		ws.Worktree.PR = update.pr
+	if update.prChanged && bay.Worktree != nil && bay.Worktree.Branch == update.prBranch && bay.Worktree.PR == "" {
+		bay.Worktree.PR = update.pr
 		// Use time.Now() rather than a probe-time timestamp so concurrent
 		// processes can't write a stale value over a fresher one.
-		ws.Worktree.PRCheckedAt = time.Now().Unix()
+		bay.Worktree.PRCheckedAt = time.Now().Unix()
 		changed = true
 	}
 
-	if update.merged && ws.Worktree != nil && !ws.IsMerged() {
-		ws.Worktree.Merged = true
+	if update.merged && bay.Worktree != nil && !bay.IsMerged() {
+		bay.Worktree.Merged = true
 		changed = true
 	}
 
 	if len(update.deadSurfaceIDs) > 0 {
-		live := ws.Surfaces[:0]
+		live := bay.Surfaces[:0]
 		var dead []manifest.Surface
 		removed := false
 		closedAt := time.Now().Unix()
-		for i := range ws.Surfaces {
-			s := &ws.Surfaces[i]
+		for i := range bay.Surfaces {
+			s := &bay.Surfaces[i]
 			if update.deadSurfaceIDs[s.ID] {
 				removed = true
 				dead = append(dead, *s)
@@ -373,7 +373,7 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 			// Push in reverse manifest order so LIFO restore recreates a
 			// whole-window death in its original visual order.
 			for i := len(dead) - 1; i >= 0; i-- {
-				if entry, ok := closedEntryForSurface(ws.ID, &dead[i], closedAt); ok {
+				if entry, ok := closedEntryForSurface(bay.ID, &dead[i], closedAt); ok {
 					if enforceClosedQueueCap {
 						dock.PushClosedEntry(entry)
 					} else {
@@ -382,13 +382,13 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 					discoveredClosed = append(discoveredClosed, entry)
 				}
 			}
-			ws.Surfaces = live
+			bay.Surfaces = live
 			changed = true
-			// If the strip emptied the workspace, schedule auto-close
+			// If the strip emptied the bay, schedule auto-close
 			// after a grace window. The user has that long to re-open
 			// a surface (bay sf new --bay <id>) to cancel.
-			if len(ws.Surfaces) == 0 && ws.PendingCloseAt == 0 {
-				ws.PendingCloseAt = time.Now().Unix() + orphanGraceSeconds
+			if len(bay.Surfaces) == 0 && bay.PendingCloseAt == 0 {
+				bay.PendingCloseAt = time.Now().Unix() + orphanGraceSeconds
 			}
 		}
 	}
@@ -396,29 +396,29 @@ func (e *Engine) applyWorkspaceSyncUpdate(m *manifest.Manifest, update workspace
 	return changed, discoveredClosed
 }
 
-// clearPendingClose resets PendingCloseAt on a workspace to 0. Used
+// clearPendingClose resets PendingCloseAt on a bay to 0. Used
 // after a finalize attempt fails so the orphan doesn't get retried
 // on every sync pass; the user must resolve the underlying issue
 // (dirty, unlanded) and close manually.
-func (e *Engine) clearPendingClose(dockName, wsID string) {
+func (e *Engine) clearPendingClose(dockName, bayID string) {
 	_ = e.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)
 		if dock == nil {
 			return nil
 		}
-		ws := dock.FindWorkspaceByID(wsID)
-		if ws == nil {
+		bay := dock.FindBayByID(bayID)
+		if bay == nil {
 			return nil
 		}
-		ws.PendingCloseAt = 0
+		bay.PendingCloseAt = 0
 		return nil
 	})
 }
 
-// workspaceIsEmpty returns true if the workspace exists and has zero
+// bayIsEmpty returns true if the bay exists and has zero
 // surfaces at this moment. Used by the orphan auto-close guard to
-// skip workspaces that gained a surface concurrently with sync.
-func (e *Engine) workspaceIsEmpty(dockName, wsID string) (bool, error) {
+// skip bays that gained a surface concurrently with sync.
+func (e *Engine) bayIsEmpty(dockName, bayID string) (bool, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return false, err
@@ -427,16 +427,16 @@ func (e *Engine) workspaceIsEmpty(dockName, wsID string) (bool, error) {
 	if dock == nil {
 		return false, nil
 	}
-	ws := dock.FindWorkspaceByID(wsID)
-	if ws == nil {
+	bay := dock.FindBayByID(bayID)
+	if bay == nil {
 		return false, nil
 	}
-	return len(ws.Surfaces) == 0, nil
+	return len(bay.Surfaces) == 0, nil
 }
 
-func (e *Engine) deadSurfaceIDs(ws *manifest.Workspace) map[int]bool {
+func (e *Engine) deadSurfaceIDs(bay *manifest.Bay) map[int]bool {
 	dead := map[int]bool{}
-	for _, s := range ws.Surfaces {
+	for _, s := range bay.Surfaces {
 		if s.Tmux != nil && s.Tmux.PaneID != "" {
 			exists, _ := e.Tmux.PaneExists(s.Tmux.PaneID)
 			if !exists {

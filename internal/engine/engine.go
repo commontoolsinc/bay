@@ -106,28 +106,28 @@ func ValidateName(name string) error {
 	return nil
 }
 
-// ValidateWorkspaceName extends ValidateName by reserving the canonical
-// workspace ID pattern (^w[1-9]\d*$). Workspace IDs and Names share the
+// ValidateBayName extends ValidateName by reserving the canonical
+// bay ID pattern (^w[1-9]\d*$). Bay IDs and Names share the
 // same identifier namespace (both can be passed to commands), so allowing
 // a Name to look like an ID would create ambiguous CLI references.
 // Names like w1 / w42 are rejected; w0, w01, my-w1, ws1, W1 are fine.
-func ValidateWorkspaceName(name string) error {
+func ValidateBayName(name string) error {
 	if err := ValidateName(name); err != nil {
 		return err
 	}
-	if manifest.IsWorkspaceID(name) {
+	if manifest.IsBayID(name) {
 		return fmt.Errorf("invalid bay name %q: matches the reserved bay ID pattern (^w[1-9]\\d*$); pick a different name", name)
 	}
 	return nil
 }
 
-// MaxDescriptionFirstLineLen caps the first line of a workspace description.
+// MaxDescriptionFirstLineLen caps the first line of a bay description.
 // The first line is the glanceable label — shown in picker, ls/tree, and the
 // M-/ flash — and competes with other metadata for terminal width.
 const MaxDescriptionFirstLineLen = 80
 
 // MaxDescriptionLen caps the total description length (first line plus
-// optional body). The body is opt-in context for return-to-workspace recall
+// optional body). The body is opt-in context for return-to-bay recall
 // and is surfaced only via the M-? popup and JSON output.
 const MaxDescriptionLen = 2000
 
@@ -161,10 +161,10 @@ func ValidateDescription(desc string) error {
 	return nil
 }
 
-func uniqueWorkspaceName(dock *manifest.Dock, current *manifest.Workspace, base string) string {
+func uniqueBayName(dock *manifest.Dock, current *manifest.Bay, base string) string {
 	candidate := base
 	for i := 2; ; i++ {
-		existing := dock.FindWorkspace(candidate)
+		existing := dock.FindBay(candidate)
 		if existing == nil || existing == current {
 			return candidate
 		}
@@ -172,18 +172,18 @@ func uniqueWorkspaceName(dock *manifest.Dock, current *manifest.Workspace, base 
 	}
 }
 
-// isPlaceholderName reports whether a workspace's Name is a placeholder
+// isPlaceholderName reports whether a bay's Name is a placeholder
 // — empty, meaning Name has never been set. Sync's auto-rename fills
 // from the branch only when Name is a placeholder; user-set Names are
 // sticky.
 //
 // We also treat ID-shaped names (^w[1-9]\d*$) as placeholders so that
-// any pre-Phase-6 manifest still in the wild (where unbranched workspaces
+// any pre-Phase-6 manifest still in the wild (where unbranched bays
 // got w<N> Names from the old path-basename default) gets its Name filled
 // from the branch on next sync, rather than carrying a stale ID-shaped
-// label that ValidateWorkspaceName would now reject for new entries.
+// label that ValidateBayName would now reject for new entries.
 func isPlaceholderName(name string) bool {
-	return name == "" || manifest.IsWorkspaceID(name)
+	return name == "" || manifest.IsBayID(name)
 }
 
 // abbreviateBranch strips common prefixes from branch names for display.
@@ -218,24 +218,24 @@ func abbreviateBranch(branch string) string {
 	if result == "" {
 		return branch // fallback to raw branch if sanitization empties it
 	}
-	// Names that match the reserved workspace ID pattern (^w[1-9]\d*$) are
-	// rejected by ValidateWorkspaceName, so a branch like fix/w1 would
-	// otherwise produce an unnameable workspace. Prefix so the result is
+	// Names that match the reserved bay ID pattern (^w[1-9]\d*$) are
+	// rejected by ValidateBayName, so a branch like fix/w1 would
+	// otherwise produce an unnameable bay. Prefix so the result is
 	// always a legal Name.
-	if manifest.IsWorkspaceID(result) {
+	if manifest.IsBayID(result) {
 		result = branchAbbrevReservedPrefix + result
 	}
 	return result
 }
 
 // branchAbbrevReservedPrefix is prepended to abbreviateBranch results that
-// would otherwise collide with the reserved workspace ID pattern. "br-"
+// would otherwise collide with the reserved bay ID pattern. "br-"
 // reads as a hint that the Name was branch-derived.
 const branchAbbrevReservedPrefix = "br-"
 
 // launchSurfaceInTmux launches the appropriate command in a tmux pane
 // based on the surface type and returns a populated Surface.
-// Used by workspace creation and surface add operations. When resume is
+// Used by bay creation and surface add operations. When resume is
 // true and the surface is an agent, the agent is launched with its
 // configured resume_args so the prior session is picked up.
 func (e *Engine) launchSurfaceInTmux(tmuxPaneID, dockName string, surfaceType manifest.SurfaceType, agent, cmd, cwd string, agentArgs []string, resume bool) (manifest.Surface, error) {

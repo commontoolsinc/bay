@@ -225,7 +225,7 @@ func TestPIDFile(t *testing.T) {
 
 // --- TestCheckLoop ---
 
-// createTestManifest builds a manifest with one dock ("dev") containing one workspace
+// createTestManifest builds a manifest with one dock ("dev") containing one bay
 // with an agent surface and a shell surface.
 func createTestManifest(t *testing.T, dir string, tmuxWindowID string) string {
 	t.Helper()
@@ -234,10 +234,10 @@ func createTestManifest(t *testing.T, dir string, tmuxWindowID string) string {
 	m.Docks = []manifest.Dock{
 		{
 			Name: "dev",
-			Workspaces: []manifest.Workspace{
+			Bays: []manifest.Bay{
 				{
 					Name: "test-ws",
-					Type: manifest.WorkspaceTypeWorktree,
+					Type: manifest.BayTypeWorktree,
 					Surfaces: []manifest.Surface{
 						{
 							ID: 1, Name: "agent", Type: manifest.SurfaceTypeAgent,
@@ -261,17 +261,17 @@ func createTestManifest(t *testing.T, dir string, tmuxWindowID string) string {
 	return path
 }
 
-// createShellOnlyManifest builds a manifest where the workspace has only a shell surface.
+// createShellOnlyManifest builds a manifest where the bay has only a shell surface.
 func createShellOnlyManifest(t *testing.T, dir string, tmuxWindowID string) string {
 	t.Helper()
 	m := manifest.New()
 	m.Docks = []manifest.Dock{
 		{
 			Name: "dev",
-			Workspaces: []manifest.Workspace{
+			Bays: []manifest.Bay{
 				{
 					Name: "shell-ws",
-					Type: manifest.WorkspaceTypeWorktree,
+					Type: manifest.BayTypeWorktree,
 					Surfaces: []manifest.Surface{
 						{
 							ID: 1, Name: "shell", Type: manifest.SurfaceTypeShell,
@@ -524,14 +524,14 @@ func TestRun_CancelsOnContext(t *testing.T) {
 // each CheckOnce cycle should call engine.SyncAll() so that branch
 // changes (and the resulting tmux window renames) propagate without
 // the user having to run a CLI command. Before this hookup, a fresh
-// `git checkout -b ...` inside a workspace pane would leave the tmux
-// tab name stuck on the old workspace name forever.
+// `git checkout -b ...` inside a bay pane would leave the tmux
+// tab name stuck on the old bay name forever.
 func TestCheckOnce_RenamesWindowOnBranchChange(t *testing.T) {
 	dir := t.TempDir()
 	mock := tmux.NewMock()
 	mockGit := git.NewMock()
 
-	// engine.SyncAll() only probes a workspace whose Path exists on
+	// engine.SyncAll() only probes a bay whose Path exists on
 	// disk; create a temp dir to stand in for the worktree.
 	wtPath := filepath.Join(dir, "wt")
 	if err := os.MkdirAll(wtPath, 0o755); err != nil {
@@ -546,10 +546,10 @@ func TestCheckOnce_RenamesWindowOnBranchChange(t *testing.T) {
 		{
 			Name: "dev",
 			Path: filepath.Join(dir, "repo"),
-			Workspaces: []manifest.Workspace{
+			Bays: []manifest.Bay{
 				{
 					Name:     "w1",
-					Type:     manifest.WorkspaceTypeWorktree,
+					Type:     manifest.BayTypeWorktree,
 					Path:     wtPath,
 					Worktree: &manifest.WorktreeAttrs{Branch: ""},
 					Surfaces: []manifest.Surface{
@@ -569,7 +569,7 @@ func TestCheckOnce_RenamesWindowOnBranchChange(t *testing.T) {
 	}
 
 	// User just ran `git checkout -b fix/login-bug` inside the
-	// workspace. The git mock now reports the new branch.
+	// bay. The git mock now reports the new branch.
 	mockGit.SetBranch(wtPath, "fix/login-bug")
 
 	patternsPath := filepath.Join(dir, "waiting-patterns.txt")
@@ -592,12 +592,12 @@ func TestCheckOnce_RenamesWindowOnBranchChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loading manifest: %v", err)
 	}
-	ws := updated.FindDock("dev").FindWorkspace("login-bug")
-	if ws == nil {
-		t.Fatalf("workspace not found at expected post-rename name 'login-bug'; manifest: %+v", updated.Docks[0].Workspaces)
+	bay := updated.FindDock("dev").FindBay("login-bug")
+	if bay == nil {
+		t.Fatalf("bay not found at expected post-rename name 'login-bug'; manifest: %+v", updated.Docks[0].Bays)
 	}
-	if ws.Worktree.Branch != "fix/login-bug" {
-		t.Errorf("branch = %q, want fix/login-bug", ws.Worktree.Branch)
+	if bay.Worktree.Branch != "fix/login-bug" {
+		t.Errorf("branch = %q, want fix/login-bug", bay.Worktree.Branch)
 	}
 
 	// Tmux window should also have been renamed.
@@ -649,10 +649,10 @@ func TestCheckOnce_DetectsPR(t *testing.T) {
 	m.Docks = []manifest.Dock{
 		{
 			Name: "dev",
-			Workspaces: []manifest.Workspace{
+			Bays: []manifest.Bay{
 				{
 					Name:     "test-ws",
-					Type:     manifest.WorkspaceTypeWorktree,
+					Type:     manifest.BayTypeWorktree,
 					Path:     "/tmp",
 					Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "feature/login"},
 					Surfaces: []manifest.Surface{
@@ -686,16 +686,16 @@ func TestCheckOnce_DetectsPR(t *testing.T) {
 	}
 
 	// Verify PR was cached in the manifest struct.
-	ws := m.FindDock("dev").FindWorkspace("test-ws")
-	if ws.Worktree.PR != "99" {
-		t.Errorf("PR = %q, want 99", ws.Worktree.PR)
+	bay := m.FindDock("dev").FindBay("test-ws")
+	if bay.Worktree.PR != "99" {
+		t.Errorf("PR = %q, want 99", bay.Worktree.PR)
 	}
 }
 
 func TestCheckOnce_PRCheckedAtPreventsRecheckWithinTTL(t *testing.T) {
 	// After a definitive "no PR found" answer, subsequent monitor cycles
-	// should not re-query gh for the same workspace. Otherwise we hammer
-	// gh every minute for every PR-less workspace forever.
+	// should not re-query gh for the same bay. Otherwise we hammer
+	// gh every minute for every PR-less bay forever.
 	dir := t.TempDir()
 	mock := tmux.NewMock()
 	mockGit := git.NewMock()
@@ -704,10 +704,10 @@ func TestCheckOnce_PRCheckedAtPreventsRecheckWithinTTL(t *testing.T) {
 	m.Docks = []manifest.Dock{
 		{
 			Name: "dev",
-			Workspaces: []manifest.Workspace{
+			Bays: []manifest.Bay{
 				{
 					Name:     "test-ws",
-					Type:     manifest.WorkspaceTypeWorktree,
+					Type:     manifest.BayTypeWorktree,
 					Path:     "/tmp",
 					Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "feature/no-pr"},
 				},
@@ -731,8 +731,8 @@ func TestCheckOnce_PRCheckedAtPreventsRecheckWithinTTL(t *testing.T) {
 	}
 
 	// Verify PRCheckedAt sentinel was set.
-	ws := m.FindDock("dev").FindWorkspace("test-ws")
-	if ws.Worktree.PRCheckedAt == 0 {
+	bay := m.FindDock("dev").FindBay("test-ws")
+	if bay.Worktree.PRCheckedAt == 0 {
 		t.Error("PRCheckedAt should be set after first definitive 'no PR' answer")
 	}
 
@@ -743,7 +743,7 @@ func TestCheckOnce_PRCheckedAtPreventsRecheckWithinTTL(t *testing.T) {
 	}
 }
 
-func TestCheckOnce_SkipsPRDetectionForWorkspaceWithNoPath(t *testing.T) {
+func TestCheckOnce_SkipsPRDetectionForBayWithNoPath(t *testing.T) {
 	dir := t.TempDir()
 	mock := tmux.NewMock()
 	mockGit := git.NewMock()
@@ -752,11 +752,11 @@ func TestCheckOnce_SkipsPRDetectionForWorkspaceWithNoPath(t *testing.T) {
 	m.Docks = []manifest.Dock{
 		{
 			Name: "dev",
-			Workspaces: []manifest.Workspace{
+			Bays: []manifest.Bay{
 				{
 					Name:     "test-ws",
 					Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "feature/no-pr"},
-					// No Path — detectPRs skips workspaces without a path.
+					// No Path — detectPRs skips bays without a path.
 				},
 			},
 		},
@@ -770,16 +770,16 @@ func TestCheckOnce_SkipsPRDetectionForWorkspaceWithNoPath(t *testing.T) {
 
 	mon := NewWithGit(mock, mockGit, manifestPath, patternsPath, pidPath, 1)
 
-	// Call detectPRs directly — workspace has no Path so should be skipped.
+	// Call detectPRs directly — bay has no Path so should be skipped.
 	changed := mon.detectPRs(m)
 	if changed {
-		t.Error("detectPRs returned true for workspace with no path")
+		t.Error("detectPRs returned true for bay with no path")
 	}
 
-	// PR should remain empty — workspace was skipped.
-	ws := m.FindDock("dev").FindWorkspace("test-ws")
-	if ws.Worktree.PR != "" {
-		t.Errorf("PR = %q, want empty", ws.Worktree.PR)
+	// PR should remain empty — bay was skipped.
+	bay := m.FindDock("dev").FindBay("test-ws")
+	if bay.Worktree.PR != "" {
+		t.Errorf("PR = %q, want empty", bay.Worktree.PR)
 	}
 }
 
@@ -790,12 +790,12 @@ func TestCheckOnce_DetectsMergedBranch(t *testing.T) {
 	mock := tmux.NewMock()
 	mockGit := git.NewMock()
 
-	// Workspace with active branch that has been merged.
+	// Bay with active branch that has been merged.
 	m := manifest.New()
 	m.Docks = []manifest.Dock{
 		{
 			Name: "dev",
-			Workspaces: []manifest.Workspace{
+			Bays: []manifest.Bay{
 				{
 					Name:       "feature-ws",
 					Path:       "/tmp",
@@ -822,26 +822,26 @@ func TestCheckOnce_DetectsMergedBranch(t *testing.T) {
 		mon.CheckOnce()
 	}
 
-	// Workspace should be marked as merged.
+	// Bay should be marked as merged.
 	updated, _ := manifest.Load(manifestPath)
 	dock := updated.FindDock("dev")
-	ws := dock.FindWorkspace("feature-ws")
-	if !ws.Worktree.Merged {
+	bay := dock.FindBay("feature-ws")
+	if !bay.Worktree.Merged {
 		t.Error("Merged = false, want true")
 	}
 }
 
-func TestCheckOnce_SkipsMergeCheckForInactiveWorkspace(t *testing.T) {
+func TestCheckOnce_SkipsMergeCheckForInactiveBay(t *testing.T) {
 	dir := t.TempDir()
 	mock := tmux.NewMock()
 	mockGit := git.NewMock()
 
-	// Workspace with no recent activity (LastActive = 0).
+	// Bay with no recent activity (LastActive = 0).
 	m := manifest.New()
 	m.Docks = []manifest.Dock{
 		{
 			Name: "dev",
-			Workspaces: []manifest.Workspace{
+			Bays: []manifest.Bay{
 				{
 					Name:     "old-ws",
 					Path:     "/tmp",
@@ -865,11 +865,11 @@ func TestCheckOnce_SkipsMergeCheckForInactiveWorkspace(t *testing.T) {
 		mon.CheckOnce()
 	}
 
-	// Should NOT be marked merged — workspace is inactive.
+	// Should NOT be marked merged — bay is inactive.
 	updated, _ := manifest.Load(manifestPath)
-	ws := updated.FindDock("dev").FindWorkspace("old-ws")
-	if ws.Worktree.Merged {
-		t.Error("Merged = true, want false (inactive workspace should be skipped)")
+	bay := updated.FindDock("dev").FindBay("old-ws")
+	if bay.Worktree.Merged {
+		t.Error("Merged = true, want false (inactive bay should be skipped)")
 	}
 }
 

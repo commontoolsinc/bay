@@ -12,7 +12,7 @@ import (
 
 func TestRunSurfaceNew_Shell(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
+	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 
@@ -24,13 +24,13 @@ func TestRunSurfaceNew_Shell(t *testing.T) {
 		t.Fatalf("runSurfaceNew: %v", err)
 	}
 
-	ws, _ := eng.WsShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "w1")
 	// w1 was created with --shell so it has one shell already; the new one
 	// should be the second.
-	if len(ws.Surfaces) != 2 {
-		t.Fatalf("expected 2 surfaces, got %d", len(ws.Surfaces))
+	if len(bay.Surfaces) != 2 {
+		t.Fatalf("expected 2 surfaces, got %d", len(bay.Surfaces))
 	}
-	added := ws.Surfaces[1]
+	added := bay.Surfaces[1]
 	if added.Type != manifest.SurfaceTypeShell {
 		t.Errorf("type = %s, want shell", added.Type)
 	}
@@ -42,7 +42,7 @@ func TestRunSurfaceNew_Shell(t *testing.T) {
 
 func TestRunSurfaceNew_Agent(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
+	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 
@@ -55,11 +55,11 @@ func TestRunSurfaceNew_Agent(t *testing.T) {
 		t.Fatalf("runSurfaceNew: %v", err)
 	}
 
-	ws, _ := eng.WsShow("labs", "w1")
-	if len(ws.Surfaces) != 2 {
-		t.Fatalf("expected 2 surfaces, got %d", len(ws.Surfaces))
+	bay, _ := eng.BayShow("labs", "w1")
+	if len(bay.Surfaces) != 2 {
+		t.Fatalf("expected 2 surfaces, got %d", len(bay.Surfaces))
 	}
-	added := ws.Surfaces[1]
+	added := bay.Surfaces[1]
 	if added.Type != manifest.SurfaceTypeAgent {
 		t.Errorf("type = %s, want agent", added.Type)
 	}
@@ -70,7 +70,7 @@ func TestRunSurfaceNew_Agent(t *testing.T) {
 
 func TestRunSurfaceNew_Cmd(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
+	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 
@@ -84,11 +84,11 @@ func TestRunSurfaceNew_Cmd(t *testing.T) {
 		t.Fatalf("runSurfaceNew: %v", err)
 	}
 
-	ws, _ := eng.WsShow("labs", "w1")
-	if len(ws.Surfaces) != 2 {
-		t.Fatalf("expected 2 surfaces, got %d", len(ws.Surfaces))
+	bay, _ := eng.BayShow("labs", "w1")
+	if len(bay.Surfaces) != 2 {
+		t.Fatalf("expected 2 surfaces, got %d", len(bay.Surfaces))
 	}
-	added := ws.Surfaces[1]
+	added := bay.Surfaces[1]
 	if added.Type != manifest.SurfaceTypeCmd {
 		t.Errorf("type = %s, want cmd", added.Type)
 	}
@@ -102,7 +102,7 @@ func TestRunSurfaceNew_Cmd(t *testing.T) {
 
 func TestRunSurfaceNew_AgentDefaultName(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
+	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 
@@ -116,9 +116,9 @@ func TestRunSurfaceNew_AgentDefaultName(t *testing.T) {
 		t.Fatalf("runSurfaceNew: %v", err)
 	}
 
-	ws, _ := eng.WsShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "w1")
 	foundAgent := false
-	for _, s := range ws.Surfaces {
+	for _, s := range bay.Surfaces {
 		if s.Type == manifest.SurfaceTypeAgent && strings.HasPrefix(s.Name, "agent") {
 			foundAgent = true
 			break
@@ -131,7 +131,7 @@ func TestRunSurfaceNew_AgentDefaultName(t *testing.T) {
 
 func TestRunSurfaceNew_CmdDefaultName(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
+	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 
@@ -145,9 +145,9 @@ func TestRunSurfaceNew_CmdDefaultName(t *testing.T) {
 		t.Fatalf("runSurfaceNew: %v", err)
 	}
 
-	ws, _ := eng.WsShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "w1")
 	foundCmd := false
-	for _, s := range ws.Surfaces {
+	for _, s := range bay.Surfaces {
 		if s.Type == manifest.SurfaceTypeCmd && strings.HasPrefix(s.Name, "tail") {
 			foundCmd = true
 			break
@@ -160,7 +160,7 @@ func TestRunSurfaceNew_CmdDefaultName(t *testing.T) {
 
 func TestRunSurfaceNew_NameWithColonIsRejected(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
+	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 
@@ -180,7 +180,7 @@ func TestEditTargetFromArgs(t *testing.T) {
 	cases := []struct {
 		name    string
 		args    []string
-		ws      string
+		bay     string
 		dock    string
 		want    string
 		wantErr bool
@@ -196,7 +196,7 @@ func TestEditTargetFromArgs(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got, err := editTargetFromArgs(c.args, c.ws, c.dock)
+			got, err := editTargetFromArgs(c.args, c.bay, c.dock)
 			if (err != nil) != c.wantErr {
 				t.Fatalf("err = %v, wantErr = %v", err, c.wantErr)
 			}
@@ -234,7 +234,7 @@ func TestResolveSplit_DefaultsToPane(t *testing.T) {
 
 func TestRunSurfaceClose_ByName(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
+	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
@@ -248,8 +248,8 @@ func TestRunSurfaceClose_ByName(t *testing.T) {
 		t.Fatalf("runSurfaceClose: %v", err)
 	}
 
-	ws, _ := eng.WsShow("labs", "w1")
-	for _, s := range ws.Surfaces {
+	bay, _ := eng.BayShow("labs", "w1")
+	for _, s := range bay.Surfaces {
 		if s.Name == "agent" {
 			t.Errorf("surface 'agent' should have been closed, still present")
 		}
@@ -275,17 +275,17 @@ func TestRunSurfaceClose_NoArgsErrors(t *testing.T) {
 	}
 }
 
-func TestRunSurfaceClose_CrossWorkspace(t *testing.T) {
+func TestRunSurfaceClose_CrossBay(t *testing.T) {
 	eng := surfaceArgFixture(t)
 
-	// labs:w2 (the "solo" workspace) has a uniquely-addressable bare ID.
-	// Close its agent surface via the helper using bare ws:surface form.
+	// labs:w2 (the "solo" bay) has a uniquely-addressable bare ID.
+	// Close its agent surface via the helper using bare bay:surface form.
 	if err := runSurfaceClose(eng, []string{"w2:agent"}, "", "", true); err != nil {
 		t.Fatalf("runSurfaceClose: %v", err)
 	}
 
-	ws, _ := eng.WsShow("labs", "w2")
-	for _, s := range ws.Surfaces {
+	bay, _ := eng.BayShow("labs", "w2")
+	for _, s := range bay.Surfaces {
 		if s.Name == "agent" {
 			t.Errorf("agent should have been closed in labs:w2")
 		}
@@ -294,7 +294,7 @@ func TestRunSurfaceClose_CrossWorkspace(t *testing.T) {
 
 // --- self keyword end-to-end ---
 
-// selfFixture (defined in target_test.go) builds a workspace with two
+// selfFixture (defined in target_test.go) builds a bay with two
 // surfaces and pins the tmux mock to the second one. Tests below reuse it.
 
 func TestRunSurfaceClose_Self(t *testing.T) {
@@ -303,8 +303,8 @@ func TestRunSurfaceClose_Self(t *testing.T) {
 	if err := runSurfaceClose(eng, []string{"self"}, "", "", true); err != nil {
 		t.Fatalf("runSurfaceClose self: %v", err)
 	}
-	ws, _ := eng.WsShow("labs", "w1")
-	for _, s := range ws.Surfaces {
+	bay, _ := eng.BayShow("labs", "w1")
+	for _, s := range bay.Surfaces {
 		if s.Name == "second" {
 			t.Errorf("surface 'second' should have been closed via 'self'")
 		}
@@ -322,9 +322,9 @@ func TestRunSurfaceClose_LiteralSelfWins(t *testing.T) {
 		t.Fatalf("runSurfaceClose self: %v", err)
 	}
 
-	ws, _ := eng.WsShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "w1")
 	hasLiteralSelf, hasSecond := false, false
-	for _, s := range ws.Surfaces {
+	for _, s := range bay.Surfaces {
 		if s.Name == "self" {
 			hasLiteralSelf = true
 		}
@@ -353,9 +353,9 @@ func TestRunSurfaceRename_Self(t *testing.T) {
 	if err := runSurfaceRename(eng, []string{"self", "renamed"}, "", ""); err != nil {
 		t.Fatalf("runSurfaceRename self: %v", err)
 	}
-	ws, _ := eng.WsShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "w1")
 	foundRenamed, foundSecond := false, false
-	for _, s := range ws.Surfaces {
+	for _, s := range bay.Surfaces {
 		if s.Name == "renamed" {
 			foundRenamed = true
 		}
@@ -375,7 +375,7 @@ func TestRunSurfaceRename_Self(t *testing.T) {
 
 func TestRunSurfaceShow_FoundAndNotFound(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
+	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
@@ -398,7 +398,7 @@ func TestRunSurfaceShow_FoundAndNotFound(t *testing.T) {
 
 func TestRunSurfaceRename(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true}); err != nil {
+	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("WsNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", WsName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
@@ -409,9 +409,9 @@ func TestRunSurfaceRename(t *testing.T) {
 		t.Fatalf("runSurfaceRename: %v", err)
 	}
 
-	ws, _ := eng.WsShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "w1")
 	foundOld, foundNew := false, false
-	for _, s := range ws.Surfaces {
+	for _, s := range bay.Surfaces {
 		if s.Name == "agent" {
 			foundOld = true
 		}
@@ -427,39 +427,39 @@ func TestRunSurfaceRename(t *testing.T) {
 	}
 }
 
-// --- resolveSurfaceWorkspace ---
+// --- resolveSurfaceBay ---
 
-func TestResolveSurfaceWorkspace_NoFlagsUsesSelf(t *testing.T) {
+func TestResolveSurfaceBay_NoFlagsUsesSelf(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
-	ws, _ := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true})
-	mockTmux.SetCurrentWindowID(ws.Surfaces[0].Tmux.WindowID)
-	mockTmux.SetCurrentPaneID(ws.Surfaces[0].Tmux.PaneID)
+	bay, _ := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true})
+	mockTmux.SetCurrentWindowID(bay.Surfaces[0].Tmux.WindowID)
+	mockTmux.SetCurrentPaneID(bay.Surfaces[0].Tmux.PaneID)
 
-	dock, wsName, err := resolveSurfaceWorkspace(eng, "", "")
+	dock, bayName, err := resolveSurfaceBay(eng, "", "")
 	if err != nil {
-		t.Fatalf("resolveSurfaceWorkspace: %v", err)
+		t.Fatalf("resolveSurfaceBay: %v", err)
 	}
-	if dock != "labs" || wsName != "w1" {
-		t.Errorf("got (%q,%q), want (labs,w1)", dock, wsName)
+	if dock != "labs" || bayName != "w1" {
+		t.Errorf("got (%q,%q), want (labs,w1)", dock, bayName)
 	}
 }
 
-func TestResolveSurfaceWorkspace_BayFlag(t *testing.T) {
+func TestResolveSurfaceBay_BayFlag(t *testing.T) {
 	eng := wsArgFixture(t)
 
-	// solo's ID is w2 (second labs workspace).
-	dock, wsName, err := resolveSurfaceWorkspace(eng, "w2", "")
+	// solo's ID is w2 (second labs bay).
+	dock, bayName, err := resolveSurfaceBay(eng, "w2", "")
 	if err != nil {
-		t.Fatalf("resolveSurfaceWorkspace: %v", err)
+		t.Fatalf("resolveSurfaceBay: %v", err)
 	}
-	if dock != "labs" || wsName != "w2" {
-		t.Errorf("got (%q,%q), want (labs,w2)", dock, wsName)
+	if dock != "labs" || bayName != "w2" {
+		t.Errorf("got (%q,%q), want (labs,w2)", dock, bayName)
 	}
 }
 
-func TestResolveSurfaceWorkspace_DockWithoutWs(t *testing.T) {
+func TestResolveSurfaceBay_DockWithoutWs(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
-	_, _, err := resolveSurfaceWorkspace(eng, "", "labs")
+	_, _, err := resolveSurfaceBay(eng, "", "labs")
 	if err == nil || !strings.Contains(err.Error(), "--bay") {
 		t.Errorf("expected --dock-requires-bay error, got %v", err)
 	}
@@ -574,11 +574,11 @@ func TestRoot_SurfaceFlavoredCommandsInSurfaceGroup(t *testing.T) {
 	}
 }
 
-func TestRoot_WorkspaceCommandRemoved(t *testing.T) {
+func TestRoot_BayCommandRemoved(t *testing.T) {
 	root := NewRootCmd("test")
 
-	_, _, err := root.Find([]string{"workspace"})
+	_, _, err := root.Find([]string{"bay"})
 	if err == nil {
-		t.Fatalf("workspace command should be removed")
+		t.Fatalf("bay command should be removed")
 	}
 }
