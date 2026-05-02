@@ -499,6 +499,34 @@ func TestRemoveWorkspace_NotFound(t *testing.T) {
 	}
 }
 
+// Workspace IDs are reassigned from a max-of-current pool, so a stale
+// undo-close entry would silently restore into a future bay that
+// reclaims the same ID. RemoveWorkspace must purge those entries.
+func TestRemoveWorkspace_PurgesClosedEntriesForWorkspace(t *testing.T) {
+	d := &Dock{
+		Name: "labs",
+		Workspaces: []Workspace{
+			{ID: "w1", Name: "auth-fix"},
+			{ID: "w2", Name: "perf"},
+		},
+		ClosedEntries: []ClosedEntry{
+			{ClosedAt: 100, Kind: ClosedKindSurface, Surface: &ClosedSurface{Workspace: "w1", Name: "claude"}},
+			{ClosedAt: 200, Kind: ClosedKindSurface, Surface: &ClosedSurface{Workspace: "w2", Name: "shell"}},
+			{ClosedAt: 300, Kind: ClosedKindSurface, Surface: &ClosedSurface{Workspace: "w1", Name: "logs"}},
+		},
+	}
+
+	if err := d.RemoveWorkspace("w1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(d.ClosedEntries) != 1 {
+		t.Fatalf("ClosedEntries: got %d, want 1: %+v", len(d.ClosedEntries), d.ClosedEntries)
+	}
+	if d.ClosedEntries[0].Surface.Workspace != "w2" {
+		t.Errorf("survivor: got %q, want %q", d.ClosedEntries[0].Surface.Workspace, "w2")
+	}
+}
+
 // --- Surface operations ---
 
 func TestNextSurfaceID_Empty(t *testing.T) {

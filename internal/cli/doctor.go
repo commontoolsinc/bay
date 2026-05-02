@@ -204,7 +204,7 @@ func missingKeybindings(content string) []string {
 	}
 	var missing []string
 	for _, kb := range bayKeybindings {
-		if kept[kb.key] {
+		if kept[kb.id()] {
 			continue
 		}
 		line := kb.canonicalLine()

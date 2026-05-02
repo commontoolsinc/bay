@@ -764,14 +764,33 @@ func (d *Dock) AddWorkspace(ws Workspace) error {
 // RemoveWorkspace removes a workspace identified by ID. (Names are no
 // longer CLI keys; the engine layer passes the ID it received from the
 // resolver.)
+//
+// Also purges any undo-close entries that reference this workspace ID:
+// IDs are reassigned from a max-of-current pool, so a future bay can
+// reclaim this ID and a stale entry would silently restore into it.
 func (d *Dock) RemoveWorkspace(id string) error {
 	for i := range d.Workspaces {
 		if d.Workspaces[i].ID == id {
 			d.Workspaces = append(d.Workspaces[:i], d.Workspaces[i+1:]...)
+			d.purgeClosedEntriesForWorkspace(id)
 			return nil
 		}
 	}
 	return fmt.Errorf("bay %q not found in dock %q", id, d.Name)
+}
+
+func (d *Dock) purgeClosedEntriesForWorkspace(wsID string) {
+	if len(d.ClosedEntries) == 0 {
+		return
+	}
+	kept := d.ClosedEntries[:0]
+	for _, e := range d.ClosedEntries {
+		if e.Kind == ClosedKindSurface && e.Surface != nil && e.Surface.Workspace == wsID {
+			continue
+		}
+		kept = append(kept, e)
+	}
+	d.ClosedEntries = kept
 }
 
 // FindDockSurface returns a pointer to a dock-level surface by name.

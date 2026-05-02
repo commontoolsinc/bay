@@ -178,11 +178,36 @@ func shellRCFile(shell string) string {
 // and cmd is the raw tmux command, not a shell invocation.
 type bayKeybinding struct {
 	key           string
+	table         string // "" = root (-n); else binds inside `-T <table>` (chord sub-tables)
 	cmd           string
 	previousCmds  []string
 	desc          string
 	tmuxVerb      string // "run-shell" or "display-popup -E" (ignored when isTmuxCommand)
 	isTmuxCommand bool   // cmd is a raw tmux command (e.g., "next-window")
+}
+
+// id is the composite identity used for uniqueness: a key in the root
+// table and the same letter in a chord sub-table are distinct bindings,
+// so we need to qualify by table.
+func (kb bayKeybinding) id() string {
+	return bindID(kb.table, kb.key)
+}
+
+func bindID(table, key string) string {
+	if table == "" {
+		return key
+	}
+	return table + ":" + key
+}
+
+// bindFlag returns the tmux argument that places this binding in the
+// right key-table: `-n` for the root table, `-T <table>` for chord
+// sub-tables.
+func (kb bayKeybinding) bindFlag() string {
+	if kb.table == "" {
+		return "-n"
+	}
+	return "-T " + kb.table
 }
 
 // bayKeybindings defines all bay tmux keybindings.
@@ -241,6 +266,63 @@ var bayKeybindings = []bayKeybinding{
 
 	// Command palette
 	{key: "M-p", cmd: "bay palette --split pane", previousCmds: []string{"bay palette"}, desc: "Option+p: command palette (Tab inside to flip mode)", tmuxVerb: "display-popup -w 80% -h 80% -E"},
+
+	// Agent chord (M-o ...): pick an agent for the current bay, or
+	// chord through `b` to create a new bay seeded with one. The
+	// display-message entries act as a one-tap reminder of the
+	// available letters; lowercase=pane, Shift=window matches the
+	// rest of bay's creation keys.
+	{key: "M-o", cmd: `display-message -d 2000 "agent: c Claude, x Codex, g Gemini | Shift=window | b=bay" \; switch-client -T ` + tableAgent, desc: "Option+o: agent chord launcher", isTmuxCommand: true},
+
+	agentInBay("c", "claude", "pane"),
+	agentInBay("C", "claude", "window"),
+	agentInBay("x", "codex", "pane"),
+	agentInBay("X", "codex", "window"),
+	agentInBay("g", "gemini", "pane"),
+	agentInBay("G", "gemini", "window"),
+
+	{table: tableAgent, key: "b", cmd: `display-message -d 2000 "bay: c Claude, x Codex, g Gemini" \; switch-client -T ` + tableAgentBay, desc: "M-o b: new-bay-with-agent submenu", isTmuxCommand: true},
+
+	newBayWithAgent("c", "claude"),
+	newBayWithAgent("x", "codex"),
+	newBayWithAgent("g", "gemini"),
+}
+
+// Tmux key-table names for the M-o agent chord. Used both for the
+// `table:` field on chord-table bindings and as the `-T <table>`
+// argument inside the `switch-client` commands that launch the chord
+// — keeping them as constants prevents the two from drifting apart.
+const (
+	tableAgent    = "bay-agent"
+	tableAgentBay = "bay-agent-bay"
+)
+
+func agentInBay(key, agent, mode string) bayKeybinding {
+	return bayKeybinding{
+		table:    tableAgent,
+		key:      key,
+		cmd:      fmt.Sprintf("bay agent %s --%s", agent, mode),
+		desc:     fmt.Sprintf("M-o %s: %s in current bay (%s)", key, titleAgent(agent), mode),
+		tmuxVerb: "run-shell",
+	}
+}
+
+func newBayWithAgent(key, agent string) bayKeybinding {
+	return bayKeybinding{
+		table:        tableAgentBay,
+		key:          key,
+		cmd:          "bay new -q --agent=" + agent,
+		previousCmds: []string{"bay ws new -q --agent=" + agent},
+		desc:         fmt.Sprintf("M-o b %s: new bay with %s", key, titleAgent(agent)),
+		tmuxVerb:     "run-shell",
+	}
+}
+
+func titleAgent(agent string) string {
+	if agent == "" {
+		return ""
+	}
+	return strings.ToUpper(agent[:1]) + agent[1:]
 }
 
 const bayKeybindingsMarker = "# Bay keybindings"
@@ -269,11 +351,11 @@ func (kb bayKeybinding) canonicalLine() string {
 		// Raw tmux command: no shell wrapper, no "|| true" — tmux commands
 		// don't fail with distracting status-line messages the way shell
 		// commands do via run-shell.
-		return fmt.Sprintf("bind-key -n %s %s", kb.key, kb.cmd)
+		return fmt.Sprintf("bind-key %s %s %s", kb.bindFlag(), kb.key, kb.cmd)
 	}
 	// Ensure exit 0 so keybindings are silent in non-bay sessions.
 	// tmux run-shell displays "returned N" for non-zero exits.
-	return fmt.Sprintf("bind-key -n %s %s '%s || true'", kb.key, kb.tmuxVerb, kb.cmd)
+	return fmt.Sprintf("bind-key %s %s %s '%s || true'", kb.bindFlag(), kb.key, kb.tmuxVerb, kb.cmd)
 }
 
 // extractBayBlock returns the bay keybindings block (everything from the
@@ -308,33 +390,62 @@ func extractBayBlock(content string) (string, bool) {
 	return strings.Join(blockLines, "\n"), true
 }
 
-// parseBindLine extracts the key and command portion of a tmux bind
-// line. Handles both active lines and commented lines (leading `#`).
-// Returns "", "", false if the line isn't a bind-key/bind binding.
+// parseBindLine extracts the table, key, and command portion of a tmux
+// bind line. Handles both active lines and commented lines (leading
+// `#`), and recognizes both root bindings (`-n`) and key-table
+// bindings (`-T <table>`). Returns ok=false if the line isn't a
+// bind-key/bind binding we can parse.
 //
 // For bay-invoking bindings the returned command is the quoted shell
 // contents (e.g. `bay ws new -q || true`); for tmux-native bindings
 // it's the raw tmux command (e.g. `previous-window`, `select-pane -L`).
-func parseBindLine(line string) (key, cmd string, ok bool) {
+//
+// Empty `table` means the binding is in the root table (`-n`); otherwise
+// it's the explicit `-T <table>` name.
+func parseBindLine(line string) (table, key, cmd string, ok bool) {
 	trimmed := strings.TrimSpace(line)
 	if strings.HasPrefix(trimmed, "#") {
 		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "#"))
 	}
 	if !strings.HasPrefix(trimmed, "bind-key") && !strings.HasPrefix(trimmed, "bind ") {
-		return "", "", false
+		return "", "", "", false
 	}
-	parts := strings.SplitN(trimmed, " ", 4)
-	if len(parts) < 4 || parts[1] != "-n" {
-		return "", "", false
+	// Pull off "bind-key" / "bind", then "-n" or "-T <table>", leaving
+	// the key + tmux command tail. We use SplitN with a small bound so
+	// the tail (which may itself contain spaces and quoted strings)
+	// stays in a single piece.
+	parts := strings.SplitN(trimmed, " ", 2)
+	if len(parts) < 2 {
+		return "", "", "", false
 	}
-	rest := parts[3]
+	tail := strings.TrimLeft(parts[1], " ")
+	switch {
+	case strings.HasPrefix(tail, "-n "):
+		tail = strings.TrimLeft(tail[len("-n "):], " ")
+	case strings.HasPrefix(tail, "-T "):
+		tail = strings.TrimLeft(tail[len("-T "):], " ")
+		tParts := strings.SplitN(tail, " ", 2)
+		if len(tParts) < 2 {
+			return "", "", "", false
+		}
+		table = tParts[0]
+		tail = strings.TrimLeft(tParts[1], " ")
+	default:
+		return "", "", "", false
+	}
+	keyParts := strings.SplitN(tail, " ", 2)
+	if len(keyParts) < 2 {
+		return "", "", "", false
+	}
+	key = keyParts[0]
+	rest := strings.TrimLeft(keyParts[1], " ")
 	if open := strings.IndexAny(rest, "'\""); open >= 0 {
 		close := strings.LastIndexByte(rest, rest[open])
 		if close > open {
-			return parts[2], rest[open+1 : close], true
+			return table, key, rest[open+1 : close], true
 		}
 	}
-	return parts[2], rest, true
+	return table, key, rest, true
 }
 
 // commandsInBlock returns the set of commands found on any active
@@ -346,7 +457,7 @@ func commandsInBlock(block string) map[string]bool {
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		if _, cmd, ok := parseBindLine(l); ok {
+		if _, _, cmd, ok := parseBindLine(l); ok {
 			cmds[cmd] = true
 		}
 	}
@@ -362,48 +473,52 @@ func commentedCommandsInBlock(block string) map[string]bool {
 		if !strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		if _, cmd, ok := parseBindLine(l); ok {
+		if _, _, cmd, ok := parseBindLine(l); ok {
 			cmds[cmd] = true
 		}
 	}
 	return cmds
 }
 
-// activeKeysInBlock returns the set of keys bound on active (non-comment)
-// bind-key/bind lines in the block.
+// activeKeysInBlock returns the set of binding identities (table+key,
+// see bindID) bound on active (non-comment) bind-key/bind lines in the
+// block.
 func activeKeysInBlock(block string) map[string]bool {
-	keys := map[string]bool{}
+	ids := map[string]bool{}
 	for _, l := range strings.Split(block, "\n") {
 		trimmed := strings.TrimSpace(l)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		if k, _, ok := parseBindLine(l); ok {
-			keys[k] = true
+		if t, k, _, ok := parseBindLine(l); ok {
+			ids[bindID(t, k)] = true
 		}
 	}
-	return keys
+	return ids
 }
 
-// commentedKeysInBlock returns the set of keys from commented-out bind
-// lines. Bay treats these as opt-out signals: a user who removed a
-// binding and left a commented stub is saying "don't re-add this."
+// commentedKeysInBlock returns the set of binding identities from
+// commented-out bind lines. Bay treats these as opt-out signals: a user
+// who removed a binding and left a commented stub is saying "don't
+// re-add this."
 func commentedKeysInBlock(block string) map[string]bool {
-	keys := map[string]bool{}
+	ids := map[string]bool{}
 	for _, l := range strings.Split(block, "\n") {
 		trimmed := strings.TrimSpace(l)
 		if !strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		if k, _, ok := parseBindLine(l); ok {
-			keys[k] = true
+		if t, k, _, ok := parseBindLine(l); ok {
+			ids[bindID(t, k)] = true
 		}
 	}
-	return keys
+	return ids
 }
 
-// activeBindings returns the map of key → command for every active
-// (non-comment) bind line in the block.
+// activeBindings returns the map of binding identity → command for
+// every active (non-comment) bind line in the block. Keys are the
+// composite (table, key) identity from bindID so a chord-table letter
+// doesn't collide with the same letter at the root.
 func activeBindings(block string) map[string]string {
 	out := map[string]string{}
 	for _, l := range strings.Split(block, "\n") {
@@ -411,8 +526,8 @@ func activeBindings(block string) map[string]string {
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		if k, cmd, ok := parseBindLine(l); ok {
-			out[k] = cmd
+		if t, k, cmd, ok := parseBindLine(l); ok {
+			out[bindID(t, k)] = cmd
 		}
 	}
 	return out
@@ -439,25 +554,33 @@ func keptKeys(block string) map[string]bool {
 
 // conflictingKeys returns the canonical keys that are already actively
 // bound in content. Walks lines and skips blanks and comments, so a
-// commented-out binding does not count as a conflict.
+// commented-out binding does not count as a conflict. Returns
+// human-facing labels (key for root bindings, "table:key" for chord
+// sub-tables) so the warning text identifies which slot collided.
 func conflictingKeys(content string, kbs []bayKeybinding) []string {
+	canonical := map[string]bool{}
+	for _, kb := range kbs {
+		canonical[kb.id()] = true
+	}
 	bound := map[string]bool{}
 	for _, l := range strings.Split(content, "\n") {
 		trimmed := strings.TrimSpace(l)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		for _, kb := range kbs {
-			if strings.HasPrefix(trimmed, "bind-key -n "+kb.key+" ") ||
-				strings.HasPrefix(trimmed, "bind -n "+kb.key+" ") {
-				bound[kb.key] = true
-			}
+		t, k, _, ok := parseBindLine(l)
+		if !ok {
+			continue
+		}
+		id := bindID(t, k)
+		if canonical[id] {
+			bound[id] = true
 		}
 	}
 	var conflicts []string
 	for _, kb := range kbs {
-		if bound[kb.key] {
-			conflicts = append(conflicts, kb.key)
+		if bound[kb.id()] {
+			conflicts = append(conflicts, kb.id())
 		}
 	}
 	return conflicts
@@ -508,7 +631,7 @@ func missingBindings(block string, kbs []bayKeybinding) []bayKeybinding {
 
 	var missing []bayKeybinding
 	for _, kb := range kbs {
-		if activeKeys[kb.key] || commentedKeys[kb.key] {
+		if activeKeys[kb.id()] || commentedKeys[kb.id()] {
 			continue
 		}
 		if cmdCount[kb.cmd] == 1 {
@@ -570,10 +693,10 @@ func mismatchedBindings(block string, kbs []bayKeybinding) []bayKeybindingMismat
 
 	var out []bayKeybindingMismatch
 	for _, kb := range kbs {
-		if kept[kb.key] {
+		if kept[kb.id()] {
 			continue
 		}
-		userCmd, ok := active[kb.key]
+		userCmd, ok := active[kb.id()]
 		if !ok {
 			continue
 		}
@@ -605,8 +728,8 @@ func mismatchedBindings(block string, kbs []bayKeybinding) []bayKeybindingMismat
 }
 
 // replaceBindingInBlock rewrites the first active bind line in the bay
-// block that matches kb.key with kb's canonical line. No-op if the
-// block or key isn't found.
+// block that matches kb's identity (table+key) with kb's canonical
+// line. No-op if the block or matching binding isn't found.
 func replaceBindingInBlock(content string, kb bayKeybinding) string {
 	block, found := extractBayBlock(content)
 	if !found {
@@ -618,8 +741,8 @@ func replaceBindingInBlock(content string, kb bayKeybinding) string {
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		k, _, ok := parseBindLine(l)
-		if !ok || k != kb.key {
+		t, k, _, ok := parseBindLine(l)
+		if !ok || bindID(t, k) != kb.id() {
 			continue
 		}
 		lines[i] = kb.canonicalLine()
@@ -678,7 +801,7 @@ func promptMismatchedBindings(reader *bufio.Reader, tmuxConf, content string, mi
 	fmt.Printf("%d binding(s) in your block don't match the current canonical:\n", len(mismatches))
 	for _, m := range mismatches {
 		fmt.Printf("  %s is bound to `%s`; canonical: `%s`\n",
-			m.canonical.key, m.userCmd, m.canonical.cmd)
+			m.canonical.id(), m.userCmd, m.canonical.cmd)
 	}
 	fmt.Print("Update these to canonical? [Y/n/k] (y=update, n=skip once, k=keep yours so bay stops asking) ")
 	answer, _ := reader.ReadString('\n')
@@ -689,7 +812,7 @@ func promptMismatchedBindings(reader *bufio.Reader, tmuxConf, content string, mi
 	case "k":
 		keys := make([]string, 0, len(mismatches))
 		for _, m := range mismatches {
-			keys = append(keys, m.canonical.key)
+			keys = append(keys, m.canonical.id())
 		}
 		marker := "# bay-keep: " + strings.Join(keys, " ")
 		if err := os.WriteFile(tmuxConf, []byte(appendToBayBlock(content, []string{marker})), 0o644); err != nil {
