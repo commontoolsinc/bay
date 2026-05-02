@@ -70,10 +70,11 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 	// goroutines after this loop, never mutated).
 	//
 	// This pass also opportunistically tags legacy docks (manifest
-	// SessionID empty AND tmux marker empty). Without that, an upgraded
-	// dock that hasn't been recovered yet stays in the (empty, empty)
-	// → owned branch and a future tmux restart would still strip its
-	// surfaces — exactly the bug session-identity is meant to fix.
+	// SessionID empty AND tmux marker empty), but only when the live
+	// session still matches the manifest's recorded tmux surfaces. If
+	// those surfaces are stale, this may be a fresh same-name session
+	// after a tmux restart, so cleanup stays disabled until recover
+	// reconciles pane IDs.
 	dockOwned := make(map[string]bool, len(m.Docks))
 	legacyBackfill := map[string]string{}
 	for i := range m.Docks {
@@ -84,24 +85,38 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 		}
 		marker, _ := e.Tmux.GetSessionOption(dock.Name, sessionIDOption)
 		if marker == "" && dock.SessionID == "" {
-			id := newSessionID()
-			if err := e.Tmux.SetSessionOption(dock.Name, sessionIDOption, id); err == nil {
-				marker = id
-				dock.SessionID = id
-				legacyBackfill[dock.Name] = id
+			if !dockHasRecordedTmuxSurfaces(dock) || e.recordedTmuxSurfacesLive(dock) {
+				id := newSessionID()
+				if err := e.Tmux.SetSessionOption(dock.Name, sessionIDOption, id); err == nil {
+					marker = id
+					dock.SessionID = id
+					legacyBackfill[dock.Name] = id
+				}
 			}
 		}
 		dockOwned[dock.Name] = marker != "" && marker == dock.SessionID
 	}
 	if len(legacyBackfill) > 0 {
-		_ = e.withManifest(func(m *manifest.Manifest) error {
+		applied := map[string]bool{}
+		err := e.withManifest(func(m *manifest.Manifest) error {
 			for name, id := range legacyBackfill {
-				if d := m.FindDock(name); d != nil && d.SessionID == "" {
-					d.SessionID = id
+				if d := m.FindDock(name); d != nil {
+					switch d.SessionID {
+					case "":
+						d.SessionID = id
+						applied[name] = true
+					case id:
+						applied[name] = true
+					}
 				}
 			}
 			return nil
 		})
+		for name := range legacyBackfill {
+			if err != nil || !applied[name] {
+				dockOwned[name] = false
+			}
+		}
 	}
 
 	type probeJob struct {
@@ -166,9 +181,9 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 			discoveredClosed = append(discoveredClosed, closedEntries...)
 		}
 
-		// Clean up dead dock-level surfaces. Skip when the session is
-		// gone, foreign, or in-flight (e.g., recover hasn't finished
-		// persisting new pane IDs) — see verifySessionOwnership.
+		// Clean up dead dock-level surfaces only when the session
+		// identity precompute above proved this is bay's current
+		// session.
 		for i := range m.Docks {
 			dock := &m.Docks[i]
 			if len(dock.Surfaces) == 0 {

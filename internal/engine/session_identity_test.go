@@ -39,6 +39,47 @@ func seedSurfaceWorkspace(t *testing.T, eng *Engine, dockName, wsName string) {
 	}
 }
 
+func seedLiveSurfaceWorkspace(t *testing.T, eng *Engine, dockName, wsName string) {
+	t.Helper()
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if err := mockTmux.NewSession(dockName); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+	windowID, err := mockTmux.NewWindow(dockName, wsName, "")
+	if err != nil {
+		t.Fatalf("seed window: %v", err)
+	}
+	panes, err := mockTmux.ListPanes(windowID)
+	if err != nil || len(panes) == 0 {
+		t.Fatalf("seed panes: panes=%v err=%v", panes, err)
+	}
+	paneID := panes[0].ID
+
+	err = eng.withManifest(func(m *manifest.Manifest) error {
+		dock := m.FindDock(dockName)
+		dock.Workspaces = append(dock.Workspaces, manifest.Workspace{
+			Name: wsName,
+			Type: manifest.WorkspaceTypeWorktree,
+			Surfaces: []manifest.Surface{
+				{
+					ID:      1,
+					Name:    "agent",
+					Type:    manifest.SurfaceTypeAgent,
+					Backend: manifest.SurfaceBackendTmux,
+					Tmux: &manifest.TmuxAttrs{
+						WindowID: windowID,
+						PaneID:   paneID,
+					},
+				},
+			},
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("seed live surface workspace: %v", err)
+	}
+}
+
 // setSessionID sets the manifest's Dock.SessionID for a dock.
 func setSessionID(t *testing.T, eng *Engine, dockName, sessionID string) {
 	t.Helper()
@@ -175,11 +216,12 @@ func TestSyncAll_StripsDeadSurfacesWhenMarkerMatches(t *testing.T) {
 	}
 }
 
-// TestSyncAll_StripsDeadSurfacesInLegacyEmptyState verifies the
-// backward-compat branch: pre-rollout manifests have no SessionID and
-// live tmux sessions have no marker. The gate must continue to behave
-// as today (strip dead surfaces) so existing docks don't regress.
-func TestSyncAll_StripsDeadSurfacesInLegacyEmptyState(t *testing.T) {
+// TestSyncAll_PreservesStaleSurfacesInLegacyEmptyState covers the
+// ambiguous legacy state: pre-rollout manifest, untagged same-name
+// session, and recorded panes that are not live. This can be either
+// manually killed panes or a fresh session after tmux restart; preserve
+// so recover remains possible.
+func TestSyncAll_PreservesStaleSurfacesInLegacyEmptyState(t *testing.T) {
 	eng, _ := testEngine(t)
 	seedSurfaceWorkspace(t, eng, "labs", "auth-fix")
 	// SessionID stays empty.
@@ -192,8 +234,8 @@ func TestSyncAll_StripsDeadSurfacesInLegacyEmptyState(t *testing.T) {
 
 	eng.SyncAll()
 
-	if got := surfaceCount(t, eng, "labs", "auth-fix"); got != 0 {
-		t.Errorf("legacy state did not strip dead surfaces: got %d, want 0", got)
+	if got := surfaceCount(t, eng, "labs", "auth-fix"); got != 1 {
+		t.Errorf("legacy stale surface stripped: got %d, want 1 (preserved)", got)
 	}
 }
 
@@ -446,6 +488,34 @@ func TestWsNew_DoesNotPersistSessionIDWhenSessionExists(t *testing.T) {
 	}
 }
 
+func TestWsNew_DoesNotPersistSessionIDWhenCreatingSessionWithLegacySurfaces(t *testing.T) {
+	eng, _ := testEngine(t)
+	seedSurfaceWorkspace(t, eng, "labs", "old-bay")
+	// Manifest SessionID stays empty, and tmux has no session at all.
+	withDeterministicSessionID(t, "created-session-uuid")
+
+	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
+		t.Fatalf("WsNew: %v", err)
+	}
+
+	m, _ := eng.LoadManifest()
+	dock := m.FindDock("labs")
+	if dock.SessionID != "" {
+		t.Errorf("WsNew persisted SessionID for legacy surfaces: got %q, want empty", dock.SessionID)
+	}
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	marker, _ := mockTmux.GetSessionOption("labs", sessionIDOption)
+	if marker != "created-session-uuid" {
+		t.Errorf("created session marker = %q, want created-session-uuid", marker)
+	}
+
+	eng.SyncAll()
+	if got := surfaceCount(t, eng, "labs", "old-bay"); got != 1 {
+		t.Errorf("pre-existing surface stripped after created-session WsNew: got %d, want 1", got)
+	}
+}
+
 // --- legacy backfill ---
 
 // TestSyncAll_BackfillsLegacySessionID covers fix #2: an upgraded
@@ -471,6 +541,52 @@ func TestSyncAll_BackfillsLegacySessionID(t *testing.T) {
 	marker, _ := mockTmux.GetSessionOption("labs", sessionIDOption)
 	if marker != "backfill-uuid" {
 		t.Errorf("tmux marker not set during backfill: got %q, want backfill-uuid", marker)
+	}
+}
+
+func TestSyncAll_BackfillsLegacySessionIDWhenRecordedSurfacesLive(t *testing.T) {
+	eng, _ := testEngine(t)
+	seedLiveSurfaceWorkspace(t, eng, "labs", "auth-fix")
+	withDeterministicSessionID(t, "live-backfill-uuid")
+
+	eng.SyncAll()
+
+	m, _ := eng.LoadManifest()
+	dock := m.FindDock("labs")
+	if dock.SessionID != "live-backfill-uuid" {
+		t.Errorf("legacy live SessionID not backfilled: got %q, want live-backfill-uuid", dock.SessionID)
+	}
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	marker, _ := mockTmux.GetSessionOption("labs", sessionIDOption)
+	if marker != "live-backfill-uuid" {
+		t.Errorf("tmux marker not set during live backfill: got %q, want live-backfill-uuid", marker)
+	}
+	if got := surfaceCount(t, eng, "labs", "auth-fix"); got != 1 {
+		t.Errorf("live surface count after backfill: got %d, want 1", got)
+	}
+}
+
+func TestSyncAll_DoesNotBackfillLegacySessionIDWhenRecordedSurfacesStale(t *testing.T) {
+	eng, _ := testEngine(t)
+	seedSurfaceWorkspace(t, eng, "labs", "auth-fix")
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if err := mockTmux.NewSession("labs"); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	eng.SyncAll()
+
+	m, _ := eng.LoadManifest()
+	dock := m.FindDock("labs")
+	if dock.SessionID != "" {
+		t.Errorf("stale legacy SessionID backfilled: got %q, want empty", dock.SessionID)
+	}
+	marker, _ := mockTmux.GetSessionOption("labs", sessionIDOption)
+	if marker != "" {
+		t.Errorf("stale legacy tmux marker set: got %q, want empty", marker)
+	}
+	if got := surfaceCount(t, eng, "labs", "auth-fix"); got != 1 {
+		t.Errorf("stale surface stripped during legacy backfill: got %d, want 1", got)
 	}
 }
 

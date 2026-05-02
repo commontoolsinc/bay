@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+
+	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
 const placeholderName = "~"
@@ -94,10 +96,9 @@ func (e *Engine) tagSession(name string) (string, error) {
 //     SyncAll. The user runs `bay recover` to reconcile after a
 //     restart.
 //  2. The returned `sessionCreated` reports whether bay just brought
-//     the session into existence. Only when sessionCreated is true is
-//     it safe for the caller to persist the returned id — there can
-//     be no stale pane IDs in a session that didn't exist a moment
-//     ago.
+//     the session into existence. The caller still has to decide
+//     whether persisting that new marker is safe: a dock may have
+//     existing manifest surfaces even when its tmux session is gone.
 //
 // Returns (id, sessionCreated, err). When the session already
 // existed, id echoes expectedSessionID and sessionCreated is false.
@@ -122,6 +123,61 @@ func (e *Engine) ensureSessionForWorkspace(name, expectedSessionID string) (stri
 		return "", false, err
 	}
 	return id, true, nil
+}
+
+func dockHasRecordedTmuxSurfaces(dock *manifest.Dock) bool {
+	if dock == nil {
+		return false
+	}
+	for i := range dock.Surfaces {
+		if dock.Surfaces[i].Tmux != nil {
+			return true
+		}
+	}
+	for i := range dock.Workspaces {
+		ws := &dock.Workspaces[i]
+		for j := range ws.Surfaces {
+			if ws.Surfaces[j].Tmux != nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (e *Engine) recordedTmuxSurfacesLive(dock *manifest.Dock) bool {
+	if dock == nil {
+		return true
+	}
+	for i := range dock.Surfaces {
+		if !e.recordedTmuxSurfaceLive(&dock.Surfaces[i]) {
+			return false
+		}
+	}
+	for i := range dock.Workspaces {
+		ws := &dock.Workspaces[i]
+		for j := range ws.Surfaces {
+			if !e.recordedTmuxSurfaceLive(&ws.Surfaces[j]) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func (e *Engine) recordedTmuxSurfaceLive(s *manifest.Surface) bool {
+	if s == nil || s.Tmux == nil {
+		return true
+	}
+	if s.Tmux.PaneID != "" {
+		exists, err := e.Tmux.PaneExists(s.Tmux.PaneID)
+		return err == nil && exists
+	}
+	if s.Tmux.WindowID != "" {
+		exists, err := e.Tmux.WindowExists(s.Tmux.WindowID)
+		return err == nil && exists
+	}
+	return false
 }
 
 // cleanPlaceholders removes unused placeholder windows from a session.
