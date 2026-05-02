@@ -522,7 +522,7 @@ func TestMismatchedBindings(t *testing.T) {
 	kbs := []bayKeybinding{
 		{key: "M-s", cmd: "bay shell --pane", tmuxVerb: "run-shell"},
 		{key: "M-S", cmd: "bay shell --window", tmuxVerb: "run-shell"},
-		{key: "M-e", cmd: "bay edit", previousCmds: []string{"bay edit --bay", "bay edit --ws"}, tmuxVerb: "run-shell"},
+		{key: "M-e", cmd: "bay edit", tmuxVerb: "run-shell"},
 		{key: "M-E", cmd: "bay edit --dock", tmuxVerb: "run-shell"},
 	}
 
@@ -556,16 +556,6 @@ bind-key -n M-e run-shell 'bay edit || true'
 `
 		if got := mismatchedBindings(block, kbs); len(got) != 0 {
 			t.Errorf("mismatchedBindings() = %+v; want empty", got)
-		}
-	})
-
-	t.Run("old edit bay flag is drift", func(t *testing.T) {
-		block := `# Bay keybindings
-bind-key -n M-e run-shell 'bay edit --bay || true'
-`
-		got := mismatchedBindings(block, kbs)
-		if len(got) != 1 || got[0].canonical.key != "M-e" {
-			t.Fatalf("mismatchedBindings() = %+v; want M-e mismatch", got)
 		}
 	})
 
@@ -614,22 +604,9 @@ bind-key -n M-e run-shell 'bay edit --dock || true'
 		}
 	})
 
-	t.Run("old palette binding is drift from pane default", func(t *testing.T) {
-		paletteKbs := []bayKeybinding{
-			{key: "M-p", cmd: "bay palette --split pane", previousCmds: []string{"bay palette"}, tmuxVerb: "display-popup -w 80% -h 80% -E"},
-		}
-		block := `# Bay keybindings
-bind-key -n M-p display-popup -w 80% -h 80% -E 'bay palette || true'
-`
-		got := mismatchedBindings(block, paletteKbs)
-		if len(got) != 1 || got[0].canonical.key != "M-p" {
-			t.Fatalf("mismatchedBindings() = %+v; want M-p mismatch", got)
-		}
-	})
-
 	t.Run("custom palette window binding is not previous default drift", func(t *testing.T) {
 		paletteKbs := []bayKeybinding{
-			{key: "M-p", cmd: "bay palette --split pane", previousCmds: []string{"bay palette"}, tmuxVerb: "display-popup -w 80% -h 80% -E"},
+			{key: "M-p", cmd: "bay palette --split pane", tmuxVerb: "display-popup -w 80% -h 80% -E"},
 		}
 		block := `# Bay keybindings
 bind-key -n M-p display-popup -w 80% -h 80% -E 'bay palette --split window || true'
@@ -682,5 +659,90 @@ bind-key -n M-s run-shell 'bay shell --window || true'
 	want := map[string]bool{"M-s": true, "M-e": true, "M-a": true}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("keptKeys() = %v, want %v", got, want)
+	}
+}
+
+// parseBindLine has to recognize key-table bindings (`-T <table>`) so
+// chord sub-tables (M-o c → bay-agent c) participate in drift
+// detection alongside root bindings.
+func TestParseBindLine_KeyTable(t *testing.T) {
+	cases := []struct {
+		line  string
+		table string
+		key   string
+		cmd   string
+	}{
+		{
+			line:  `bind-key -T bay-agent c run-shell 'bay agent claude --pane || true'`,
+			table: "bay-agent",
+			key:   "c",
+			cmd:   "bay agent claude --pane || true",
+		},
+		{
+			line:  `bind-key -T bay-agent-bay g run-shell 'bay new -q --agent=gemini || true'`,
+			table: "bay-agent-bay",
+			key:   "g",
+			cmd:   "bay new -q --agent=gemini || true",
+		},
+		{
+			line:  `bind-key -T bay-agent b display-message -d 2000 "bay: c Claude, x Codex, g Gemini" \; switch-client -T bay-agent-bay`,
+			table: "bay-agent",
+			key:   "b",
+			cmd:   "bay: c Claude, x Codex, g Gemini", // quoted region only — matches existing tmux-cmd extraction behavior
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.line, func(t *testing.T) {
+			gotTable, gotKey, gotCmd, ok := parseBindLine(tc.line)
+			if !ok {
+				t.Fatalf("parseBindLine returned ok=false")
+			}
+			if gotTable != tc.table || gotKey != tc.key || gotCmd != tc.cmd {
+				t.Errorf("parseBindLine = (%q, %q, %q), want (%q, %q, %q)",
+					gotTable, gotKey, gotCmd, tc.table, tc.key, tc.cmd)
+			}
+		})
+	}
+}
+
+// canonicalLine and parseBindLine should round-trip for a chord
+// sub-table binding: emit, parse, recover the same identity.
+func TestChordBindingRoundTrip(t *testing.T) {
+	kb := bayKeybinding{
+		table:    "bay-agent-bay",
+		key:      "c",
+		cmd:      "bay new -q --agent=claude",
+		tmuxVerb: "run-shell",
+	}
+	line := kb.canonicalLine()
+	t.Logf("canonical line: %s", line)
+	gotTable, gotKey, _, ok := parseBindLine(line)
+	if !ok {
+		t.Fatalf("parseBindLine(%q) failed", line)
+	}
+	if got := bindID(gotTable, gotKey); got != kb.id() {
+		t.Errorf("round-trip id = %q, want %q", got, kb.id())
+	}
+}
+
+// activeBindings keys binding identities by table+key, so a chord-
+// table letter doesn't collide with the same letter at the root.
+// (`c` in bay-agent must be distinct from `c` if it ever appeared
+// in the root table.)
+func TestActiveBindings_TableKeyDistinctFromRootKey(t *testing.T) {
+	block := `# Bay keybindings
+bind-key -n M-c run-shell 'bay new -q || true'
+bind-key -T bay-agent c run-shell 'bay agent claude --pane || true'
+bind-key -T bay-agent-bay c run-shell 'bay new -q --agent=claude || true'
+`
+	got := activeBindings(block)
+	if got["M-c"] != "bay new -q || true" {
+		t.Errorf("M-c missing or wrong: %q", got["M-c"])
+	}
+	if got["bay-agent:c"] != "bay agent claude --pane || true" {
+		t.Errorf("bay-agent:c missing or wrong: %q", got["bay-agent:c"])
+	}
+	if got["bay-agent-bay:c"] != "bay new -q --agent=claude || true" {
+		t.Errorf("bay-agent-bay:c missing or wrong: %q", got["bay-agent-bay:c"])
 	}
 }

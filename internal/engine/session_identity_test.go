@@ -16,9 +16,9 @@ func seedSurfaceWorkspace(t *testing.T, eng *Engine, dockName, wsName string) {
 	t.Helper()
 	err := eng.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)
-		dock.Workspaces = append(dock.Workspaces, manifest.Workspace{
+		dock.Bays = append(dock.Bays, manifest.Bay{
 			Name: wsName,
-			Type: manifest.WorkspaceTypeWorktree,
+			Type: manifest.BayTypeWorktree,
 			Surfaces: []manifest.Surface{
 				{
 					ID:      1,
@@ -57,9 +57,9 @@ func seedLiveSurfaceWorkspace(t *testing.T, eng *Engine, dockName, wsName string
 
 	err = eng.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)
-		dock.Workspaces = append(dock.Workspaces, manifest.Workspace{
+		dock.Bays = append(dock.Bays, manifest.Bay{
 			Name: wsName,
-			Type: manifest.WorkspaceTypeWorktree,
+			Type: manifest.BayTypeWorktree,
 			Surfaces: []manifest.Surface{
 				{
 					ID:      1,
@@ -104,7 +104,7 @@ func surfaceCount(t *testing.T, eng *Engine, dockName, wsName string) int {
 	if dock == nil {
 		t.Fatalf("dock %q missing", dockName)
 	}
-	ws := dock.FindWorkspace(wsName)
+	ws := dock.FindBay(wsName)
 	if ws == nil {
 		t.Fatalf("workspace %q missing", wsName)
 	}
@@ -451,16 +451,16 @@ func TestSyncAll_NoMidRecoverCleanup(t *testing.T) {
 	}
 }
 
-// --- WsNew with foreign session ---
+// --- BayNew with foreign session ---
 
-// TestWsNew_DoesNotPersistSessionIDWhenSessionExists locks in the
+// TestBayNew_DoesNotPersistSessionIDWhenSessionExists locks in the
 // fix for the post-restart `bay new` race: when the live session
-// exists but bay didn't create it, WsNew must NOT write a new
+// exists but bay didn't create it, BayNew must NOT write a new
 // SessionID into the manifest, even if ensureSession-style logic
 // would have minted one. Persisting here would let the next SyncAll
 // see (matching marker → owned) and strip pre-existing workspaces'
 // stale pane IDs.
-func TestWsNew_DoesNotPersistSessionIDWhenSessionExists(t *testing.T) {
+func TestBayNew_DoesNotPersistSessionIDWhenSessionExists(t *testing.T) {
 	eng, _ := testEngine(t)
 	seedSurfaceWorkspace(t, eng, "labs", "old-bay")
 	setSessionID(t, eng, "labs", "pre-crash-uuid")
@@ -472,36 +472,36 @@ func TestWsNew_DoesNotPersistSessionIDWhenSessionExists(t *testing.T) {
 		t.Fatalf("seed session: %v", err)
 	}
 
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
-		t.Fatalf("WsNew: %v", err)
+	if _, err := eng.BayNew(BayNewOptions{Dock: "labs"}); err != nil {
+		t.Fatalf("BayNew: %v", err)
 	}
 
 	m, _ := eng.LoadManifest()
 	dock := m.FindDock("labs")
 	if dock.SessionID != "pre-crash-uuid" {
-		t.Errorf("WsNew clobbered SessionID: got %q, want pre-crash-uuid", dock.SessionID)
+		t.Errorf("BayNew clobbered SessionID: got %q, want pre-crash-uuid", dock.SessionID)
 	}
 	// Original workspace's surface must survive — the gate's
 	// mismatched-marker preservation is what keeps recover viable.
 	if got := surfaceCount(t, eng, "labs", "old-bay"); got != 1 {
-		t.Errorf("pre-existing surface stripped after WsNew: got %d, want 1", got)
+		t.Errorf("pre-existing surface stripped after BayNew: got %d, want 1", got)
 	}
 }
 
-func TestWsNew_DoesNotPersistSessionIDWhenCreatingSessionWithLegacySurfaces(t *testing.T) {
+func TestBayNew_DoesNotPersistSessionIDWhenCreatingSessionWithLegacySurfaces(t *testing.T) {
 	eng, _ := testEngine(t)
 	seedSurfaceWorkspace(t, eng, "labs", "old-bay")
 	// Manifest SessionID stays empty, and tmux has no session at all.
 	withDeterministicSessionID(t, "created-session-uuid")
 
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
-		t.Fatalf("WsNew: %v", err)
+	if _, err := eng.BayNew(BayNewOptions{Dock: "labs"}); err != nil {
+		t.Fatalf("BayNew: %v", err)
 	}
 
 	m, _ := eng.LoadManifest()
 	dock := m.FindDock("labs")
 	if dock.SessionID != "" {
-		t.Errorf("WsNew persisted SessionID for legacy surfaces: got %q, want empty", dock.SessionID)
+		t.Errorf("BayNew persisted SessionID for legacy surfaces: got %q, want empty", dock.SessionID)
 	}
 
 	mockTmux := eng.Tmux.(*tmux.Mock)
@@ -512,7 +512,7 @@ func TestWsNew_DoesNotPersistSessionIDWhenCreatingSessionWithLegacySurfaces(t *t
 
 	eng.SyncAll()
 	if got := surfaceCount(t, eng, "labs", "old-bay"); got != 1 {
-		t.Errorf("pre-existing surface stripped after created-session WsNew: got %d, want 1", got)
+		t.Errorf("pre-existing surface stripped after created-session BayNew: got %d, want 1", got)
 	}
 }
 
@@ -592,10 +592,10 @@ func TestRecover_InvalidatesStaleTmuxIDsOnSessionTakeover(t *testing.T) {
 	wsPath := t.TempDir()
 	err := eng.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock("labs")
-		dock.Workspaces = append(dock.Workspaces, manifest.Workspace{
+		dock.Bays = append(dock.Bays, manifest.Bay{
 			ID:   "w1",
 			Name: "auth-fix",
-			Type: manifest.WorkspaceTypeWorktree,
+			Type: manifest.BayTypeWorktree,
 			Path: wsPath,
 			Surfaces: []manifest.Surface{
 				{
@@ -628,7 +628,7 @@ func TestRecover_InvalidatesStaleTmuxIDsOnSessionTakeover(t *testing.T) {
 	}
 
 	m, _ := eng.LoadManifest()
-	ws := m.FindDock("labs").FindWorkspaceByID("w1")
+	ws := m.FindDock("labs").FindBayByID("w1")
 	if ws.Surfaces[0].Tmux.WindowID == "@5" {
 		t.Errorf("WindowID retained pre-takeover value @5 — recover reconciled against potential foreign window")
 	}

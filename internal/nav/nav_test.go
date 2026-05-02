@@ -7,13 +7,13 @@ import (
 	"github.com/commontoolsinc/bay/internal/tmux"
 )
 
-// buildTestManifest creates a manifest with two docks and several workspaces.
+// buildTestManifest creates a manifest with two docks and several bays.
 func buildTestManifest() *manifest.Manifest {
 	m := manifest.New()
 	m.Docks = []manifest.Dock{
 		{
 			Name: "labs",
-			Workspaces: []manifest.Workspace{
+			Bays: []manifest.Bay{
 				{
 					Name:     "mem-refactor",
 					Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "feature/refactor-memory-access", PR: "234"},
@@ -33,7 +33,7 @@ func buildTestManifest() *manifest.Manifest {
 		},
 		{
 			Name: "core",
-			Workspaces: []manifest.Workspace{
+			Bays: []manifest.Bay{
 				{
 					Name:     "nav-feature",
 					Worktree: &manifest.WorktreeAttrs{Repo: "core", Branch: "feature/nav-support"},
@@ -73,8 +73,8 @@ func TestCollectEntries(t *testing.T) {
 
 	entries := CollectEntries(m, tc)
 
-	// We expect 3 entries: one per workspace.
-	// labs has 2 workspaces, core has 1.
+	// We expect 3 entries: one per bay.
+	// labs has 2 bays, core has 1.
 	if len(entries) != 3 {
 		t.Fatalf("expected 3 entries, got %d", len(entries))
 	}
@@ -82,7 +82,7 @@ func TestCollectEntries(t *testing.T) {
 	// Build a map for easier lookup.
 	byName := make(map[string]Entry)
 	for _, e := range entries {
-		byName[e.WsName] = e
+		byName[e.BayName] = e
 	}
 
 	// Check labs:mem-refactor
@@ -108,8 +108,8 @@ func TestCollectEntries(t *testing.T) {
 	if !e2.Waiting {
 		t.Error("fix-auth should be waiting (window @3)")
 	}
-	if e2.WsName != "fix-auth" {
-		t.Errorf("fix-auth WsName: got %q, want %q", e2.WsName, "fix-auth")
+	if e2.BayName != "fix-auth" {
+		t.Errorf("fix-auth BayName: got %q, want %q", e2.BayName, "fix-auth")
 	}
 
 	// Check core:nav-feature
@@ -131,8 +131,8 @@ func TestCollectEntries_EmptyManifest(t *testing.T) {
 
 func TestFuzzyMatch_NoQuery(t *testing.T) {
 	entries := []Entry{
-		{WsName: "a", DockName: "d1"},
-		{WsName: "b", DockName: "d2"},
+		{BayName: "a", DockName: "d1"},
+		{BayName: "b", DockName: "d2"},
 	}
 	result := FuzzyMatch(entries, "")
 	if len(result) != 2 {
@@ -142,39 +142,39 @@ func TestFuzzyMatch_NoQuery(t *testing.T) {
 
 func TestFuzzyMatch_ByName(t *testing.T) {
 	entries := []Entry{
-		{WsName: "mem-refactor", Branch: "feature/mem", PR: "100", DockName: "labs"},
-		{WsName: "fix-auth", Branch: "bugfix/auth", PR: "200", DockName: "core"},
-		{WsName: "nav-feature", Branch: "feature/nav", PR: "300", DockName: "labs"},
+		{BayName: "mem-refactor", Branch: "feature/mem", PR: "100", DockName: "labs"},
+		{BayName: "fix-auth", Branch: "bugfix/auth", PR: "200", DockName: "core"},
+		{BayName: "nav-feature", Branch: "feature/nav", PR: "300", DockName: "labs"},
 	}
 
 	result := FuzzyMatch(entries, "mem")
 	if len(result) != 1 {
 		t.Fatalf("expected 1 match for 'mem', got %d", len(result))
 	}
-	if result[0].WsName != "mem-refactor" {
-		t.Errorf("expected mem-refactor, got %q", result[0].WsName)
+	if result[0].BayName != "mem-refactor" {
+		t.Errorf("expected mem-refactor, got %q", result[0].BayName)
 	}
 }
 
 func TestFuzzyMatch_ByBranch(t *testing.T) {
 	entries := []Entry{
-		{WsName: "mem-refactor", Branch: "feature/refactor-memory-access", PR: "100", DockName: "labs"},
-		{WsName: "fix-auth", Branch: "bugfix/auth-timeout", PR: "200", DockName: "core"},
+		{BayName: "mem-refactor", Branch: "feature/refactor-memory-access", PR: "100", DockName: "labs"},
+		{BayName: "fix-auth", Branch: "bugfix/auth-timeout", PR: "200", DockName: "core"},
 	}
 
 	result := FuzzyMatch(entries, "auth-timeout")
 	if len(result) != 1 {
 		t.Fatalf("expected 1 match for 'auth-timeout', got %d", len(result))
 	}
-	if result[0].WsName != "fix-auth" {
-		t.Errorf("expected fix-auth, got %q", result[0].WsName)
+	if result[0].BayName != "fix-auth" {
+		t.Errorf("expected fix-auth, got %q", result[0].BayName)
 	}
 }
 
 func TestFuzzyMatch_ByPR(t *testing.T) {
 	entries := []Entry{
-		{WsName: "mem-refactor", Branch: "feature/mem", PR: "234", DockName: "labs"},
-		{WsName: "fix-auth", Branch: "bugfix/auth", PR: "567", DockName: "core"},
+		{BayName: "mem-refactor", Branch: "feature/mem", PR: "234", DockName: "labs"},
+		{BayName: "fix-auth", Branch: "bugfix/auth", PR: "567", DockName: "core"},
 	}
 
 	result := FuzzyMatch(entries, "234")
@@ -188,8 +188,8 @@ func TestFuzzyMatch_ByPR(t *testing.T) {
 
 func TestFuzzyMatch_ByDockName(t *testing.T) {
 	entries := []Entry{
-		{WsName: "mem-refactor", Branch: "feature/mem", PR: "234", DockName: "labs"},
-		{WsName: "fix-auth", Branch: "bugfix/auth", PR: "567", DockName: "core"},
+		{BayName: "mem-refactor", Branch: "feature/mem", PR: "234", DockName: "labs"},
+		{BayName: "fix-auth", Branch: "bugfix/auth", PR: "567", DockName: "core"},
 	}
 
 	result := FuzzyMatch(entries, "core")
@@ -203,22 +203,22 @@ func TestFuzzyMatch_ByDockName(t *testing.T) {
 
 func TestFuzzyMatch_ByDescription(t *testing.T) {
 	entries := []Entry{
-		{WsName: "w2", Description: "Login flow fixes", Branch: "fix/login", DockName: "labs"},
-		{WsName: "w3", Description: "Unrelated refactor", Branch: "refactor/foo", DockName: "labs"},
+		{BayName: "w2", Description: "Login flow fixes", Branch: "fix/login", DockName: "labs"},
+		{BayName: "w3", Description: "Unrelated refactor", Branch: "refactor/foo", DockName: "labs"},
 	}
 
 	result := FuzzyMatch(entries, "login flow")
 	if len(result) != 1 {
 		t.Fatalf("expected 1 match for description substring, got %d", len(result))
 	}
-	if result[0].WsName != "w2" {
-		t.Errorf("expected w2, got %q", result[0].WsName)
+	if result[0].BayName != "w2" {
+		t.Errorf("expected w2, got %q", result[0].BayName)
 	}
 }
 
 func TestFuzzyMatch_CaseInsensitive(t *testing.T) {
 	entries := []Entry{
-		{WsName: "Mem-Refactor", Branch: "Feature/MEM", PR: "234", DockName: "Labs"},
+		{BayName: "Mem-Refactor", Branch: "Feature/MEM", PR: "234", DockName: "Labs"},
 	}
 
 	result := FuzzyMatch(entries, "mem")
@@ -229,9 +229,9 @@ func TestFuzzyMatch_CaseInsensitive(t *testing.T) {
 
 func TestFuzzyMatch_MultipleMatches(t *testing.T) {
 	entries := []Entry{
-		{WsName: "feature-a", Branch: "feature/a", PR: "100", DockName: "labs"},
-		{WsName: "feature-b", Branch: "feature/b", PR: "200", DockName: "labs"},
-		{WsName: "bugfix-c", Branch: "bugfix/c", PR: "300", DockName: "core"},
+		{BayName: "feature-a", Branch: "feature/a", PR: "100", DockName: "labs"},
+		{BayName: "feature-b", Branch: "feature/b", PR: "200", DockName: "labs"},
+		{BayName: "bugfix-c", Branch: "bugfix/c", PR: "300", DockName: "core"},
 	}
 
 	result := FuzzyMatch(entries, "feature")
@@ -242,7 +242,7 @@ func TestFuzzyMatch_MultipleMatches(t *testing.T) {
 
 func TestFuzzyMatch_NoMatch(t *testing.T) {
 	entries := []Entry{
-		{WsName: "mem-refactor", Branch: "feature/mem", PR: "234", DockName: "labs"},
+		{BayName: "mem-refactor", Branch: "feature/mem", PR: "234", DockName: "labs"},
 	}
 
 	result := FuzzyMatch(entries, "zzz-nonexistent")
@@ -253,10 +253,10 @@ func TestFuzzyMatch_NoMatch(t *testing.T) {
 
 func TestFilterWaiting(t *testing.T) {
 	entries := []Entry{
-		{WsName: "a", Waiting: true},
-		{WsName: "b", Waiting: false},
-		{WsName: "c", Waiting: true},
-		{WsName: "d", Waiting: false},
+		{BayName: "a", Waiting: true},
+		{BayName: "b", Waiting: false},
+		{BayName: "c", Waiting: true},
+		{BayName: "d", Waiting: false},
 	}
 
 	result := FilterWaiting(entries)
@@ -265,15 +265,15 @@ func TestFilterWaiting(t *testing.T) {
 	}
 	for _, e := range result {
 		if !e.Waiting {
-			t.Errorf("entry %q should be waiting", e.WsName)
+			t.Errorf("entry %q should be waiting", e.BayName)
 		}
 	}
 }
 
 func TestFilterWaiting_NoneWaiting(t *testing.T) {
 	entries := []Entry{
-		{WsName: "a", Waiting: false},
-		{WsName: "b", Waiting: false},
+		{BayName: "a", Waiting: false},
+		{BayName: "b", Waiting: false},
 	}
 
 	result := FilterWaiting(entries)
@@ -284,10 +284,10 @@ func TestFilterWaiting_NoneWaiting(t *testing.T) {
 
 func TestNextWaiting_CyclesCorrectly(t *testing.T) {
 	entries := []Entry{
-		{WsName: "a", TmuxWindowID: "@1", Waiting: true},
-		{WsName: "b", TmuxWindowID: "@2", Waiting: false},
-		{WsName: "c", TmuxWindowID: "@3", Waiting: true},
-		{WsName: "d", TmuxWindowID: "@4", Waiting: true},
+		{BayName: "a", TmuxWindowID: "@1", Waiting: true},
+		{BayName: "b", TmuxWindowID: "@2", Waiting: false},
+		{BayName: "c", TmuxWindowID: "@3", Waiting: true},
+		{BayName: "d", TmuxWindowID: "@4", Waiting: true},
 	}
 
 	cases := []struct {
@@ -314,8 +314,8 @@ func TestNextWaiting_CyclesCorrectly(t *testing.T) {
 
 func TestNextWaiting_NoWaiting(t *testing.T) {
 	entries := []Entry{
-		{WsName: "a", TmuxWindowID: "@1", Waiting: false},
-		{WsName: "b", TmuxWindowID: "@2", Waiting: false},
+		{BayName: "a", TmuxWindowID: "@1", Waiting: false},
+		{BayName: "b", TmuxWindowID: "@2", Waiting: false},
 	}
 
 	next, idx := NextWaiting(entries, "@1")
@@ -326,8 +326,8 @@ func TestNextWaiting_NoWaiting(t *testing.T) {
 
 func TestNextWaiting_UnknownCurrent(t *testing.T) {
 	entries := []Entry{
-		{WsName: "a", TmuxWindowID: "@1", Waiting: true},
-		{WsName: "b", TmuxWindowID: "@2", Waiting: true},
+		{BayName: "a", TmuxWindowID: "@1", Waiting: true},
+		{BayName: "b", TmuxWindowID: "@2", Waiting: true},
 	}
 
 	// Current window not in list; should return first waiting entry.
@@ -343,24 +343,24 @@ func TestNextWaiting_UnknownCurrent(t *testing.T) {
 func TestFormatEntry(t *testing.T) {
 	e := Entry{
 		DockName:     "labs",
-		WsName:       "mem-refactor",
+		BayName:      "mem-refactor",
 		Branch:       "feature/refactor-memory-access",
 		PR:           "234",
 		TmuxWindowID: "@1",
 		Waiting:      false,
 	}
 
-	// FormatEntry was moved to the CLI picker layer (ws.go pickWorkspace).
+	// FormatEntry was moved to the CLI picker layer (bay.go pickBay).
 	// Entry fields are tested indirectly via the picker tests.
 	_ = e // verify the entry builds without error
 }
 
 // --- Surface-level navigation tests ---
 
-func buildSurfaceWorkspace() *manifest.Workspace {
+func buildSurfaceBay() *manifest.Bay {
 	agent := "claude"
 	cmd := "npm test"
-	return &manifest.Workspace{
+	return &manifest.Bay{
 		Name: "auth-fix",
 		Path: "/projects/auth-fix",
 		Surfaces: []manifest.Surface{
@@ -372,9 +372,9 @@ func buildSurfaceWorkspace() *manifest.Workspace {
 }
 
 func TestCollectSurfaces(t *testing.T) {
-	ws := buildSurfaceWorkspace()
+	bay := buildSurfaceBay()
 
-	entries := CollectSurfaces(ws, "%2", nil)
+	entries := CollectSurfaces(bay, "%2", nil)
 
 	if len(entries) != 3 {
 		t.Fatalf("expected 3 surface entries, got %d", len(entries))
@@ -391,9 +391,9 @@ func TestCollectSurfaces(t *testing.T) {
 }
 
 func TestCollectSurfaces_NoCurrent(t *testing.T) {
-	ws := buildSurfaceWorkspace()
+	bay := buildSurfaceBay()
 
-	entries := CollectSurfaces(ws, "%999", nil)
+	entries := CollectSurfaces(bay, "%999", nil)
 
 	for _, e := range entries {
 		if e.Current {
@@ -403,8 +403,8 @@ func TestCollectSurfaces_NoCurrent(t *testing.T) {
 }
 
 func TestNextSurface(t *testing.T) {
-	ws := buildSurfaceWorkspace()
-	entries := CollectSurfaces(ws, "%1", nil) // current = agent (index 0)
+	bay := buildSurfaceBay()
+	entries := CollectSurfaces(bay, "%1", nil) // current = agent (index 0)
 
 	next, idx := NextSurface(entries)
 	if next == nil || next.Name != "shell" || idx != 1 {
@@ -413,9 +413,9 @@ func TestNextSurface(t *testing.T) {
 }
 
 func TestNextSurface_WrapsAround(t *testing.T) {
-	ws := buildSurfaceWorkspace()
+	bay := buildSurfaceBay()
 	// Current = tests (index 2, last). Next should wrap to agent (index 0).
-	entries := CollectSurfaces(ws, "%3", nil)
+	entries := CollectSurfaces(bay, "%3", nil)
 
 	next, idx := NextSurface(entries)
 	if next == nil || next.Name != "agent" || idx != 0 {
@@ -424,8 +424,8 @@ func TestNextSurface_WrapsAround(t *testing.T) {
 }
 
 func TestPrevSurface(t *testing.T) {
-	ws := buildSurfaceWorkspace()
-	entries := CollectSurfaces(ws, "%2", nil) // current = shell (index 1)
+	bay := buildSurfaceBay()
+	entries := CollectSurfaces(bay, "%2", nil) // current = shell (index 1)
 
 	prev, idx := PrevSurface(entries)
 	if prev == nil || prev.Name != "agent" || idx != 0 {
@@ -434,8 +434,8 @@ func TestPrevSurface(t *testing.T) {
 }
 
 func TestPrevSurface_WrapsAround(t *testing.T) {
-	ws := buildSurfaceWorkspace()
-	entries := CollectSurfaces(ws, "%1", nil) // current = agent (index 0, first)
+	bay := buildSurfaceBay()
+	entries := CollectSurfaces(bay, "%1", nil) // current = agent (index 0, first)
 
 	prev, idx := PrevSurface(entries)
 	if prev == nil || prev.Name != "tests" || idx != 2 {
@@ -444,8 +444,8 @@ func TestPrevSurface_WrapsAround(t *testing.T) {
 }
 
 func TestNextSurface_NoCurrent(t *testing.T) {
-	ws := buildSurfaceWorkspace()
-	entries := CollectSurfaces(ws, "%999", nil) // no match
+	bay := buildSurfaceBay()
+	entries := CollectSurfaces(bay, "%999", nil) // no match
 
 	next, idx := NextSurface(entries)
 	if next == nil || next.Name != "agent" || idx != 0 {

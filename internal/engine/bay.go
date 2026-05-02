@@ -11,8 +11,8 @@ import (
 	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
-// WsNewOptions are options for creating a new workspace.
-type WsNewOptions struct {
+// BayNewOptions are options for creating a new bay.
+type BayNewOptions struct {
 	Dock         string // dock name (required)
 	Dir          string // external directory (makes it external type)
 	Name         string // display name override
@@ -23,8 +23,8 @@ type WsNewOptions struct {
 	Branch       string // git branch to checkout (creates it if new)
 }
 
-// WsNew creates a new workspace with surfaces.
-func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
+// BayNew creates a new bay with surfaces.
+func (e *Engine) BayNew(opts BayNewOptions) (*manifest.Bay, error) {
 	dockName := opts.Dock
 
 	m, err := e.LoadManifest()
@@ -38,21 +38,21 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		return nil, fmt.Errorf("unknown dock %q", dockName)
 	}
 
-	// Determine workspace type and path.
-	var wsType manifest.WorkspaceType
-	var wsPath string
+	// Determine bay type and path.
+	var bayType manifest.BayType
+	var bayPath string
 	var worktreeAttrs *manifest.WorktreeAttrs
 	var branchExists bool
 
 	nameExplicit := opts.Name != ""
 	displayName := opts.Name
 	if displayName == "" && opts.Branch != "" {
-		displayName = uniqueWorkspaceName(dock, nil, abbreviateBranch(opts.Branch))
+		displayName = uniqueBayName(dock, nil, abbreviateBranch(opts.Branch))
 	}
 	// Validate explicit/branch-derived name early. Names matching the
 	// reserved ID pattern (^w[1-9]\d*$) are rejected here.
 	if displayName != "" {
-		if err := ValidateWorkspaceName(displayName); err != nil {
+		if err := ValidateBayName(displayName); err != nil {
 			return nil, err
 		}
 	}
@@ -60,28 +60,28 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	if err := ValidateDescription(desc); err != nil {
 		return nil, err
 	}
-	if nameExplicit && dock.FindWorkspace(displayName) != nil {
+	if nameExplicit && dock.FindBay(displayName) != nil {
 		return nil, fmt.Errorf("bay name %q already exists in dock %q", displayName, dockName)
 	}
 
 	agentName := ""
 	if !opts.Shell {
-		agentName, err = e.resolveWorkspaceAgent(dockName, m, opts.Agent, opts.RequireAgent)
+		agentName, err = e.resolveBayAgent(dockName, m, opts.Agent, opts.RequireAgent)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if opts.Dir != "" {
-		// External workspace.
-		wsType = manifest.WorkspaceTypeExternal
-		wsPath = config.ExpandPath(opts.Dir)
-		if _, err := os.Stat(wsPath); err != nil {
-			return nil, fmt.Errorf("external directory %q: %w", wsPath, err)
+		// External bay.
+		bayType = manifest.BayTypeExternal
+		bayPath = config.ExpandPath(opts.Dir)
+		if _, err := os.Stat(bayPath); err != nil {
+			return nil, fmt.Errorf("external directory %q: %w", bayPath, err)
 		}
 	} else {
-		// Worktree workspace.
-		wsType = manifest.WorkspaceTypeWorktree
+		// Worktree bay.
+		bayType = manifest.BayTypeWorktree
 		if dock.Path == "" {
 			return nil, fmt.Errorf("dock %q has no checkout; specify --dir for an external bay", dockName)
 		}
@@ -92,9 +92,9 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 			return nil, fmt.Errorf("creating worktree dir: %w", err)
 		}
 		// Worktree dirs are sequential (w1, w2, ...) and independent of
-		// the workspace name. The name can be renamed or auto-updated as
+		// the bay name. The name can be renamed or auto-updated as
 		// work pivots, but the on-disk directory stays stable.
-		wsPath = filepath.Join(wtDir, nextWorkspaceDir(wtDir, dock))
+		bayPath = filepath.Join(wtDir, nextBayDir(wtDir, dock))
 
 		repoPath := config.ExpandPath(dock.Path)
 
@@ -112,22 +112,22 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		if branchExists {
 			wtBranch = opts.Branch
 		}
-		if err := e.Git.CreateWorktree(repoPath, wsPath, wtBranch); err != nil {
+		if err := e.Git.CreateWorktree(repoPath, bayPath, wtBranch); err != nil {
 			return nil, fmt.Errorf("creating worktree: %w", err)
 		}
 
 		toCopy, err := e.resolveWorktreeInclude(repoPath)
 		if err == nil {
-			err = copyWorktreeIncludeFiles(repoPath, wsPath, toCopy)
+			err = copyWorktreeIncludeFiles(repoPath, bayPath, toCopy)
 		}
 		if err != nil {
-			_ = e.Git.RemoveWorktree(repoPath, wsPath, true)
+			_ = e.Git.RemoveWorktree(repoPath, bayPath, true)
 			return nil, err
 		}
 	}
 
 	// No explicit name and no branch → leave displayName empty. The
-	// workspace's ID is the stable handle (set after AddWorkspace);
+	// bay's ID is the stable handle (set after AddBay);
 	// updateWindowNames falls back to the ID for the tab label, and
 	// sync fills Name from the branch on first detection.
 
@@ -136,31 +136,31 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 
 	// rollbackWorktree cleans up a worktree on failure.
 	rollbackWorktree := func() {
-		if wsType == manifest.WorkspaceTypeWorktree && dock.Path != "" {
+		if bayType == manifest.BayTypeWorktree && dock.Path != "" {
 			repoPath := config.ExpandPath(dock.Path)
-			_ = e.Git.RemoveWorktree(repoPath, wsPath, true)
+			_ = e.Git.RemoveWorktree(repoPath, bayPath, true)
 		}
 	}
 
 	// Ensure tmux session exists. We split the two cases: when the
 	// session was already present we deliberately leave the SessionID
-	// alone — existing workspaces may hold pane IDs from a dead tmux
+	// alone — existing bays may hold pane IDs from a dead tmux
 	// instance, and persisting a new SessionID here would defeat the
 	// gate's mismatched-marker preservation and let the next SyncAll
 	// strip them. The user runs `bay recover` to reconcile after a
-	// restart. When WsNew creates the session, persisting is still safe
+	// restart. When BayNew creates the session, persisting is still safe
 	// only if this dock did not already have recorded tmux surfaces.
 	persistCreatedSessionID := !dockHasRecordedTmuxSurfaces(dock)
-	sessionID, sessionCreated, err := e.ensureSessionForWorkspace(dockName, dock.SessionID)
+	sessionID, sessionCreated, err := e.ensureSessionForBay(dockName, dock.SessionID)
 	if err != nil {
 		rollbackWorktree()
 		return nil, err
 	}
 
-	// Create tmux window and position it at the end of existing workspace
-	// windows so new workspaces appear rightmost in the tab bar.
-	initialWindowLabel := WorkspaceCompactLabel(&manifest.Workspace{Name: displayName, Path: wsPath})
-	windowID, err := e.Tmux.NewWindow(dockName, initialWindowLabel, wsPath)
+	// Create tmux window and position it at the end of existing bay
+	// windows so new bays appear rightmost in the tab bar.
+	initialWindowLabel := BayCompactLabel(&manifest.Bay{Name: displayName, Path: bayPath})
+	windowID, err := e.Tmux.NewWindow(dockName, initialWindowLabel, bayPath)
 	if err != nil {
 		rollbackWorktree()
 		return nil, fmt.Errorf("creating tmux window: %w", err)
@@ -190,7 +190,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		surfaceName = "shell"
 	}
 
-	surface, err := e.launchSurfaceInTmux(tmuxPaneID, dockName, surfaceType, agentName, "", wsPath, agentArgs, false)
+	surface, err := e.launchSurfaceInTmux(tmuxPaneID, dockName, surfaceType, agentName, "", bayPath, agentArgs, false)
 	if err != nil {
 		_ = e.Tmux.KillWindow(windowID)
 		rollbackWorktree()
@@ -201,13 +201,13 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	surface.Tmux.WindowID = windowID
 	surface.Tmux.LayoutGroup = 1
 
-	// Build workspace. Name may be empty here (no explicit name, no branch);
+	// Build bay. Name may be empty here (no explicit name, no branch);
 	// sync fills it from the branch on first detection and is sticky after,
 	// matching the design's "stable yet semantic" goal.
-	ws := manifest.Workspace{
+	bay := manifest.Bay{
 		Name:        displayName,
-		Type:        wsType,
-		Path:        wsPath,
+		Type:        bayType,
+		Path:        bayPath,
 		Description: desc,
 		LastActive:  time.Now().Unix(),
 		Worktree:    worktreeAttrs,
@@ -221,8 +221,8 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
 
-		// Persist SessionID only when WsNew created the session
-		// itself. See ensureSessionForWorkspace's comment for why
+		// Persist SessionID only when BayNew created the session
+		// itself. See ensureSessionForBay's comment for why
 		// adopting an existing session's marker is unsafe here.
 		if sessionCreated && persistCreatedSessionID && dock.SessionID == "" {
 			dock.SessionID = sessionID
@@ -230,24 +230,24 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 
 		finalName = displayName
 		if !nameExplicit {
-			finalName = uniqueWorkspaceName(dock, nil, displayName)
-		} else if dock.FindWorkspace(displayName) != nil {
+			finalName = uniqueBayName(dock, nil, displayName)
+		} else if dock.FindBay(displayName) != nil {
 			return fmt.Errorf("bay name %q already exists in dock %q", displayName, dockName)
 		}
 
-		ws.Name = finalName
-		if err := dock.AddWorkspace(ws); err != nil {
+		bay.Name = finalName
+		if err := dock.AddBay(bay); err != nil {
 			return err
 		}
-		// Fill in the ID for the workspace we just added. Lookups by Name
+		// Fill in the ID for the bay we just added. Lookups by Name
 		// fail when finalName is empty, so resolve by path instead.
-		manifest.AssignWorkspaceIDs(dock)
-		addedWs := findWorkspaceByPath(dock, wsPath)
-		if addedWs == nil {
-			return fmt.Errorf("bay at %q not found after creation", wsPath)
+		manifest.AssignBayIDs(dock)
+		addedBay := findBayByPath(dock, bayPath)
+		if addedBay == nil {
+			return fmt.Errorf("bay at %q not found after creation", bayPath)
 		}
-		if _, err := addedWs.AddSurface(surface); err != nil {
-			_ = dock.RemoveWorkspace(addedWs.ID)
+		if _, err := addedBay.AddSurface(surface); err != nil {
+			_ = dock.RemoveBay(addedBay.ID)
 			return err
 		}
 		return nil
@@ -257,7 +257,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 		return nil, err
 	}
 	if finalName != displayName {
-		finalWindowLabel := WorkspaceCompactLabel(&manifest.Workspace{Name: finalName, Path: wsPath})
+		finalWindowLabel := BayCompactLabel(&manifest.Bay{Name: finalName, Path: bayPath})
 		_ = e.Tmux.RenameWindow(windowID, finalWindowLabel)
 	}
 
@@ -269,17 +269,17 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	if dock == nil {
 		return nil, fmt.Errorf("unknown dock %q", dockName)
 	}
-	addedWs := findWorkspaceByPath(dock, wsPath)
-	if addedWs == nil {
-		return nil, fmt.Errorf("bay at %q not found after creation", wsPath)
+	addedBay := findBayByPath(dock, bayPath)
+	if addedBay == nil {
+		return nil, fmt.Errorf("bay at %q not found after creation", bayPath)
 	}
 
 	// Set up git branch if requested. For existing branches the worktree
 	// was already created on the branch; for new branches we create it now.
-	if opts.Branch != "" && addedWs.Worktree != nil {
+	if opts.Branch != "" && addedBay.Worktree != nil {
 		if !branchExists {
-			if err := e.Git.CreateBranch(wsPath, opts.Branch); err != nil {
-				return addedWs, fmt.Errorf("bay created but branch creation failed: %w", err)
+			if err := e.Git.CreateBranch(bayPath, opts.Branch); err != nil {
+				return addedBay, fmt.Errorf("bay created but branch creation failed: %w", err)
 			}
 		}
 		if err := e.withManifest(func(m *manifest.Manifest) error {
@@ -287,22 +287,22 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 			if dock == nil {
 				return fmt.Errorf("unknown dock %q", dockName)
 			}
-			ws := findWorkspaceByPath(dock, wsPath)
-			if ws == nil {
-				return fmt.Errorf("bay at %q not found in dock %q", wsPath, dockName)
+			bay := findBayByPath(dock, bayPath)
+			if bay == nil {
+				return fmt.Errorf("bay at %q not found in dock %q", bayPath, dockName)
 			}
 
-			ws.Worktree.Branch = opts.Branch
-			if isPlaceholderName(ws.Name) {
-				newName := uniqueWorkspaceName(dock, ws, abbreviateBranch(opts.Branch))
-				if newName != ws.Name {
-					ws.Name = newName
-					e.updateWindowNames(ws, "")
+			bay.Worktree.Branch = opts.Branch
+			if isPlaceholderName(bay.Name) {
+				newName := uniqueBayName(dock, bay, abbreviateBranch(opts.Branch))
+				if newName != bay.Name {
+					bay.Name = newName
+					e.updateWindowNames(bay, "")
 				}
 			}
 			return nil
 		}); err != nil {
-			return addedWs, fmt.Errorf("bay created but metadata update failed: %w", err)
+			return addedBay, fmt.Errorf("bay created but metadata update failed: %w", err)
 		}
 	}
 
@@ -314,19 +314,19 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 	if updatedDock == nil {
 		return nil, fmt.Errorf("unknown dock %q", dockName)
 	}
-	updatedWs := findWorkspaceByPath(updatedDock, wsPath)
-	if updatedWs == nil {
-		return nil, fmt.Errorf("bay at %q not found in dock %q", wsPath, dockName)
+	updatedBay := findBayByPath(updatedDock, bayPath)
+	if updatedBay == nil {
+		return nil, fmt.Errorf("bay at %q not found in dock %q", bayPath, dockName)
 	}
 
-	// Re-evaluate tab name lengths now that workspace count changed.
+	// Re-evaluate tab name lengths now that bay count changed.
 	e.refreshDockWindowNames(updatedDock)
 
-	return updatedWs, nil
+	return updatedBay, nil
 }
 
-// closeWorkspaceState does the safety checks, worktree removal, archive,
-// and manifest update for a workspace — but NOT the destructive tmux
+// closeBayState does the safety checks, worktree removal, archive,
+// and manifest update for a bay — but NOT the destructive tmux
 // kill. Returns the tmux window IDs the caller should kill afterward.
 //
 // This split exists so callers can defer all destructive tmux work until
@@ -337,7 +337,7 @@ func (e *Engine) WsNew(opts WsNewOptions) (*manifest.Workspace, error) {
 // the manifest update first, the worst case is that bay dies between
 // the manifest write and the kill — leaving the manifest correct and
 // the pane briefly orphaned (next bay invocation will skip it).
-func (e *Engine) closeWorkspaceState(dockName, wsID string, force bool) ([]string, error) {
+func (e *Engine) closeBayState(dockName, bayID string, force bool) ([]string, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return nil, err
@@ -347,12 +347,12 @@ func (e *Engine) closeWorkspaceState(dockName, wsID string, force bool) ([]strin
 	if dock == nil {
 		return nil, fmt.Errorf("unknown dock %q", dockName)
 	}
-	ws := dock.FindWorkspaceByID(wsID)
-	if ws == nil {
-		return nil, fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
+	bay := dock.FindBayByID(bayID)
+	if bay == nil {
+		return nil, fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
 	}
 
-	// Safety checks for worktree workspaces + determine if the branch
+	// Safety checks for worktree bays + determine if the branch
 	// is safe to delete after the worktree is removed. The gate is
 	// HasUnpushedCommits, not git's merge-into-default check: a
 	// pushed-but-unmerged PR branch is safe because the work exists on
@@ -361,38 +361,38 @@ func (e *Engine) closeWorkspaceState(dockName, wsID string, force bool) ([]strin
 	// default branch as landed.
 	branchSafeToDelete := false
 	forceRemoveWorktree := force
-	if ws.Type == manifest.WorkspaceTypeWorktree && !force {
-		if _, statErr := os.Stat(ws.Path); statErr == nil {
-			dirty, blockingDirty, err := e.CheckDirtyChanges(ws)
+	if bay.Type == manifest.BayTypeWorktree && !force {
+		if _, statErr := os.Stat(bay.Path); statErr == nil {
+			dirty, blockingDirty, err := e.CheckDirtyChanges(bay)
 			if err != nil {
-				return nil, fmt.Errorf("bay %q has uncommitted changes; %w (use --force to override)", wsID, err)
+				return nil, fmt.Errorf("bay %q has uncommitted changes; %w (use --force to override)", bayID, err)
 			}
 			if blockingDirty {
-				return nil, fmt.Errorf("bay %q has uncommitted changes (use --force to override)", wsID)
+				return nil, fmt.Errorf("bay %q has uncommitted changes (use --force to override)", bayID)
 			}
 			if dirty {
 				forceRemoveWorktree = true
 			}
 
-			unpushed, err := e.HasUnlandedCommits(ws)
+			unpushed, err := e.HasUnlandedCommits(bay)
 			if err != nil {
-				return nil, fmt.Errorf("bay %q: could not verify push status: %w (use --force to override)", wsID, err)
+				return nil, fmt.Errorf("bay %q: could not verify push status: %w (use --force to override)", bayID, err)
 			}
 			if unpushed {
-				return nil, fmt.Errorf("bay %q has unlanded commits (use --force to override)", wsID)
+				return nil, fmt.Errorf("bay %q has unlanded commits (use --force to override)", bayID)
 			}
 			// Safety checks passed → branch work exists remotely or has landed.
-			if ws.Worktree != nil && ws.Worktree.Branch != "" {
+			if bay.Worktree != nil && bay.Worktree.Branch != "" {
 				branchSafeToDelete = true
 			}
 		}
-	} else if force && ws.Type == manifest.WorkspaceTypeWorktree {
+	} else if force && bay.Type == manifest.BayTypeWorktree {
 		// Force close: still check if the branch is pushed (best-effort)
 		// so we can clean it up. Don't block the close if the check
 		// fails — just skip the branch delete.
-		if ws.Worktree != nil && ws.Worktree.Branch != "" {
-			if _, statErr := os.Stat(ws.Path); statErr == nil {
-				unpushed, err := e.HasUnlandedCommits(ws)
+		if bay.Worktree != nil && bay.Worktree.Branch != "" {
+			if _, statErr := os.Stat(bay.Path); statErr == nil {
+				unpushed, err := e.HasUnlandedCommits(bay)
 				if err == nil && !unpushed {
 					branchSafeToDelete = true
 				}
@@ -404,7 +404,7 @@ func (e *Engine) closeWorkspaceState(dockName, wsID string, force bool) ([]strin
 	// manifest state is persisted.
 	seen := map[string]bool{}
 	var windowIDs []string
-	for _, s := range ws.Surfaces {
+	for _, s := range bay.Surfaces {
 		if s.Tmux != nil && s.Tmux.WindowID != "" && !seen[s.Tmux.WindowID] {
 			seen[s.Tmux.WindowID] = true
 			windowIDs = append(windowIDs, s.Tmux.WindowID)
@@ -414,9 +414,9 @@ func (e *Engine) closeWorkspaceState(dockName, wsID string, force bool) ([]strin
 	// Remove worktree from disk. This is destructive of the worktree
 	// directory (and may invalidate the shell's CWD), but does not
 	// kill bay's process.
-	if ws.Type == manifest.WorkspaceTypeWorktree && ws.Worktree != nil && dock.Path != "" {
+	if bay.Type == manifest.BayTypeWorktree && bay.Worktree != nil && dock.Path != "" {
 		repoPath := config.ExpandPath(dock.Path)
-		if err := e.Git.RemoveWorktree(repoPath, ws.Path, forceRemoveWorktree); err != nil {
+		if err := e.Git.RemoveWorktree(repoPath, bay.Path, forceRemoveWorktree); err != nil {
 			if !force {
 				return nil, fmt.Errorf("removing worktree: %w", err)
 			}
@@ -425,13 +425,13 @@ func (e *Engine) closeWorkspaceState(dockName, wsID string, force bool) ([]strin
 		// git refuses to delete a branch checked out in a worktree,
 		// so this must come after RemoveWorktree.
 		if branchSafeToDelete {
-			_ = e.Git.DeleteBranch(repoPath, ws.Worktree.Branch)
+			_ = e.Git.DeleteBranch(repoPath, bay.Worktree.Branch)
 		}
 		_ = os.Remove(dock.EffectiveWorktreeDir())
 	}
 
-	// Archive the workspace. Disambiguate name if it already exists
-	// in the archive (same workspace closed and recreated before).
+	// Archive the bay. Disambiguate name if it already exists
+	// in the archive (same bay closed and recreated before).
 	archive, err := manifest.LoadArchive(e.archivePath)
 	if err != nil {
 		archive = manifest.New()
@@ -441,11 +441,11 @@ func (e *Engine) closeWorkspaceState(dockName, wsID string, force bool) ([]strin
 		_ = archive.AddDock(manifest.Dock{Name: dockName})
 		archiveDock = archive.FindDock(dockName)
 	}
-	archived := *ws
-	for i := 2; archiveDock.FindWorkspace(archived.Name) != nil; i++ {
-		archived.Name = fmt.Sprintf("%s-%d", ws.Name, i)
+	archived := *bay
+	for i := 2; archiveDock.FindBay(archived.Name) != nil; i++ {
+		archived.Name = fmt.Sprintf("%s-%d", bay.Name, i)
 	}
-	_ = archiveDock.AddWorkspace(archived)
+	_ = archiveDock.AddBay(archived)
 	_ = manifest.SaveArchive(e.archivePath, archive)
 
 	// Remove from manifest atomically in case another command updated the dock.
@@ -454,24 +454,24 @@ func (e *Engine) closeWorkspaceState(dockName, wsID string, force bool) ([]strin
 		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		return dock.RemoveWorkspace(wsID)
+		return dock.RemoveBay(bayID)
 	}); err != nil {
 		return nil, err
 	}
 	return windowIDs, nil
 }
 
-// HasUnlandedCommits reports whether committed work in ws is not safely
-// recoverable from a remote branch, the default branch, or the workspace's
+// HasUnlandedCommits reports whether committed work in bay is not safely
+// recoverable from a remote branch, the default branch, or the bay's
 // merged PR. The PR check handles multi-commit squash merges where per-commit
 // patch comparison cannot prove that the old local stack landed.
-func (e *Engine) HasUnlandedCommits(ws *manifest.Workspace) (bool, error) {
-	if ws == nil || ws.Worktree == nil || ws.Path == "" {
+func (e *Engine) HasUnlandedCommits(bay *manifest.Bay) (bool, error) {
+	if bay == nil || bay.Worktree == nil || bay.Path == "" {
 		return false, nil
 	}
-	unpushed, err := e.Git.HasUnpushedCommits(ws.Path)
+	unpushed, err := e.Git.HasUnpushedCommits(bay.Path)
 	if err != nil {
-		if e.localHeadInMergedPR(ws) {
+		if e.localHeadInMergedPR(bay) {
 			return false, nil
 		}
 		return false, err
@@ -479,35 +479,35 @@ func (e *Engine) HasUnlandedCommits(ws *manifest.Workspace) (bool, error) {
 	if !unpushed {
 		return false, nil
 	}
-	if e.localHeadInMergedPR(ws) {
+	if e.localHeadInMergedPR(bay) {
 		return false, nil
 	}
 	return true, nil
 }
 
-func (e *Engine) localHeadInMergedPR(ws *manifest.Workspace) bool {
-	if ws == nil || ws.Worktree == nil || ws.Worktree.PR == "" || ws.Path == "" {
+func (e *Engine) localHeadInMergedPR(bay *manifest.Bay) bool {
+	if bay == nil || bay.Worktree == nil || bay.Worktree.PR == "" || bay.Path == "" {
 		return false
 	}
-	landed, err := e.Git.LocalHeadInMergedPR(ws.Path, ws.Worktree.PR)
+	landed, err := e.Git.LocalHeadInMergedPR(bay.Path, bay.Worktree.PR)
 	return err == nil && landed
 }
 
 // HasBlockingDirtyChanges reports whether a worktree has uncommitted changes
 // that normal close must preserve. Dirty changes are allowed only when the
 // full working tree exactly matches a durable ref that bay can recover later.
-func (e *Engine) HasBlockingDirtyChanges(ws *manifest.Workspace) (bool, error) {
-	_, blocking, err := e.CheckDirtyChanges(ws)
+func (e *Engine) HasBlockingDirtyChanges(bay *manifest.Bay) (bool, error) {
+	_, blocking, err := e.CheckDirtyChanges(bay)
 	return blocking, err
 }
 
 // CheckDirtyChanges reports whether a worktree is dirty, and whether those
 // dirty changes should block normal close.
-func (e *Engine) CheckDirtyChanges(ws *manifest.Workspace) (dirty bool, blocking bool, err error) {
-	if ws == nil || ws.Type != manifest.WorkspaceTypeWorktree || ws.Path == "" {
+func (e *Engine) CheckDirtyChanges(bay *manifest.Bay) (dirty bool, blocking bool, err error) {
+	if bay == nil || bay.Type != manifest.BayTypeWorktree || bay.Path == "" {
 		return false, false, nil
 	}
-	dirty, err = e.Git.IsDirty(ws.Path)
+	dirty, err = e.Git.IsDirty(bay.Path)
 	if err != nil {
 		return false, false, fmt.Errorf("checking bay state: %w", err)
 	}
@@ -515,17 +515,17 @@ func (e *Engine) CheckDirtyChanges(ws *manifest.Workspace) (dirty bool, blocking
 		return false, false, nil
 	}
 
-	matches, _, err := e.Git.WorktreeMatchesRecoverableRef(ws.Path)
+	matches, _, err := e.Git.WorktreeMatchesRecoverableRef(bay.Path)
 	if err != nil {
 		return true, true, fmt.Errorf("could not verify changes against recoverable refs: %w", err)
 	}
 	return true, !matches, nil
 }
 
-// WsCleanReview clears dirty review changes only when the full worktree state
+// BayCleanReview clears dirty review changes only when the full worktree state
 // exactly matches a durable ref. It returns the matched ref, or "" when the
 // worktree was already clean.
-func (e *Engine) WsCleanReview(dockName, wsID string) (string, error) {
+func (e *Engine) BayCleanReview(dockName, bayID string) (string, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return "", err
@@ -534,18 +534,18 @@ func (e *Engine) WsCleanReview(dockName, wsID string) (string, error) {
 	if dock == nil {
 		return "", fmt.Errorf("unknown dock %q", dockName)
 	}
-	ws := dock.FindWorkspaceByID(wsID)
-	if ws == nil {
-		return "", fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
+	bay := dock.FindBayByID(bayID)
+	if bay == nil {
+		return "", fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
 	}
-	if ws.Type != manifest.WorkspaceTypeWorktree || ws.Path == "" {
-		return "", fmt.Errorf("bay %q is not a worktree", wsID)
+	if bay.Type != manifest.BayTypeWorktree || bay.Path == "" {
+		return "", fmt.Errorf("bay %q is not a worktree", bayID)
 	}
-	if _, statErr := os.Stat(ws.Path); statErr != nil {
-		return "", fmt.Errorf("bay %q path: %w", wsID, statErr)
+	if _, statErr := os.Stat(bay.Path); statErr != nil {
+		return "", fmt.Errorf("bay %q path: %w", bayID, statErr)
 	}
 
-	dirty, err := e.Git.IsDirty(ws.Path)
+	dirty, err := e.Git.IsDirty(bay.Path)
 	if err != nil {
 		return "", fmt.Errorf("checking bay state: %w", err)
 	}
@@ -553,21 +553,21 @@ func (e *Engine) WsCleanReview(dockName, wsID string) (string, error) {
 		return "", nil
 	}
 
-	matches, ref, err := e.Git.WorktreeMatchesRecoverableRef(ws.Path)
+	matches, ref, err := e.Git.WorktreeMatchesRecoverableRef(bay.Path)
 	if err != nil {
 		return "", fmt.Errorf("could not verify changes against recoverable refs: %w", err)
 	}
 	if !matches {
-		return "", fmt.Errorf("bay %q has uncommitted changes that do not exactly match a recoverable git ref", wsID)
+		return "", fmt.Errorf("bay %q has uncommitted changes that do not exactly match a recoverable git ref", bayID)
 	}
-	if err := e.Git.DiscardWorktreeChanges(ws.Path); err != nil {
+	if err := e.Git.DiscardWorktreeChanges(bay.Path); err != nil {
 		return "", err
 	}
 	return ref, nil
 }
 
-func (e *Engine) WsClose(dockName, wsID string, force bool) error {
-	windowIDs, err := e.closeWorkspaceState(dockName, wsID, force)
+func (e *Engine) BayClose(dockName, bayID string, force bool) error {
+	windowIDs, err := e.closeBayState(dockName, bayID, force)
 	if err != nil {
 		return err
 	}
@@ -579,40 +579,40 @@ func (e *Engine) WsClose(dockName, wsID string, force bool) error {
 		_ = e.Tmux.KillWindow(id)
 	}
 
-	// Re-evaluate tab name lengths now that workspace count changed.
+	// Re-evaluate tab name lengths now that bay count changed.
 	e.refreshDockWindowNamesByName(dockName)
 	return nil
 }
 
-// wsSkipFunc is called for each workspace during batch close. It returns a
-// non-empty reason string to skip the workspace, or "" to include it.
-type wsSkipFunc func(ws *manifest.Workspace, dockName string) string
+// baySkipFunc is called for each bay during batch close. It returns a
+// non-empty reason string to skip the bay, or "" to include it.
+type baySkipFunc func(bay *manifest.Bay, dockName string) string
 
-// WsCloseClean closes all clean (non-dirty, no unlanded commits) workspaces.
-func (e *Engine) WsCloseClean(dockName string, force, dryRun bool, exclude ...string) ([]string, []string, error) {
-	return e.wsCloseBatch(dockName, force, dryRun, nil, exclude...)
+// BayCloseClean closes all clean (non-dirty, no unlanded commits) bays.
+func (e *Engine) BayCloseClean(dockName string, force, dryRun bool, exclude ...string) ([]string, []string, error) {
+	return e.bayCloseBatch(dockName, force, dryRun, nil, exclude...)
 }
 
-// WsCloseDone closes workspaces that are not dirty AND not pending (have an
-// unmerged branch). Only removes workspaces whose work has landed or that
+// BayCloseDone closes bays that are not dirty AND not pending (have an
+// unmerged branch). Only removes bays whose work has landed or that
 // have no branch at all.
-func (e *Engine) WsCloseDone(dockName string, force, dryRun bool, exclude ...string) ([]string, []string, error) {
-	return e.wsCloseBatch(dockName, force, dryRun, func(ws *manifest.Workspace, dn string) string {
-		if ws.Worktree != nil && ws.Worktree.Branch != "" && !ws.IsMerged() && !e.localHeadInMergedPR(ws) {
+func (e *Engine) BayCloseDone(dockName string, force, dryRun bool, exclude ...string) ([]string, []string, error) {
+	return e.bayCloseBatch(dockName, force, dryRun, func(bay *manifest.Bay, dn string) string {
+		if bay.Worktree != nil && bay.Worktree.Branch != "" && !bay.IsMerged() && !e.localHeadInMergedPR(bay) {
 			return "pending"
 		}
 		return ""
 	}, exclude...)
 }
 
-// wsCloseBatch is the shared implementation for batch-close operations.
-// An optional skip function can pre-filter workspaces before the safety
-// checks in closeWorkspaceState.
+// bayCloseBatch is the shared implementation for batch-close operations.
+// An optional skip function can pre-filter bays before the safety
+// checks in closeBayState.
 //
 // Manifest updates for ALL targets are persisted before any tmux kill,
 // so that bay invoked from inside one of the affected panes doesn't
 // leave the rest of the targets half-closed when its host pane dies.
-func (e *Engine) wsCloseBatch(dockName string, force, dryRun bool, skip wsSkipFunc, exclude ...string) (closed []string, skipped []string, err error) {
+func (e *Engine) bayCloseBatch(dockName string, force, dryRun bool, skip baySkipFunc, exclude ...string) (closed []string, skipped []string, err error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return nil, nil, err
@@ -635,18 +635,18 @@ func (e *Engine) wsCloseBatch(dockName string, force, dryRun bool, skip wsSkipFu
 		if dockName != "" && d.Name != dockName {
 			continue
 		}
-		for j := range d.Workspaces {
-			ws := &d.Workspaces[j]
-			if excludeSet[ws.ID] {
+		for j := range d.Bays {
+			bay := &d.Bays[j]
+			if excludeSet[bay.ID] {
 				continue
 			}
 			if skip != nil {
-				if reason := skip(ws, d.Name); reason != "" {
-					skipped = append(skipped, d.Name+":"+ws.ID+" ("+reason+")")
+				if reason := skip(bay, d.Name); reason != "" {
+					skipped = append(skipped, d.Name+":"+bay.ID+" ("+reason+")")
 					continue
 				}
 			}
-			targets = append(targets, target{dock: d.Name, id: ws.ID, name: ws.Name})
+			targets = append(targets, target{dock: d.Name, id: bay.ID, name: bay.Name})
 		}
 	}
 
@@ -661,13 +661,13 @@ func (e *Engine) wsCloseBatch(dockName string, force, dryRun bool, skip wsSkipFu
 		// Dry-run: check dirty/unlanded status but don't mutate anything.
 		for _, t := range targets {
 			label := t.dock + ":" + t.id
-			ws := m.FindDock(t.dock).FindWorkspaceByID(t.id)
-			if ws != nil && ws.Path != "" && !force {
-				if dirty, err := e.HasBlockingDirtyChanges(ws); err == nil && dirty {
+			bay := m.FindDock(t.dock).FindBayByID(t.id)
+			if bay != nil && bay.Path != "" && !force {
+				if dirty, err := e.HasBlockingDirtyChanges(bay); err == nil && dirty {
 					skipped = append(skipped, label+" (dirty)")
 					continue
 				}
-				if unpushed, err := e.HasUnlandedCommits(ws); err == nil && unpushed {
+				if unpushed, err := e.HasUnlandedCommits(bay); err == nil && unpushed {
 					skipped = append(skipped, label+" (unlanded)")
 					continue
 				}
@@ -678,8 +678,8 @@ func (e *Engine) wsCloseBatch(dockName string, force, dryRun bool, skip wsSkipFu
 	}
 
 	// First pass: do all manifest mutations, collecting window IDs to kill.
-	// closeWorkspaceState performs the dirty/unlanded safety checks, so
-	// dirty workspaces are naturally skipped (added to skipped list).
+	// closeBayState performs the dirty/unlanded safety checks, so
+	// dirty bays are naturally skipped (added to skipped list).
 	type pendingKill struct {
 		dock      string
 		windowIDs []string
@@ -687,7 +687,7 @@ func (e *Engine) wsCloseBatch(dockName string, force, dryRun bool, skip wsSkipFu
 	var pending []pendingKill
 	for _, t := range targets {
 		label := t.dock + ":" + t.id
-		ids, closeErr := e.closeWorkspaceState(t.dock, t.id, force)
+		ids, closeErr := e.closeBayState(t.dock, t.id, force)
 		if closeErr != nil {
 			skipped = append(skipped, label+" ("+closeErr.Error()+")")
 			continue
@@ -697,7 +697,7 @@ func (e *Engine) wsCloseBatch(dockName string, force, dryRun bool, skip wsSkipFu
 	}
 
 	// Second pass: kill tmux windows. Safe to die at any point — every
-	// closed-workspace's manifest entry is already persisted.
+	// closed-bay's manifest entry is already persisted.
 	for _, p := range pending {
 		for _, id := range p.windowIDs {
 			e.ensurePlaceholderIfLastWindow(p.dock, id)
@@ -707,44 +707,44 @@ func (e *Engine) wsCloseBatch(dockName string, force, dryRun bool, skip wsSkipFu
 	return closed, skipped, nil
 }
 
-// WsUpdate updates workspace metadata (branch, PR).
-func (e *Engine) WsUpdate(dockName, wsID string, branch, pr *string) error {
+// BayUpdate updates bay metadata (branch, PR).
+func (e *Engine) BayUpdate(dockName, bayID string, branch, pr *string) error {
 	return e.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)
 		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws := dock.FindWorkspaceByID(wsID)
-		if ws == nil {
-			return fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
+		bay := dock.FindBayByID(bayID)
+		if bay == nil {
+			return fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
 		}
 
-		ws.LastActive = time.Now().Unix()
+		bay.LastActive = time.Now().Unix()
 		nameChanged := false
 
-		if branch != nil && ws.Worktree != nil {
-			ws.Worktree.Branch = *branch
-			if isPlaceholderName(ws.Name) {
-				ws.Name = uniqueWorkspaceName(dock, ws, abbreviateBranch(*branch))
+		if branch != nil && bay.Worktree != nil {
+			bay.Worktree.Branch = *branch
+			if isPlaceholderName(bay.Name) {
+				bay.Name = uniqueBayName(dock, bay, abbreviateBranch(*branch))
 				nameChanged = true
 			}
 		}
-		if pr != nil && ws.Worktree != nil {
-			ws.Worktree.PR = *pr
+		if pr != nil && bay.Worktree != nil {
+			bay.Worktree.PR = *pr
 		}
 
 		if nameChanged {
-			e.updateWindowNames(ws, "")
+			e.updateWindowNames(bay, "")
 		}
 
 		return nil
 	})
 }
 
-// WsDescribe sets (or clears, if desc is "") a workspace's description.
-// Descriptions appear in the workspace picker and in ls/tree output; they
+// BayDescribe sets (or clears, if desc is "") a bay's description.
+// Descriptions appear in the bay picker and in ls/tree output; they
 // have no effect on tmux tab names, which stay short by design.
-func (e *Engine) WsDescribe(dockName, wsID, desc string) error {
+func (e *Engine) BayDescribe(dockName, bayID, desc string) error {
 	desc = strings.TrimSpace(desc)
 	if err := ValidateDescription(desc); err != nil {
 		return err
@@ -754,19 +754,19 @@ func (e *Engine) WsDescribe(dockName, wsID, desc string) error {
 		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws := dock.FindWorkspaceByID(wsID)
-		if ws == nil {
-			return fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
+		bay := dock.FindBayByID(bayID)
+		if bay == nil {
+			return fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
 		}
-		ws.Description = desc
-		ws.LastActive = time.Now().Unix()
+		bay.Description = desc
+		bay.LastActive = time.Now().Unix()
 		return nil
 	})
 }
 
-// WsRename renames a workspace.
-func (e *Engine) WsRename(dockName, wsID, newName string) error {
-	if err := ValidateWorkspaceName(newName); err != nil {
+// BayRename renames a bay.
+func (e *Engine) BayRename(dockName, bayID, newName string) error {
+	if err := ValidateBayName(newName); err != nil {
 		return err
 	}
 
@@ -775,30 +775,30 @@ func (e *Engine) WsRename(dockName, wsID, newName string) error {
 		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws := dock.FindWorkspaceByID(wsID)
-		if ws == nil {
-			return fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
+		bay := dock.FindBayByID(bayID)
+		if bay == nil {
+			return fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
 		}
 
 		// Check uniqueness.
-		if existing := dock.FindWorkspace(newName); existing != nil {
+		if existing := dock.FindBay(newName); existing != nil {
 			return fmt.Errorf("name %q already in use", newName)
 		}
 
-		ws.Name = newName
-		ws.LastActive = time.Now().Unix()
-		e.updateWindowNames(ws, "")
+		bay.Name = newName
+		bay.LastActive = time.Now().Unix()
+		e.updateWindowNames(bay, "")
 
 		return nil
 	})
 }
 
-// WsShow returns detailed information about a workspace.
+// BayShow returns detailed information about a bay.
 // This is a read-only manifest query — it does NOT call SyncAll.
 // Callers that display data to the user (bay show, bay sf ls)
-// should call SyncAll first. Callers that just need workspace state
+// should call SyncAll first. Callers that just need bay state
 // for an operation (navigation, close, restart) can skip the sync.
-func (e *Engine) WsShow(dockName, wsID string) (*manifest.Workspace, error) {
+func (e *Engine) BayShow(dockName, bayID string) (*manifest.Bay, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return nil, err
@@ -807,36 +807,36 @@ func (e *Engine) WsShow(dockName, wsID string) (*manifest.Workspace, error) {
 	if dock == nil {
 		return nil, fmt.Errorf("unknown dock %q", dockName)
 	}
-	ws := dock.FindWorkspaceByID(wsID)
-	if ws == nil {
-		return nil, fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
+	bay := dock.FindBayByID(bayID)
+	if bay == nil {
+		return nil, fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
 	}
-	return ws, nil
+	return bay, nil
 }
 
-// MarkPRCheckStale resets PRCheckedAt for a workspace so the monitor's
+// MarkPRCheckStale resets PRCheckedAt for a bay so the monitor's
 // next sync tick re-queries gh, bypassing the TTL. Used as a
-// user-interest signal: when someone reads workspace info and the PR
+// user-interest signal: when someone reads bay info and the PR
 // is missing, that's a signal they expect to see one soon, so push
 // bay to re-check before the 5-minute TTL elapses.
 //
 // No-op when the PR is already populated or the branch is empty — those
 // states have no useful signal to act on.
-func (e *Engine) MarkPRCheckStale(dockName, wsID string) error {
+func (e *Engine) MarkPRCheckStale(dockName, bayID string) error {
 	return e.withManifestMaybe(func(m *manifest.Manifest) (bool, error) {
 		dock := m.FindDock(dockName)
 		if dock == nil {
 			return false, nil
 		}
-		ws := dock.FindWorkspaceByID(wsID)
-		if ws == nil {
+		bay := dock.FindBayByID(bayID)
+		if bay == nil {
 			return false, nil
 		}
-		return clearPRCheckedAt(ws), nil
+		return clearPRCheckedAt(bay), nil
 	})
 }
 
-// MarkAllPRChecksStale resets PRCheckedAt for every workspace that has a
+// MarkAllPRChecksStale resets PRCheckedAt for every bay that has a
 // branch but no PR, in a single locked manifest update. Used by `bay tree`
 // to nudge the monitor without paying N file-lock cycles.
 func (e *Engine) MarkAllPRChecksStale() error {
@@ -844,8 +844,8 @@ func (e *Engine) MarkAllPRChecksStale() error {
 		changed := false
 		for i := range m.Docks {
 			dock := &m.Docks[i]
-			for j := range dock.Workspaces {
-				if clearPRCheckedAt(&dock.Workspaces[j]) {
+			for j := range dock.Bays {
+				if clearPRCheckedAt(&dock.Bays[j]) {
 					changed = true
 				}
 			}
@@ -854,53 +854,53 @@ func (e *Engine) MarkAllPRChecksStale() error {
 	})
 }
 
-func clearPRCheckedAt(ws *manifest.Workspace) bool {
-	if ws.Worktree == nil {
+func clearPRCheckedAt(bay *manifest.Bay) bool {
+	if bay.Worktree == nil {
 		return false
 	}
-	if ws.Worktree.Branch == "" || ws.Worktree.PR != "" {
+	if bay.Worktree.Branch == "" || bay.Worktree.PR != "" {
 		return false
 	}
-	if ws.Worktree.PRCheckedAt == 0 {
+	if bay.Worktree.PRCheckedAt == 0 {
 		return false
 	}
-	ws.Worktree.PRCheckedAt = 0
+	bay.Worktree.PRCheckedAt = 0
 	return true
 }
 
-// ResolveWorkspace resolves a workspace query to (dockName, wsID).
+// ResolveBay resolves a bay query to (dockName, bayID).
 // Accepts: "dock:id" or bare ID. Names are not accepted; if the query
 // matches a Name, the returned error includes a "did you mean" hint
 // at the canonical ID.
-func (e *Engine) ResolveWorkspace(query string) (string, string, error) {
+func (e *Engine) ResolveBay(query string) (string, string, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return "", "", err
 	}
-	ws, dock, resolveErr := m.ResolveWorkspace(query)
+	bay, dock, resolveErr := m.ResolveBay(query)
 	if resolveErr != nil {
 		return "", "", resolveErr
 	}
-	return dock.Name, ws.ID, nil
+	return dock.Name, bay.ID, nil
 }
 
-// ResolveSelf resolves the current workspace from CWD and tmux context.
+// ResolveSelf resolves the current bay from CWD and tmux context.
 func (e *Engine) ResolveSelf() (string, string, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return "", "", err
 	}
 
-	// First try: match CWD against workspace paths. IsPathUnder is
+	// First try: match CWD against bay paths. IsPathUnder is
 	// symlink-safe — needed on macOS where /tmp → /private/tmp etc.
 	cwd, cwdErr := os.Getwd()
 	if cwdErr == nil {
 		for i := range m.Docks {
 			dock := &m.Docks[i]
-			for j := range dock.Workspaces {
-				ws := &dock.Workspaces[j]
-				if config.IsPathUnder(cwd, ws.Path) {
-					return dock.Name, ws.ID, nil
+			for j := range dock.Bays {
+				bay := &dock.Bays[j]
+				if config.IsPathUnder(cwd, bay.Path) {
+					return dock.Name, bay.ID, nil
 				}
 			}
 		}
@@ -911,11 +911,11 @@ func (e *Engine) ResolveSelf() (string, string, error) {
 	if tmuxErr == nil {
 		for i := range m.Docks {
 			dock := &m.Docks[i]
-			for j := range dock.Workspaces {
-				ws := &dock.Workspaces[j]
-				for _, s := range ws.Surfaces {
+			for j := range dock.Bays {
+				bay := &dock.Bays[j]
+				for _, s := range bay.Surfaces {
 					if s.Tmux != nil && s.Tmux.WindowID == winID {
-						return dock.Name, ws.ID, nil
+						return dock.Name, bay.ID, nil
 					}
 				}
 			}
@@ -925,16 +925,16 @@ func (e *Engine) ResolveSelf() (string, string, error) {
 	return "", "", fmt.Errorf("not in a bay")
 }
 
-// ResolveByWindowID finds the workspace that owns the given tmux window ID.
-func (e *Engine) ResolveByWindowID(tmuxWindowID string) (dockName, wsID string, ws *manifest.Workspace, err error) {
+// ResolveByWindowID finds the bay that owns the given tmux window ID.
+func (e *Engine) ResolveByWindowID(tmuxWindowID string) (dockName, bayID string, bay *manifest.Bay, err error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return "", "", nil, err
 	}
 	for i := range m.Docks {
 		dock := &m.Docks[i]
-		for j := range dock.Workspaces {
-			w := &dock.Workspaces[j]
+		for j := range dock.Bays {
+			w := &dock.Bays[j]
 			for _, s := range w.Surfaces {
 				if s.Tmux != nil && s.Tmux.WindowID == tmuxWindowID {
 					return dock.Name, w.ID, w, nil
@@ -945,14 +945,14 @@ func (e *Engine) ResolveByWindowID(tmuxWindowID string) (dockName, wsID string, 
 	return "", "", nil, fmt.Errorf("no bay found for tmux window %s", tmuxWindowID)
 }
 
-// WorkspaceDirTag returns the path-derived display tag for a workspace.
-// For worktree workspaces this is usually the stable worktree directory
+// BayDirTag returns the path-derived display tag for a bay.
+// For worktree bays this is usually the stable worktree directory
 // basename (w1, w2, ...).
-func WorkspaceDirTag(ws *manifest.Workspace) string {
-	if ws == nil || ws.Path == "" {
+func BayDirTag(bay *manifest.Bay) string {
+	if bay == nil || bay.Path == "" {
 		return ""
 	}
-	clean := filepath.Clean(ws.Path)
+	clean := filepath.Clean(bay.Path)
 	base := filepath.Base(clean)
 	if base == "." || base == string(filepath.Separator) {
 		return ""
@@ -960,37 +960,37 @@ func WorkspaceDirTag(ws *manifest.Workspace) string {
 	return base
 }
 
-// WorkspaceCompactLabel returns the ordinary tmux/status display label for a
-// workspace, preserving the path-derived dir tag when the workspace has a
+// BayCompactLabel returns the ordinary tmux/status display label for a
+// bay, preserving the path-derived dir tag when the bay has a
 // distinct semantic name.
-func WorkspaceCompactLabel(ws *manifest.Workspace) string {
-	if ws == nil {
+func BayCompactLabel(bay *manifest.Bay) string {
+	if bay == nil {
 		return ""
 	}
-	dirTag := WorkspaceDirTag(ws)
+	dirTag := BayDirTag(bay)
 	if dirTag == "" {
-		return ws.Name
+		return bay.Name
 	}
-	if ws.Name == "" || ws.Name == dirTag {
+	if bay.Name == "" || bay.Name == dirTag {
 		return dirTag
 	}
-	return dirTag + "." + ws.Name
+	return dirTag + "." + bay.Name
 }
 
-// TruncateWorkspaceCompactLabel crops a compact workspace label to maxLen
+// TruncateBayCompactLabel crops a compact bay label to maxLen
 // bytes, preserving the dir tag before the semantic name.
-func TruncateWorkspaceCompactLabel(ws *manifest.Workspace, maxLen int) string {
-	return TruncateWorkspaceCompactLabelWithSiblings(ws, maxLen, "")
+func TruncateBayCompactLabel(bay *manifest.Bay, maxLen int) string {
+	return TruncateBayCompactLabelWithSiblings(bay, maxLen, "")
 }
 
-// TruncateWorkspaceCompactLabelWithSiblings is like TruncateWorkspaceCompactLabel
+// TruncateBayCompactLabelWithSiblings is like TruncateBayCompactLabel
 // but additionally aware of a common hyphen-token prefix shared by sibling
-// workspace names in the same dock. When truncation is needed and ws.Name
+// bay names in the same dock. When truncation is needed and bay.Name
 // starts with commonPrefix + "-", the common prefix is replaced with a single
 // leading "…" so the unique tail of the name has more room. commonPrefix
 // should not include a trailing hyphen and is ignored when empty.
-func TruncateWorkspaceCompactLabelWithSiblings(ws *manifest.Workspace, maxLen int, commonPrefix string) string {
-	label := WorkspaceCompactLabel(ws)
+func TruncateBayCompactLabelWithSiblings(bay *manifest.Bay, maxLen int, commonPrefix string) string {
+	label := BayCompactLabel(bay)
 	if maxLen <= 0 || label == "" {
 		return ""
 	}
@@ -998,8 +998,8 @@ func TruncateWorkspaceCompactLabelWithSiblings(ws *manifest.Workspace, maxLen in
 		return label
 	}
 
-	dirTag := WorkspaceDirTag(ws)
-	if dirTag == "" || ws == nil || ws.Name == "" || ws.Name == dirTag {
+	dirTag := BayDirTag(bay)
+	if dirTag == "" || bay == nil || bay.Name == "" || bay.Name == dirTag {
 		return TruncateName(label, maxLen)
 	}
 
@@ -1011,13 +1011,13 @@ func TruncateWorkspaceCompactLabelWithSiblings(ws *manifest.Workspace, maxLen in
 		return TruncateName(dirTag, maxLen)
 	}
 	nameBudget := maxLen - len(prefix)
-	if stripped, ok := stripCommonPrefix(ws.Name, commonPrefix, nameBudget); ok {
+	if stripped, ok := stripCommonPrefix(bay.Name, commonPrefix, nameBudget); ok {
 		return prefix + stripped
 	}
-	if len(ws.Name) <= nameBudget {
-		return prefix + ws.Name
+	if len(bay.Name) <= nameBudget {
+		return prefix + bay.Name
 	}
-	return prefix + ws.Name[:nameBudget]
+	return prefix + bay.Name[:nameBudget]
 }
 
 // stripCommonPrefix returns name with commonPrefix+"-" replaced by a leading
@@ -1103,31 +1103,31 @@ func hasHyphenTokenPrefix(tokens, prefix []string, prefixLen int) bool {
 	return true
 }
 
-func workspaceWindowLabel(ws *manifest.Workspace) string {
-	label := WorkspaceCompactLabel(ws)
+func bayWindowLabel(bay *manifest.Bay) string {
+	label := BayCompactLabel(bay)
 	if label != "" {
 		return label
 	}
-	if ws != nil {
-		return ws.ID
+	if bay != nil {
+		return bay.ID
 	}
 	return ""
 }
 
-// updateWindowNames renames all tmux windows for a workspace's surfaces.
-// Primary windows (layout group 1) get the workspace compact label; secondary
+// updateWindowNames renames all tmux windows for a bay's surfaces.
+// Primary windows (layout group 1) get the bay compact label; secondary
 // windows get ":surfacename" where surfacename is the first surface in the
 // group.
 //
 // When primaryLabel is empty and no compact label is available, falls back to
-// the workspace's ID so the tab still has a stable label.
-func (e *Engine) updateWindowNames(ws *manifest.Workspace, primaryLabel string) {
+// the bay's ID so the tab still has a stable label.
+func (e *Engine) updateWindowNames(bay *manifest.Bay, primaryLabel string) {
 	if primaryLabel == "" {
-		primaryLabel = workspaceWindowLabel(ws)
+		primaryLabel = bayWindowLabel(bay)
 	}
 	// Build a map of layout group → first surface name (by slice order).
 	firstInGroup := map[int]string{}
-	for _, s := range ws.Surfaces {
+	for _, s := range bay.Surfaces {
 		if s.Tmux != nil && s.Tmux.LayoutGroup > 0 {
 			if _, ok := firstInGroup[s.Tmux.LayoutGroup]; !ok {
 				firstInGroup[s.Tmux.LayoutGroup] = s.Name
@@ -1136,7 +1136,7 @@ func (e *Engine) updateWindowNames(ws *manifest.Workspace, primaryLabel string) 
 	}
 
 	seen := map[string]bool{}
-	for _, s := range ws.Surfaces {
+	for _, s := range bay.Surfaces {
 		if s.Tmux != nil && s.Tmux.WindowID != "" && !seen[s.Tmux.WindowID] {
 			if s.Tmux.LayoutGroup <= 1 {
 				_ = e.Tmux.RenameWindow(s.Tmux.WindowID, primaryLabel)
@@ -1165,7 +1165,7 @@ const (
 )
 
 // refreshDockWindowNames recomputes the max tab name length for a dock based
-// on the terminal width, status-left/right lengths, and workspace count, then
+// on the terminal width, status-left/right lengths, and bay count, then
 // renames all windows. This keeps tab names maximally informative without
 // overflowing the status bar.
 //
@@ -1182,23 +1182,23 @@ func (e *Engine) refreshDockWindowNames(dock *manifest.Dock) {
 		if rerr != nil || reserved <= 0 {
 			reserved = tabStatusBarOverheadFallback
 		}
-		maxLen = maxTabNameLen(clientWidth, reserved, len(dock.Workspaces))
+		maxLen = maxTabNameLen(clientWidth, reserved, len(dock.Bays))
 	}
 	var commonPrefixes []string
 	if truncate {
-		names := make([]string, len(dock.Workspaces))
-		for i := range dock.Workspaces {
-			names[i] = dock.Workspaces[i].Name
+		names := make([]string, len(dock.Bays))
+		for i := range dock.Bays {
+			names[i] = dock.Bays[i].Name
 		}
 		commonPrefixes = commonHyphenPrefixes(names)
 	}
-	for i := range dock.Workspaces {
-		ws := &dock.Workspaces[i]
-		name := WorkspaceCompactLabel(ws)
+	for i := range dock.Bays {
+		bay := &dock.Bays[i]
+		name := BayCompactLabel(bay)
 		if truncate {
-			name = TruncateWorkspaceCompactLabelWithSiblings(ws, maxLen, commonPrefixes[i])
+			name = TruncateBayCompactLabelWithSiblings(bay, maxLen, commonPrefixes[i])
 		}
-		e.updateWindowNames(ws, name)
+		e.updateWindowNames(bay, name)
 	}
 }
 
@@ -1218,16 +1218,16 @@ func (e *Engine) refreshDockWindowNamesByName(dockName string) {
 }
 
 // maxTabNameLen computes the maximum tab name length given the terminal width,
-// the cells reserved for status-left + status-right, and the workspace count.
-func maxTabNameLen(clientWidth, reservedCells, wsCount int) int {
-	if wsCount <= 0 {
+// the cells reserved for status-left + status-right, and the bay count.
+func maxTabNameLen(clientWidth, reservedCells, bayCount int) int {
+	if bayCount <= 0 {
 		return tabMaxNameLen
 	}
 	available := clientWidth - reservedCells
 	if available < 0 {
 		available = 0
 	}
-	maxLen := available/wsCount - tabPerTabOverhead
+	maxLen := available/bayCount - tabPerTabOverhead
 	if maxLen < tabMinNameLen {
 		maxLen = tabMinNameLen
 	}
@@ -1268,26 +1268,26 @@ func TruncateTabName(s string, maxLen int) string {
 	return string(runes[:maxLen-1]) + truncTabEllipsis
 }
 
-// SetLastFocused records which surface was last focused in a workspace and
+// SetLastFocused records which surface was last focused in a bay and
 // bumps LastActive. The activity bump signals to the monitor's activity gate
-// that this workspace is in active use, so its repo gets fetched on the next
+// that this bay is in active use, so its repo gets fetched on the next
 // merge-detection cycle.
-func (e *Engine) SetLastFocused(dockName, wsID string, surfaceID int) error {
+func (e *Engine) SetLastFocused(dockName, bayID string, surfaceID int) error {
 	return e.withManifestMaybe(func(m *manifest.Manifest) (bool, error) {
 		dock := m.FindDock(dockName)
 		if dock == nil {
 			return false, fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws := dock.FindWorkspaceByID(wsID)
-		if ws == nil {
-			return false, fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
+		bay := dock.FindBayByID(bayID)
+		if bay == nil {
+			return false, fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
 		}
 		now := time.Now().Unix()
-		if ws.LastFocused == surfaceID && ws.LastActive == now {
+		if bay.LastFocused == surfaceID && bay.LastActive == now {
 			return false, nil // no change
 		}
-		ws.LastFocused = surfaceID
-		ws.LastActive = now
+		bay.LastFocused = surfaceID
+		bay.LastActive = now
 		return true, nil
 	})
 }
@@ -1365,17 +1365,17 @@ func copyWorktreeIncludeFiles(repoRoot, worktreePath string, files []string) err
 	return nil
 }
 
-// nextWorkspaceDir returns the next sequential directory basename (w1, w2,
+// nextBayDir returns the next sequential directory basename (w1, w2,
 // ...) that is unclaimed — neither present on disk under wtDir nor recorded
-// as the basename of any workspace's Path in the dock. Worktree directory
-// names are intentionally decoupled from workspace names so that renaming
-// or repurposing a workspace doesn't leave a stale dirname on disk.
-func nextWorkspaceDir(wtDir string, dock *manifest.Dock) string {
+// as the basename of any bay's Path in the dock. Worktree directory
+// names are intentionally decoupled from bay names so that renaming
+// or repurposing a bay doesn't leave a stale dirname on disk.
+func nextBayDir(wtDir string, dock *manifest.Dock) string {
 	claimed := map[string]bool{}
 	if dock != nil {
-		for _, ws := range dock.Workspaces {
-			if ws.Path != "" {
-				claimed[filepath.Base(ws.Path)] = true
+		for _, bay := range dock.Bays {
+			if bay.Path != "" {
+				claimed[filepath.Base(bay.Path)] = true
 			}
 		}
 	}
@@ -1392,12 +1392,12 @@ func nextWorkspaceDir(wtDir string, dock *manifest.Dock) string {
 }
 
 // positionNewWindow moves a newly created window so that tmux tab order
-// matches manifest order. For a new workspace (wsID==""), the window goes
-// after the last window of the last existing workspace. For a new surface in
-// an existing workspace, it goes after the last window of that workspace.
+// matches manifest order. For a new bay (bayID==""), the window goes
+// after the last window of the last existing bay. For a new surface in
+// an existing bay, it goes after the last window of that bay.
 // If m is nil the manifest is loaded; callers with a pre-loaded manifest
 // can pass it to avoid a second read.
-func (e *Engine) positionNewWindow(dockName, windowID, wsID string, m *manifest.Manifest) {
+func (e *Engine) positionNewWindow(dockName, windowID, bayID string, m *manifest.Manifest) {
 	if m == nil {
 		var err error
 		m, err = e.LoadManifest()
@@ -1411,20 +1411,20 @@ func (e *Engine) positionNewWindow(dockName, windowID, wsID string, m *manifest.
 	}
 
 	var afterID string
-	if wsID == "" {
-		// New workspace: goes after the last window of the last existing workspace.
-		for i := len(dock.Workspaces) - 1; i >= 0; i-- {
-			if id := lastWindowIDInWorkspace(dock, dock.Workspaces[i].ID); id != "" {
+	if bayID == "" {
+		// New bay: goes after the last window of the last existing bay.
+		for i := len(dock.Bays) - 1; i >= 0; i-- {
+			if id := lastWindowIDInBay(dock, dock.Bays[i].ID); id != "" {
 				afterID = id
 				break
 			}
 		}
 	} else {
-		// New surface: goes after the last window of this workspace,
-		// falling back to the last window of the previous workspace.
-		afterID = lastWindowIDInWorkspace(dock, wsID)
+		// New surface: goes after the last window of this bay,
+		// falling back to the last window of the previous bay.
+		afterID = lastWindowIDInBay(dock, bayID)
 		if afterID == "" {
-			afterID = lastWindowIDBeforeWorkspace(dock, wsID)
+			afterID = lastWindowIDBeforeBay(dock, bayID)
 		}
 	}
 
@@ -1433,25 +1433,25 @@ func (e *Engine) positionNewWindow(dockName, windowID, wsID string, m *manifest.
 	}
 }
 
-// lastWindowIDBeforeWorkspace returns the tmux window ID that a new window
-// for the given workspace should be placed after, based on manifest order.
-// It walks backwards through workspaces (and surfaces within the target
-// workspace) to find the nearest existing window. Returns "" if none found.
-func lastWindowIDBeforeWorkspace(dock *manifest.Dock, wsID string) string {
-	wsIdx := -1
-	for i, ws := range dock.Workspaces {
-		if ws.ID == wsID {
-			wsIdx = i
+// lastWindowIDBeforeBay returns the tmux window ID that a new window
+// for the given bay should be placed after, based on manifest order.
+// It walks backwards through bays (and surfaces within the target
+// bay) to find the nearest existing window. Returns "" if none found.
+func lastWindowIDBeforeBay(dock *manifest.Dock, bayID string) string {
+	bayIdx := -1
+	for i, bay := range dock.Bays {
+		if bay.ID == bayID {
+			bayIdx = i
 			break
 		}
 	}
-	if wsIdx == -1 {
+	if bayIdx == -1 {
 		return ""
 	}
-	// Walk backwards from the previous workspace to find any existing window.
-	for i := wsIdx - 1; i >= 0; i-- {
-		for j := len(dock.Workspaces[i].Surfaces) - 1; j >= 0; j-- {
-			s := dock.Workspaces[i].Surfaces[j]
+	// Walk backwards from the previous bay to find any existing window.
+	for i := bayIdx - 1; i >= 0; i-- {
+		for j := len(dock.Bays[i].Surfaces) - 1; j >= 0; j-- {
+			s := dock.Bays[i].Surfaces[j]
 			if s.Tmux != nil && s.Tmux.WindowID != "" {
 				return s.Tmux.WindowID
 			}
@@ -1460,25 +1460,25 @@ func lastWindowIDBeforeWorkspace(dock *manifest.Dock, wsID string) string {
 	return ""
 }
 
-// lastWindowIDInWorkspace returns the last tmux window ID among the surfaces
-// of the given workspace. Returns "" if the workspace has no windows.
-func lastWindowIDInWorkspace(dock *manifest.Dock, wsID string) string {
-	ws := dock.FindWorkspaceByID(wsID)
-	if ws == nil {
+// lastWindowIDInBay returns the last tmux window ID among the surfaces
+// of the given bay. Returns "" if the bay has no windows.
+func lastWindowIDInBay(dock *manifest.Dock, bayID string) string {
+	bay := dock.FindBayByID(bayID)
+	if bay == nil {
 		return ""
 	}
-	for i := len(ws.Surfaces) - 1; i >= 0; i-- {
-		if ws.Surfaces[i].Tmux != nil && ws.Surfaces[i].Tmux.WindowID != "" {
-			return ws.Surfaces[i].Tmux.WindowID
+	for i := len(bay.Surfaces) - 1; i >= 0; i-- {
+		if bay.Surfaces[i].Tmux != nil && bay.Surfaces[i].Tmux.WindowID != "" {
+			return bay.Surfaces[i].Tmux.WindowID
 		}
 	}
 	return ""
 }
 
-func findWorkspaceByPath(dock *manifest.Dock, path string) *manifest.Workspace {
-	for i := range dock.Workspaces {
-		if dock.Workspaces[i].Path == path {
-			return &dock.Workspaces[i]
+func findBayByPath(dock *manifest.Dock, path string) *manifest.Bay {
+	for i := range dock.Bays {
+		if dock.Bays[i].Path == path {
+			return &dock.Bays[i]
 		}
 	}
 	return nil

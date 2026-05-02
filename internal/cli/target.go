@@ -7,9 +7,9 @@ import (
 	"github.com/commontoolsinc/bay/internal/engine"
 )
 
-// parseWsArg parses a bay positional argument like "w1" or "labs:w1".
+// parseBayArg parses a bay positional argument like "w1" or "labs:w1".
 // dock may be empty if no prefix was given.
-func parseWsArg(arg string) (dock, ws string, err error) {
+func parseBayArg(arg string) (dock, bay string, err error) {
 	parts := strings.Split(arg, ":")
 	switch len(parts) {
 	case 1:
@@ -27,8 +27,8 @@ func parseWsArg(arg string) (dock, ws string, err error) {
 //	bay:name
 //	dock:bay:name
 //
-// dock and ws may be empty.
-func parseSurfaceArg(arg string) (dock, ws, surface string, err error) {
+// dock and bay may be empty.
+func parseSurfaceArg(arg string) (dock, bay, surface string, err error) {
 	parts := strings.Split(arg, ":")
 	switch len(parts) {
 	case 1:
@@ -42,8 +42,8 @@ func parseSurfaceArg(arg string) (dock, ws, surface string, err error) {
 	}
 }
 
-// resolveWsArg resolves a bay positional + --dock flag into
-// (dockName, wsName). The positional may be "self", a bare bay ID,
+// resolveBayArg resolves a bay positional + --dock flag into
+// (dockName, bayName). The positional may be "self", a bare bay ID,
 // or "dock:id". --dock disambiguates a bare ID and may not conflict
 // with a dock prefix in the positional.
 //
@@ -53,7 +53,7 @@ func parseSurfaceArg(arg string) (dock, ws, surface string, err error) {
 // crew also has w2". Falls through to a full-manifest search when the
 // current dock doesn't have a match, which may then error with
 // "ambiguous" as before.
-func resolveWsArg(eng *engine.Engine, posArg, dockFlag string) (string, string, error) {
+func resolveBayArg(eng *engine.Engine, posArg, dockFlag string) (string, string, error) {
 	if posArg == "self" {
 		if dockFlag != "" {
 			return "", "", fmt.Errorf("--dock cannot be combined with self")
@@ -61,7 +61,7 @@ func resolveWsArg(eng *engine.Engine, posArg, dockFlag string) (string, string, 
 		return eng.ResolveSelf()
 	}
 
-	dock, ws, err := parseWsArg(posArg)
+	dock, bay, err := parseBayArg(posArg)
 	if err != nil {
 		return "", "", err
 	}
@@ -74,23 +74,23 @@ func resolveWsArg(eng *engine.Engine, posArg, dockFlag string) (string, string, 
 	}
 
 	if dock != "" {
-		return eng.ResolveWorkspace(dock + ":" + ws)
+		return eng.ResolveBay(dock + ":" + bay)
 	}
-	return resolveBareWs(eng, ws)
+	return resolveBareBay(eng, bay)
 }
 
-// resolveBareWs resolves a bare bay ID, preferring the current dock
+// resolveBareBay resolves a bare bay ID, preferring the current dock
 // to disambiguate. If the current dock (from cwd/tmux) has a bay
 // with this ID, that wins; otherwise falls through to a full-manifest
 // search, which may error with "ambiguous" if the ID
 // appears in multiple docks and none is the current one.
-func resolveBareWs(eng *engine.Engine, ws string) (string, string, error) {
+func resolveBareBay(eng *engine.Engine, bay string) (string, string, error) {
 	if ctx, err := eng.CurrentContext(); err == nil && ctx.Dock != "" {
-		if dn, wn, resolveErr := eng.ResolveWorkspace(ctx.Dock + ":" + ws); resolveErr == nil {
+		if dn, wn, resolveErr := eng.ResolveBay(ctx.Dock + ":" + bay); resolveErr == nil {
 			return dn, wn, nil
 		}
 	}
-	return eng.ResolveWorkspace(ws)
+	return eng.ResolveBay(bay)
 }
 
 // resolveSurfaceArgOrSelf is like resolveSurfaceArg but treats a bare "self"
@@ -98,31 +98,31 @@ func resolveBareWs(eng *engine.Engine, ws string) (string, string, error) {
 // pane's surface, unless a literal surface named "self" exists in the
 // resolved bay — in which case the literal wins. Qualified forms
 // like "w1:self" or "labs:w1:self" are always literal — no virtual fallback.
-func resolveSurfaceArgOrSelf(eng *engine.Engine, posArg, wsFlag, dockFlag string) (string, string, string, error) {
-	if posArg != "self" || wsFlag != "" || dockFlag != "" {
-		return resolveSurfaceArg(eng, posArg, wsFlag, dockFlag)
+func resolveSurfaceArgOrSelf(eng *engine.Engine, posArg, bayFlag, dockFlag string) (string, string, string, error) {
+	if posArg != "self" || bayFlag != "" || dockFlag != "" {
+		return resolveSurfaceArg(eng, posArg, bayFlag, dockFlag)
 	}
 
-	dockName, wsName, err := eng.ResolveSelf()
+	dockName, bayName, err := eng.ResolveSelf()
 	if err != nil {
 		return "", "", "", err
 	}
-	ws, err := eng.WsShow(dockName, wsName)
+	bay, err := eng.BayShow(dockName, bayName)
 	if err != nil {
 		return "", "", "", err
 	}
 	// Literal surface named "self" wins if it exists.
-	if ws.FindSurface("self") != nil {
-		return dockName, wsName, "self", nil
+	if bay.FindSurface("self") != nil {
+		return dockName, bayName, "self", nil
 	}
 	// Otherwise resolve to the surface owning the current tmux pane.
 	paneID, tmuxErr := eng.Tmux.CurrentPaneID()
 	if tmuxErr != nil {
 		return "", "", "", fmt.Errorf("cannot determine current pane")
 	}
-	for _, s := range ws.Surfaces {
+	for _, s := range bay.Surfaces {
 		if s.Tmux != nil && s.Tmux.PaneID == paneID {
-			return dockName, wsName, s.Name, nil
+			return dockName, bayName, s.Name, nil
 		}
 	}
 	// Check dock-level surfaces (e.g., dock editor).
@@ -151,22 +151,22 @@ func isDockSurface(posArg string) (string, bool) {
 }
 
 // resolveSurfaceArg resolves a surface positional + --bay/--dock flags into
-// (dockName, wsName, surfaceName). The positional may be "name", "bay:name",
+// (dockName, bayName, surfaceName). The positional may be "name", "bay:name",
 // "dock:bay:name", or the special form "dock:name" for dock-level surfaces.
 // Flags may not conflict with corresponding parts in the positional.
 // If neither positional nor flags name a bay, the current bay (ResolveSelf)
 // is used.
-func resolveSurfaceArg(eng *engine.Engine, posArg, wsFlag, dockFlag string) (string, string, string, error) {
-	dock, ws, surface, err := parseSurfaceArg(posArg)
+func resolveSurfaceArg(eng *engine.Engine, posArg, bayFlag, dockFlag string) (string, string, string, error) {
+	dock, bay, surface, err := parseSurfaceArg(posArg)
 	if err != nil {
 		return "", "", "", err
 	}
 
-	if wsFlag != "" {
-		if ws != "" {
+	if bayFlag != "" {
+		if bay != "" {
 			return "", "", "", fmt.Errorf("--bay conflicts with bay prefix in argument")
 		}
-		ws = wsFlag
+		bay = bayFlag
 	}
 	if dockFlag != "" {
 		if dock != "" {
@@ -174,21 +174,21 @@ func resolveSurfaceArg(eng *engine.Engine, posArg, wsFlag, dockFlag string) (str
 		}
 		dock = dockFlag
 	}
-	if dock != "" && ws == "" {
+	if dock != "" && bay == "" {
 		return "", "", "", fmt.Errorf("--dock requires --bay or a bay prefix")
 	}
 
-	var dockName, wsName string
+	var dockName, bayName string
 	switch {
-	case dock != "" && ws != "":
-		dockName, wsName, err = eng.ResolveWorkspace(dock + ":" + ws)
-	case ws != "":
-		dockName, wsName, err = resolveBareWs(eng, ws)
+	case dock != "" && bay != "":
+		dockName, bayName, err = eng.ResolveBay(dock + ":" + bay)
+	case bay != "":
+		dockName, bayName, err = resolveBareBay(eng, bay)
 	default:
-		dockName, wsName, err = eng.ResolveSelf()
+		dockName, bayName, err = eng.ResolveSelf()
 	}
 	if err != nil {
 		return "", "", "", err
 	}
-	return dockName, wsName, surface, nil
+	return dockName, bayName, surface, nil
 }

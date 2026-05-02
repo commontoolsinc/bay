@@ -12,12 +12,12 @@ import (
 
 // DockInfo holds summary information about a dock.
 type DockInfo struct {
-	Name        string          `json:"name"`
-	Agent       string          `json:"agent,omitempty"`
-	Path        string          `json:"path,omitempty"`
-	WorktreeDir string          `json:"worktree_dir,omitempty"`
-	Surfaces    []SurfaceInfo   `json:"surfaces,omitempty"` // dock-level surfaces
-	Workspaces  []WorkspaceInfo `json:"bays"`
+	Name        string        `json:"name"`
+	Agent       string        `json:"agent,omitempty"`
+	Path        string        `json:"path,omitempty"`
+	WorktreeDir string        `json:"worktree_dir,omitempty"`
+	Surfaces    []SurfaceInfo `json:"surfaces,omitempty"` // dock-level surfaces
+	Bays        []BayInfo     `json:"bays"`
 }
 
 // SurfaceInfo holds runtime information about a tracked surface.
@@ -31,8 +31,8 @@ type SurfaceInfo struct {
 	Status  string `json:"status"`
 }
 
-// WorkspaceInfo holds summary information about a workspace.
-type WorkspaceInfo struct {
+// BayInfo holds summary information about a bay.
+type BayInfo struct {
 	ID           string        `json:"id"`
 	Name         string        `json:"name"`
 	Description  string        `json:"description,omitempty"`
@@ -190,10 +190,10 @@ func validateDockCheckoutPath(m *manifest.Manifest, path string) error {
 		if dock.Path != "" && config.CanonicalPath(dock.Path) == canonical {
 			return fmt.Errorf("checkout path %q is already owned by dock %q", expanded, dock.Name)
 		}
-		for j := range dock.Workspaces {
-			ws := &dock.Workspaces[j]
-			if ws.Path != "" && config.CanonicalPath(ws.Path) == canonical {
-				return fmt.Errorf("checkout path %q is already registered as bay %s:%s", expanded, dock.Name, ws.ID)
+		for j := range dock.Bays {
+			bay := &dock.Bays[j]
+			if bay.Path != "" && config.CanonicalPath(bay.Path) == canonical {
+				return fmt.Errorf("checkout path %q is already registered as bay %s:%s", expanded, dock.Name, bay.ID)
 			}
 		}
 	}
@@ -251,9 +251,9 @@ func (e *Engine) DockRename(oldName, newName string) error {
 	})
 }
 
-// DockClose closes all workspaces in a dock and kills the tmux session.
+// DockClose closes all bays in a dock and kills the tmux session.
 //
-// All manifest mutations (per workspace + the dock itself) happen before
+// All manifest mutations (per bay + the dock itself) happen before
 // any tmux kill, so the user-visible state is correct even if bay is
 // invoked from inside a pane in this dock and dies during KillSession.
 func (e *Engine) DockClose(name string, force bool) error {
@@ -266,32 +266,32 @@ func (e *Engine) DockClose(name string, force bool) error {
 		return fmt.Errorf("unknown dock %q", name)
 	}
 
-	// Collect workspace IDs first to avoid modifying the slice during
+	// Collect bay IDs first to avoid modifying the slice during
 	// iteration. Names may be empty; IDs are the stable handle.
-	var wsIDs []string
-	for _, ws := range dock.Workspaces {
-		wsIDs = append(wsIDs, ws.ID)
+	var bayIDs []string
+	for _, bay := range dock.Bays {
+		bayIDs = append(bayIDs, bay.ID)
 	}
 
-	// Manifest pass: archive + remove each workspace. On the success
+	// Manifest pass: archive + remove each bay. On the success
 	// path we discard the returned window IDs because KillSession at
 	// the end takes out every pane in the session in one shot. On a
 	// non-force failure mid-loop we use them to kill just the windows
-	// for workspaces that *were* removed from the manifest, so we don't
+	// for bays that *were* removed from the manifest, so we don't
 	// leave orphaned tmux windows with no manifest reference.
 	var killedWindowIDs []string
-	for _, wsID := range wsIDs {
-		ids, err := e.closeWorkspaceState(name, wsID, force)
+	for _, bayID := range bayIDs {
+		ids, err := e.closeBayState(name, bayID, force)
 		if err != nil {
 			if !force {
 				// Sync tmux state with the manifest mutations we already
-				// did before bailing out — otherwise the workspaces we
+				// did before bailing out — otherwise the bays we
 				// closed earlier in the loop would have orphan windows.
 				for _, id := range killedWindowIDs {
 					e.ensurePlaceholderIfLastWindow(name, id)
 					_ = e.Tmux.KillWindow(id)
 				}
-				return fmt.Errorf("bay %q: %w", wsID, err)
+				return fmt.Errorf("bay %q: %w", bayID, err)
 			}
 		}
 		killedWindowIDs = append(killedWindowIDs, ids...)
@@ -318,7 +318,7 @@ func (e *Engine) DockClose(name string, force bool) error {
 	return nil
 }
 
-// List returns all docks and workspaces with runtime status.
+// List returns all docks and bays with runtime status.
 func (e *Engine) List() ([]DockInfo, error) {
 	e.SyncAll()
 
@@ -352,55 +352,55 @@ func (e *Engine) List() ([]DockInfo, error) {
 			}
 			info.Surfaces = append(info.Surfaces, sInfo)
 		}
-		for j := range dock.Workspaces {
-			ws := &dock.Workspaces[j]
-			info.Workspaces = append(info.Workspaces, e.buildWorkspaceInfo(ws, agent, waitingWindows))
+		for j := range dock.Bays {
+			bay := &dock.Bays[j]
+			info.Bays = append(info.Bays, e.buildBayInfo(bay, agent, waitingWindows))
 		}
 		docks = append(docks, info)
 	}
 	return docks, nil
 }
 
-// buildWorkspaceInfo constructs a WorkspaceInfo from a manifest workspace,
+// buildBayInfo constructs a BayInfo from a manifest bay,
 // checking path existence and tmux liveness for each surface.
-func (e *Engine) buildWorkspaceInfo(ws *manifest.Workspace, agent string, waitingWindows map[string]bool) WorkspaceInfo {
-	wsPath := config.ExpandPath(ws.Path)
-	_, statErr := os.Stat(wsPath)
+func (e *Engine) buildBayInfo(bay *manifest.Bay, agent string, waitingWindows map[string]bool) BayInfo {
+	bayPath := config.ExpandPath(bay.Path)
+	_, statErr := os.Stat(bayPath)
 
 	branch := ""
 	pr := ""
-	if ws.Worktree != nil {
-		branch = ws.Worktree.Branch
-		pr = ws.Worktree.PR
+	if bay.Worktree != nil {
+		branch = bay.Worktree.Branch
+		pr = bay.Worktree.PR
 	}
 
-	wsInfo := WorkspaceInfo{
-		ID:           ws.ID,
-		Name:         ws.Name,
-		Description:  ws.Description,
-		Type:         string(ws.Type),
-		Path:         ws.Path,
+	bayInfo := BayInfo{
+		ID:           bay.ID,
+		Name:         bay.Name,
+		Description:  bay.Description,
+		Type:         string(bay.Type),
+		Path:         bay.Path,
 		Branch:       branch,
 		PR:           pr,
-		Pending:      ws.Worktree != nil && ws.Worktree.Branch != "" && !ws.IsMerged(),
-		Missing:      ws.Path != "" && statErr != nil,
+		Pending:      bay.Worktree != nil && bay.Worktree.Branch != "" && !bay.IsMerged(),
+		Missing:      bay.Path != "" && statErr != nil,
 		DefaultAgent: agent,
 		SyncStatus:   manifest.SyncStatusOK,
-		SurfaceCount: len(ws.Surfaces),
+		SurfaceCount: len(bay.Surfaces),
 	}
 
-	if wsInfo.Missing {
-		wsInfo.SyncStatus = manifest.SyncStatusMissing
+	if bayInfo.Missing {
+		bayInfo.SyncStatus = manifest.SyncStatusMissing
 	}
 
 	// Compute dirty state from git.
-	if ws.Path != "" && statErr == nil {
-		if dirty, err := e.Git.IsDirty(wsPath); err == nil {
-			wsInfo.Dirty = dirty
+	if bay.Path != "" && statErr == nil {
+		if dirty, err := e.Git.IsDirty(bayPath); err == nil {
+			bayInfo.Dirty = dirty
 		}
 	}
 
-	for _, s := range ws.Surfaces {
+	for _, s := range bay.Surfaces {
 		sInfo := SurfaceInfo{
 			ID:      s.ID,
 			Name:    s.Name,
@@ -419,29 +419,29 @@ func (e *Engine) buildWorkspaceInfo(ws *manifest.Workspace, agent string, waitin
 			exists, _ := e.Tmux.WindowExists(s.Tmux.WindowID)
 			if !exists {
 				sInfo.Status = manifest.SyncStatusStale
-				wsInfo.Stale = true
+				bayInfo.Stale = true
 			} else if waitingWindows[s.Tmux.WindowID] {
-				wsInfo.Waiting = true
+				bayInfo.Waiting = true
 			}
 		}
 
-		wsInfo.Surfaces = append(wsInfo.Surfaces, sInfo)
+		bayInfo.Surfaces = append(bayInfo.Surfaces, sInfo)
 	}
 
-	if wsInfo.Missing {
-		wsInfo.Stale = false
+	if bayInfo.Missing {
+		bayInfo.Stale = false
 	}
-	if wsInfo.SyncStatus == manifest.SyncStatusOK && wsInfo.Stale {
-		wsInfo.SyncStatus = manifest.SyncStatusStale
+	if bayInfo.SyncStatus == manifest.SyncStatusOK && bayInfo.Stale {
+		bayInfo.SyncStatus = manifest.SyncStatusStale
 	}
-	return wsInfo
+	return bayInfo
 }
 
-// WorkspaceInfoByName returns the runtime view for a single workspace.
+// BayInfoByName returns the runtime view for a single bay.
 // This does NOT call List() or SyncAll — it loads the manifest and
-// builds info for just the requested workspace. Callers that display
+// builds info for just the requested bay. Callers that display
 // data should call SyncAll first.
-func (e *Engine) WorkspaceInfoByName(dockName, wsID string) (*WorkspaceInfo, error) {
+func (e *Engine) BayInfoByName(dockName, bayID string) (*BayInfo, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return nil, err
@@ -450,12 +450,12 @@ func (e *Engine) WorkspaceInfoByName(dockName, wsID string) (*WorkspaceInfo, err
 	if dock == nil {
 		return nil, fmt.Errorf("unknown dock %q", dockName)
 	}
-	ws := dock.FindWorkspaceByID(wsID)
-	if ws == nil {
-		return nil, fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
+	bay := dock.FindBayByID(bayID)
+	if bay == nil {
+		return nil, fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
 	}
 	agent := e.resolvedDockAgent(dockName, m)
 	waitingWindows, _ := e.Tmux.WaitingOrBellWindowIDs(dockName)
-	info := e.buildWorkspaceInfo(ws, agent, waitingWindows)
+	info := e.buildBayInfo(bay, agent, waitingWindows)
 	return &info, nil
 }

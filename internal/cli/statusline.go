@@ -92,34 +92,34 @@ window until the next status-interval tick.`,
 				return nil // can't load manifest
 			}
 
-			dockName, ws := resolveWindowID(m, winID)
-			if ws == nil {
+			dockName, bay := resolveWindowID(m, winID)
+			if bay == nil {
 				return nil // not a bay window
 			}
 
 			var out string
 			switch field {
 			case "id":
-				out = ws.ID
+				out = bay.ID
 			case "name":
-				out = ws.Name
+				out = bay.Name
 			case "dir":
-				out = engine.WorkspaceDirTag(ws)
+				out = engine.BayDirTag(bay)
 			case "branch":
-				if ws.Worktree != nil {
-					out = ws.Worktree.Branch
+				if bay.Worktree != nil {
+					out = bay.Worktree.Branch
 				}
 			case "pr":
-				if ws.Worktree != nil && ws.Worktree.PR != "" {
-					out = "#" + ws.Worktree.PR
+				if bay.Worktree != nil && bay.Worktree.PR != "" {
+					out = "#" + bay.Worktree.PR
 				}
 			case "status":
-				if ws.Path != "" {
-					if dirty, err := g.IsDirty(ws.Path); err == nil && dirty {
+				if bay.Path != "" {
+					if dirty, err := g.IsDirty(bay.Path); err == nil && dirty {
 						out = "dirty"
 					}
 				}
-				if out == "" && ws.IsMerged() {
+				if out == "" && bay.IsMerged() {
 					out = "merged"
 				}
 			case "dock":
@@ -128,7 +128,7 @@ window until the next status-interval tick.`,
 				dock := m.FindDock(dockName)
 				if dock != nil {
 					count := 0
-					for _, w := range dock.Workspaces {
+					for _, w := range dock.Bays {
 						if w.IsMerged() {
 							count++
 						}
@@ -140,24 +140,24 @@ window until the next status-interval tick.`,
 			case "full":
 				branch := ""
 				pr := ""
-				if ws.Worktree != nil {
-					branch = ws.Worktree.Branch
-					pr = ws.Worktree.PR
+				if bay.Worktree != nil {
+					branch = bay.Worktree.Branch
+					pr = bay.Worktree.PR
 				}
 
 				status := ""
-				if ws.Path != "" {
-					if dirty, err := g.IsDirty(ws.Path); err == nil && dirty {
+				if bay.Path != "" {
+					if dirty, err := g.IsDirty(bay.Path); err == nil && dirty {
 						status = "dirty"
-					} else if ws.IsMerged() {
+					} else if bay.IsMerged() {
 						status = "merged"
 					}
-				} else if ws.Worktree != nil && ws.Worktree.Merged {
+				} else if bay.Worktree != nil && bay.Worktree.Merged {
 					status = "merged"
 				}
 
 				width, _ := strconv.Atoi(widthStr)
-				out = formatStatusLine(ws, branch, pr, status, width)
+				out = formatStatusLine(bay, branch, pr, status, width)
 			default:
 				return fmt.Errorf("unknown field %q; valid fields: id, name, dir, branch, pr, status, dock, merged, full", field)
 			}
@@ -186,40 +186,40 @@ window until the next status-interval tick.`,
 //	compact-status:   w4.auth bran.. #PR *
 //	minimal:          w4.auth bran.. *
 //	label-only:       w4.auth
-func formatStatusLine(ws *manifest.Workspace, branch, pr, status string, width int) string {
-	label := engine.WorkspaceCompactLabel(ws)
+func formatStatusLine(bay *manifest.Bay, branch, pr, status string, width int) string {
+	label := engine.BayCompactLabel(bay)
 	full := buildStatusLine(label, branch, pr, status)
 	if width <= 0 || len(full) <= width {
 		return full
 	}
 
 	// First crop only the label, preserving branch/PR/status.
-	if out, ok := fitByCroppingLabel(ws, branch, pr, status, width); ok {
+	if out, ok := fitByCroppingLabel(bay, branch, pr, status, width); ok {
 		return out
 	}
 
 	// Then truncate branch metadata. Keep full status first.
 	if branch != "" {
-		if out, ok := fitWithTruncatedBranch(ws, branch, pr, status, width); ok {
+		if out, ok := fitWithTruncatedBranch(bay, branch, pr, status, width); ok {
 			return out
 		}
 	}
 
 	shortStatus := abbreviateStatus(status)
 	if branch != "" {
-		if out, ok := fitWithTruncatedBranch(ws, branch, pr, shortStatus, width); ok {
+		if out, ok := fitWithTruncatedBranch(bay, branch, pr, shortStatus, width); ok {
 			return out
 		}
-		if out, ok := fitWithTruncatedBranch(ws, branch, "", shortStatus, width); ok {
+		if out, ok := fitWithTruncatedBranch(bay, branch, "", shortStatus, width); ok {
 			return out
 		}
 	}
 
 	if label != "" {
-		if out, ok := fitByCroppingLabel(ws, "", "", shortStatus, width); ok {
+		if out, ok := fitByCroppingLabel(bay, "", "", shortStatus, width); ok {
 			return out
 		}
-		return engine.TruncateWorkspaceCompactLabel(ws, width)
+		return engine.TruncateBayCompactLabel(bay, width)
 	}
 	if shortStatus != "" && len(shortStatus) <= width {
 		return shortStatus
@@ -227,7 +227,7 @@ func formatStatusLine(ws *manifest.Workspace, branch, pr, status string, width i
 	return ""
 }
 
-func fitByCroppingLabel(ws *manifest.Workspace, branch, pr, status string, width int) (string, bool) {
+func fitByCroppingLabel(bay *manifest.Bay, branch, pr, status string, width int) (string, bool) {
 	rest := buildStatusLine("", branch, pr, status)
 	budget := width
 	if rest != "" {
@@ -236,22 +236,22 @@ func fitByCroppingLabel(ws *manifest.Workspace, branch, pr, status string, width
 	if budget <= 0 {
 		return "", false
 	}
-	if engine.WorkspaceCompactLabel(ws) != "" {
+	if engine.BayCompactLabel(bay) != "" {
 		minBudget := 1
-		if dirTag := engine.WorkspaceDirTag(ws); dirTag != "" {
+		if dirTag := engine.BayDirTag(bay); dirTag != "" {
 			minBudget = len(dirTag)
 		}
 		if budget < minBudget {
 			return "", false
 		}
 	}
-	label := engine.TruncateWorkspaceCompactLabel(ws, budget)
+	label := engine.TruncateBayCompactLabel(bay, budget)
 	out := buildStatusLine(label, branch, pr, status)
 	return out, out != "" && len(out) <= width
 }
 
-func fitWithTruncatedBranch(ws *manifest.Workspace, branch, pr, status string, width int) (string, bool) {
-	label := engine.WorkspaceCompactLabel(ws)
+func fitWithTruncatedBranch(bay *manifest.Bay, branch, pr, status string, width int) (string, bool) {
+	label := engine.BayCompactLabel(bay)
 	maxLabelBudget := len(label)
 	if maxLabelBudget > width {
 		maxLabelBudget = width
@@ -259,14 +259,14 @@ func fitWithTruncatedBranch(ws *manifest.Workspace, branch, pr, status string, w
 	minLabelBudget := 0
 	if label != "" {
 		minLabelBudget = 1
-		if dirTag := engine.WorkspaceDirTag(ws); dirTag != "" && len(dirTag) <= width {
+		if dirTag := engine.BayDirTag(bay); dirTag != "" && len(dirTag) <= width {
 			minLabelBudget = len(dirTag)
 		}
 	}
 	for labelBudget := maxLabelBudget; labelBudget >= minLabelBudget; labelBudget-- {
 		truncatedLabel := ""
 		if labelBudget > 0 {
-			truncatedLabel = engine.TruncateWorkspaceCompactLabel(ws, labelBudget)
+			truncatedLabel = engine.TruncateBayCompactLabel(bay, labelBudget)
 		}
 		branchBudget := statusLineBranchBudget(width, truncatedLabel, pr, status)
 		if branchBudget < 4 {
@@ -327,16 +327,16 @@ func abbreviateStatus(status string) string {
 	}
 }
 
-// resolveWindowID finds the dock and workspace that own a tmux window ID.
+// resolveWindowID finds the dock and bay that own a tmux window ID.
 // Returns ("", nil) if no match is found.
-func resolveWindowID(m *manifest.Manifest, windowID string) (string, *manifest.Workspace) {
+func resolveWindowID(m *manifest.Manifest, windowID string) (string, *manifest.Bay) {
 	for i := range m.Docks {
 		dock := &m.Docks[i]
-		for j := range dock.Workspaces {
-			ws := &dock.Workspaces[j]
-			for _, s := range ws.Surfaces {
+		for j := range dock.Bays {
+			bay := &dock.Bays[j]
+			for _, s := range bay.Surfaces {
 				if s.Tmux != nil && s.Tmux.WindowID == windowID {
-					return dock.Name, ws
+					return dock.Name, bay
 				}
 			}
 		}

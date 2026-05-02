@@ -46,7 +46,7 @@ func mkEntry(id, title string, sec Section, needs Scope, hotkey string, action f
 func TestRun_EscapeClosesWithoutAction(t *testing.T) {
 	called := false
 	entries := []Entry{
-		mkEntry("go-ws", "Go to workspace", SectionNavigation, ScopeInDock, "M-G",
+		mkEntry("go-bay", "Go to bay", SectionNavigation, ScopeInDock, "M-G",
 			func() (string, error) { called = true; return "", nil }),
 	}
 	in := feedKeys(t, "\x1b")
@@ -55,7 +55,7 @@ func TestRun_EscapeClosesWithoutAction(t *testing.T) {
 	defer out.Close()
 
 	err := Run(RunOptions{
-		Scope:   ScopeInWorkspace,
+		Scope:   ScopeInBay,
 		Mode:    ModeWindow,
 		Entries: func(Mode) []Entry { return entries },
 		In:      in,
@@ -134,7 +134,7 @@ func TestRun_HidesEntriesBelowScope(t *testing.T) {
 	entries := []Entry{
 		mkEntry("edit-config", "Edit config", SectionAdmin, ScopeAnywhere, "",
 			func() (string, error) { calls = append(calls, "edit-config"); return "", nil }),
-		mkEntry("go-sf", "Go to surface", SectionNavigation, ScopeInWorkspace, "",
+		mkEntry("go-sf", "Go to surface", SectionNavigation, ScopeInBay, "",
 			func() (string, error) { calls = append(calls, "go-sf"); return "", nil }),
 	}
 	// Just Enter — should land on the only visible entry (edit-config)
@@ -199,7 +199,7 @@ func TestRun_RecordsSuccessToRecents(t *testing.T) {
 	rec := LoadRecents(filepath.Join(dir, "recents.json"))
 
 	entries := []Entry{
-		mkEntry("go-ws", "Go to workspace", SectionNavigation, ScopeAnywhere, "",
+		mkEntry("go-bay", "Go to bay", SectionNavigation, ScopeAnywhere, "",
 			func() (string, error) { return "", nil }),
 	}
 	in := feedKeys(t, "\r")
@@ -217,8 +217,8 @@ func TestRun_RecordsSuccessToRecents(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if len(rec.Recent) != 1 || rec.Recent[0].ID != "go-ws" {
-		t.Errorf("recents = %+v; want one go-ws entry", rec.Recent)
+	if len(rec.Recent) != 1 || rec.Recent[0].ID != "go-bay" {
+		t.Errorf("recents = %+v; want one go-bay entry", rec.Recent)
 	}
 }
 
@@ -384,11 +384,11 @@ func TestRun_RecentsEntryAlsoShownInItsSection(t *testing.T) {
 	// as "no bouncing around when an entry enters or leaves recents."
 	dir := t.TempDir()
 	rec := LoadRecents(dir + "/r.json")
-	// Record once so "go-ws" appears in recents.
-	rec.Record("go-ws", "")
+	// Record once so "go-bay" appears in recents.
+	rec.Record("go-bay", "")
 
 	entries := []Entry{
-		mkEntry("go-ws", "Go to workspace", SectionNavigation, ScopeAnywhere, "",
+		mkEntry("go-bay", "Go to bay", SectionNavigation, ScopeAnywhere, "",
 			func() (string, error) { return "", nil }),
 		mkEntry("other", "Other", SectionNavigation, ScopeAnywhere, "",
 			func() (string, error) { return "", nil }),
@@ -402,19 +402,19 @@ func TestRun_RecentsEntryAlsoShownInItsSection(t *testing.T) {
 	})
 	_, _ = state.render(80)
 
-	// Count how many rendered rows resolve to the "go-ws" entry: one in
+	// Count how many rendered rows resolve to the "go-bay" entry: one in
 	// Recent, one in Navigation.
 	count := 0
 	for _, r := range state.rendered {
 		if r.entryIdx < 0 {
 			continue
 		}
-		if entries[r.entryIdx].ID == "go-ws" {
+		if entries[r.entryIdx].ID == "go-bay" {
 			count++
 		}
 	}
 	if count != 2 {
-		t.Errorf("go-ws rendered %d times; want 2 (once in Recent, once in Navigation)", count)
+		t.Errorf("go-bay rendered %d times; want 2 (once in Recent, once in Navigation)", count)
 	}
 }
 
@@ -488,11 +488,11 @@ func TestFuzzyScore_RequiresAllCharsInOrder(t *testing.T) {
 		want          bool
 	}{
 		{"New shell", "ns", true},
-		{"New shell", "sn", false},           // out of order
-		{"New shell", "newshell", true},      // contiguous ignoring space
-		{"New shell", "xyz", false},          // missing chars
-		{"Rename workspace...", "rw", true},  // initials
-		{"Rename workspace...", "rws", true}, // initials + within
+		{"New shell", "sn", false},      // out of order
+		{"New shell", "newshell", true}, // contiguous ignoring space
+		{"New shell", "xyz", false},     // missing chars
+		{"Rename bay...", "rb", true},   // initials
+		{"Rename bay...", "rba", true},  // initials + within
 		{"Edit config", "ec", true},
 		{"Edit config", "ed c", true}, // spaces in query still match
 	}
@@ -551,16 +551,16 @@ func TestFuzzyScore_EmptyQueryMatchesEverything(t *testing.T) {
 }
 
 func TestFuzzyScore_PrefersWordBoundaryOverFirstMatch(t *testing.T) {
-	// "nw" against "New workspace": greedy takes the 'w' in "New" and
-	// misses the word-boundary 'w' in "workspace". DP must find the
+	// "nb" against "New bay": greedy can take the 'b' inside an earlier
+	// word and miss the word-boundary 'b' in "bay". DP must find the
 	// better alignment.
-	ws, ok1 := fuzzyScore("New workspace", "nw")
-	sh, ok2 := fuzzyScore("New shell", "nw")
+	bay, ok1 := fuzzyScore("New bay", "nb")
+	sh, ok2 := fuzzyScore("Nob shell", "nb")
 	if !ok1 || !ok2 {
 		t.Fatalf("both should match; ok1=%v ok2=%v", ok1, ok2)
 	}
-	if ws <= sh {
-		t.Errorf("New workspace (%d) should outrank New shell (%d) for 'nw'", ws, sh)
+	if bay <= sh {
+		t.Errorf("New bay (%d) should outrank Nob shell (%d) for 'nb'", bay, sh)
 	}
 }
 

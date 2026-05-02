@@ -28,15 +28,15 @@ func stripANSI(s string) string {
 type FocusKind string
 
 const (
-	FocusAll       FocusKind = "all"
-	FocusDock      FocusKind = "dock"
-	FocusWorkspace FocusKind = "bay"
+	FocusAll  FocusKind = "all"
+	FocusDock FocusKind = "dock"
+	FocusBay  FocusKind = "bay"
 )
 
 type ListFocus struct {
-	Kind        FocusKind `json:"kind"`
-	Dock        string    `json:"dock,omitempty"`
-	WorkspaceID string    `json:"bay_id,omitempty"`
+	Kind  FocusKind `json:"kind"`
+	Dock  string    `json:"dock,omitempty"`
+	BayID string    `json:"bay_id,omitempty"`
 }
 
 type ListViewOptions struct {
@@ -49,18 +49,18 @@ type ListView struct {
 	Recursive      bool              `json:"recursive"`
 	Docks          []engine.DockInfo `json:"docks"`
 	CurrentDock    string            `json:"-"` // for highlighting; not serialized
-	CurrentWsID    string            `json:"-"`
+	CurrentBayID   string            `json:"-"`
 	CurrentSurface string            `json:"-"`
 }
 
-// SetCurrentContext populates the current dock/workspace/surface for highlighting.
+// SetCurrentContext populates the current dock/bay/surface for highlighting.
 func (v *ListView) SetCurrentContext(eng *engine.Engine) {
 	if session, err := eng.Tmux.CurrentSession(); err == nil {
 		v.CurrentDock = session
 	}
-	if dock, ws, err := eng.ResolveSelf(); err == nil {
+	if dock, bay, err := eng.ResolveSelf(); err == nil {
 		v.CurrentDock = dock
-		v.CurrentWsID = ws
+		v.CurrentBayID = bay
 	}
 	// Resolve current surface from tmux pane.
 	if ctx, err := eng.CurrentContext(); err == nil {
@@ -69,28 +69,28 @@ func (v *ListView) SetCurrentContext(eng *engine.Engine) {
 }
 
 type ListRow struct {
-	Dock                string `json:"dock,omitempty"`
-	WorkspaceName       string `json:"bay_name,omitempty"`
-	WorkspaceBranch     string `json:"bay_branch,omitempty"`
-	WorkspaceDirty      bool   `json:"bay_dirty,omitempty"`
-	WorkspacePending    bool   `json:"bay_pending,omitempty"`
-	WorkspaceSyncStatus string `json:"bay_sync_status,omitempty"`
-	WorkspaceWaiting    bool   `json:"bay_waiting,omitempty"`
-	SurfaceID           int    `json:"surface_id,omitempty"`
-	SurfaceName         string `json:"surface_name,omitempty"`
-	SurfaceType         string `json:"surface_type,omitempty"`
-	SurfaceAgent        string `json:"surface_agent,omitempty"`
-	SurfaceCommand      string `json:"surface_command,omitempty"`
-	SurfaceStatus       string `json:"surface_status,omitempty"`
+	Dock           string `json:"dock,omitempty"`
+	BayName        string `json:"bay_name,omitempty"`
+	BayBranch      string `json:"bay_branch,omitempty"`
+	BayDirty       bool   `json:"bay_dirty,omitempty"`
+	BayPending     bool   `json:"bay_pending,omitempty"`
+	BaySyncStatus  string `json:"bay_sync_status,omitempty"`
+	BayWaiting     bool   `json:"bay_waiting,omitempty"`
+	SurfaceID      int    `json:"surface_id,omitempty"`
+	SurfaceName    string `json:"surface_name,omitempty"`
+	SurfaceType    string `json:"surface_type,omitempty"`
+	SurfaceAgent   string `json:"surface_agent,omitempty"`
+	SurfaceCommand string `json:"surface_command,omitempty"`
+	SurfaceStatus  string `json:"surface_status,omitempty"`
 }
 
-// BuildListView builds the dock -> workspace hierarchy from DockInfo data.
+// BuildListView builds the dock -> bay hierarchy from DockInfo data.
 func BuildListView(docks []engine.DockInfo, opts ListViewOptions) ListView {
 	focus := opts.Focus
 	if focus.Kind == "" {
 		focus.Kind = FocusAll
 	}
-	recursive := opts.Recursive || focus.Kind == FocusWorkspace
+	recursive := opts.Recursive || focus.Kind == FocusBay
 
 	dockMap := map[string]engine.DockInfo{}
 	for _, dock := range docks {
@@ -105,19 +105,19 @@ func BuildListView(docks []engine.DockInfo, opts ListViewOptions) ListView {
 	sort.Strings(dockNames)
 
 	for _, dockName := range dockNames {
-		if (focus.Kind == FocusDock || focus.Kind == FocusWorkspace) && focus.Dock != "" && focus.Dock != dockName {
+		if (focus.Kind == FocusDock || focus.Kind == FocusBay) && focus.Dock != "" && focus.Dock != dockName {
 			continue
 		}
 		dock := dockMap[dockName]
 		filtered := dock
-		filtered.Workspaces = nil
-		for _, ws := range dock.Workspaces {
-			if focus.Kind == FocusWorkspace && focus.WorkspaceID != "" && focus.WorkspaceID != ws.ID {
+		filtered.Bays = nil
+		for _, bay := range dock.Bays {
+			if focus.Kind == FocusBay && focus.BayID != "" && focus.BayID != bay.ID {
 				continue
 			}
-			filtered.Workspaces = append(filtered.Workspaces, trimWorkspace(ws, recursive))
+			filtered.Bays = append(filtered.Bays, trimBay(bay, recursive))
 		}
-		if focus.Kind == FocusWorkspace && len(filtered.Workspaces) == 0 {
+		if focus.Kind == FocusBay && len(filtered.Bays) == 0 {
 			continue
 		}
 		view.Docks = append(view.Docks, filtered)
@@ -126,12 +126,12 @@ func BuildListView(docks []engine.DockInfo, opts ListViewOptions) ListView {
 	return view
 }
 
-func trimWorkspace(ws engine.WorkspaceInfo, recursive bool) engine.WorkspaceInfo {
+func trimBay(bay engine.BayInfo, recursive bool) engine.BayInfo {
 	if recursive {
-		return ws
+		return bay
 	}
-	ws.Surfaces = nil
-	return ws
+	bay.Surfaces = nil
+	return bay
 }
 
 // printListViewJSON marshals a ListView (or its denormalized rows) to stdout.
@@ -151,34 +151,34 @@ func printListViewJSON(view ListView, rows bool) error {
 func ListRows(view ListView) []ListRow {
 	var rows []ListRow
 	for _, dock := range view.Docks {
-		for _, ws := range dock.Workspaces {
-			if len(ws.Surfaces) == 0 {
+		for _, bay := range dock.Bays {
+			if len(bay.Surfaces) == 0 {
 				rows = append(rows, ListRow{
-					Dock:                dock.Name,
-					WorkspaceName:       ws.Name,
-					WorkspaceBranch:     ws.Branch,
-					WorkspaceDirty:      ws.Dirty,
-					WorkspacePending:    ws.Pending,
-					WorkspaceSyncStatus: ws.SyncStatus,
-					WorkspaceWaiting:    ws.Waiting,
+					Dock:          dock.Name,
+					BayName:       bay.Name,
+					BayBranch:     bay.Branch,
+					BayDirty:      bay.Dirty,
+					BayPending:    bay.Pending,
+					BaySyncStatus: bay.SyncStatus,
+					BayWaiting:    bay.Waiting,
 				})
 				continue
 			}
-			for _, s := range ws.Surfaces {
+			for _, s := range bay.Surfaces {
 				rows = append(rows, ListRow{
-					Dock:                dock.Name,
-					WorkspaceName:       ws.Name,
-					WorkspaceBranch:     ws.Branch,
-					WorkspaceDirty:      ws.Dirty,
-					WorkspacePending:    ws.Pending,
-					WorkspaceSyncStatus: ws.SyncStatus,
-					WorkspaceWaiting:    ws.Waiting,
-					SurfaceID:           s.ID,
-					SurfaceName:         s.Name,
-					SurfaceType:         s.Type,
-					SurfaceAgent:        s.Agent,
-					SurfaceCommand:      s.Command,
-					SurfaceStatus:       s.Status,
+					Dock:           dock.Name,
+					BayName:        bay.Name,
+					BayBranch:      bay.Branch,
+					BayDirty:       bay.Dirty,
+					BayPending:     bay.Pending,
+					BaySyncStatus:  bay.SyncStatus,
+					BayWaiting:     bay.Waiting,
+					SurfaceID:      s.ID,
+					SurfaceName:    s.Name,
+					SurfaceType:    s.Type,
+					SurfaceAgent:   s.Agent,
+					SurfaceCommand: s.Command,
+					SurfaceStatus:  s.Status,
 				})
 			}
 		}
@@ -257,7 +257,7 @@ func truncateCommand(cmd string) string {
 	return cmd[:29] + "..."
 }
 
-// workspaceMetaCols returns fixed-position columns for workspace metadata.
+// bayMetaCols returns fixed-position columns for bay metadata.
 // Column positions: 0=description, 1=branch, 2=dir (only when different from
 // name), 3=status, 4=count, 5=sync/waiting, 6=id (only when different from
 // name).
@@ -266,31 +266,31 @@ func truncateCommand(cmd string) string {
 // them in place (index 0) if the computed terminal budget is tighter. Only
 // the first line of the description is shown — bodies are opt-in and appear
 // in the M-? popup, not on the list row.
-func workspaceMetaCols(ws engine.WorkspaceInfo, showCounts, short bool) []metaCol {
+func bayMetaCols(bay engine.BayInfo, showCounts, short bool) []metaCol {
 	cols := make([]metaCol, 7)
-	if first := engine.DescriptionFirstLine(ws.Description); first != "" {
+	if first := engine.DescriptionFirstLine(bay.Description); first != "" {
 		cols[0] = descField(first, engine.MaxDescriptionFirstLineLen, short)
 	}
-	cols[1] = metaField("br", ws.Branch, short)
-	// Show directory basename only when it differs from the workspace name.
-	if ws.Path != "" {
-		dir := filepath.Base(ws.Path)
-		if dir != ws.Name {
+	cols[1] = metaField("br", bay.Branch, short)
+	// Show directory basename only when it differs from the bay name.
+	if bay.Path != "" {
+		dir := filepath.Base(bay.Path)
+		if dir != bay.Name {
 			cols[2] = metaField("dir", dir, short)
 		}
 	}
-	if ws.Dirty {
+	if bay.Dirty {
 		cols[3] = metaField("st", "dirty", short)
-	} else if ws.Pending {
+	} else if bay.Pending {
 		cols[3] = metaField("st", "pending", short)
 	}
 	if showCounts {
-		cols[4] = metaField("n", fmt.Sprintf("%d", ws.SurfaceCount), short)
+		cols[4] = metaField("n", fmt.Sprintf("%d", bay.SurfaceCount), short)
 	}
 	// Sync and waiting indicators share the trailing column.
 	var parts []string
 	var tailWidth int
-	if sync := ws.SyncStatus; sync != "" && sync != manifest.SyncStatusOK {
+	if sync := bay.SyncStatus; sync != "" && sync != manifest.SyncStatusOK {
 		if short {
 			parts = append(parts, sync)
 			tailWidth = utf8.RuneCountInString(sync)
@@ -299,7 +299,7 @@ func workspaceMetaCols(ws engine.WorkspaceInfo, showCounts, short bool) []metaCo
 			tailWidth = 3 + utf8.RuneCountInString(sync)
 		}
 	}
-	if ws.Waiting {
+	if bay.Waiting {
 		parts = append(parts, "\u23f3")
 		if tailWidth > 0 {
 			tailWidth += 2 // space + emoji
@@ -311,10 +311,10 @@ func workspaceMetaCols(ws engine.WorkspaceInfo, showCounts, short bool) []metaCo
 		cols[5] = metaCol{text: strings.Join(parts, " "), width: tailWidth}
 	}
 	// Show ID only when it differs from Name (or when Name is empty). Auto-
-	// named workspaces have ID == Name and don't need the redundancy; users
+	// named bays have ID == Name and don't need the redundancy; users
 	// who renamed see their ID alongside the friendly label.
-	if ws.ID != "" && ws.ID != ws.Name {
-		cols[6] = metaField("id", ws.ID, short)
+	if bay.ID != "" && bay.ID != bay.Name {
+		cols[6] = metaField("id", bay.ID, short)
 	}
 	return cols
 }
@@ -423,14 +423,14 @@ func writeAlignedLine(b *strings.Builder, prefix string, prefixWidth int, metaCo
 }
 
 // alignedRow holds a precomputed render row. The optional surfaceRows
-// field is populated only on workspace rows in tree mode and carries the
-// pre-built surface render rows for that workspace, so the render pass
-// can iterate workspace rows without indexing back into dock.Workspaces.
+// field is populated only on bay rows in tree mode and carries the
+// pre-built surface render rows for that bay, so the render pass
+// can iterate bay rows without indexing back into dock.Bays.
 type alignedRow struct {
 	prefix      string
 	prefixWidth int
 	metaCols    []metaCol
-	surfaceRows []alignedRow // workspace rows only, in tree mode
+	surfaceRows []alignedRow // bay rows only, in tree mode
 }
 
 func hasMetaCols(cols []metaCol) bool {
@@ -499,7 +499,7 @@ func detectStdoutWidth() int {
 }
 
 // descStrMaxForWidth returns the max description string length that fits
-// alongside the rest of a workspace row at the given terminal width.
+// alongside the rest of a bay row at the given terminal width.
 // termWidth == 0 means "not a terminal" (pipe/redirect) and returns the
 // storage cap so consumers see the full stored value.
 //
@@ -568,37 +568,37 @@ func FormatListView(view ListView, long, short bool) string {
 			}
 		}
 
-		if len(dock.Workspaces) == 0 && len(dock.Surfaces) == 0 {
+		if len(dock.Bays) == 0 && len(dock.Surfaces) == 0 {
 			p, _ := indentedPrefix(1, "", "(no bays)", short)
 			fmt.Fprintln(&b, p)
 			continue
 		}
-		if len(dock.Workspaces) == 0 {
+		if len(dock.Bays) == 0 {
 			continue
 		}
-		showChildren := view.Recursive || view.Focus.Kind == FocusWorkspace
+		showChildren := view.Recursive || view.Focus.Kind == FocusBay
 
-		wsRows := make([]alignedRow, len(dock.Workspaces))
+		bayRows := make([]alignedRow, len(dock.Bays))
 		var allSfRows []alignedRow
-		for i, ws := range dock.Workspaces {
-			isCurrentWs := dock.Name == view.CurrentDock && ws.ID == view.CurrentWsID
-			wsName := ws.Name
-			if isCurrentWs {
-				wsName += " *"
+		for i, bay := range dock.Bays {
+			isCurrentBay := dock.Name == view.CurrentDock && bay.ID == view.CurrentBayID
+			bayName := bay.Name
+			if isCurrentBay {
+				bayName += " *"
 			}
-			p, w := indentedPrefix(1, "bay", wsName, short)
-			wsRows[i] = alignedRow{
+			p, w := indentedPrefix(1, "bay", bayName, short)
+			bayRows[i] = alignedRow{
 				prefix:      p,
 				prefixWidth: w,
-				metaCols:    workspaceMetaCols(ws, !showChildren, short),
+				metaCols:    bayMetaCols(bay, !showChildren, short),
 			}
 			if !showChildren {
 				continue
 			}
-			sfRows := make([]alignedRow, len(ws.Surfaces))
-			for j, s := range ws.Surfaces {
+			sfRows := make([]alignedRow, len(bay.Surfaces))
+			for j, s := range bay.Surfaces {
 				sName := s.Name
-				if isCurrentWs && s.Name == view.CurrentSurface {
+				if isCurrentBay && s.Name == view.CurrentSurface {
 					sName += " *"
 				}
 				sfP, sfW := indentedPrefix(2, "sf", sName, short)
@@ -608,37 +608,37 @@ func FormatListView(view ListView, long, short bool) string {
 					metaCols:    surfaceMetaCols(s, long, short),
 				}
 			}
-			wsRows[i].surfaceRows = sfRows
+			bayRows[i].surfaceRows = sfRows
 			allSfRows = append(allSfRows, sfRows...)
 		}
 
-		wsAlign := alignWidth(wsRows)
-		wsColWidths := alignColumnWidths(wsRows)
+		bayAlign := alignWidth(bayRows)
+		bayColWidths := alignColumnWidths(bayRows)
 
 		// Fit description column (index 0) to terminal width by shrinking
-		// too-long rows in place. No-op when no workspace has a description.
-		if wsColWidths[0] > 0 {
-			strMax := descStrMaxForWidth(termWidth, nonDescRowWidth(wsAlign, wsColWidths), short)
+		// too-long rows in place. No-op when no bay has a description.
+		if bayColWidths[0] > 0 {
+			strMax := descStrMaxForWidth(termWidth, nonDescRowWidth(bayAlign, bayColWidths), short)
 			shrunk := false
-			for i, ws := range dock.Workspaces {
-				first := engine.DescriptionFirstLine(ws.Description)
+			for i, bay := range dock.Bays {
+				first := engine.DescriptionFirstLine(bay.Description)
 				if first == "" || len(first) <= strMax {
 					continue
 				}
-				wsRows[i].metaCols[0] = descField(first, strMax, short)
+				bayRows[i].metaCols[0] = descField(first, strMax, short)
 				shrunk = true
 			}
 			if shrunk {
-				wsColWidths = alignColumnWidths(wsRows)
+				bayColWidths = alignColumnWidths(bayRows)
 			}
 		}
 
 		sfAlign := alignWidth(allSfRows)
 		sfColWidths := alignColumnWidths(allSfRows)
 
-		for _, wsRow := range wsRows {
-			writeAlignedLine(&b, wsRow.prefix, wsRow.prefixWidth, wsRow.metaCols, wsAlign, wsColWidths)
-			for _, sr := range wsRow.surfaceRows {
+		for _, bayRow := range bayRows {
+			writeAlignedLine(&b, bayRow.prefix, bayRow.prefixWidth, bayRow.metaCols, bayAlign, bayColWidths)
+			for _, sr := range bayRow.surfaceRows {
 				writeAlignedLine(&b, sr.prefix, sr.prefixWidth, sr.metaCols, sfAlign, sfColWidths)
 			}
 		}
@@ -646,7 +646,7 @@ func FormatListView(view ListView, long, short bool) string {
 	return b.String()
 }
 
-// showRow is a label/value pair for detail views (ws show, dock show, etc.).
+// showRow is a label/value pair for detail views (bay show, dock show, etc.).
 type showRow struct{ label, value string }
 
 // maxShowRowLabel returns the max label width across rows.
@@ -681,18 +681,18 @@ func writeAlignedRows(b *strings.Builder, rows []showRow, minWidth int) {
 	}
 }
 
-func FormatWorkspaceShow(dockName string, ws *engine.WorkspaceInfo, long bool) string {
+func FormatBayShow(dockName string, bay *engine.BayInfo, long bool) string {
 	var b strings.Builder
 
 	var rows []showRow
-	rows = append(rows, showRow{"bay", ws.Name})
-	if ws.ID != "" && ws.ID != ws.Name {
-		rows = append(rows, showRow{"id", ws.ID})
+	rows = append(rows, showRow{"bay", bay.Name})
+	if bay.ID != "" && bay.ID != bay.Name {
+		rows = append(rows, showRow{"id", bay.ID})
 	}
-	if ws.Description != "" {
+	if bay.Description != "" {
 		// Show the first line as the aligned "description" row; render any
 		// body as follow-on unlabeled rows so alignment stays clean.
-		first, body, _ := strings.Cut(ws.Description, "\n")
+		first, body, _ := strings.Cut(bay.Description, "\n")
 		rows = append(rows, showRow{"description", first})
 		if body != "" {
 			for _, line := range strings.Split(body, "\n") {
@@ -701,27 +701,27 @@ func FormatWorkspaceShow(dockName string, ws *engine.WorkspaceInfo, long bool) s
 		}
 	}
 	rows = append(rows, showRow{"dock", dockName})
-	if ws.Type != "" && ws.Type != "worktree" {
-		rows = append(rows, showRow{"type", ws.Type})
+	if bay.Type != "" && bay.Type != "worktree" {
+		rows = append(rows, showRow{"type", bay.Type})
 	}
-	rows = append(rows, showRow{"path", ws.Path})
-	if ws.Branch != "" {
-		rows = append(rows, showRow{"branch", ws.Branch})
+	rows = append(rows, showRow{"path", bay.Path})
+	if bay.Branch != "" {
+		rows = append(rows, showRow{"branch", bay.Branch})
 	}
-	if ws.PR != "" {
-		rows = append(rows, showRow{"pr", ws.PR})
+	if bay.PR != "" {
+		rows = append(rows, showRow{"pr", bay.PR})
 	}
-	if ws.Dirty {
+	if bay.Dirty {
 		rows = append(rows, showRow{"dirty", "yes"})
 	}
-	if ws.Pending {
+	if bay.Pending {
 		rows = append(rows, showRow{"pending", "yes"})
 	}
-	if ws.DefaultAgent != "" {
-		rows = append(rows, showRow{"default agent", ws.DefaultAgent})
+	if bay.DefaultAgent != "" {
+		rows = append(rows, showRow{"default agent", bay.DefaultAgent})
 	}
-	if ws.SyncStatus != "" && ws.SyncStatus != manifest.SyncStatusOK {
-		rows = append(rows, showRow{"sync", ws.SyncStatus})
+	if bay.SyncStatus != "" && bay.SyncStatus != manifest.SyncStatusOK {
+		rows = append(rows, showRow{"sync", bay.SyncStatus})
 	}
 
 	// Write rows, ensuring "surface" label fits in the alignment.
@@ -734,8 +734,8 @@ func FormatWorkspaceShow(dockName string, ws *engine.WorkspaceInfo, long bool) s
 
 	// Surface rows: right-align "surface" label to same column.
 	sfPad := strings.Repeat(" ", maxLabel-len(sfLabel))
-	sfRows := make([]alignedRow, len(ws.Surfaces))
-	for i, s := range ws.Surfaces {
+	sfRows := make([]alignedRow, len(bay.Surfaces))
+	for i, s := range bay.Surfaces {
 		prefix := sfPad + dim(sfLabel) + " " + s.Name
 		width := maxLabel + 1 + utf8.RuneCountInString(s.Name)
 		sfRows[i] = alignedRow{
@@ -781,12 +781,12 @@ func FormatSurfaceList(surfaces []engine.SurfaceInfo, currentSurface string, sho
 	return b.String()
 }
 
-// FormatFullTree formats the full dock -> workspace hierarchy.
+// FormatFullTree formats the full dock -> bay hierarchy.
 func FormatFullTree(docks []engine.DockInfo) string {
 	return FormatListView(BuildListView(docks, ListViewOptions{}), false, false)
 }
 
-// FormatDockTree formats dock -> workspace hierarchy for one or more docks.
+// FormatDockTree formats dock -> bay hierarchy for one or more docks.
 func FormatDockTree(docks []engine.DockInfo) string {
 	focus := ListFocus{Kind: FocusAll}
 	if len(docks) == 1 {

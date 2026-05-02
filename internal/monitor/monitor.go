@@ -44,13 +44,13 @@ const (
 	// With a default 3-second interval, 100 cycles = ~5 minutes.
 	MergeCheckCycles = 100
 
-	// activityWindow is how long a workspace must have been active to
+	// activityWindow is how long a bay must have been active to
 	// trigger fetch + merge checks (2 hours in seconds).
 	activityWindow = 2 * 60 * 60
 )
 
 // Monitor watches agent panes for input prompts and highlights their tmux windows.
-// It also periodically detects PR numbers for workspaces with branches.
+// It also periodically detects PR numbers for bays with branches.
 type Monitor struct {
 	tmux         tmux.Interface
 	git          git.Interface
@@ -170,7 +170,7 @@ func (m *Monitor) CheckOnce() error {
 	// Branch sync first, so the manifest we load below reflects any
 	// branch changes the user just made (and so the tmux windows have
 	// already been renamed by the time we iterate them for prompt
-	// detection). Cheap — engine.SyncAll's per-workspace probe is one
+	// detection). Cheap — engine.SyncAll's per-bay probe is one
 	// local git call.
 	if m.engine != nil {
 		m.engine.SyncAll()
@@ -191,9 +191,9 @@ func (m *Monitor) CheckOnce() error {
 
 	for i := range mf.Docks {
 		dock := &mf.Docks[i]
-		for j := range dock.Workspaces {
-			ws := &dock.Workspaces[j]
-			for _, s := range ws.Surfaces {
+		for j := range dock.Bays {
+			bay := &dock.Bays[j]
+			for _, s := range bay.Surfaces {
 				if s.Tmux == nil || s.Tmux.WindowID == "" {
 					continue
 				}
@@ -241,39 +241,39 @@ func (m *Monitor) CheckOnce() error {
 	return nil
 }
 
-// detectPRs checks workspaces with a branch but no PR and tries to find one.
+// detectPRs checks bays with a branch but no PR and tries to find one.
 // Uses the PRCheckedAt timestamp + manifest.PRCheckTTL to avoid re-hammering
-// workspaces that have already been checked. The TTL ensures that PRs opened
+// bays that have already been checked. The TTL ensures that PRs opened
 // after the first check are eventually picked up.
 //
-// Returns true if any workspace's PR state changed.
+// Returns true if any bay's PR state changed.
 func (m *Monitor) detectPRs(mf *manifest.Manifest) bool {
 	now := time.Now().Unix()
 	changed := false
 	for i := range mf.Docks {
 		dock := &mf.Docks[i]
-		for j := range dock.Workspaces {
-			ws := &dock.Workspaces[j]
-			if ws.Path == "" || !ws.Worktree.NeedsPRCheck(now) {
+		for j := range dock.Bays {
+			bay := &dock.Bays[j]
+			if bay.Path == "" || !bay.Worktree.NeedsPRCheck(now) {
 				continue
 			}
-			pr, err := m.git.PRForBranch(ws.Path, ws.Worktree.Branch)
+			pr, err := m.git.PRForBranch(bay.Path, bay.Worktree.Branch)
 			if err != nil {
 				// gh unavailable or transient — leave PRCheckedAt
 				// unchanged so we retry next cycle.
 				continue
 			}
 			// Definitive answer: either a PR number, or confirmed no PR.
-			ws.Worktree.PR = pr
-			ws.Worktree.PRCheckedAt = time.Now().Unix()
+			bay.Worktree.PR = pr
+			bay.Worktree.PRCheckedAt = time.Now().Unix()
 			changed = true
 		}
 	}
 	return changed
 }
 
-// detectMerges checks active workspaces for branches merged into default.
-// Only checks workspaces with recent activity (within activityWindow).
+// detectMerges checks active bays for branches merged into default.
+// Only checks bays with recent activity (within activityWindow).
 // Performs git fetch before merge check. Returns true if any status changed.
 func (m *Monitor) detectMerges(mf *manifest.Manifest) bool {
 	now := time.Now().Unix()
@@ -284,31 +284,31 @@ func (m *Monitor) detectMerges(mf *manifest.Manifest) bool {
 
 	for i := range mf.Docks {
 		dock := &mf.Docks[i]
-		for j := range dock.Workspaces {
-			ws := &dock.Workspaces[j]
-			if ws.Worktree == nil || ws.Worktree.Branch == "" || ws.Path == "" {
+		for j := range dock.Bays {
+			bay := &dock.Bays[j]
+			if bay.Worktree == nil || bay.Worktree.Branch == "" || bay.Path == "" {
 				continue
 			}
-			if ws.Worktree.Merged {
+			if bay.Worktree.Merged {
 				continue
 			}
-			// Activity gate: skip workspaces not active recently.
-			if ws.LastActive == 0 || (now-ws.LastActive) > activityWindow {
+			// Activity gate: skip bays not active recently.
+			if bay.LastActive == 0 || (now-bay.LastActive) > activityWindow {
 				continue
 			}
 
 			// Fetch once per repo path.
-			if !fetched[ws.Path] {
-				_ = m.git.Fetch(ws.Path)
-				fetched[ws.Path] = true
+			if !fetched[bay.Path] {
+				_ = m.git.Fetch(bay.Path)
+				fetched[bay.Path] = true
 			}
 
-			merged, err := m.git.IsMergedIntoDefault(ws.Path, ws.Worktree.Branch)
+			merged, err := m.git.IsMergedIntoDefault(bay.Path, bay.Worktree.Branch)
 			if err != nil || !merged {
 				continue
 			}
 
-			ws.Worktree.Merged = true
+			bay.Worktree.Merged = true
 			changed = true
 		}
 	}

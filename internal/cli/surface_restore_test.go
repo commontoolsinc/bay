@@ -40,11 +40,11 @@ func TestRunSurfaceRestore_SuccessEmitsNoToast(t *testing.T) {
 	mockTmux.SetCurrentSession("labs")
 	t.Setenv("TMUX", "/tmp/tmux-501/default,12345,0")
 
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs"}); err != nil {
-		t.Fatalf("WsNew: %v", err)
+	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs"}); err != nil {
+		t.Fatalf("BayNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{
-		DockName: "labs", WsName: "w1",
+		DockName: "labs", BayName: "w1",
 		Type: manifest.SurfaceTypeShell, Name: "logs", SplitDir: "v",
 	}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
@@ -69,20 +69,20 @@ func TestRunSurfaceRestore_DiscoversDeadSurfaceBeforeRestore(t *testing.T) {
 	mockTmux.SetCurrentSession("labs")
 	t.Setenv("TMUX", "/tmp/tmux-501/default,12345,0")
 
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs"}); err != nil {
-		t.Fatalf("WsNew: %v", err)
+	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs"}); err != nil {
+		t.Fatalf("BayNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{
-		DockName: "labs", WsName: "w1",
+		DockName: "labs", BayName: "w1",
 		Type: manifest.SurfaceTypeShell, Name: "logs", SplitDir: "v",
 	}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 
-	ws, _ := eng.WsShow("labs", "w1")
-	logs := ws.FindSurface("logs")
+	bay, _ := eng.BayShow("labs", "w1")
+	logs := bay.FindSurface("logs")
 	if logs == nil || logs.Tmux == nil {
-		t.Fatalf("logs surface missing tmux attrs: %+v", ws.Surfaces)
+		t.Fatalf("logs surface missing tmux attrs: %+v", bay.Surfaces)
 	}
 	if err := mockTmux.KillPane(logs.Tmux.PaneID); err != nil {
 		t.Fatalf("KillPane: %v", err)
@@ -92,8 +92,8 @@ func TestRunSurfaceRestore_DiscoversDeadSurfaceBeforeRestore(t *testing.T) {
 		t.Fatalf("runSurfaceRestore: %v", err)
 	}
 
-	ws, _ = eng.WsShow("labs", "w1")
-	if ws.FindSurface("logs") == nil {
+	bay, _ = eng.BayShow("labs", "w1")
+	if bay.FindSurface("logs") == nil {
 		t.Fatal("expected runSurfaceRestore to discover and restore dead surface")
 	}
 	entries, err := eng.ListClosedEntries("labs")
@@ -110,12 +110,12 @@ func TestRunSurfaceRestore_KeepsQueuedCloseBlockAheadOfDiscoveredDeadSurface(t *
 	mockTmux.SetCurrentSession("labs")
 	t.Setenv("TMUX", "/tmp/tmux-501/default,12345,0")
 
-	if _, err := eng.WsNew(engine.WsNewOptions{Dock: "labs"}); err != nil {
-		t.Fatalf("WsNew: %v", err)
+	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs"}); err != nil {
+		t.Fatalf("BayNew: %v", err)
 	}
 	for _, name := range []string{"logs", "notes", "scratch"} {
 		if err := eng.SurfaceAdd(engine.SurfaceAddOptions{
-			DockName: "labs", WsName: "w1",
+			DockName: "labs", BayName: "w1",
 			Type: manifest.SurfaceTypeShell, Name: name, SplitDir: "v",
 		}); err != nil {
 			t.Fatalf("SurfaceAdd %s: %v", name, err)
@@ -128,10 +128,10 @@ func TestRunSurfaceRestore_KeepsQueuedCloseBlockAheadOfDiscoveredDeadSurface(t *
 		t.Fatalf("SurfaceClose notes: %v", err)
 	}
 
-	ws, _ := eng.WsShow("labs", "w1")
-	scratch := ws.FindSurface("scratch")
+	bay, _ := eng.BayShow("labs", "w1")
+	scratch := bay.FindSurface("scratch")
 	if scratch == nil || scratch.Tmux == nil {
-		t.Fatalf("scratch surface missing tmux attrs: %+v", ws.Surfaces)
+		t.Fatalf("scratch surface missing tmux attrs: %+v", bay.Surfaces)
 	}
 	if err := mockTmux.KillPane(scratch.Tmux.PaneID); err != nil {
 		t.Fatalf("KillPane scratch: %v", err)
@@ -141,9 +141,9 @@ func TestRunSurfaceRestore_KeepsQueuedCloseBlockAheadOfDiscoveredDeadSurface(t *
 		if err := runSurfaceRestore(eng, false); err != nil {
 			t.Fatalf("runSurfaceRestore %d: %v", i+1, err)
 		}
-		ws, _ = eng.WsShow("labs", "w1")
-		if ws.FindSurface(want) == nil {
-			t.Fatalf("restore %d restored wrong surface; expected %q in %+v", i+1, want, ws.Surfaces)
+		bay, _ = eng.BayShow("labs", "w1")
+		if bay.FindSurface(want) == nil {
+			t.Fatalf("restore %d restored wrong surface; expected %q in %+v", i+1, want, bay.Surfaces)
 		}
 	}
 }

@@ -7,28 +7,28 @@ import (
 	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
-// Edit returns the workspace path for opening in an editor and bumps
+// Edit returns the bay path for opening in an editor and bumps
 // LastActive so the monitor's activity gate keeps fetching merge data
-// for this workspace's repo.
-func (e *Engine) Edit(dockName, wsID string) (string, error) {
+// for this bay's repo.
+func (e *Engine) Edit(dockName, bayID string) (string, error) {
 	var path string
 	err := e.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)
 		if dock == nil {
 			return fmt.Errorf("unknown dock %q", dockName)
 		}
-		ws := dock.FindWorkspaceByID(wsID)
-		if ws == nil {
-			return fmt.Errorf("bay %q not found in dock %q", wsID, dockName)
+		bay := dock.FindBayByID(bayID)
+		if bay == nil {
+			return fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
 		}
-		ws.LastActive = time.Now().Unix()
-		path = ws.Path
+		bay.LastActive = time.Now().Unix()
+		path = bay.Path
 		return nil
 	})
 	return path, err
 }
 
-// EditAll returns all active workspace paths for a single dock.
+// EditAll returns all active bay paths for a single dock.
 func (e *Engine) EditAll(dockName string) ([]string, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
@@ -39,9 +39,9 @@ func (e *Engine) EditAll(dockName string) ([]string, error) {
 		return nil, fmt.Errorf("unknown dock %q", dockName)
 	}
 	var paths []string
-	for _, ws := range dock.Workspaces {
-		if ws.Path != "" {
-			paths = append(paths, ws.Path)
+	for _, bay := range dock.Bays {
+		if bay.Path != "" {
+			paths = append(paths, bay.Path)
 		}
 	}
 	return paths, nil

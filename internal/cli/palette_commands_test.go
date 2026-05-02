@@ -80,8 +80,8 @@ func TestDetectScope(t *testing.T) {
 		{"nil ctx", nil, palette.ScopeAnywhere},
 		{"empty ctx", &engine.Context{}, palette.ScopeAnywhere},
 		{"dock only", &engine.Context{Dock: "bay"}, palette.ScopeInDock},
-		{"workspace", &engine.Context{Dock: "bay", Workspace: "auth-fix"}, palette.ScopeInWorkspace},
-		{"surface", &engine.Context{Dock: "bay", Workspace: "w", Surface: "shell"}, palette.ScopeInWorkspace},
+		{"bay", &engine.Context{Dock: "bay", Bay: "auth-fix"}, palette.ScopeInBay},
+		{"surface", &engine.Context{Dock: "bay", Bay: "w", Surface: "shell"}, palette.ScopeInBay},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -144,7 +144,7 @@ func TestBuildPaletteEntries_AgentPickEntriesSupportBoundRecents(t *testing.T) {
 	}
 	entries := buildPaletteEntries(env, palette.ModeWindow)
 
-	for _, id := range []string{"new-agent-pick", "new-workspace-agent-pick"} {
+	for _, id := range []string{"new-agent-pick", "new-bay-agent-pick"} {
 		entry := findEntry(t, entries, id)
 		if entry.ActionWithParam == nil {
 			t.Fatalf("%s ActionWithParam is nil; bound recents would reopen the picker", id)
@@ -170,8 +170,8 @@ func TestBuildPaletteEntries_AgentPickEntriesSupportBoundRecents(t *testing.T) {
 func testPaletteEnv() *paletteEnv {
 	return &paletteEnv{
 		Engine:  &engine.Engine{},
-		Ctx:     &engine.Context{Dock: "testdock", Workspace: "testws", Surface: "testsf"},
-		Scope:   palette.ScopeInWorkspace,
+		Ctx:     &engine.Context{Dock: "testdock", Bay: "testbay", Surface: "testsf"},
+		Scope:   palette.ScopeInBay,
 		Recents: palette.LoadRecents(""),
 		Hotkeys: fakeHotkeys(nil),
 	}

@@ -46,11 +46,11 @@ bind-key -T root M-y send-keys 'hello'
 }
 
 func TestParseHotkeys_StripsOrTrueOnly(t *testing.T) {
-	out := `bind-key -T root M-e run-shell 'bay edit --ws || true'
+	out := `bind-key -T root M-e run-shell 'bay edit --bay || true'
 bind-key -T root M-x run-shell 'bay edit --dock'
 `
 	h := parseHotkeys(out)
-	if got := h.Lookup("bay edit --ws"); got != "M-e" {
+	if got := h.Lookup("bay edit --bay"); got != "M-e" {
 		t.Errorf("|| true not stripped: got %q", got)
 	}
 	if got := h.Lookup("bay edit --dock"); got != "M-x" {

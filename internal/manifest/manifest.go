@@ -18,10 +18,10 @@ import (
 // CurrentVersion is the manifest schema version.
 const CurrentVersion = 6
 
-// WorkspaceType constants.
+// BayType constants.
 const (
-	WorkspaceTypeWorktree WorkspaceType = "worktree"
-	WorkspaceTypeExternal WorkspaceType = "external"
+	BayTypeWorktree BayType = "worktree"
+	BayTypeExternal BayType = "external"
 )
 
 // SurfaceType constants — the semantic role of a surface.
@@ -32,7 +32,7 @@ const (
 	SurfaceTypeCmd    SurfaceType = "cmd"
 )
 
-// SyncStatus constants — workspace/surface sync health.
+// SyncStatus constants — bay/surface sync health.
 type SyncStatus = string
 
 const (
@@ -47,7 +47,7 @@ const (
 	SurfaceBackendGUI  SurfaceBackend = "gui-app"
 )
 
-type WorkspaceType string
+type BayType string
 type SurfaceType string
 type SurfaceBackend string
 
@@ -77,7 +77,7 @@ type Dock struct {
 	Host          *GUIAttrs           `json:"host,omitempty"`       // terminal window hosting this dock's tmux session; nil if unmanaged
 	SessionID     string              `json:"session_id,omitempty"` // identifies the tmux session bay set up; matched against the @bay-session-id session option to detect server restarts
 	Surfaces      []Surface           `json:"surfaces,omitempty"`   // dock-level surfaces (e.g., dock-scoped editor)
-	Workspaces    []Workspace         `json:"bays"`
+	Bays          []Bay               `json:"bays"`
 	ClosedEntries []ClosedEntry       `json:"closed_entries,omitempty"` // undo-close queue (see docs/design/undo-close.md)
 }
 
@@ -90,31 +90,11 @@ func (d Dock) EffectiveWorktreeDir() string {
 	return config.ExpandPath(d.Path) + "-worktrees"
 }
 
-// UnmarshalJSON accepts both the v5 `bays` field and the legacy v4
-// `workspaces` field. Marshal always writes `bays`, so loading and saving an
-// old manifest performs the schema rename.
-func (d *Dock) UnmarshalJSON(data []byte) error {
-	type dockJSON Dock
-	aux := struct {
-		*dockJSON
-		LegacyWorkspaces []Workspace `json:"workspaces"`
-	}{
-		dockJSON: (*dockJSON)(d),
-	}
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return err
-	}
-	if d.Workspaces == nil && aux.LegacyWorkspaces != nil {
-		d.Workspaces = aux.LegacyWorkspaces
-	}
-	return nil
-}
-
-// Workspace represents a unit of work — typically one branch/PR.
-type Workspace struct {
+// Bay represents a unit of work — typically one branch/PR.
+type Bay struct {
 	ID             string         `json:"id"`                         // stable handle (^w[1-9]\d*$); set at creation, never changes; unique within dock
 	Name           string         `json:"name"`                       // user-facing display label, renameable; not a CLI key. Empty until set explicitly or filled from a branch.
-	Type           WorkspaceType  `json:"type"`                       // "worktree" or "external"
+	Type           BayType        `json:"type"`                       // "worktree" or "external"
 	Path           string         `json:"path,omitempty"`             // absolute path to the working directory
 	Description    string         `json:"description,omitempty"`      // short free-form label shown in picker/ls/tree
 	LastFocused    int            `json:"last_focused,omitempty"`     // surface ID; 0 = none yet
@@ -128,7 +108,7 @@ type Workspace struct {
 	DeprecatedStatus string `json:"status,omitempty"`
 }
 
-// WorktreeAttrs holds git worktree metadata. Only present for worktree workspaces.
+// WorktreeAttrs holds git worktree metadata. Only present for worktree bays.
 type WorktreeAttrs struct {
 	Repo        string `json:"repo,omitempty"` // legacy v5 repo key; migrated to parent dock
 	Branch      string `json:"branch"`
@@ -137,29 +117,29 @@ type WorktreeAttrs struct {
 	Merged      bool   `json:"merged,omitempty"`        // true when branch has been merged into default
 }
 
-// IsMerged reports whether this workspace's branch has been merged into the default branch.
-func (ws *Workspace) IsMerged() bool {
-	return ws.Worktree != nil && ws.Worktree.Merged
+// IsMerged reports whether this bay's branch has been merged into the default branch.
+func (b *Bay) IsMerged() bool {
+	return b.Worktree != nil && b.Worktree.Merged
 }
 
-// IsWorkspaceID reports whether s matches the canonical workspace ID
+// IsBayID reports whether s matches the canonical bay ID
 // pattern: lowercase 'w' followed by a positive integer with no leading
-// zeros. The pattern is reserved — workspace Names cannot match it,
+// zeros. The pattern is reserved — bay Names cannot match it,
 // which keeps the ID and Name namespaces disjoint.
-func IsWorkspaceID(s string) bool {
-	_, ok := parseWorkspaceIDNum(s)
+func IsBayID(s string) bool {
+	_, ok := parseBayIDNum(s)
 	return ok
 }
 
-// parseWorkspaceIDNum extracts the integer suffix from a workspace ID.
+// parseBayIDNum extracts the integer suffix from a bay ID.
 // Returns (n, true) for valid IDs (n >= 1), (0, false) otherwise.
-func parseWorkspaceIDNum(s string) (int, bool) {
+func parseBayIDNum(s string) (int, bool) {
 	if len(s) < 2 || s[0] != 'w' {
 		return 0, false
 	}
 	rest := s[1:]
 	// Reject any non-digit lead — strconv.Atoi accepts +/- prefixes,
-	// but those aren't canonical workspace IDs.
+	// but those aren't canonical bay IDs.
 	if rest[0] < '0' || rest[0] > '9' {
 		return 0, false
 	}
@@ -173,34 +153,34 @@ func parseWorkspaceIDNum(s string) (int, bool) {
 	return n, true
 }
 
-// AssignWorkspaceIDs fills in IDs for any workspace in the dock whose ID
+// AssignBayIDs fills in IDs for any bay in the dock whose ID
 // is currently empty. Two passes after an initial scan:
 //
 //  1. Claim the path basename as ID if it matches the canonical pattern
 //     and isn't already taken in this dock. This preserves continuity
 //     for legacy manifests where path basenames are already w1/w2/...
-//  2. Assign next-sequential w<N> for any workspace still without an ID,
+//  2. Assign next-sequential w<N> for any bay still without an ID,
 //     where N is one above the highest used in the dock.
 //
 // Sequential IDs (pass 2) always fall above claimed-basename IDs (pass 1),
 // which keeps externals from stealing low IDs out from under worktrees
 // when dock ordering is mixed. The three-pass structure (scan → claim →
 // sequential) is required to preserve that invariant: merging scan into
-// claim risks one workspace claiming an ID a later workspace already
+// claim risks one bay claiming an ID a later bay already
 // holds explicitly, and merging claim into sequential lets a sequential
-// fill grab a low ID before another workspace's basename can claim it.
+// fill grab a low ID before another bay's basename can claim it.
 //
-// On collisions in pass 1 (two workspaces sharing the same w<N> path
-// basename), the workspace appearing first in dock.Workspaces wins; the
+// On collisions in pass 1 (two bays sharing the same w<N> path
+// basename), the bay appearing first in dock.Bays wins; the
 // second falls through to pass 2. Iteration order is the manifest's
 // stored order, so the result is deterministic across runs.
 //
-// Idempotent: a workspace with a non-empty ID is left alone, and the
+// Idempotent: a bay with a non-empty ID is left alone, and the
 // function returns immediately when no fill is needed.
-func AssignWorkspaceIDs(dock *Dock) {
+func AssignBayIDs(dock *Dock) {
 	needsFill := false
-	for i := range dock.Workspaces {
-		if dock.Workspaces[i].ID == "" {
+	for i := range dock.Bays {
+		if dock.Bays[i].ID == "" {
 			needsFill = true
 			break
 		}
@@ -211,40 +191,40 @@ func AssignWorkspaceIDs(dock *Dock) {
 
 	used := map[string]bool{}
 	maxN := 0
-	for i := range dock.Workspaces {
-		id := dock.Workspaces[i].ID
+	for i := range dock.Bays {
+		id := dock.Bays[i].ID
 		if id == "" {
 			continue
 		}
 		used[id] = true
-		if n, ok := parseWorkspaceIDNum(id); ok && n > maxN {
+		if n, ok := parseBayIDNum(id); ok && n > maxN {
 			maxN = n
 		}
 	}
-	for i := range dock.Workspaces {
-		ws := &dock.Workspaces[i]
-		if ws.ID != "" || ws.Path == "" {
+	for i := range dock.Bays {
+		bay := &dock.Bays[i]
+		if bay.ID != "" || bay.Path == "" {
 			continue
 		}
-		base := filepath.Base(ws.Path)
-		n, ok := parseWorkspaceIDNum(base)
+		base := filepath.Base(bay.Path)
+		n, ok := parseBayIDNum(base)
 		if !ok || used[base] {
 			continue
 		}
-		ws.ID = base
+		bay.ID = base
 		used[base] = true
 		if n > maxN {
 			maxN = n
 		}
 	}
-	for i := range dock.Workspaces {
-		ws := &dock.Workspaces[i]
-		if ws.ID != "" {
+	for i := range dock.Bays {
+		bay := &dock.Bays[i]
+		if bay.ID != "" {
 			continue
 		}
 		maxN++
-		ws.ID = fmt.Sprintf("w%d", maxN)
-		used[ws.ID] = true
+		bay.ID = fmt.Sprintf("w%d", maxN)
+		used[bay.ID] = true
 	}
 }
 
@@ -261,7 +241,7 @@ const PRCheckTTL = 300
 //   - the worktree has a branch but no PR cached, AND
 //   - we've never checked OR the last check is older than PRCheckTTL
 //
-// Callers must additionally verify the workspace path is non-empty.
+// Callers must additionally verify the bay path is non-empty.
 func (w *WorktreeAttrs) NeedsPRCheck(now int64) bool {
 	if w == nil || w.Branch == "" || w.PR != "" {
 		return false
@@ -274,8 +254,8 @@ func (w *WorktreeAttrs) NeedsPRCheck(now int64) bool {
 
 // Surface is the unit of navigation — anything you can focus and jump to.
 type Surface struct {
-	ID      int            `json:"id"`      // unique within workspace, stable across renames, never reused
-	Name    string         `json:"name"`    // unique within workspace; used for fuzzy nav
+	ID      int            `json:"id"`      // unique within bay, stable across renames, never reused
+	Name    string         `json:"name"`    // unique within bay; used for fuzzy nav
 	Type    SurfaceType    `json:"type"`    // semantic role: agent, editor, shell, cmd
 	Backend SurfaceBackend `json:"backend"` // interaction model: tmux-pane, gui-app
 
@@ -295,7 +275,7 @@ type TmuxAttrs struct {
 	WindowID string `json:"window_id,omitempty"`
 
 	// Stable — survives recover.
-	LayoutGroup int    `json:"layout_group"`         // per-workspace, starting from 1; same value = same tmux window
+	LayoutGroup int    `json:"layout_group"`         // per-bay, starting from 1; same value = same tmux window
 	SplitFrom   int    `json:"split_from,omitempty"` // surface ID; 0 = first pane in layout group
 	SplitDir    string `json:"split_dir,omitempty"`  // "h" or "v"; empty for first pane in group
 }
@@ -312,7 +292,7 @@ type ClosedEntryKind string
 
 const (
 	ClosedKindSurface ClosedEntryKind = "surface"
-	// ClosedKindWorkspace is reserved for Step 2 of undo-close.
+	// ClosedKindBay is reserved for Step 2 of undo-close.
 )
 
 // ClosedQueueMax caps the number of undo-close entries retained per dock.
@@ -333,35 +313,16 @@ type ClosedEntry struct {
 }
 
 // ClosedSurface records enough state to recreate a closed surface in its
-// parent workspace. Transient fields (PaneID, WindowID, ID) are deliberately
+// parent bay. Transient fields (PaneID, WindowID, ID) are deliberately
 // omitted — they're reassigned on restore.
 type ClosedSurface struct {
-	Workspace   string      `json:"bay"`                    // parent bay ID at close time (the stable handle)
+	Bay         string      `json:"bay"`                    // parent bay ID at close time (the stable handle)
 	Name        string      `json:"name"`                   // user-facing surface name
 	Type        SurfaceType `json:"type"`                   // agent / shell / cmd / editor
 	Agent       string      `json:"agent,omitempty"`        // type=agent
 	Command     string      `json:"command,omitempty"`      // type=cmd or type=editor
 	SplitDir    string      `json:"split_dir,omitempty"`    // "" = root pane, "h"/"v" = split
 	LayoutGroup int         `json:"layout_group,omitempty"` // original tmux window membership; restore re-joins siblings if any survive
-}
-
-// UnmarshalJSON accepts both the v5 `bay` field and the legacy `workspace`
-// field used by older undo-close entries.
-func (cs *ClosedSurface) UnmarshalJSON(data []byte) error {
-	type closedSurfaceJSON ClosedSurface
-	aux := struct {
-		*closedSurfaceJSON
-		LegacyWorkspace string `json:"workspace"`
-	}{
-		closedSurfaceJSON: (*closedSurfaceJSON)(cs),
-	}
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return err
-	}
-	if cs.Workspace == "" && aux.LegacyWorkspace != "" {
-		cs.Workspace = aux.LegacyWorkspace
-	}
-	return nil
 }
 
 // PushClosedEntry appends entry to the dock's undo-close queue, enforcing
@@ -446,28 +407,26 @@ func Parse(data []byte) (*Manifest, error) {
 	// Migrate v2 → v3: convert status=done to Worktree.Merged=true.
 	if m.Version < 3 {
 		for i := range m.Docks {
-			for j := range m.Docks[i].Workspaces {
-				ws := &m.Docks[i].Workspaces[j]
-				if ws.DeprecatedStatus == "done" && ws.Worktree != nil {
-					ws.Worktree.Merged = true
+			for j := range m.Docks[i].Bays {
+				bay := &m.Docks[i].Bays[j]
+				if bay.DeprecatedStatus == "done" && bay.Worktree != nil {
+					bay.Worktree.Merged = true
 				}
-				ws.DeprecatedStatus = ""
+				bay.DeprecatedStatus = ""
 			}
 		}
 	}
 
-	// Fill in workspace IDs. Runs unconditionally:
-	//   - For pre-v4 manifests, workspaces have no ID field set.
-	//   - Defensive: if any workspace was created without an ID (e.g.,
+	// Fill in bay IDs. Runs unconditionally:
+	//   - For pre-v4 manifests, bays have no ID field set.
+	//   - Defensive: if any bay was created without an ID (e.g.,
 	//     during the rollout window before engine wires up ID assignment
 	//     at creation), Parse fills it in here so callers can rely on
-	//     ws.ID being non-empty.
+	//     bay.ID being non-empty.
 	for i := range m.Docks {
-		AssignWorkspaceIDs(&m.Docks[i])
+		AssignBayIDs(&m.Docks[i])
 	}
 
-	// v5 renamed dock.workspaces to dock.bays. Dock.UnmarshalJSON handles
-	// both forms, so v4→v5 is a pure decode rename with no migration body.
 	if m.Version < 6 {
 		if err := migrateV5ToV6(&m); err != nil {
 			return nil, err
@@ -515,17 +474,17 @@ func migrateV5ToV6(m *Manifest) error {
 			dock.Path = repo.Path
 			dock.WorktreeDir = repo.WorktreeDir
 		}
-		for j := range dock.Workspaces {
-			ws := &dock.Workspaces[j]
-			if ws.Worktree == nil || ws.Worktree.Repo == "" || ws.Worktree.Repo == dock.Repo {
+		for j := range dock.Bays {
+			bay := &dock.Bays[j]
+			if bay.Worktree == nil || bay.Worktree.Repo == "" || bay.Worktree.Repo == dock.Repo {
 				continue
 			}
-			return fmt.Errorf("cannot migrate manifest v5 to v6: cross-repo bay %s:%s uses repo %q but dock uses repo %q; close or recreate the bay in a dock for repo %q before upgrading", dock.Name, ws.ID, ws.Worktree.Repo, dock.Repo, ws.Worktree.Repo)
+			return fmt.Errorf("cannot migrate manifest v5 to v6: cross-repo bay %s:%s uses repo %q but dock uses repo %q; close or recreate the bay in a dock for repo %q before upgrading", dock.Name, bay.ID, bay.Worktree.Repo, dock.Repo, bay.Worktree.Repo)
 		}
 		dock.Repo = ""
-		for j := range dock.Workspaces {
-			if dock.Workspaces[j].Worktree != nil {
-				dock.Workspaces[j].Worktree.Repo = ""
+		for j := range dock.Bays {
+			if dock.Bays[j].Worktree != nil {
+				dock.Bays[j].Worktree.Repo = ""
 			}
 		}
 	}
@@ -653,15 +612,15 @@ func SaveArchive(path string, m *Manifest) error {
 	return Save(path, m)
 }
 
-// AllWorkspaces returns all workspaces across all docks, sorted by dock then workspace name.
-func AllWorkspaces(m *Manifest) []WorkspaceRef {
-	var refs []WorkspaceRef
+// AllBays returns all bays across all docks, sorted by dock then bay name.
+func AllBays(m *Manifest) []BayRef {
+	var refs []BayRef
 	for i := range m.Docks {
 		dock := &m.Docks[i]
-		for j := range dock.Workspaces {
-			refs = append(refs, WorkspaceRef{
-				Dock:      dock.Name,
-				Workspace: &dock.Workspaces[j],
+		for j := range dock.Bays {
+			refs = append(refs, BayRef{
+				Dock: dock.Name,
+				Bay:  &dock.Bays[j],
 			})
 		}
 	}
@@ -669,15 +628,15 @@ func AllWorkspaces(m *Manifest) []WorkspaceRef {
 		if refs[i].Dock != refs[j].Dock {
 			return refs[i].Dock < refs[j].Dock
 		}
-		return refs[i].Workspace.Name < refs[j].Workspace.Name
+		return refs[i].Bay.Name < refs[j].Bay.Name
 	})
 	return refs
 }
 
-// WorkspaceRef is a reference to a workspace within its dock.
-type WorkspaceRef struct {
-	Dock      string
-	Workspace *Workspace
+// BayRef is a reference to a bay within its dock.
+type BayRef struct {
+	Dock string
+	Bay  *Bay
 }
 
 // --- Dock operations ---
@@ -697,8 +656,8 @@ func (m *Manifest) AddDock(d Dock) error {
 	if m.FindDock(d.Name) != nil {
 		return fmt.Errorf("dock %q already exists", d.Name)
 	}
-	if d.Workspaces == nil {
-		d.Workspaces = []Workspace{}
+	if d.Bays == nil {
+		d.Bays = []Bay{}
 	}
 	m.Docks = append(m.Docks, d)
 	return nil
@@ -715,64 +674,83 @@ func (m *Manifest) RemoveDock(name string) error {
 	return fmt.Errorf("dock %q not found", name)
 }
 
-// --- Workspace operations ---
+// --- Bay operations ---
 
-// FindWorkspace returns the first workspace with a matching non-empty Name.
-// Empty Names always return nil — multiple workspaces may legitimately have
+// FindBay returns the first bay with a matching non-empty Name.
+// Empty Names always return nil — multiple bays may legitimately have
 // no Name set (display falls back to ID), so an empty-string lookup is not
 // a useful identification query.
-func (d *Dock) FindWorkspace(name string) *Workspace {
+func (d *Dock) FindBay(name string) *Bay {
 	if name == "" {
 		return nil
 	}
-	for i := range d.Workspaces {
-		if d.Workspaces[i].Name == name {
-			return &d.Workspaces[i]
+	for i := range d.Bays {
+		if d.Bays[i].Name == name {
+			return &d.Bays[i]
 		}
 	}
 	return nil
 }
 
-// FindWorkspaceByID returns the workspace with the matching ID, or nil.
+// FindBayByID returns the bay with the matching ID, or nil.
 // IDs are unique within a dock and never reused, so this is the canonical
 // lookup once the resolver moves off Name.
-func (d *Dock) FindWorkspaceByID(id string) *Workspace {
+func (d *Dock) FindBayByID(id string) *Bay {
 	if id == "" {
 		return nil
 	}
-	for i := range d.Workspaces {
-		if d.Workspaces[i].ID == id {
-			return &d.Workspaces[i]
+	for i := range d.Bays {
+		if d.Bays[i].ID == id {
+			return &d.Bays[i]
 		}
 	}
 	return nil
 }
 
-// AddWorkspace adds a workspace. Returns an error if the workspace's Name
-// is non-empty and already taken in the dock. Empty-Name workspaces are
+// AddBay adds a bay. Returns an error if the bay's Name
+// is non-empty and already taken in the dock. Empty-Name bays are
 // always allowed; they'll display via their ID until a Name is set.
-func (d *Dock) AddWorkspace(ws Workspace) error {
-	if ws.Name != "" && d.FindWorkspace(ws.Name) != nil {
-		return fmt.Errorf("bay %q already exists in dock %q", ws.Name, d.Name)
+func (d *Dock) AddBay(bay Bay) error {
+	if bay.Name != "" && d.FindBay(bay.Name) != nil {
+		return fmt.Errorf("bay %q already exists in dock %q", bay.Name, d.Name)
 	}
-	if ws.Surfaces == nil {
-		ws.Surfaces = []Surface{}
+	if bay.Surfaces == nil {
+		bay.Surfaces = []Surface{}
 	}
-	d.Workspaces = append(d.Workspaces, ws)
+	d.Bays = append(d.Bays, bay)
 	return nil
 }
 
-// RemoveWorkspace removes a workspace identified by ID. (Names are no
+// RemoveBay removes a bay identified by ID. (Names are no
 // longer CLI keys; the engine layer passes the ID it received from the
 // resolver.)
-func (d *Dock) RemoveWorkspace(id string) error {
-	for i := range d.Workspaces {
-		if d.Workspaces[i].ID == id {
-			d.Workspaces = append(d.Workspaces[:i], d.Workspaces[i+1:]...)
+//
+// Also purges any undo-close entries that reference this bay ID:
+// IDs are reassigned from a max-of-current pool, so a future bay can
+// reclaim this ID and a stale entry would silently restore into it.
+func (d *Dock) RemoveBay(id string) error {
+	for i := range d.Bays {
+		if d.Bays[i].ID == id {
+			d.Bays = append(d.Bays[:i], d.Bays[i+1:]...)
+			d.purgeClosedEntriesForBay(id)
 			return nil
 		}
 	}
 	return fmt.Errorf("bay %q not found in dock %q", id, d.Name)
+}
+
+func (d *Dock) purgeClosedEntriesForBay(bayID string) {
+	if len(d.ClosedEntries) == 0 {
+		return
+	}
+	kept := d.ClosedEntries[:0]
+	for _, e := range d.ClosedEntries {
+		if e.Kind == ClosedKindSurface && e.Surface != nil && e.Surface.Bay == bayID {
+			continue
+		}
+		kept = append(kept, e)
+	}
+	d.ClosedEntries = kept
 }
 
 // FindDockSurface returns a pointer to a dock-level surface by name.
@@ -814,10 +792,10 @@ func (d *Dock) RemoveDockSurface(name string) error {
 
 // --- Surface operations ---
 
-// NextSurfaceID returns the next surface ID (max+1) for the workspace.
-func (ws *Workspace) NextSurfaceID() int {
+// NextSurfaceID returns the next surface ID (max+1) for the bay.
+func (b *Bay) NextSurfaceID() int {
 	max := 0
-	for _, s := range ws.Surfaces {
+	for _, s := range b.Surfaces {
 		if s.ID > max {
 			max = s.ID
 		}
@@ -826,88 +804,88 @@ func (ws *Workspace) NextSurfaceID() int {
 }
 
 // FindSurface returns a pointer to the surface with the given name, or nil.
-func (ws *Workspace) FindSurface(name string) *Surface {
-	for i := range ws.Surfaces {
-		if ws.Surfaces[i].Name == name {
-			return &ws.Surfaces[i]
+func (b *Bay) FindSurface(name string) *Surface {
+	for i := range b.Surfaces {
+		if b.Surfaces[i].Name == name {
+			return &b.Surfaces[i]
 		}
 	}
 	return nil
 }
 
 // FindSurfaceByID returns a pointer to the surface with the given ID, or nil.
-func (ws *Workspace) FindSurfaceByID(id int) *Surface {
-	for i := range ws.Surfaces {
-		if ws.Surfaces[i].ID == id {
-			return &ws.Surfaces[i]
+func (b *Bay) FindSurfaceByID(id int) *Surface {
+	for i := range b.Surfaces {
+		if b.Surfaces[i].ID == id {
+			return &b.Surfaces[i]
 		}
 	}
 	return nil
 }
 
 // AddSurface adds a surface with an auto-assigned ID. Returns the assigned ID.
-func (ws *Workspace) AddSurface(s Surface) (int, error) {
-	if ws.FindSurface(s.Name) != nil {
-		return 0, fmt.Errorf("surface %q already exists in bay %q", s.Name, ws.Name)
+func (b *Bay) AddSurface(s Surface) (int, error) {
+	if b.FindSurface(s.Name) != nil {
+		return 0, fmt.Errorf("surface %q already exists in bay %q", s.Name, b.Name)
 	}
-	s.ID = ws.NextSurfaceID()
-	ws.Surfaces = append(ws.Surfaces, s)
+	s.ID = b.NextSurfaceID()
+	b.Surfaces = append(b.Surfaces, s)
 	return s.ID, nil
 }
 
 // RemoveSurface removes a surface by name.
-func (ws *Workspace) RemoveSurface(name string) error {
-	for i := range ws.Surfaces {
-		if ws.Surfaces[i].Name == name {
-			ws.Surfaces = append(ws.Surfaces[:i], ws.Surfaces[i+1:]...)
+func (b *Bay) RemoveSurface(name string) error {
+	for i := range b.Surfaces {
+		if b.Surfaces[i].Name == name {
+			b.Surfaces = append(b.Surfaces[:i], b.Surfaces[i+1:]...)
 			return nil
 		}
 	}
-	return fmt.Errorf("surface %q not found in bay %q", name, ws.Name)
+	return fmt.Errorf("surface %q not found in bay %q", name, b.Name)
 }
 
-// --- Workspace resolution ---
+// --- Bay resolution ---
 
-// ResolveWorkspace resolves a query that may be "dock:id" or a bare ID.
-// Returns pointers to the workspace and its parent dock.
+// ResolveBay resolves a query that may be "dock:id" or a bare ID.
+// Returns pointers to the bay and its parent dock.
 //
 // Strict resolution: only IDs are accepted as CLI keys. If the query
 // looks like a Name (i.e. it doesn't match a known ID), the error
-// message hints at the canonical ID for any workspace with a matching
+// message hints at the canonical ID for any bay with a matching
 // Name, so users who type a friendly Name see a one-step fix.
-func (m *Manifest) ResolveWorkspace(query string) (*Workspace, *Dock, error) {
+func (m *Manifest) ResolveBay(query string) (*Bay, *Dock, error) {
 	// Try "dock:id" format.
 	if parts := strings.SplitN(query, ":", 2); len(parts) == 2 {
 		d := m.FindDock(parts[0])
 		if d == nil {
 			return nil, nil, fmt.Errorf("dock %q not found", parts[0])
 		}
-		ws := d.FindWorkspaceByID(parts[1])
-		if ws == nil {
-			return nil, nil, workspaceNotFoundError(parts[1], parts[0], dockNameHints(d, parts[1]))
+		bay := d.FindBayByID(parts[1])
+		if bay == nil {
+			return nil, nil, bayNotFoundError(parts[1], parts[0], dockNameHints(d, parts[1]))
 		}
-		return ws, d, nil
+		return bay, d, nil
 	}
 
 	// Bare ID: search all docks.
 	var matches []struct {
-		ws   *Workspace
+		bay  *Bay
 		dock *Dock
 	}
 	for i := range m.Docks {
-		if ws := m.Docks[i].FindWorkspaceByID(query); ws != nil {
+		if bay := m.Docks[i].FindBayByID(query); bay != nil {
 			matches = append(matches, struct {
-				ws   *Workspace
+				bay  *Bay
 				dock *Dock
-			}{ws, &m.Docks[i]})
+			}{bay, &m.Docks[i]})
 		}
 	}
 
 	switch len(matches) {
 	case 0:
-		return nil, nil, workspaceNotFoundError(query, "", manifestNameHints(m, query))
+		return nil, nil, bayNotFoundError(query, "", manifestNameHints(m, query))
 	case 1:
-		return matches[0].ws, matches[0].dock, nil
+		return matches[0].bay, matches[0].dock, nil
 	default:
 		var docks []string
 		for _, match := range matches {
@@ -923,18 +901,18 @@ type nameHint struct {
 	dock string
 }
 
-// dockNameHints returns IDs of workspaces in d whose Name equals query.
+// dockNameHints returns IDs of bays in d whose Name equals query.
 func dockNameHints(d *Dock, query string) []nameHint {
 	var hints []nameHint
-	for i := range d.Workspaces {
-		if d.Workspaces[i].Name == query {
-			hints = append(hints, nameHint{id: d.Workspaces[i].ID, dock: d.Name})
+	for i := range d.Bays {
+		if d.Bays[i].Name == query {
+			hints = append(hints, nameHint{id: d.Bays[i].ID, dock: d.Name})
 		}
 	}
 	return hints
 }
 
-// manifestNameHints returns IDs of workspaces across all docks whose
+// manifestNameHints returns IDs of bays across all docks whose
 // Name equals query.
 func manifestNameHints(m *Manifest, query string) []nameHint {
 	var hints []nameHint
@@ -944,10 +922,10 @@ func manifestNameHints(m *Manifest, query string) []nameHint {
 	return hints
 }
 
-// workspaceNotFoundError formats a "workspace not found" error,
+// bayNotFoundError formats a "bay not found" error,
 // optionally adding a "did you mean" pointer at the canonical ID for
-// any workspace whose Name matched the query.
-func workspaceNotFoundError(query, dockName string, hints []nameHint) error {
+// any bay whose Name matched the query.
+func bayNotFoundError(query, dockName string, hints []nameHint) error {
 	base := fmt.Sprintf("bay %q not found", query)
 	if dockName != "" {
 		base = fmt.Sprintf("bay %q not found in dock %q", query, dockName)

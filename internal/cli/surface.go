@@ -95,9 +95,9 @@ func defaultCmdName(command string) string {
 	return filepath.Base(fields[0])
 }
 
-// runSurfaceNew creates a new surface in (dockName, wsName). The caller is
-// responsible for resolving (dockName, wsName) and setting opts.Type.
-func runSurfaceNew(eng *engine.Engine, dockName, wsName string, opts surfaceNewOpts) error {
+// runSurfaceNew creates a new surface in (dockName, bayName). The caller is
+// responsible for resolving (dockName, bayName) and setting opts.Type.
+func runSurfaceNew(eng *engine.Engine, dockName, bayName string, opts surfaceNewOpts) error {
 	if err := validateSurfaceName(opts.Name); err != nil {
 		return err
 	}
@@ -123,7 +123,7 @@ func runSurfaceNew(eng *engine.Engine, dockName, wsName string, opts surfaceNewO
 	}
 	return eng.SurfaceAdd(engine.SurfaceAddOptions{
 		DockName: dockName,
-		WsName:   wsName,
+		BayName:  bayName,
 		Type:     opts.Type,
 		Name:     name,
 		Agent:    agent,
@@ -133,7 +133,7 @@ func runSurfaceNew(eng *engine.Engine, dockName, wsName string, opts surfaceNewO
 }
 
 func newSurfaceCloseCmd() *cobra.Command {
-	var wsFlag, dockFlag string
+	var bayFlag, dockFlag string
 	var force bool
 
 	cmd := &cobra.Command{
@@ -163,11 +163,11 @@ skip close confirmations.`,
 			if err != nil {
 				return err
 			}
-			return runSurfaceClose(eng, args, wsFlag, dockFlag, force)
+			return runSurfaceClose(eng, args, bayFlag, dockFlag, force)
 		},
 	}
 
-	cmd.Flags().StringVar(&wsFlag, "bay", "", "bay ID (disambiguates with --dock)")
+	cmd.Flags().StringVar(&bayFlag, "bay", "", "bay ID (disambiguates with --dock)")
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (only valid with --bay or a bay prefix)")
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "skip close confirmations")
 
@@ -183,9 +183,9 @@ skip close confirmations.`,
 // protect keybinding users from accidental bay teardown. Agent surfaces
 // prompt for confirmation when stdin is a TTY (unless force is true). Other
 // surface types close without prompting.
-func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string, force bool) error {
+func runSurfaceClose(eng *engine.Engine, args []string, bayFlag, dockFlag string, force bool) error {
 	if len(args) == 0 {
-		if wsFlag != "" || dockFlag != "" {
+		if bayFlag != "" || dockFlag != "" {
 			return fmt.Errorf("--bay/--dock require a surface name")
 		}
 		return fmt.Errorf("specify a surface name (or 'self' to close the current surface)")
@@ -200,13 +200,13 @@ func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string,
 		return eng.DockSurfaceClose(session, sfName)
 	}
 
-	dockName, wsName, sName, err := resolveSurfaceArgOrSelf(eng, args[0], wsFlag, dockFlag)
+	dockName, bayName, sName, err := resolveSurfaceArgOrSelf(eng, args[0], bayFlag, dockFlag)
 	if err != nil {
 		return err
 	}
 
-	// wsName == "" means this resolved to a dock surface (via self).
-	if wsName == "" {
+	// bayName == "" means this resolved to a dock surface (via self).
+	if bayName == "" {
 		return eng.DockSurfaceClose(dockName, sName)
 	}
 
@@ -221,21 +221,21 @@ func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string,
 	//     protecting on its own. Skipped when the last-surface check has
 	//     already fired — one confirmation is enough.
 	if !force {
-		ws, err := eng.WsShow(dockName, wsName)
+		bay, err := eng.BayShow(dockName, bayName)
 		if err != nil {
 			return err
 		}
-		switch s := ws.FindSurface(sName); {
+		switch s := bay.FindSurface(sName); {
 		case s == nil:
 			// Surface not in manifest; let SurfaceClose surface the error.
-		case len(ws.Surfaces) == 1 && shouldConfirmLastSurfaceClose():
-			if msg, err := lastSurfaceCloseRefusal(eng, ws); err != nil {
+		case len(bay.Surfaces) == 1 && shouldConfirmLastSurfaceClose():
+			if msg, err := lastSurfaceCloseRefusal(eng, bay); err != nil {
 				return err
 			} else if msg != "" {
 				notifyFor(eng, msg, 5000)
 				return nil
 			}
-			if !confirmLastSurfaceClose(eng.Tmux.DisplayMessage, dockName, wsName) {
+			if !confirmLastSurfaceClose(eng.Tmux.DisplayMessage, dockName, bayName) {
 				return nil
 			}
 		case s.Type == manifest.SurfaceTypeAgent:
@@ -246,31 +246,31 @@ func runSurfaceClose(eng *engine.Engine, args []string, wsFlag, dockFlag string,
 		}
 	}
 
-	return eng.SurfaceClose(dockName, wsName, sName, force)
+	return eng.SurfaceClose(dockName, bayName, sName, force)
 }
 
-func lastSurfaceCloseRefusal(eng *engine.Engine, ws *manifest.Workspace) (string, error) {
-	if ws.Type != manifest.WorkspaceTypeWorktree || ws.Path == "" {
+func lastSurfaceCloseRefusal(eng *engine.Engine, bay *manifest.Bay) (string, error) {
+	if bay.Type != manifest.BayTypeWorktree || bay.Path == "" {
 		return "", nil
 	}
-	if _, statErr := os.Stat(ws.Path); statErr != nil {
+	if _, statErr := os.Stat(bay.Path); statErr != nil {
 		return "", nil
 	}
 
-	dirty, err := eng.HasBlockingDirtyChanges(ws)
+	dirty, err := eng.HasBlockingDirtyChanges(bay)
 	if err != nil {
 		return "", err
 	}
 	if dirty {
-		return fmt.Sprintf("%s: bay kept (local changes may be work in progress).", ws.Name), nil
+		return fmt.Sprintf("%s: bay kept (local changes may be work in progress).", bay.Name), nil
 	}
 
-	unpushed, err := eng.HasUnlandedCommits(ws)
+	unpushed, err := eng.HasUnlandedCommits(bay)
 	if err != nil {
-		return "", fmt.Errorf("bay %q: could not verify push status: %w (use --force to override)", ws.Name, err)
+		return "", fmt.Errorf("bay %q: could not verify push status: %w (use --force to override)", bay.Name, err)
 	}
 	if unpushed {
-		return fmt.Sprintf("%s: bay kept (unlanded commits).", ws.Name), nil
+		return fmt.Sprintf("%s: bay kept (unlanded commits).", bay.Name), nil
 	}
 	return "", nil
 }
@@ -398,7 +398,7 @@ func printClosedQueue(eng *engine.Engine, dockName string) error {
 			} else if s.Command != "" {
 				extra = " cmd=" + engine.TruncateTabName(s.Command, 40)
 			}
-			fmt.Printf("%d. %s surface %s/%s (%s)%s\n", i+1, age, s.Workspace, s.Name, s.Type, extra)
+			fmt.Printf("%d. %s surface %s/%s (%s)%s\n", i+1, age, s.Bay, s.Name, s.Type, extra)
 		default:
 			fmt.Printf("%d. %s %s\n", i+1, age, e.Kind)
 		}
@@ -480,7 +480,7 @@ func newSurfaceLsCmd() *cobra.Command {
 				return err
 			}
 
-			dockName, wsName, err := eng.ResolveSelf()
+			dockName, bayName, err := eng.ResolveSelf()
 			if err != nil {
 				return fmt.Errorf("not in a bay")
 			}
@@ -494,9 +494,9 @@ func newSurfaceLsCmd() *cobra.Command {
 				if d.Name != dockName {
 					continue
 				}
-				for _, ws := range d.Workspaces {
-					if ws.ID == wsName {
-						surfaces = ws.Surfaces
+				for _, bay := range d.Bays {
+					if bay.ID == bayName {
+						surfaces = bay.Surfaces
 						break
 					}
 				}
@@ -518,7 +518,7 @@ func newSurfaceLsCmd() *cobra.Command {
 			}
 
 			currentSurface := ""
-			if ctx, err := eng.CurrentContext(); err == nil && ctx.Dock == dockName && ctx.WorkspaceID == wsName {
+			if ctx, err := eng.CurrentContext(); err == nil && ctx.Dock == dockName && ctx.BayID == bayName {
 				currentSurface = ctx.Surface
 			}
 			fmt.Print(FormatSurfaceList(surfaces, currentSurface, shortOutput))
@@ -533,7 +533,7 @@ func newSurfaceLsCmd() *cobra.Command {
 }
 
 func newSurfaceShowCmd() *cobra.Command {
-	var wsFlag, dockFlag string
+	var bayFlag, dockFlag string
 
 	cmd := &cobra.Command{
 		Use:     "show [name]",
@@ -545,11 +545,11 @@ func newSurfaceShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runSurfaceShow(eng, args, wsFlag, dockFlag)
+			return runSurfaceShow(eng, args, bayFlag, dockFlag)
 		},
 	}
 
-	cmd.Flags().StringVar(&wsFlag, "bay", "", "bay ID (disambiguates with --dock)")
+	cmd.Flags().StringVar(&bayFlag, "bay", "", "bay ID (disambiguates with --dock)")
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (only valid with --bay or a bay prefix)")
 
 	return cmd
@@ -558,25 +558,25 @@ func newSurfaceShowCmd() *cobra.Command {
 // runSurfaceShow prints details for a named surface. Accepts the `self`
 // keyword, and a bare no-arg invocation defaults to the current pane's
 // surface.
-func runSurfaceShow(eng *engine.Engine, args []string, wsFlag, dockFlag string) error {
+func runSurfaceShow(eng *engine.Engine, args []string, bayFlag, dockFlag string) error {
 	target := "self"
 	if len(args) > 0 {
 		target = args[0]
 	}
-	dockName, wsName, sName, err := resolveSurfaceArgOrSelf(eng, target, wsFlag, dockFlag)
+	dockName, bayName, sName, err := resolveSurfaceArgOrSelf(eng, target, bayFlag, dockFlag)
 	if err != nil {
 		return err
 	}
 
 	eng.SyncAll()
-	ws, err := eng.WsShow(dockName, wsName)
+	bay, err := eng.BayShow(dockName, bayName)
 	if err != nil {
 		return err
 	}
 
-	s := ws.FindSurface(sName)
+	s := bay.FindSurface(sName)
 	if s == nil {
-		return fmt.Errorf("surface %q not found in bay %q", sName, wsName)
+		return fmt.Errorf("surface %q not found in bay %q", sName, bayName)
 	}
 
 	rows := []showRow{
@@ -602,7 +602,7 @@ func runSurfaceShow(eng *engine.Engine, args []string, wsFlag, dockFlag string) 
 }
 
 func newSurfaceRenameCmd() *cobra.Command {
-	var wsFlag, dockFlag string
+	var bayFlag, dockFlag string
 
 	cmd := &cobra.Command{
 		Use:     "rename [old] <new>",
@@ -623,11 +623,11 @@ func newSurfaceRenameCmd() *cobra.Command {
 			if len(args) == 1 {
 				args = []string{"self", args[0]}
 			}
-			return runSurfaceRename(eng, args, wsFlag, dockFlag)
+			return runSurfaceRename(eng, args, bayFlag, dockFlag)
 		},
 	}
 
-	cmd.Flags().StringVar(&wsFlag, "bay", "", "bay ID (disambiguates with --dock)")
+	cmd.Flags().StringVar(&bayFlag, "bay", "", "bay ID (disambiguates with --dock)")
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (only valid with --bay or a bay prefix)")
 
 	return cmd
@@ -639,29 +639,29 @@ func newSurfaceRenameCmd() *cobra.Command {
 //
 // Precondition: args must contain exactly two elements. Cobra's ExactArgs(2)
 // enforces this in production; callers from tests should pass the same.
-func runSurfaceRename(eng *engine.Engine, args []string, wsFlag, dockFlag string) error {
-	dockName, wsName, oldName, err := resolveSurfaceArgOrSelf(eng, args[0], wsFlag, dockFlag)
+func runSurfaceRename(eng *engine.Engine, args []string, bayFlag, dockFlag string) error {
+	dockName, bayName, oldName, err := resolveSurfaceArgOrSelf(eng, args[0], bayFlag, dockFlag)
 	if err != nil {
 		return err
 	}
-	return eng.SurfaceRename(dockName, wsName, oldName, args[1])
+	return eng.SurfaceRename(dockName, bayName, oldName, args[1])
 }
 
 // surfaceGo implements the surface picker / direct jump logic.
 func surfaceGo(eng *engine.Engine, args []string, nextWaiting bool) error {
-	dockName, wsName, err := eng.ResolveSelf()
+	dockName, bayName, err := eng.ResolveSelf()
 	if err != nil {
 		return fmt.Errorf("not in a bay")
 	}
 
-	ws, err := eng.WsShow(dockName, wsName)
+	bay, err := eng.BayShow(dockName, bayName)
 	if err != nil {
 		return err
 	}
 
 	currentPaneID, _ := eng.Tmux.CurrentPaneID()
 	waitingWindows, _ := eng.Tmux.WaitingOrBellWindowIDs(dockName)
-	entries := nav.CollectSurfaces(ws, currentPaneID, waitingWindows)
+	entries := nav.CollectSurfaces(bay, currentPaneID, waitingWindows)
 
 	if len(entries) == 0 {
 		return nil
@@ -672,7 +672,7 @@ func surfaceGo(eng *engine.Engine, args []string, nextWaiting bool) error {
 		if target == nil {
 			return nil
 		}
-		return focusSurface(eng, target, dockName, wsName)
+		return focusSurface(eng, target, dockName, bayName)
 	}
 
 	// Filter by query.
@@ -691,28 +691,28 @@ func surfaceGo(eng *engine.Engine, args []string, nextWaiting bool) error {
 		if entries[0].Current {
 			return nil // already here
 		}
-		return focusSurface(eng, &entries[0], dockName, wsName)
+		return focusSurface(eng, &entries[0], dockName, bayName)
 	default:
-		return pickSurface(eng, entries, dockName, wsName)
+		return pickSurface(eng, entries, dockName, bayName)
 	}
 }
 
 // surfaceCycle moves to next/prev surface in the current bay and
 // flashes the new position via the cycling indicator.
 func surfaceCycle(eng *engine.Engine, forward bool) error {
-	dockName, wsName, err := eng.ResolveSelf()
+	dockName, bayName, err := eng.ResolveSelf()
 	if err != nil {
 		return fmt.Errorf("not in a bay")
 	}
 
-	ws, err := eng.WsShow(dockName, wsName)
+	bay, err := eng.BayShow(dockName, bayName)
 	if err != nil {
 		return err
 	}
 
 	currentPaneID, _ := eng.Tmux.CurrentPaneID()
 	waitingWindows, _ := eng.Tmux.WaitingOrBellWindowIDs(dockName)
-	entries := nav.CollectSurfaces(ws, currentPaneID, waitingWindows)
+	entries := nav.CollectSurfaces(bay, currentPaneID, waitingWindows)
 
 	if len(entries) < 2 {
 		return nil
@@ -724,14 +724,14 @@ func surfaceCycle(eng *engine.Engine, forward bool) error {
 	} else {
 		target, _ = nav.PrevSurface(entries)
 	}
-	if err := focusSurface(eng, target, dockName, wsName); err != nil {
+	if err := focusSurface(eng, target, dockName, bayName); err != nil {
 		return err
 	}
 	return nil
 }
 
 // focusSurface switches focus to a surface and records it as last-focused.
-func focusSurface(eng *engine.Engine, entry *nav.SurfaceEntry, dockName, wsName string) error {
+func focusSurface(eng *engine.Engine, entry *nav.SurfaceEntry, dockName, bayName string) error {
 	if entry.WindowID != "" {
 		if err := eng.Tmux.SelectWindow(entry.WindowID); err != nil {
 			return err
@@ -742,12 +742,12 @@ func focusSurface(eng *engine.Engine, entry *nav.SurfaceEntry, dockName, wsName 
 			return err
 		}
 	}
-	_ = eng.SetLastFocused(dockName, wsName, entry.ID)
+	_ = eng.SetLastFocused(dockName, bayName, entry.ID)
 	return nil
 }
 
 // pickSurface shows the built-in picker for surface selection.
-func pickSurface(eng *engine.Engine, entries []nav.SurfaceEntry, dockName, wsName string) error {
+func pickSurface(eng *engine.Engine, entries []nav.SurfaceEntry, dockName, bayName string) error {
 	items := formatSurfaceItems(entries)
 	currentIdx := 0
 	for i, e := range entries {
@@ -760,7 +760,7 @@ func pickSurface(eng *engine.Engine, entries []nav.SurfaceEntry, dockName, wsNam
 	if err != nil || selected < 0 {
 		return nil // cancelled
 	}
-	return focusSurface(eng, &entries[selected], dockName, wsName)
+	return focusSurface(eng, &entries[selected], dockName, bayName)
 }
 
 // formatSurfaceItems formats surface entries with aligned columns.

@@ -67,7 +67,7 @@ bay setup
 This creates your config file, installs tmux keybindings, sets up shell
 completions, and configures your default agent and editor. If Claude Code
 or Codex is installed, it also installs hooks so tmux highlights the tab
-when an agent needs permission or finishes a turn — Option+R then jumps
+when an agent needs permission or finishes a turn — Option+r then jumps
 straight to it.
 
 ### Explicit dock
@@ -696,6 +696,7 @@ prefix required — just press the key combo directly.
 | `Option+H` / `Option+L` | Select pane left / right (tmux-native) |
 | `Option+J` / `Option+K` | Select pane down / up (mirrors `j`/`k`) |
 | `Option+g` | Bay picker (popup) |
+| `Option+r` | Jump to next waiting bay in dock (agent needs attention) |
 
 ### Creation (lowercase = split pane, Shift = new window)
 
@@ -704,7 +705,7 @@ prefix required — just press the key combo directly.
 | `Option+s` / `Option+S` | Shell pane / shell window |
 | `Option+a` / `Option+A` | Agent pane / agent window |
 | `Option+e` / `Option+E` | Bay editor / dock editor |
-| `Option+c` | Create bay in current dock |
+| `Option+c` / `Option+C` | Create bay in current dock (Shift adds the dock's default agent) |
 
 ### Utility
 
@@ -715,6 +716,21 @@ prefix required — just press the key combo directly.
 | `Option+/` | Flash current bay (name — first-line description — branch — #PR) |
 | `Option+?` | Popup with full bay description (including body) |
 | `Option+p` | Command palette (Tab inside to flip window/pane mode) |
+
+### Agent chord (`Option+o`)
+
+`Option+o` opens a tmux key-table that picks a specific agent without
+going through the dock's default. Each chord shows a 2-second toast
+reminding you of the letters.
+
+| Chord | Action |
+|-------|--------|
+| `Option+o c` / `Option+o C` | Claude in current bay (pane / window) |
+| `Option+o x` / `Option+o X` | Codex in current bay (pane / window) |
+| `Option+o g` / `Option+o G` | Gemini in current bay (pane / window) |
+| `Option+o b c` | New bay in current dock with Claude |
+| `Option+o b x` | New bay in current dock with Codex |
+| `Option+o b g` | New bay in current dock with Gemini |
 
 ### Pattern
 
@@ -738,42 +754,8 @@ pane), `bay setup` on re-run detects canonical keys bound to a
 non-canonical bay command and prompts to update them. Opt out per-key
 by adding `# bay-keep: M-s` to the bay block — bay will stop asking
 about that key, and `bay doctor` will stop reporting it as missing.
-
-### Optional: personal agent launcher
-
-If you regularly switch between specific agents, add a personal tmux
-key table outside the managed `# Bay keybindings` block. This keeps
-Bay's default keymap focused on generic actions while giving you
-deterministic shortcuts for your own agent workflow.
-
-This example uses `Option+o` as an agent namespace; choose another
-unused key if you already bind it. Lowercase opens a split pane,
-uppercase opens a new tmux window, and `w` switches to bay
-creation:
-
-```tmux
-# BEGIN bay-personal-agent-bindings
-# Personal Bay agent launcher. Keep outside the "# Bay keybindings" block.
-bind-key -n M-o display-message -d 2000 "agent: c Claude, x Codex, g Gemini | Shift=window | w=bay" \; switch-client -T bay-agent
-
-bind-key -T bay-agent c run-shell 'bay agent claude --pane || true'
-bind-key -T bay-agent C run-shell 'bay agent claude --window || true'
-bind-key -T bay-agent x run-shell 'bay agent codex --pane || true'
-bind-key -T bay-agent X run-shell 'bay agent codex --window || true'
-bind-key -T bay-agent g run-shell 'bay agent gemini --pane || true'
-bind-key -T bay-agent G run-shell 'bay agent gemini --window || true'
-
-bind-key -T bay-agent w display-message -d 2000 "bay: c Claude, x Codex, g Gemini" \; switch-client -T bay-agent-bay
-bind-key -T bay-agent-bay c run-shell 'bay new -q --agent=claude || true'
-bind-key -T bay-agent-bay x run-shell 'bay new -q --agent=codex || true'
-bind-key -T bay-agent-bay g run-shell 'bay new -q --agent=gemini || true'
-# END bay-personal-agent-bindings
-```
-
-After editing `~/.tmux.conf`, reload it with `prefix + r` if you use
-the recommended reload binding, or run `tmux source-file ~/.tmux.conf`.
-Delete the rows for agents you do not use, or replace the built-in
-agent names with custom agents from your Bay config.
+Chord sub-table bindings use a `table:key` form, e.g.
+`# bay-keep: bay-agent:c bay-agent-bay:x`.
 
 ## Command palette
 

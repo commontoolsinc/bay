@@ -13,7 +13,7 @@ import (
 // RecoverResult holds the results of a recovery operation.
 type RecoverResult struct {
 	Dock      string
-	Recovered []string // workspace names that had surfaces recreated
+	Recovered []string // bay names that had surfaces recreated
 	Warnings  []string
 	AttachCmd string
 }
@@ -49,7 +49,7 @@ func (e *Engine) Recover() ([]RecoverResult, error) {
 			invalidateRecordedTmuxAttrs(dock)
 		}
 
-		outcome := e.recoverDockWorkspaces(dock, m)
+		outcome := e.recoverDockBays(dock, m)
 		if sessionIDChanged {
 			outcome.changed = true
 		}
@@ -99,7 +99,7 @@ func (e *Engine) DockRecover(name string) (RecoverResult, error) {
 		invalidateRecordedTmuxAttrs(dock)
 	}
 
-	outcome := e.recoverDockWorkspaces(dock, m)
+	outcome := e.recoverDockBays(dock, m)
 	if sessionIDChanged {
 		outcome.changed = true
 	}
@@ -114,7 +114,7 @@ func (e *Engine) DockRecover(name string) (RecoverResult, error) {
 		}
 	}
 
-	// Restore focus to the most recently active workspace.
+	// Restore focus to the most recently active bay.
 	e.restoreFocusedWindow(dock)
 
 	result := RecoverResult{
@@ -173,22 +173,22 @@ func (e *Engine) recoverDockSurfaces(dock *manifest.Dock, outcome *recoverOutcom
 }
 
 // restoreFocusedWindow selects the tmux window for the most recently
-// active workspace, so recovery leaves the user where they were.
+// active bay, so recovery leaves the user where they were.
 func (e *Engine) restoreFocusedWindow(dock *manifest.Dock) {
-	var bestWs *manifest.Workspace
-	for i := range dock.Workspaces {
-		ws := &dock.Workspaces[i]
-		if bestWs == nil || ws.LastActive > bestWs.LastActive {
-			bestWs = ws
+	var bestBay *manifest.Bay
+	for i := range dock.Bays {
+		bay := &dock.Bays[i]
+		if bestBay == nil || bay.LastActive > bestBay.LastActive {
+			bestBay = bay
 		}
 	}
-	if bestWs == nil {
+	if bestBay == nil {
 		return
 	}
 	// Find the window for the last-focused surface, or the first surface.
-	for _, s := range bestWs.Surfaces {
+	for _, s := range bestBay.Surfaces {
 		if s.Tmux != nil && s.Tmux.WindowID != "" {
-			if bestWs.LastFocused > 0 && s.ID == bestWs.LastFocused {
+			if bestBay.LastFocused > 0 && s.ID == bestBay.LastFocused {
 				_ = e.Tmux.SelectWindow(s.Tmux.WindowID)
 				if s.Tmux.PaneID != "" {
 					_ = e.Tmux.SelectPane(s.Tmux.PaneID)
@@ -198,7 +198,7 @@ func (e *Engine) restoreFocusedWindow(dock *manifest.Dock) {
 		}
 	}
 	// Fallback: select the first surface's window.
-	for _, s := range bestWs.Surfaces {
+	for _, s := range bestBay.Surfaces {
 		if s.Tmux != nil && s.Tmux.WindowID != "" {
 			_ = e.Tmux.SelectWindow(s.Tmux.WindowID)
 			return
@@ -206,32 +206,32 @@ func (e *Engine) restoreFocusedWindow(dock *manifest.Dock) {
 	}
 }
 
-// recoverDockWorkspaces handles recovery for all workspaces in a dock.
-func (e *Engine) recoverDockWorkspaces(dock *manifest.Dock, m *manifest.Manifest) recoverOutcome {
+// recoverDockBays handles recovery for all bays in a dock.
+func (e *Engine) recoverDockBays(dock *manifest.Dock, m *manifest.Manifest) recoverOutcome {
 	outcome := recoverOutcome{}
 
-	for i := range dock.Workspaces {
-		ws := &dock.Workspaces[i]
+	for i := range dock.Bays {
+		bay := &dock.Bays[i]
 
-		if _, err := os.Stat(ws.Path); err != nil {
+		if _, err := os.Stat(bay.Path); err != nil {
 			continue
 		}
 
-		wsRecovered := false
+		bayRecovered := false
 
 		// Group surfaces by layout group for recovery.
-		groups := groupSurfacesByLayout(ws)
+		groups := groupSurfacesByLayout(bay)
 
 		for _, layoutGroup := range sortedLayoutGroups(groups) {
-			surfaceIndices := orderedSurfaceIndices(ws, groups[layoutGroup])
+			surfaceIndices := orderedSurfaceIndices(bay, groups[layoutGroup])
 			// Check if the tmux window for this group still exists.
 			var existingWindowID string
 			for _, idx := range surfaceIndices {
-				s := &ws.Surfaces[idx]
+				s := &bay.Surfaces[idx]
 				if s.Tmux != nil && s.Tmux.WindowID != "" {
 					exists, err := e.Tmux.WindowExists(s.Tmux.WindowID)
 					if err != nil {
-						outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: check window %s: %v", ws.Name, s.Tmux.WindowID, err))
+						outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: check window %s: %v", bay.Name, s.Tmux.WindowID, err))
 						continue
 					}
 					if exists {
@@ -243,24 +243,24 @@ func (e *Engine) recoverDockWorkspaces(dock *manifest.Dock, m *manifest.Manifest
 
 			if existingWindowID != "" {
 				// Window exists — reconcile panes.
-				outcome.changed = e.reconcileSurfaces(dock.Name, existingWindowID, ws, surfaceIndices, m, &outcome) || outcome.changed
+				outcome.changed = e.reconcileSurfaces(dock.Name, existingWindowID, bay, surfaceIndices, m, &outcome) || outcome.changed
 			} else {
 				// Window gone — recreate it. Primary windows (group 1) get
-				// the workspace compact label; secondary windows get :surfacename.
-				wsRecovered = true
-				windowName := workspaceWindowLabel(ws)
+				// the bay compact label; secondary windows get :surfacename.
+				bayRecovered = true
+				windowName := bayWindowLabel(bay)
 				if layoutGroup > 1 && len(surfaceIndices) > 0 {
-					windowName = ":" + ws.Surfaces[surfaceIndices[0]].Name
+					windowName = ":" + bay.Surfaces[surfaceIndices[0]].Name
 				}
-				newWindowID, err := e.Tmux.NewWindow(dock.Name, windowName, ws.Path)
+				newWindowID, err := e.Tmux.NewWindow(dock.Name, windowName, bay.Path)
 				if err != nil {
-					outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: create window: %v", ws.Name, err))
+					outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: create window: %v", bay.Name, err))
 					continue
 				}
 				outcome.changed = true
 
 				for j, idx := range surfaceIndices {
-					s := &ws.Surfaces[idx]
+					s := &bay.Surfaces[idx]
 					if s.Tmux == nil {
 						continue
 					}
@@ -271,16 +271,16 @@ func (e *Engine) recoverDockWorkspaces(dock *manifest.Dock, m *manifest.Manifest
 						// First surface uses the window's initial pane.
 						panes, err := e.Tmux.ListPanes(newWindowID)
 						if err != nil {
-							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: list panes for %s: %v", ws.Name, newWindowID, err))
+							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: list panes for %s: %v", bay.Name, newWindowID, err))
 							continue
 						}
 						if len(panes) == 0 {
-							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: window %s has no initial pane", ws.Name, newWindowID))
+							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: window %s has no initial pane", bay.Name, newWindowID))
 							continue
 						}
 						s.Tmux.PaneID = panes[0].ID
 						if err := e.recoverSurfaceLaunch(dock.Name, s, s.Tmux.PaneID, m, true); err != nil {
-							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", ws.Name, s.Name, err))
+							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", bay.Name, s.Name, err))
 						}
 					} else {
 						// Subsequent surfaces split from their recorded parent pane.
@@ -288,44 +288,44 @@ func (e *Engine) recoverDockWorkspaces(dock *manifest.Dock, m *manifest.Manifest
 						if dir == "" {
 							dir = "v"
 						}
-						splitTargetID, err := recoverSplitTargetID(ws, s, newWindowID)
+						splitTargetID, err := recoverSplitTargetID(bay, s, newWindowID)
 						if err != nil {
-							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", ws.Name, s.Name, err))
+							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", bay.Name, s.Name, err))
 							continue
 						}
-						newPaneID, err := e.Tmux.SplitWindow(splitTargetID, dir, ws.Path, false)
+						newPaneID, err := e.Tmux.SplitWindow(splitTargetID, dir, bay.Path, false)
 						if err != nil {
-							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: split window: %v", ws.Name, s.Name, err))
+							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: split window: %v", bay.Name, s.Name, err))
 							continue
 						}
 						s.Tmux.PaneID = newPaneID
 						if err := e.recoverSurfaceLaunch(dock.Name, s, newPaneID, m, true); err != nil {
-							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", ws.Name, s.Name, err))
+							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", bay.Name, s.Name, err))
 						}
 					}
 				}
 			}
 		}
 
-		if wsRecovered {
-			outcome.recovered = append(outcome.recovered, ws.Name)
+		if bayRecovered {
+			outcome.recovered = append(outcome.recovered, bay.Name)
 		}
 	}
 	return outcome
 }
 
 // reconcileSurfaces checks existing panes against manifest surfaces and repairs missing ones.
-func (e *Engine) reconcileSurfaces(dockName, tmuxWindowID string, ws *manifest.Workspace, surfaceIndices []int, m *manifest.Manifest, outcome *recoverOutcome) bool {
+func (e *Engine) reconcileSurfaces(dockName, tmuxWindowID string, bay *manifest.Bay, surfaceIndices []int, m *manifest.Manifest, outcome *recoverOutcome) bool {
 	tmuxPanes, err := e.Tmux.ListPanes(tmuxWindowID)
 	if err != nil {
-		outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: list panes for %s: %v", ws.Name, tmuxWindowID, err))
+		outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: list panes for %s: %v", bay.Name, tmuxWindowID, err))
 		return false
 	}
 	changed := false
 
 	// Update pane IDs for existing surfaces.
 	for i, idx := range surfaceIndices {
-		s := &ws.Surfaces[idx]
+		s := &bay.Surfaces[idx]
 		if s.Tmux != nil && i < len(tmuxPanes) && s.Tmux.PaneID != tmuxPanes[i].ID {
 			s.Tmux.PaneID = tmuxPanes[i].ID
 			changed = true
@@ -334,7 +334,7 @@ func (e *Engine) reconcileSurfaces(dockName, tmuxWindowID string, ws *manifest.W
 
 	// Recreate missing panes.
 	for j := len(tmuxPanes); j < len(surfaceIndices); j++ {
-		s := &ws.Surfaces[surfaceIndices[j]]
+		s := &bay.Surfaces[surfaceIndices[j]]
 		if s.Tmux == nil {
 			continue
 		}
@@ -342,20 +342,20 @@ func (e *Engine) reconcileSurfaces(dockName, tmuxWindowID string, ws *manifest.W
 		if dir == "" {
 			dir = "v"
 		}
-		splitTargetID, err := recoverSplitTargetID(ws, s, tmuxWindowID)
+		splitTargetID, err := recoverSplitTargetID(bay, s, tmuxWindowID)
 		if err != nil {
-			outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", ws.Name, s.Name, err))
+			outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", bay.Name, s.Name, err))
 			continue
 		}
-		newPaneID, err := e.Tmux.SplitWindow(splitTargetID, dir, ws.Path, false)
+		newPaneID, err := e.Tmux.SplitWindow(splitTargetID, dir, bay.Path, false)
 		if err != nil {
-			outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: split window: %v", ws.Name, s.Name, err))
+			outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: split window: %v", bay.Name, s.Name, err))
 			continue
 		}
 		s.Tmux.PaneID = newPaneID
 		changed = true
 		if err := e.recoverSurfaceLaunch(dockName, s, newPaneID, m, true); err != nil {
-			outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", ws.Name, s.Name, err))
+			outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", bay.Name, s.Name, err))
 		}
 	}
 	return changed
@@ -471,9 +471,9 @@ func mergeRecoveredDockRuntimeState(dst, src *manifest.Dock) bool {
 		}
 	}
 
-	for i := range src.Workspaces {
-		srcWS := &src.Workspaces[i]
-		dstWS := findWorkspaceForRecoveryMerge(dst, srcWS)
+	for i := range src.Bays {
+		srcWS := &src.Bays[i]
+		dstWS := findBayForRecoveryMerge(dst, srcWS)
 		if dstWS == nil {
 			continue
 		}
@@ -508,38 +508,38 @@ func mergeRecoveredDockRuntimeState(dst, src *manifest.Dock) bool {
 	return changed
 }
 
-func findWorkspaceForRecoveryMerge(dock *manifest.Dock, src *manifest.Workspace) *manifest.Workspace {
-	for i := range dock.Workspaces {
-		if dock.Workspaces[i].Path == src.Path {
-			return &dock.Workspaces[i]
+func findBayForRecoveryMerge(dock *manifest.Dock, src *manifest.Bay) *manifest.Bay {
+	for i := range dock.Bays {
+		if dock.Bays[i].Path == src.Path {
+			return &dock.Bays[i]
 		}
 	}
-	if ws := dock.FindWorkspaceByID(src.ID); ws != nil {
-		return ws
+	if bay := dock.FindBayByID(src.ID); bay != nil {
+		return bay
 	}
 	if src.Name == "" {
 		return nil
 	}
-	return dock.FindWorkspace(src.Name)
+	return dock.FindBay(src.Name)
 }
 
-func findSurfaceForRecoveryMerge(ws *manifest.Workspace, src *manifest.Surface) *manifest.Surface {
+func findSurfaceForRecoveryMerge(bay *manifest.Bay, src *manifest.Surface) *manifest.Surface {
 	if src.ID != 0 {
-		if surface := ws.FindSurfaceByID(src.ID); surface != nil {
+		if surface := bay.FindSurfaceByID(src.ID); surface != nil {
 			return surface
 		}
 	}
 	if src.Name == "" {
 		return nil
 	}
-	return ws.FindSurface(src.Name)
+	return bay.FindSurface(src.Name)
 }
 
-func recoverSplitTargetID(ws *manifest.Workspace, s *manifest.Surface, fallbackTargetID string) (string, error) {
+func recoverSplitTargetID(bay *manifest.Bay, s *manifest.Surface, fallbackTargetID string) (string, error) {
 	if s.Tmux == nil || s.Tmux.SplitFrom == 0 {
 		return fallbackTargetID, nil
 	}
-	parent := ws.FindSurfaceByID(s.Tmux.SplitFrom)
+	parent := bay.FindSurfaceByID(s.Tmux.SplitFrom)
 	if parent == nil || parent.Tmux == nil || parent.Tmux.PaneID == "" {
 		return "", fmt.Errorf("missing split parent %d", s.Tmux.SplitFrom)
 	}
@@ -548,9 +548,9 @@ func recoverSplitTargetID(ws *manifest.Workspace, s *manifest.Surface, fallbackT
 
 // groupSurfacesByLayout groups surface indices by their layout group.
 // Returns a map of layout group -> slice of surface indices, ordered by group number.
-func groupSurfacesByLayout(ws *manifest.Workspace) map[int][]int {
+func groupSurfacesByLayout(bay *manifest.Bay) map[int][]int {
 	groups := map[int][]int{}
-	for i, s := range ws.Surfaces {
+	for i, s := range bay.Surfaces {
 		if s.Tmux == nil {
 			continue
 		}
@@ -568,20 +568,20 @@ func sortedLayoutGroups(groups map[int][]int) []int {
 	return keys
 }
 
-func orderedSurfaceIndices(ws *manifest.Workspace, indices []int) []int {
+func orderedSurfaceIndices(bay *manifest.Bay, indices []int) []int {
 	if len(indices) < 2 {
 		return append([]int(nil), indices...)
 	}
 
 	idxByID := make(map[int]int, len(indices))
 	for _, idx := range indices {
-		idxByID[ws.Surfaces[idx].ID] = idx
+		idxByID[bay.Surfaces[idx].ID] = idx
 	}
 
 	children := map[int][]int{}
 	for _, idx := range indices {
 		parentID := 0
-		if tmuxAttrs := ws.Surfaces[idx].Tmux; tmuxAttrs != nil {
+		if tmuxAttrs := bay.Surfaces[idx].Tmux; tmuxAttrs != nil {
 			parentID = tmuxAttrs.SplitFrom
 			if parentID != 0 {
 				if _, ok := idxByID[parentID]; !ok {
@@ -593,7 +593,7 @@ func orderedSurfaceIndices(ws *manifest.Workspace, indices []int) []int {
 	}
 	for parentID := range children {
 		slices.SortFunc(children[parentID], func(a, b int) int {
-			return ws.Surfaces[a].ID - ws.Surfaces[b].ID
+			return bay.Surfaces[a].ID - bay.Surfaces[b].ID
 		})
 	}
 
@@ -607,7 +607,7 @@ func orderedSurfaceIndices(ws *manifest.Workspace, indices []int) []int {
 			}
 			visited[idx] = true
 			ordered = append(ordered, idx)
-			visit(ws.Surfaces[idx].ID)
+			visit(bay.Surfaces[idx].ID)
 		}
 	}
 	visit(0)
@@ -618,7 +618,7 @@ func orderedSurfaceIndices(ws *manifest.Workspace, indices []int) []int {
 
 	fallback := append([]int(nil), indices...)
 	slices.SortFunc(fallback, func(a, b int) int {
-		return ws.Surfaces[a].ID - ws.Surfaces[b].ID
+		return bay.Surfaces[a].ID - bay.Surfaces[b].ID
 	})
 	for _, idx := range fallback {
 		if !visited[idx] {

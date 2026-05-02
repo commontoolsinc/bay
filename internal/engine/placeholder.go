@@ -86,12 +86,12 @@ func (e *Engine) tagSession(name string) (string, error) {
 	return id, nil
 }
 
-// ensureSessionForWorkspace is the WsNew flavor of ensureSession.
+// ensureSessionForBay is the BayNew flavor of ensureSession.
 // Differs from ensureSession in two ways:
 //
 //  1. When the session already exists, the marker is NOT touched —
-//     WsNew has no way to refresh stale pane IDs in pre-existing
-//     workspaces, so claiming/re-tagging here would convert
+//     BayNew has no way to refresh stale pane IDs in pre-existing
+//     bays, so claiming/re-tagging here would convert
 //     "preserved" surfaces into "stripped" surfaces on the next
 //     SyncAll. The user runs `bay recover` to reconcile after a
 //     restart.
@@ -102,7 +102,7 @@ func (e *Engine) tagSession(name string) (string, error) {
 //
 // Returns (id, sessionCreated, err). When the session already
 // existed, id echoes expectedSessionID and sessionCreated is false.
-func (e *Engine) ensureSessionForWorkspace(name, expectedSessionID string) (string, bool, error) {
+func (e *Engine) ensureSessionForBay(name, expectedSessionID string) (string, bool, error) {
 	exists, err := e.Tmux.HasSession(name)
 	if err != nil {
 		return "", false, fmt.Errorf("checking tmux session: %w", err)
@@ -128,7 +128,7 @@ func (e *Engine) ensureSessionForWorkspace(name, expectedSessionID string) (stri
 // dockHasRecordedTmuxSurfaces reports whether the dock's manifest
 // holds any surfaces with tmux attrs. Used as a "do we have something
 // to be wrong about?" check by the legacy backfill in syncAll and the
-// session-ID persistence decision in WsNew. Liveness of the recorded
+// session-ID persistence decision in BayNew. Liveness of the recorded
 // IDs against the live tmux server is deliberately NOT consulted —
 // pane/window IDs are server-local and reset on restart, so a fresh
 // same-name session may have ID collisions with records from a dead
@@ -142,10 +142,10 @@ func dockHasRecordedTmuxSurfaces(dock *manifest.Dock) bool {
 			return true
 		}
 	}
-	for i := range dock.Workspaces {
-		ws := &dock.Workspaces[i]
-		for j := range ws.Surfaces {
-			if ws.Surfaces[j].Tmux != nil {
+	for i := range dock.Bays {
+		bay := &dock.Bays[i]
+		for j := range bay.Surfaces {
+			if bay.Surfaces[j].Tmux != nil {
 				return true
 			}
 		}
@@ -170,12 +170,12 @@ func invalidateRecordedTmuxAttrs(dock *manifest.Dock) {
 			dock.Surfaces[i].Tmux.WindowID = ""
 		}
 	}
-	for i := range dock.Workspaces {
-		ws := &dock.Workspaces[i]
-		for j := range ws.Surfaces {
-			if ws.Surfaces[j].Tmux != nil {
-				ws.Surfaces[j].Tmux.PaneID = ""
-				ws.Surfaces[j].Tmux.WindowID = ""
+	for i := range dock.Bays {
+		bay := &dock.Bays[i]
+		for j := range bay.Surfaces {
+			if bay.Surfaces[j].Tmux != nil {
+				bay.Surfaces[j].Tmux.PaneID = ""
+				bay.Surfaces[j].Tmux.WindowID = ""
 			}
 		}
 	}
