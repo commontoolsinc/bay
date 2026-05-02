@@ -229,7 +229,7 @@ lifetime."
 - `repo-hooks.md`: the proposed `on_add`/`on_remove` hooks move from
   repo to dock. Cadence simplifies (one event per checkout lifetime).
   That doc should be updated to reflect this when this proposal lands.
-- `workspace-lifecycle-config.md`: bay/workspace prepare commands are
+- `bay-lifecycle-config.md`: bay prepare commands are
   already dock-level, so this change is neutral for that proposal.
 - A separate **home bay** design (the canonical-checkout bay concept)
   was the trigger for this discussion. The home-bay design is
