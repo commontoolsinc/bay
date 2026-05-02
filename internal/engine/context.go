@@ -10,12 +10,12 @@ import (
 
 // Context describes the current Bay location resolved from cwd and tmux.
 type Context struct {
-	Dock        string `json:"dock,omitempty"`
-	WorkspaceID string `json:"-"`
-	Workspace   string `json:"-"`
-	Surface     string `json:"surface,omitempty"`
-	SurfaceID   int    `json:"surface_id,omitempty"`
-	Path        string `json:"path,omitempty"`
+	Dock      string `json:"dock,omitempty"`
+	BayID     string `json:"-"`
+	Bay       string `json:"-"`
+	Surface   string `json:"surface,omitempty"`
+	SurfaceID int    `json:"surface_id,omitempty"`
+	Path      string `json:"path,omitempty"`
 }
 
 // MarshalJSON emits the user-facing bay vocabulary while preserving the
@@ -29,14 +29,7 @@ func (c Context) MarshalJSON() ([]byte, error) {
 		SurfaceID int    `json:"surface_id,omitempty"`
 		Path      string `json:"path,omitempty"`
 	}
-	return json.Marshal(contextJSON{
-		Dock:      c.Dock,
-		BayID:     c.WorkspaceID,
-		Bay:       c.Workspace,
-		Surface:   c.Surface,
-		SurfaceID: c.SurfaceID,
-		Path:      c.Path,
-	})
+	return json.Marshal(contextJSON(c))
 }
 
 // CurrentContext resolves the current Bay context from cwd and tmux state.
@@ -59,17 +52,17 @@ func (e *Engine) CurrentContext() (*Context, error) {
 	currentWindowID, _ := e.Tmux.CurrentWindowID()
 	currentPaneID, _ := e.Tmux.CurrentPaneID()
 
-	// Try matching CWD against workspace paths.
+	// Try matching CWD against bay paths.
 	for i := range m.Docks {
 		dock := &m.Docks[i]
-		for j := range dock.Workspaces {
-			ws := &dock.Workspaces[j]
-			if cwd != "" && config.IsPathUnder(cwd, ws.Path) {
+		for j := range dock.Bays {
+			bay := &dock.Bays[j]
+			if cwd != "" && config.IsPathUnder(cwd, bay.Path) {
 				ctx.Dock = dock.Name
-				ctx.WorkspaceID = ws.ID
-				ctx.Workspace = ws.Name
+				ctx.BayID = bay.ID
+				ctx.Bay = bay.Name
 				// Find current surface from tmux pane.
-				for _, s := range ws.Surfaces {
+				for _, s := range bay.Surfaces {
 					if s.Tmux != nil && s.Tmux.PaneID == currentPaneID {
 						ctx.Surface = s.Name
 						ctx.SurfaceID = s.ID
@@ -85,9 +78,9 @@ func (e *Engine) CurrentContext() (*Context, error) {
 	if currentWindowID != "" {
 		for i := range m.Docks {
 			dock := &m.Docks[i]
-			for j := range dock.Workspaces {
-				ws := &dock.Workspaces[j]
-				for _, s := range ws.Surfaces {
+			for j := range dock.Bays {
+				bay := &dock.Bays[j]
+				for _, s := range bay.Surfaces {
 					if s.Tmux == nil {
 						continue
 					}
@@ -95,9 +88,9 @@ func (e *Engine) CurrentContext() (*Context, error) {
 						continue
 					}
 					ctx.Dock = dock.Name
-					ctx.WorkspaceID = ws.ID
-					ctx.Workspace = ws.Name
-					ctx.Path = config.CanonicalPath(ws.Path)
+					ctx.BayID = bay.ID
+					ctx.Bay = bay.Name
+					ctx.Path = config.CanonicalPath(bay.Path)
 					if s.Tmux.PaneID == currentPaneID {
 						ctx.Surface = s.Name
 						ctx.SurfaceID = s.ID

@@ -419,7 +419,7 @@ the bay for auto-close after a 60-second grace window
 (`Bay.PendingCloseAt` in the manifest). The user (or an
 agent) can cancel by re-adding a surface; `SurfaceAdd` clears
 `PendingCloseAt` unconditionally. If the grace expires with no
-surfaces, sync runs `WsClose(force=false)` — clean + landed
+surfaces, sync runs `BayClose(force=false)` — clean + landed
 finalizes the teardown; dirty or unlanded clears `PendingCloseAt`
 to stop retries and leaves a permanent orphan for the user to
 resolve manually.

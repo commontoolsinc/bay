@@ -26,20 +26,20 @@ func assertLayout(t *testing.T, mock *tmux.Mock, windowID, want string) {
 // addShell is a tiny helper for the layout-sensitive tests below: adds
 // a shell surface with the given name and split direction, and returns
 // the new surface's pane ID for use in expected layout strings.
-func addShell(t *testing.T, eng *Engine, ws, name, splitDir string) string {
+func addShell(t *testing.T, eng *Engine, bay, name, splitDir string) string {
 	t.Helper()
 	if err := eng.SurfaceAdd(SurfaceAddOptions{
-		DockName: "labs", WsName: ws,
+		DockName: "labs", BayName: bay,
 		Type: manifest.SurfaceTypeShell, Name: name, SplitDir: splitDir,
 	}); err != nil {
 		t.Fatalf("SurfaceAdd %s: %v", name, err)
 	}
-	wsView, _ := eng.WsShow("labs", ws)
-	return wsView.FindSurface(name).Tmux.PaneID
+	bayView, _ := eng.BayShow("labs", bay)
+	return bayView.FindSurface(name).Tmux.PaneID
 }
 
 // threePaneFixture is the shared prologue for the layout tests: creates
-// workspace "w1" with three vertical panes (root + middle + bottom),
+// bay "w1" with three vertical panes (root + middle + bottom),
 // returning the engine's mock view, the window ID, and each pane's ID.
 type threePaneFixture struct {
 	eng                          *Engine
@@ -54,11 +54,11 @@ func setupThreePaneWindow(t *testing.T) threePaneFixture {
 	eng, _ := testEngine(t)
 	mock := eng.Tmux.(*tmux.Mock)
 
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
-		t.Fatalf("WsNew: %v", err)
+	if _, err := eng.BayNew(BayNewOptions{Dock: "labs"}); err != nil {
+		t.Fatalf("BayNew: %v", err)
 	}
-	wsView, _ := eng.WsShow("labs", "w1")
-	root := wsView.Surfaces[0]
+	bayView, _ := eng.BayShow("labs", "w1")
+	root := bayView.Surfaces[0]
 	middle := addShell(t, eng, "w1", "middle", "v")
 	bottom := addShell(t, eng, "w1", "bottom", "v")
 	return threePaneFixture{
@@ -92,8 +92,8 @@ func TestSurfaceRestore_LayoutCloseLastRestoresAtEnd(t *testing.T) {
 	}
 	// The restored pane lands as a sibling of the last surface (middle),
 	// nested in middle's region — visually appended to the bottom.
-	wsView, _ := f.eng.WsShow("labs", "w1")
-	restored := wsView.FindSurface("bottom").Tmux.PaneID
+	bayView, _ := f.eng.BayShow("labs", "w1")
+	restored := bayView.FindSurface("bottom").Tmux.PaneID
 	assertLayout(t, f.mock, f.winID, f.rootPane+"/("+f.middlePane+"/"+restored+")")
 }
 
@@ -116,8 +116,8 @@ func TestSurfaceRestore_LayoutRootPaneLandsAtRoot(t *testing.T) {
 	}
 	// The restored root must wrap the surviving panes, not nest inside
 	// one of them. With -fb the layout becomes {restored, prev_layout}.
-	wsView, _ := f.eng.WsShow("labs", "w1")
-	restored := wsView.FindSurface(f.rootName).Tmux.PaneID
+	bayView, _ := f.eng.BayShow("labs", "w1")
+	restored := bayView.FindSurface(f.rootName).Tmux.PaneID
 	assertLayout(t, f.mock, f.winID, restored+"/("+f.middlePane+"/"+f.bottom+")")
 }
 
@@ -129,7 +129,7 @@ func TestSurfaceRestore_LayoutStackedRestoreReproducesOriginal(t *testing.T) {
 
 	// Close every pane in order: bottom, middle, root. Closing the last
 	// surface kills the tmux window, so the post-restore window is a
-	// freshly created one — looked up from the workspace state below.
+	// freshly created one — looked up from the bay state below.
 	for _, name := range []string{"bottom", "middle", f.rootName} {
 		if err := f.eng.SurfaceClose("labs", "w1", name, false); err != nil {
 			t.Fatalf("SurfaceClose %s: %v", name, err)
@@ -141,11 +141,11 @@ func TestSurfaceRestore_LayoutStackedRestoreReproducesOriginal(t *testing.T) {
 		}
 	}
 
-	wsView, _ := f.eng.WsShow("labs", "w1")
-	rootPane := wsView.FindSurface(f.rootName).Tmux.PaneID
-	middlePane := wsView.FindSurface("middle").Tmux.PaneID
-	bottomPane := wsView.FindSurface("bottom").Tmux.PaneID
-	winID := wsView.FindSurface(f.rootName).Tmux.WindowID
+	bayView, _ := f.eng.BayShow("labs", "w1")
+	rootPane := bayView.FindSurface(f.rootName).Tmux.PaneID
+	middlePane := bayView.FindSurface("middle").Tmux.PaneID
+	bottomPane := bayView.FindSurface("bottom").Tmux.PaneID
+	winID := bayView.FindSurface(f.rootName).Tmux.WindowID
 
 	got, err := f.mock.LayoutString(winID)
 	if err != nil {
@@ -174,11 +174,11 @@ func TestSurfaceRestore_LayoutDiscoveredWholeWindowDeathRestoresOriginalOrder(t 
 		}
 	}
 
-	wsView, _ := f.eng.WsShow("labs", "w1")
-	rootPane := wsView.FindSurface(f.rootName).Tmux.PaneID
-	middlePane := wsView.FindSurface("middle").Tmux.PaneID
-	bottomPane := wsView.FindSurface("bottom").Tmux.PaneID
-	winID := wsView.FindSurface(f.rootName).Tmux.WindowID
+	bayView, _ := f.eng.BayShow("labs", "w1")
+	rootPane := bayView.FindSurface(f.rootName).Tmux.PaneID
+	middlePane := bayView.FindSurface("middle").Tmux.PaneID
+	bottomPane := bayView.FindSurface("bottom").Tmux.PaneID
+	winID := bayView.FindSurface(f.rootName).Tmux.WindowID
 
 	got, err := f.mock.LayoutString(winID)
 	if err != nil {
@@ -199,12 +199,12 @@ func TestSurfaceRestore_LayoutMixedAxisStaysIntact(t *testing.T) {
 	eng, _ := testEngine(t)
 	mock := eng.Tmux.(*tmux.Mock)
 
-	if _, err := eng.WsNew(WsNewOptions{Dock: "labs"}); err != nil {
-		t.Fatalf("WsNew: %v", err)
+	if _, err := eng.BayNew(BayNewOptions{Dock: "labs"}); err != nil {
+		t.Fatalf("BayNew: %v", err)
 	}
-	wsView, _ := eng.WsShow("labs", "w1")
-	rootPane := wsView.Surfaces[0].Tmux.PaneID
-	winID := wsView.Surfaces[0].Tmux.WindowID
+	bayView, _ := eng.BayShow("labs", "w1")
+	rootPane := bayView.Surfaces[0].Tmux.PaneID
+	winID := bayView.Surfaces[0].Tmux.WindowID
 
 	right := addShell(t, eng, "w1", "right", "h")
 	rightBottom := addShell(t, eng, "w1", "right-bottom", "v")
@@ -224,7 +224,7 @@ func TestSurfaceRestore_LayoutMixedAxisStaysIntact(t *testing.T) {
 	if _, err := eng.SurfaceRestore("labs"); err != nil {
 		t.Fatalf("SurfaceRestore: %v", err)
 	}
-	wsView, _ = eng.WsShow("labs", "w1")
-	restored := wsView.FindSurface("right-bottom").Tmux.PaneID
+	bayView, _ = eng.BayShow("labs", "w1")
+	restored := bayView.FindSurface("right-bottom").Tmux.PaneID
 	assertLayout(t, mock, winID, rootPane+"|("+right+"/"+restored+")")
 }

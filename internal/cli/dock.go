@@ -237,20 +237,20 @@ func newDockShowCmd() *cobra.Command {
 			}
 
 			// Bay summary
-			total := len(mDock.Workspaces)
-			wsSummary := fmt.Sprintf("%d", total)
+			total := len(mDock.Bays)
+			baySummary := fmt.Sprintf("%d", total)
 			if total > 0 {
 				merged := 0
-				for _, ws := range mDock.Workspaces {
-					if ws.IsMerged() {
+				for _, bay := range mDock.Bays {
+					if bay.IsMerged() {
 						merged++
 					}
 				}
 				if merged > 0 {
-					wsSummary += fmt.Sprintf(" (%d merged)", merged)
+					baySummary += fmt.Sprintf(" (%d merged)", merged)
 				}
 			}
-			rows = append(rows, showRow{"bays", wsSummary})
+			rows = append(rows, showRow{"bays", baySummary})
 
 			printAlignedRows(rows)
 			return nil

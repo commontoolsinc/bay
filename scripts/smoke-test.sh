@@ -26,42 +26,42 @@ cd /tmp/bay-smoke-repo
 echo "hello" > README.md
 git add . && git commit -m "init" -q
 
-# 1. Zero-config: bay ws new with no config file
+# 1. Zero-config: bay new with no config file
 echo ""
-echo "--- 1. Zero-config workspace creation ---"
-$BAY ws new --shell --name smoke-ws
-echo "PASS: workspace created"
+echo "--- 1. Zero-config bay creation ---"
+$BAY new smoke-bay --shell
+echo "PASS: bay created"
 
 # 2. Check it exists
 echo ""
-echo "--- 2. List workspaces ---"
+echo "--- 2. List bays ---"
 $BAY ls
 echo "PASS: ls works"
 
-# 3. Show workspace details
+# 3. Show bay details
 echo ""
-echo "--- 3. Workspace show ---"
-$BAY ws show bay-smoke-repo:smoke-ws
-echo "PASS: ws show works"
+echo "--- 3. Bay show ---"
+$BAY show bay-smoke-repo:smoke-bay
+echo "PASS: bay show works"
 
 # 4. Add a surface (shell split)
 echo ""
 echo "--- 4. Add a surface ---"
-$BAY sf new --shell --name shell-2 --split v bay-smoke-repo:smoke-ws 2>/dev/null || true
+$BAY sf new shell shell-2 --split v --bay smoke-bay --dock bay-smoke-repo 2>/dev/null || true
 # This may fail outside tmux — that's OK, we test the command exists
 echo "PASS: sf new command exists"
 
-# 5. Update workspace metadata
+# 5. Update bay metadata
 echo ""
-echo "--- 5. Update workspace ---"
-$BAY ws show bay-smoke-repo:smoke-ws
-echo "PASS: ws show works"
+echo "--- 5. Update bay ---"
+$BAY show bay-smoke-repo:smoke-bay
+echo "PASS: bay show works"
 
-# 6. Rename workspace
+# 6. Rename bay
 echo ""
-echo "--- 6. Rename workspace ---"
-$BAY ws rename bay-smoke-repo:smoke-ws renamed-ws
-echo "PASS: ws rename works"
+echo "--- 6. Rename bay ---"
+$BAY rename bay-smoke-repo:smoke-bay renamed-bay
+echo "PASS: bay rename works"
 
 # 7. PWD context
 echo ""
@@ -88,21 +88,21 @@ echo "--- 9. Doctor ---"
 $BAY doctor || true
 echo "PASS: doctor runs"
 
-# 10. Close workspace
+# 10. Close bay
 echo ""
-echo "--- 10. Close workspace ---"
-$BAY ws close bay-smoke-repo:renamed-ws --force
-echo "PASS: ws close works"
+echo "--- 10. Close bay ---"
+$BAY close bay-smoke-repo:renamed-bay --force
+echo "PASS: bay close works"
 
 # 11. Verify cleanup
 echo ""
 echo "--- 11. Verify cleanup ---"
 OUTPUT=$($BAY ls 2>&1)
-if echo "$OUTPUT" | grep -q "renamed-ws"; then
-    echo "FAIL: workspace still visible after close"
+if echo "$OUTPUT" | grep -q "renamed-bay"; then
+    echo "FAIL: bay still visible after close"
     exit 1
 fi
-echo "PASS: workspace removed"
+echo "PASS: bay removed"
 
 # 12. Recovery
 echo ""

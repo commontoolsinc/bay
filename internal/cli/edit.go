@@ -181,11 +181,11 @@ func focusTerminalEditor(eng *engine.Engine, dockName, absPath string) error {
 // create a tracked surface in their own tmux pane via SurfaceAdd.
 // Shared by `bay edit` and `bay new edit`.
 func runEditCreate(eng *engine.Engine, target, editorOverride, splitDir string) error {
-	dockName, wsID, err := resolveTarget(eng, target)
+	dockName, bayID, err := resolveTarget(eng, target)
 	if err != nil {
 		return err
 	}
-	path, err := eng.Edit(dockName, wsID)
+	path, err := eng.Edit(dockName, bayID)
 	if err != nil {
 		return err
 	}
@@ -208,7 +208,7 @@ func runEditCreate(eng *engine.Engine, target, editorOverride, splitDir string) 
 	fullCmd := editorCmd + " " + path
 	return eng.SurfaceAdd(engine.SurfaceAddOptions{
 		DockName: dockName,
-		WsName:   wsID,
+		BayName:  bayID,
 		Type:     manifest.SurfaceTypeEditor,
 		Name:     "editor",
 		Command:  fullCmd,

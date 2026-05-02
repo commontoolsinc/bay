@@ -40,8 +40,8 @@ func testListEngine(t *testing.T) (*engine.Engine, string) {
 	manifest.Save(manifestPath, &manifest.Manifest{
 		Version: manifest.CurrentVersion,
 		Docks: []manifest.Dock{
-			{Name: "labs", Path: repoDir, Agent: "claude", Workspaces: []manifest.Workspace{}},
-			{Name: "web", Path: webDir, Agent: "claude", Workspaces: []manifest.Workspace{}},
+			{Name: "labs", Path: repoDir, Agent: "claude", Bays: []manifest.Bay{}},
+			{Name: "web", Path: webDir, Agent: "claude", Bays: []manifest.Bay{}},
 		},
 	})
 
@@ -58,14 +58,14 @@ func testListEngine(t *testing.T) (*engine.Engine, string) {
 func TestResolveListFocus_DirtySkipsContextualFocus(t *testing.T) {
 	eng, _ := testListEngine(t)
 
-	ws, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true})
+	bay, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true})
 	if err != nil {
-		t.Fatalf("WsNew failed: %v", err)
+		t.Fatalf("BayNew failed: %v", err)
 	}
-	if err := os.MkdirAll(ws.Path, 0o755); err != nil {
+	if err := os.MkdirAll(bay.Path, 0o755); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
-	if err := os.Chdir(ws.Path); err != nil {
+	if err := os.Chdir(bay.Path); err != nil {
 		t.Fatalf("Chdir failed: %v", err)
 	}
 	t.Cleanup(func() {
@@ -78,17 +78,17 @@ func TestResolveListFocus_DirtySkipsContextualFocus(t *testing.T) {
 	}
 }
 
-func TestInferListFocus_WorkspaceContext(t *testing.T) {
+func TestInferListFocus_BayContext(t *testing.T) {
 	eng, _ := testListEngine(t)
 
-	ws, err := eng.WsNew(engine.WsNewOptions{Dock: "labs", Shell: true})
+	bay, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true})
 	if err != nil {
-		t.Fatalf("WsNew failed: %v", err)
+		t.Fatalf("BayNew failed: %v", err)
 	}
-	if err := os.MkdirAll(ws.Path, 0o755); err != nil {
+	if err := os.MkdirAll(bay.Path, 0o755); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
-	if err := os.Chdir(ws.Path); err != nil {
+	if err := os.Chdir(bay.Path); err != nil {
 		t.Fatalf("Chdir failed: %v", err)
 	}
 	t.Cleanup(func() {
@@ -96,7 +96,7 @@ func TestInferListFocus_WorkspaceContext(t *testing.T) {
 	})
 
 	focus := inferListFocus(eng)
-	if focus.Kind != FocusWorkspace || focus.Dock != "labs" || focus.WorkspaceID != ws.ID {
+	if focus.Kind != FocusBay || focus.Dock != "labs" || focus.BayID != bay.ID {
 		t.Fatalf("unexpected focus: %#v", focus)
 	}
 }

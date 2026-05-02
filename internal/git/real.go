@@ -46,7 +46,7 @@ func (r *Real) CreateWorktree(repoPath, worktreePath, branch string) error {
 	if branch != "" {
 		// Checkout an existing branch. --guess-remote lets git create a
 		// local tracking branch from origin/<branch> when no local branch
-		// exists (common after bay ws close deletes the local copy).
+		// exists (common after bay close deletes the local copy).
 		cmd := exec.Command("git", "-C", repoPath, "worktree", "add", "--guess-remote", worktreePath, branch)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("git worktree add: %s: %w", strings.TrimSpace(string(out)), err)
@@ -483,7 +483,7 @@ func (r *Real) IsMergedIntoDefault(path, branch string) (bool, error) {
 	remoteDefault := "origin/" + defaultBranch
 	// A branch that has never been pushed to the remote is local-only
 	// and can't have been merged via a PR or remote merge. Without
-	// this check, a brand-new branch created from main (bay ws new
+	// this check, a brand-new branch created from main (bay new
 	// --branch) is immediately detected as "merged" because
 	// merge-base --is-ancestor is trivially true when both refs
 	// point at the same commit (or after a fast-forward merge).

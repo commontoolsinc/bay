@@ -50,11 +50,11 @@ func TestParse_FullManifest(t *testing.T) {
 			{
 				"name": "labs",
 				"repo": "labs",
-				"workspaces": [
+				"bays": [
 					{
 						"name": "auth-fix",
 						"type": "worktree",
-						"path": "/tmp/ws1",
+						"path": "/tmp/bay1",
 						"status": "active",
 						"last_focused": 1,
 						"worktree": {
@@ -116,51 +116,51 @@ func TestParse_FullManifest(t *testing.T) {
 	if dock.Name != "labs" {
 		t.Errorf("dock name = %q, want %q", dock.Name, "labs")
 	}
-	if len(dock.Workspaces) != 1 {
-		t.Fatalf("workspaces length = %d, want 1", len(dock.Workspaces))
+	if len(dock.Bays) != 1 {
+		t.Fatalf("bays length = %d, want 1", len(dock.Bays))
 	}
 
-	ws := &dock.Workspaces[0]
-	if ws.Name != "auth-fix" {
-		t.Errorf("workspace name = %q, want %q", ws.Name, "auth-fix")
+	bay := &dock.Bays[0]
+	if bay.Name != "auth-fix" {
+		t.Errorf("bay name = %q, want %q", bay.Name, "auth-fix")
 	}
-	// Path basename "ws1" is non-canonical, so pass 1 skips it and pass 2
+	// Path basename "bay1" is non-canonical, so pass 1 skips it and pass 2
 	// assigns the first sequential ID.
-	if ws.ID != "w1" {
-		t.Errorf("workspace ID = %q, want %q", ws.ID, "w1")
+	if bay.ID != "w1" {
+		t.Errorf("bay ID = %q, want %q", bay.ID, "w1")
 	}
-	if ws.Type != WorkspaceTypeWorktree {
-		t.Errorf("workspace type = %q, want %q", ws.Type, WorkspaceTypeWorktree)
+	if bay.Type != BayTypeWorktree {
+		t.Errorf("bay type = %q, want %q", bay.Type, BayTypeWorktree)
 	}
 	// v2 manifest with status=active should not set Merged
-	if ws.Worktree != nil && ws.Worktree.Merged {
-		t.Error("workspace should not be merged")
+	if bay.Worktree != nil && bay.Worktree.Merged {
+		t.Error("bay should not be merged")
 	}
-	if ws.LastFocused != 1 {
-		t.Errorf("last_focused = %d, want 1", ws.LastFocused)
+	if bay.LastFocused != 1 {
+		t.Errorf("last_focused = %d, want 1", bay.LastFocused)
 	}
-	if ws.Worktree == nil {
+	if bay.Worktree == nil {
 		t.Fatal("worktree attrs is nil")
 	}
 	if dock.Path != "/repo/labs" {
 		t.Errorf("dock path = %q, want /repo/labs", dock.Path)
 	}
-	if ws.Worktree.Repo != "" {
-		t.Errorf("worktree repo = %q, want empty after v6 migration", ws.Worktree.Repo)
+	if bay.Worktree.Repo != "" {
+		t.Errorf("worktree repo = %q, want empty after v6 migration", bay.Worktree.Repo)
 	}
-	if ws.Worktree.Branch != "fix-auth" {
-		t.Errorf("worktree branch = %q, want %q", ws.Worktree.Branch, "fix-auth")
+	if bay.Worktree.Branch != "fix-auth" {
+		t.Errorf("worktree branch = %q, want %q", bay.Worktree.Branch, "fix-auth")
 	}
-	if ws.Worktree.PR != "52" {
-		t.Errorf("worktree pr = %q, want %q", ws.Worktree.PR, "52")
+	if bay.Worktree.PR != "52" {
+		t.Errorf("worktree pr = %q, want %q", bay.Worktree.PR, "52")
 	}
 
-	if len(ws.Surfaces) != 3 {
-		t.Fatalf("surfaces length = %d, want 3", len(ws.Surfaces))
+	if len(bay.Surfaces) != 3 {
+		t.Fatalf("surfaces length = %d, want 3", len(bay.Surfaces))
 	}
 
 	// Agent surface
-	s := &ws.Surfaces[0]
+	s := &bay.Surfaces[0]
 	if s.ID != 1 || s.Name != "agent" || s.Type != SurfaceTypeAgent || s.Backend != SurfaceBackendTmux {
 		t.Errorf("surface 0: got id=%d name=%q type=%q backend=%q", s.ID, s.Name, s.Type, s.Backend)
 	}
@@ -175,13 +175,13 @@ func TestParse_FullManifest(t *testing.T) {
 	}
 
 	// Shell surface
-	s = &ws.Surfaces[1]
+	s = &bay.Surfaces[1]
 	if s.Type != SurfaceTypeShell || s.Tmux.SplitFrom != 1 || s.Tmux.SplitDir != "h" {
 		t.Errorf("surface 1: type=%q split_from=%d split_dir=%q", s.Type, s.Tmux.SplitFrom, s.Tmux.SplitDir)
 	}
 
 	// Editor surface
-	s = &ws.Surfaces[2]
+	s = &bay.Surfaces[2]
 	if s.Type != SurfaceTypeEditor || s.Backend != SurfaceBackendGUI {
 		t.Errorf("surface 2: type=%q backend=%q", s.Type, s.Backend)
 	}
@@ -198,11 +198,11 @@ func TestRoundTrip(t *testing.T) {
 			{
 				Name: "labs",
 				Path: "/repo/labs",
-				Workspaces: []Workspace{
+				Bays: []Bay{
 					{
 						Name: "auth-fix",
-						Type: WorkspaceTypeWorktree,
-						Path: "/tmp/ws1",
+						Type: BayTypeWorktree,
+						Path: "/tmp/bay1",
 						Worktree: &WorktreeAttrs{
 							Branch: "fix-auth",
 							PR:     "52",
@@ -239,11 +239,11 @@ func TestRoundTrip(t *testing.T) {
 	if restored.Docks[0].Name != "labs" {
 		t.Errorf("dock name = %q, want %q", restored.Docks[0].Name, "labs")
 	}
-	ws := &restored.Docks[0].Workspaces[0]
-	if ws.Name != "auth-fix" {
-		t.Errorf("workspace name = %q, want %q", ws.Name, "auth-fix")
+	bay := &restored.Docks[0].Bays[0]
+	if bay.Name != "auth-fix" {
+		t.Errorf("bay name = %q, want %q", bay.Name, "auth-fix")
 	}
-	if ws.Surfaces[0].Agent == nil || *ws.Surfaces[0].Agent != "claude-code" {
+	if bay.Surfaces[0].Agent == nil || *bay.Surfaces[0].Agent != "claude-code" {
 		t.Error("agent not round-tripped")
 	}
 }
@@ -255,8 +255,8 @@ func TestSaveAndLoad(t *testing.T) {
 	original := New()
 	original.Docks = append(original.Docks, Dock{
 		Name: "test",
-		Workspaces: []Workspace{
-			{Name: "ws1", Type: WorkspaceTypeWorktree},
+		Bays: []Bay{
+			{Name: "bay1", Type: BayTypeWorktree},
 		},
 	})
 
@@ -272,8 +272,8 @@ func TestSaveAndLoad(t *testing.T) {
 	if len(loaded.Docks) != 1 || loaded.Docks[0].Name != "test" {
 		t.Errorf("loaded dock: got %v", loaded.Docks)
 	}
-	if len(loaded.Docks[0].Workspaces) != 1 || loaded.Docks[0].Workspaces[0].Name != "ws1" {
-		t.Errorf("loaded workspace: got %v", loaded.Docks[0].Workspaces)
+	if len(loaded.Docks[0].Bays) != 1 || loaded.Docks[0].Bays[0].Name != "bay1" {
+		t.Errorf("loaded bay: got %v", loaded.Docks[0].Bays)
 	}
 }
 
@@ -386,9 +386,9 @@ func TestFindDock_ReturnsMutablePointer(t *testing.T) {
 	m.Docks = []Dock{{Name: "labs"}}
 
 	d := m.FindDock("labs")
-	d.Workspaces = append(d.Workspaces, Workspace{Name: "ws1"})
+	d.Bays = append(d.Bays, Bay{Name: "bay1"})
 
-	if len(m.Docks[0].Workspaces) != 1 {
+	if len(m.Docks[0].Bays) != 1 {
 		t.Error("mutation through FindDock pointer did not affect manifest")
 	}
 }
@@ -433,154 +433,154 @@ func TestRemoveDock_NotFound(t *testing.T) {
 	}
 }
 
-// --- Workspace operations ---
+// --- Bay operations ---
 
-func TestFindWorkspace(t *testing.T) {
-	d := &Dock{
-		Name:       "labs",
-		Workspaces: []Workspace{{Name: "auth-fix"}, {Name: "perf"}},
-	}
-
-	ws := d.FindWorkspace("auth-fix")
-	if ws == nil || ws.Name != "auth-fix" {
-		t.Errorf("FindWorkspace(auth-fix) = %v", ws)
-	}
-
-	ws = d.FindWorkspace("nonexistent")
-	if ws != nil {
-		t.Errorf("FindWorkspace(nonexistent) = %v, want nil", ws)
-	}
-}
-
-func TestAddWorkspace(t *testing.T) {
-	d := &Dock{Name: "labs"}
-
-	if err := d.AddWorkspace(Workspace{Name: "auth-fix"}); err != nil {
-		t.Fatal(err)
-	}
-	if len(d.Workspaces) != 1 || d.Workspaces[0].Name != "auth-fix" {
-		t.Errorf("after add: %v", d.Workspaces)
-	}
-}
-
-func TestAddWorkspace_DuplicateName(t *testing.T) {
-	d := &Dock{
-		Name:       "labs",
-		Workspaces: []Workspace{{Name: "auth-fix"}},
-	}
-
-	err := d.AddWorkspace(Workspace{Name: "auth-fix"})
-	if err == nil {
-		t.Fatal("expected error for duplicate workspace name")
-	}
-}
-
-func TestRemoveWorkspace(t *testing.T) {
+func TestFindBay(t *testing.T) {
 	d := &Dock{
 		Name: "labs",
-		Workspaces: []Workspace{
+		Bays: []Bay{{Name: "auth-fix"}, {Name: "perf"}},
+	}
+
+	bay := d.FindBay("auth-fix")
+	if bay == nil || bay.Name != "auth-fix" {
+		t.Errorf("FindBay(auth-fix) = %v", bay)
+	}
+
+	bay = d.FindBay("nonexistent")
+	if bay != nil {
+		t.Errorf("FindBay(nonexistent) = %v, want nil", bay)
+	}
+}
+
+func TestAddBay(t *testing.T) {
+	d := &Dock{Name: "labs"}
+
+	if err := d.AddBay(Bay{Name: "auth-fix"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Bays) != 1 || d.Bays[0].Name != "auth-fix" {
+		t.Errorf("after add: %v", d.Bays)
+	}
+}
+
+func TestAddBay_DuplicateName(t *testing.T) {
+	d := &Dock{
+		Name: "labs",
+		Bays: []Bay{{Name: "auth-fix"}},
+	}
+
+	err := d.AddBay(Bay{Name: "auth-fix"})
+	if err == nil {
+		t.Fatal("expected error for duplicate bay name")
+	}
+}
+
+func TestRemoveBay(t *testing.T) {
+	d := &Dock{
+		Name: "labs",
+		Bays: []Bay{
 			{ID: "w1", Name: "auth-fix"},
 			{ID: "w2", Name: "perf"},
 		},
 	}
 
-	if err := d.RemoveWorkspace("w1"); err != nil {
+	if err := d.RemoveBay("w1"); err != nil {
 		t.Fatal(err)
 	}
-	if len(d.Workspaces) != 1 || d.Workspaces[0].Name != "perf" {
-		t.Errorf("after remove: %v", d.Workspaces)
+	if len(d.Bays) != 1 || d.Bays[0].Name != "perf" {
+		t.Errorf("after remove: %v", d.Bays)
 	}
 }
 
-func TestRemoveWorkspace_NotFound(t *testing.T) {
+func TestRemoveBay_NotFound(t *testing.T) {
 	d := &Dock{Name: "labs"}
-	if err := d.RemoveWorkspace("nonexistent"); err == nil {
-		t.Fatal("expected error for missing workspace")
+	if err := d.RemoveBay("nonexistent"); err == nil {
+		t.Fatal("expected error for missing bay")
 	}
 }
 
-// Workspace IDs are reassigned from a max-of-current pool, so a stale
+// Bay IDs are reassigned from a max-of-current pool, so a stale
 // undo-close entry would silently restore into a future bay that
-// reclaims the same ID. RemoveWorkspace must purge those entries.
-func TestRemoveWorkspace_PurgesClosedEntriesForWorkspace(t *testing.T) {
+// reclaims the same ID. RemoveBay must purge those entries.
+func TestRemoveBay_PurgesClosedEntriesForBay(t *testing.T) {
 	d := &Dock{
 		Name: "labs",
-		Workspaces: []Workspace{
+		Bays: []Bay{
 			{ID: "w1", Name: "auth-fix"},
 			{ID: "w2", Name: "perf"},
 		},
 		ClosedEntries: []ClosedEntry{
-			{ClosedAt: 100, Kind: ClosedKindSurface, Surface: &ClosedSurface{Workspace: "w1", Name: "claude"}},
-			{ClosedAt: 200, Kind: ClosedKindSurface, Surface: &ClosedSurface{Workspace: "w2", Name: "shell"}},
-			{ClosedAt: 300, Kind: ClosedKindSurface, Surface: &ClosedSurface{Workspace: "w1", Name: "logs"}},
+			{ClosedAt: 100, Kind: ClosedKindSurface, Surface: &ClosedSurface{Bay: "w1", Name: "claude"}},
+			{ClosedAt: 200, Kind: ClosedKindSurface, Surface: &ClosedSurface{Bay: "w2", Name: "shell"}},
+			{ClosedAt: 300, Kind: ClosedKindSurface, Surface: &ClosedSurface{Bay: "w1", Name: "logs"}},
 		},
 	}
 
-	if err := d.RemoveWorkspace("w1"); err != nil {
+	if err := d.RemoveBay("w1"); err != nil {
 		t.Fatal(err)
 	}
 	if len(d.ClosedEntries) != 1 {
 		t.Fatalf("ClosedEntries: got %d, want 1: %+v", len(d.ClosedEntries), d.ClosedEntries)
 	}
-	if d.ClosedEntries[0].Surface.Workspace != "w2" {
-		t.Errorf("survivor: got %q, want %q", d.ClosedEntries[0].Surface.Workspace, "w2")
+	if d.ClosedEntries[0].Surface.Bay != "w2" {
+		t.Errorf("survivor: got %q, want %q", d.ClosedEntries[0].Surface.Bay, "w2")
 	}
 }
 
 // --- Surface operations ---
 
 func TestNextSurfaceID_Empty(t *testing.T) {
-	ws := &Workspace{}
-	if id := ws.NextSurfaceID(); id != 1 {
+	bay := &Bay{}
+	if id := bay.NextSurfaceID(); id != 1 {
 		t.Errorf("NextSurfaceID() = %d, want 1", id)
 	}
 }
 
 func TestNextSurfaceID_WithExisting(t *testing.T) {
-	ws := &Workspace{
+	bay := &Bay{
 		Surfaces: []Surface{{ID: 1}, {ID: 3}},
 	}
-	if id := ws.NextSurfaceID(); id != 4 {
+	if id := bay.NextSurfaceID(); id != 4 {
 		t.Errorf("NextSurfaceID() = %d, want 4", id)
 	}
 }
 
 func TestFindSurface(t *testing.T) {
-	ws := &Workspace{
+	bay := &Bay{
 		Surfaces: []Surface{{ID: 1, Name: "agent"}, {ID: 2, Name: "shell"}},
 	}
 
-	s := ws.FindSurface("agent")
+	s := bay.FindSurface("agent")
 	if s == nil || s.Name != "agent" {
 		t.Errorf("FindSurface(agent) = %v", s)
 	}
 
-	s = ws.FindSurface("nonexistent")
+	s = bay.FindSurface("nonexistent")
 	if s != nil {
 		t.Errorf("FindSurface(nonexistent) = %v, want nil", s)
 	}
 }
 
 func TestFindSurfaceByID(t *testing.T) {
-	ws := &Workspace{
+	bay := &Bay{
 		Surfaces: []Surface{{ID: 1, Name: "agent"}, {ID: 2, Name: "shell"}},
 	}
 
-	s := ws.FindSurfaceByID(2)
+	s := bay.FindSurfaceByID(2)
 	if s == nil || s.Name != "shell" {
 		t.Errorf("FindSurfaceByID(2) = %v", s)
 	}
 
-	s = ws.FindSurfaceByID(99)
+	s = bay.FindSurfaceByID(99)
 	if s != nil {
 		t.Errorf("FindSurfaceByID(99) = %v, want nil", s)
 	}
 }
 
 func TestAddSurface(t *testing.T) {
-	ws := &Workspace{}
+	bay := &Bay{}
 
-	id, err := ws.AddSurface(Surface{
+	id, err := bay.AddSurface(Surface{
 		Name:    "agent",
 		Type:    SurfaceTypeAgent,
 		Backend: SurfaceBackendTmux,
@@ -591,12 +591,12 @@ func TestAddSurface(t *testing.T) {
 	if id != 1 {
 		t.Errorf("assigned id = %d, want 1", id)
 	}
-	if len(ws.Surfaces) != 1 || ws.Surfaces[0].ID != 1 {
-		t.Errorf("after add: %v", ws.Surfaces)
+	if len(bay.Surfaces) != 1 || bay.Surfaces[0].ID != 1 {
+		t.Errorf("after add: %v", bay.Surfaces)
 	}
 
 	// Add a second surface
-	id, err = ws.AddSurface(Surface{Name: "shell", Type: SurfaceTypeShell, Backend: SurfaceBackendTmux})
+	id, err = bay.AddSurface(Surface{Name: "shell", Type: SurfaceTypeShell, Backend: SurfaceBackendTmux})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -606,22 +606,22 @@ func TestAddSurface(t *testing.T) {
 }
 
 func TestAddSurface_DuplicateName(t *testing.T) {
-	ws := &Workspace{
+	bay := &Bay{
 		Surfaces: []Surface{{ID: 1, Name: "agent"}},
 	}
 
-	_, err := ws.AddSurface(Surface{Name: "agent"})
+	_, err := bay.AddSurface(Surface{Name: "agent"})
 	if err == nil {
 		t.Fatal("expected error for duplicate surface name")
 	}
 }
 
 func TestAddSurface_IDsNeverReused(t *testing.T) {
-	ws := &Workspace{
+	bay := &Bay{
 		Surfaces: []Surface{{ID: 1, Name: "agent"}, {ID: 3, Name: "shell"}},
 	}
 
-	id, err := ws.AddSurface(Surface{Name: "editor"})
+	id, err := bay.AddSurface(Surface{Name: "editor"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -631,7 +631,7 @@ func TestAddSurface_IDsNeverReused(t *testing.T) {
 }
 
 func TestRemoveSurface(t *testing.T) {
-	ws := &Workspace{
+	bay := &Bay{
 		Surfaces: []Surface{
 			{ID: 1, Name: "agent"},
 			{ID: 2, Name: "shell"},
@@ -639,67 +639,67 @@ func TestRemoveSurface(t *testing.T) {
 		},
 	}
 
-	if err := ws.RemoveSurface("shell"); err != nil {
+	if err := bay.RemoveSurface("shell"); err != nil {
 		t.Fatal(err)
 	}
-	if len(ws.Surfaces) != 2 {
-		t.Fatalf("surfaces length = %d, want 2", len(ws.Surfaces))
+	if len(bay.Surfaces) != 2 {
+		t.Fatalf("surfaces length = %d, want 2", len(bay.Surfaces))
 	}
-	if ws.Surfaces[0].Name != "agent" || ws.Surfaces[1].Name != "editor" {
-		t.Errorf("after remove: %v", ws.Surfaces)
+	if bay.Surfaces[0].Name != "agent" || bay.Surfaces[1].Name != "editor" {
+		t.Errorf("after remove: %v", bay.Surfaces)
 	}
 }
 
 func TestRemoveSurface_NotFound(t *testing.T) {
-	ws := &Workspace{}
-	if err := ws.RemoveSurface("nonexistent"); err == nil {
+	bay := &Bay{}
+	if err := bay.RemoveSurface("nonexistent"); err == nil {
 		t.Fatal("expected error for missing surface")
 	}
 }
 
-// --- Workspace resolution ---
+// --- Bay resolution ---
 
-func TestResolveWorkspace_ByDockColonID(t *testing.T) {
+func TestResolveBay_ByDockColonID(t *testing.T) {
 	m := &Manifest{
 		Docks: []Dock{
-			{Name: "labs", Workspaces: []Workspace{{ID: "w1", Name: "auth-fix"}}},
+			{Name: "labs", Bays: []Bay{{ID: "w1", Name: "auth-fix"}}},
 		},
 	}
 
-	ws, dock, err := m.ResolveWorkspace("labs:w1")
+	bay, dock, err := m.ResolveBay("labs:w1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ws.ID != "w1" || dock.Name != "labs" {
-		t.Errorf("resolve = ws=%q dock=%q", ws.ID, dock.Name)
+	if bay.ID != "w1" || dock.Name != "labs" {
+		t.Errorf("resolve = bay=%q dock=%q", bay.ID, dock.Name)
 	}
 }
 
-func TestResolveWorkspace_ByID(t *testing.T) {
+func TestResolveBay_ByID(t *testing.T) {
 	m := &Manifest{
 		Docks: []Dock{
-			{Name: "labs", Workspaces: []Workspace{{ID: "w1", Name: "auth-fix"}}},
+			{Name: "labs", Bays: []Bay{{ID: "w1", Name: "auth-fix"}}},
 		},
 	}
 
-	ws, dock, err := m.ResolveWorkspace("w1")
+	bay, dock, err := m.ResolveBay("w1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ws.ID != "w1" || dock.Name != "labs" {
-		t.Errorf("resolve = ws=%q dock=%q", ws.ID, dock.Name)
+	if bay.ID != "w1" || dock.Name != "labs" {
+		t.Errorf("resolve = bay=%q dock=%q", bay.ID, dock.Name)
 	}
 }
 
-// TestResolveWorkspace_ByNameRedirectsToID covers the strict-resolver
+// TestResolveBay_ByNameRedirectsToID covers the strict-resolver
 // hint: typing a Name returns an error that points at the canonical ID.
-func TestResolveWorkspace_ByNameRedirectsToID(t *testing.T) {
+func TestResolveBay_ByNameRedirectsToID(t *testing.T) {
 	m := &Manifest{
 		Docks: []Dock{
-			{Name: "labs", Workspaces: []Workspace{{ID: "w1", Name: "auth-fix"}}},
+			{Name: "labs", Bays: []Bay{{ID: "w1", Name: "auth-fix"}}},
 		},
 	}
-	_, _, err := m.ResolveWorkspace("auth-fix")
+	_, _, err := m.ResolveBay("auth-fix")
 	if err == nil {
 		t.Fatal("expected error for Name lookup under strict resolution")
 	}
@@ -708,69 +708,69 @@ func TestResolveWorkspace_ByNameRedirectsToID(t *testing.T) {
 	}
 }
 
-func TestResolveWorkspace_AmbiguousName(t *testing.T) {
+func TestResolveBay_AmbiguousName(t *testing.T) {
 	m := &Manifest{
 		Docks: []Dock{
-			{Name: "labs", Workspaces: []Workspace{{Name: "shared"}}},
-			{Name: "research", Workspaces: []Workspace{{Name: "shared"}}},
+			{Name: "labs", Bays: []Bay{{Name: "shared"}}},
+			{Name: "research", Bays: []Bay{{Name: "shared"}}},
 		},
 	}
 
-	_, _, err := m.ResolveWorkspace("shared")
+	_, _, err := m.ResolveBay("shared")
 	if err == nil {
 		t.Fatal("expected error for ambiguous name")
 	}
 }
 
-func TestResolveWorkspace_NotFound(t *testing.T) {
+func TestResolveBay_NotFound(t *testing.T) {
 	m := &Manifest{
-		Docks: []Dock{{Name: "labs", Workspaces: []Workspace{{Name: "auth-fix"}}}},
+		Docks: []Dock{{Name: "labs", Bays: []Bay{{Name: "auth-fix"}}}},
 	}
 
-	_, _, err := m.ResolveWorkspace("nonexistent")
+	_, _, err := m.ResolveBay("nonexistent")
 	if err == nil {
 		t.Fatal("expected error for not found")
 	}
 }
 
-// --- AllWorkspaces ---
+// --- AllBays ---
 
-func TestAllWorkspaces(t *testing.T) {
+func TestAllBays(t *testing.T) {
 	m := &Manifest{
 		Docks: []Dock{
-			{Name: "research", Workspaces: []Workspace{{Name: "beta"}, {Name: "alpha"}}},
-			{Name: "labs", Workspaces: []Workspace{{Name: "ws1"}}},
+			{Name: "research", Bays: []Bay{{Name: "beta"}, {Name: "alpha"}}},
+			{Name: "labs", Bays: []Bay{{Name: "bay1"}}},
 		},
 	}
 
-	refs := AllWorkspaces(m)
+	refs := AllBays(m)
 	if len(refs) != 3 {
-		t.Fatalf("AllWorkspaces length = %d, want 3", len(refs))
+		t.Fatalf("AllBays length = %d, want 3", len(refs))
 	}
-	// Sorted by dock then workspace name
-	if refs[0].Dock != "labs" || refs[0].Workspace.Name != "ws1" {
-		t.Errorf("refs[0] = %q/%q", refs[0].Dock, refs[0].Workspace.Name)
+	// Sorted by dock then bay name
+	if refs[0].Dock != "labs" || refs[0].Bay.Name != "bay1" {
+		t.Errorf("refs[0] = %q/%q", refs[0].Dock, refs[0].Bay.Name)
 	}
-	if refs[1].Dock != "research" || refs[1].Workspace.Name != "alpha" {
-		t.Errorf("refs[1] = %q/%q", refs[1].Dock, refs[1].Workspace.Name)
+	if refs[1].Dock != "research" || refs[1].Bay.Name != "alpha" {
+		t.Errorf("refs[1] = %q/%q", refs[1].Dock, refs[1].Bay.Name)
 	}
-	if refs[2].Dock != "research" || refs[2].Workspace.Name != "beta" {
-		t.Errorf("refs[2] = %q/%q", refs[2].Dock, refs[2].Workspace.Name)
+	if refs[2].Dock != "research" || refs[2].Bay.Name != "beta" {
+		t.Errorf("refs[2] = %q/%q", refs[2].Dock, refs[2].Bay.Name)
 	}
 }
 
-func TestAllWorkspaces_ReturnsMutablePointers(t *testing.T) {
+func TestAllBays_ReturnsMutablePointers(t *testing.T) {
 	m := &Manifest{
 		Docks: []Dock{
-			{Name: "labs", Workspaces: []Workspace{{Name: "ws1"}}},
+			{Name: "labs", Bays: []Bay{{Name: "bay1"}}},
 		},
 	}
 
-	refs := AllWorkspaces(m)
-	refs[0].Workspace.Name = "ws1-renamed"
+	refs := AllBays(m)
+	refs[0].Bay.Name = "bay1-renamed"
 
-	if m.Docks[0].Workspaces[0].Name != "ws1-renamed" {
-		t.Error("mutation through AllWorkspaces pointer did not affect manifest")
+	if m.Docks[0].Bays[0].Name != "bay1-renamed" {
+		t.Error("mutation through AllBays pointer did not affect manifest")
 	}
 }
 
@@ -877,17 +877,17 @@ func TestSurface_Validate_AgentOnWrongType(t *testing.T) {
 	}
 }
 
-func TestResolveWorkspace_DockColonNotFound(t *testing.T) {
+func TestResolveBay_DockColonNotFound(t *testing.T) {
 	m := &Manifest{
-		Docks: []Dock{{Name: "labs", Workspaces: []Workspace{{Name: "auth-fix"}}}},
+		Docks: []Dock{{Name: "labs", Bays: []Bay{{Name: "auth-fix"}}}},
 	}
 
-	_, _, err := m.ResolveWorkspace("labs:nonexistent")
+	_, _, err := m.ResolveBay("labs:nonexistent")
 	if err == nil {
 		t.Fatal("expected error for not found")
 	}
 
-	_, _, err = m.ResolveWorkspace("baddock:auth-fix")
+	_, _, err = m.ResolveBay("baddock:auth-fix")
 	if err == nil {
 		t.Fatal("expected error for bad dock")
 	}
@@ -898,11 +898,11 @@ func TestDockCheckoutAndAgentRoundTrip(t *testing.T) {
 		Version: CurrentVersion,
 		Docks: []Dock{
 			{
-				Name:       "dev",
-				Path:       "/p/labs",
-				Agent:      "claude",
-				AgentArgs:  map[string][]string{"claude": {"--add-dir", "/extra"}},
-				Workspaces: []Workspace{},
+				Name:      "dev",
+				Path:      "/p/labs",
+				Agent:     "claude",
+				AgentArgs: map[string][]string{"claude": {"--add-dir", "/extra"}},
+				Bays:      []Bay{},
 			},
 		},
 	}
@@ -970,12 +970,12 @@ func TestParse_MigratesV5ReposToDockCheckouts(t *testing.T) {
 	if dock.Path != "/p/labs" || dock.WorktreeDir != "/wt/labs" || dock.Repo != "" {
 		t.Fatalf("dock migration mismatch: %#v", dock)
 	}
-	ws := dock.FindWorkspaceByID("w1")
-	if ws == nil || ws.Worktree == nil {
-		t.Fatalf("workspace not migrated: %#v", dock.Workspaces)
+	bay := dock.FindBayByID("w1")
+	if bay == nil || bay.Worktree == nil {
+		t.Fatalf("bay not migrated: %#v", dock.Bays)
 	}
-	if ws.Worktree.Repo != "" {
-		t.Errorf("worktree repo = %q, want empty after v6 migration", ws.Worktree.Repo)
+	if bay.Worktree.Repo != "" {
+		t.Errorf("worktree repo = %q, want empty after v6 migration", bay.Worktree.Repo)
 	}
 }
 
@@ -1039,27 +1039,27 @@ func TestParse_MigratesV2StatusDoneToMerged(t *testing.T) {
 			{
 				"name": "labs",
 				"repo": "labs",
-				"workspaces": [
+				"bays": [
 					{
-						"name": "ws-done",
+						"name": "bay-done",
 						"type": "worktree",
-						"path": "/tmp/ws1",
+						"path": "/tmp/bay1",
 						"status": "done",
 						"worktree": {"repo": "labs", "branch": "feat-x"},
 						"surfaces": []
 					},
 					{
-						"name": "ws-active",
+						"name": "bay-active",
 						"type": "worktree",
-						"path": "/tmp/ws2",
+						"path": "/tmp/bay2",
 						"status": "active",
 						"worktree": {"repo": "labs", "branch": "feat-y"},
 						"surfaces": []
 					},
 					{
-						"name": "ws-no-worktree",
+						"name": "bay-no-worktree",
 						"type": "external",
-						"path": "/tmp/ws3",
+						"path": "/tmp/bay3",
 						"status": "done",
 						"surfaces": []
 					}
@@ -1073,20 +1073,20 @@ func TestParse_MigratesV2StatusDoneToMerged(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ws0 := &m.Docks[0].Workspaces[0]
-	if ws0.Worktree == nil || !ws0.Worktree.Merged {
-		t.Errorf("ws-done: expected Merged=true, got Merged=%v", ws0.Worktree != nil && ws0.Worktree.Merged)
+	bay0 := &m.Docks[0].Bays[0]
+	if bay0.Worktree == nil || !bay0.Worktree.Merged {
+		t.Errorf("bay-done: expected Merged=true, got Merged=%v", bay0.Worktree != nil && bay0.Worktree.Merged)
 	}
 
-	ws1 := &m.Docks[0].Workspaces[1]
-	if ws1.Worktree == nil || ws1.Worktree.Merged {
-		t.Errorf("ws-active: expected Merged=false, got Merged=%v", ws1.Worktree != nil && ws1.Worktree.Merged)
+	bay1 := &m.Docks[0].Bays[1]
+	if bay1.Worktree == nil || bay1.Worktree.Merged {
+		t.Errorf("bay-active: expected Merged=false, got Merged=%v", bay1.Worktree != nil && bay1.Worktree.Merged)
 	}
 
-	// External workspace with status=done but no worktree — Merged should not be set
-	ws2 := &m.Docks[0].Workspaces[2]
-	if ws2.Worktree != nil {
-		t.Errorf("ws-no-worktree: expected no worktree attrs")
+	// External bay with status=done but no worktree — Merged should not be set
+	bay2 := &m.Docks[0].Bays[2]
+	if bay2.Worktree != nil {
+		t.Errorf("bay-no-worktree: expected no worktree attrs")
 	}
 
 	if m.Version != CurrentVersion {
@@ -1094,7 +1094,7 @@ func TestParse_MigratesV2StatusDoneToMerged(t *testing.T) {
 	}
 }
 
-func TestIsWorkspaceID(t *testing.T) {
+func TestIsBayID(t *testing.T) {
 	cases := []struct {
 		s    string
 		want bool
@@ -1115,15 +1115,15 @@ func TestIsWorkspaceID(t *testing.T) {
 		{"w1.5", false},
 	}
 	for _, c := range cases {
-		if got := IsWorkspaceID(c.s); got != c.want {
-			t.Errorf("IsWorkspaceID(%q) = %v, want %v", c.s, got, c.want)
+		if got := IsBayID(c.s); got != c.want {
+			t.Errorf("IsBayID(%q) = %v, want %v", c.s, got, c.want)
 		}
 	}
 }
 
 // TestParse_FillsMissingIDsFromPathBasename covers the common legacy
-// case: a v3 manifest where every workspace's path is already w<N>-shaped
-// (because bay's worktree dirs have always been). Each workspace's ID
+// case: a v3 manifest where every bay's path is already w<N>-shaped
+// (because bay's worktree dirs have always been). Each bay's ID
 // should equal its path basename — no renumbering, no surprises.
 func TestParse_FillsMissingIDsFromPathBasename(t *testing.T) {
 	data := []byte(`{
@@ -1133,7 +1133,7 @@ func TestParse_FillsMissingIDsFromPathBasename(t *testing.T) {
 			{
 				"name": "labs",
 				"repo": "labs",
-				"workspaces": [
+				"bays": [
 					{"name": "auth-fix", "type": "worktree", "path": "/repo-worktrees/w1", "surfaces": []},
 					{"name": "cache-ttl", "type": "worktree", "path": "/repo-worktrees/w2", "surfaces": []},
 					{"name": "api-log",  "type": "worktree", "path": "/repo-worktrees/w5", "surfaces": []}
@@ -1146,8 +1146,8 @@ func TestParse_FillsMissingIDsFromPathBasename(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := []string{}
-	for _, ws := range m.Docks[0].Workspaces {
-		got = append(got, ws.ID)
+	for _, bay := range m.Docks[0].Bays {
+		got = append(got, bay.ID)
 	}
 	want := []string{"w1", "w2", "w5"}
 	if !slices.Equal(got, want) {
@@ -1156,7 +1156,7 @@ func TestParse_FillsMissingIDsFromPathBasename(t *testing.T) {
 }
 
 // TestParse_AssignsSequentialIDsForUnusablePaths covers external
-// workspaces (or any with non-w<N> path basenames): they fall through
+// bays (or any with non-w<N> path basenames): they fall through
 // to pass 2 and get the next available sequential ID, picking up after
 // the highest-claimed worktree ID.
 func TestParse_AssignsSequentialIDsForUnusablePaths(t *testing.T) {
@@ -1167,7 +1167,7 @@ func TestParse_AssignsSequentialIDsForUnusablePaths(t *testing.T) {
 			{
 				"name": "mixed",
 				"repo": "mixed",
-				"workspaces": [
+				"bays": [
 					{"name": "wt", "type": "worktree", "path": "/repo-worktrees/w3", "surfaces": []},
 					{"name": "ext1", "type": "external", "path": "/Users/me/projects/foo", "surfaces": []},
 					{"name": "ext2", "type": "external", "path": "/Users/me/projects/bar", "surfaces": []}
@@ -1181,8 +1181,8 @@ func TestParse_AssignsSequentialIDsForUnusablePaths(t *testing.T) {
 	}
 	// wt claims w3 from its path; externals get w4, w5 (continuing from max).
 	got := []string{}
-	for _, ws := range m.Docks[0].Workspaces {
-		got = append(got, ws.ID)
+	for _, bay := range m.Docks[0].Bays {
+		got = append(got, bay.ID)
 	}
 	want := []string{"w3", "w4", "w5"}
 	if !slices.Equal(got, want) {
@@ -1191,7 +1191,7 @@ func TestParse_AssignsSequentialIDsForUnusablePaths(t *testing.T) {
 }
 
 // TestParse_HandlesIDCollisions covers the pathological case where two
-// workspaces claim the same w<N> path basename (shouldn't normally
+// bays claim the same w<N> path basename (shouldn't normally
 // happen, but guard against it). First one to be processed wins; the
 // second falls through to sequential assignment.
 func TestParse_HandlesIDCollisions(t *testing.T) {
@@ -1202,7 +1202,7 @@ func TestParse_HandlesIDCollisions(t *testing.T) {
 			{
 				"name": "labs",
 				"repo": "labs",
-				"workspaces": [
+				"bays": [
 					{"name": "a", "type": "worktree", "path": "/x/w1", "surfaces": []},
 					{"name": "b", "type": "worktree", "path": "/x/w1", "surfaces": []}
 				]
@@ -1213,11 +1213,11 @@ func TestParse_HandlesIDCollisions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Docks[0].Workspaces[0].ID != "w1" {
-		t.Errorf("workspace[0].ID = %q, want w1", m.Docks[0].Workspaces[0].ID)
+	if m.Docks[0].Bays[0].ID != "w1" {
+		t.Errorf("bay[0].ID = %q, want w1", m.Docks[0].Bays[0].ID)
 	}
-	if m.Docks[0].Workspaces[1].ID != "w2" {
-		t.Errorf("workspace[1].ID = %q, want w2 (collision fallback)", m.Docks[0].Workspaces[1].ID)
+	if m.Docks[0].Bays[1].ID != "w2" {
+		t.Errorf("bay[1].ID = %q, want w2 (collision fallback)", m.Docks[0].Bays[1].ID)
 	}
 }
 
@@ -1231,7 +1231,7 @@ func TestParse_PreservesExistingIDs(t *testing.T) {
 			{
 				"name": "labs",
 				"repo": "labs",
-				"workspaces": [
+				"bays": [
 					{"id": "w7", "name": "a", "type": "worktree", "path": "/x/w1", "surfaces": []}
 				]
 			}
@@ -1241,8 +1241,8 @@ func TestParse_PreservesExistingIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Docks[0].Workspaces[0].ID != "w7" {
-		t.Errorf("ID = %q, want w7 (preserved)", m.Docks[0].Workspaces[0].ID)
+	if m.Docks[0].Bays[0].ID != "w7" {
+		t.Errorf("ID = %q, want w7 (preserved)", m.Docks[0].Bays[0].ID)
 	}
 }
 
@@ -1259,30 +1259,30 @@ func TestParse_BumpsToV4(t *testing.T) {
 	}
 }
 
-// TestFindWorkspaceByID confirms ID lookups: empty input always returns
+// TestFindBayByID confirms ID lookups: empty input always returns
 // nil, a hit returns a pointer into the dock's slice, a miss returns nil.
-func TestFindWorkspaceByID(t *testing.T) {
+func TestFindBayByID(t *testing.T) {
 	dock := &Dock{
 		Name: "labs",
-		Workspaces: []Workspace{
+		Bays: []Bay{
 			{ID: "w1", Name: "auth-fix"},
 			{ID: "w3", Name: "cache-ttl"},
 		},
 	}
-	if dock.FindWorkspaceByID("") != nil {
-		t.Error("FindWorkspaceByID(\"\") should return nil")
+	if dock.FindBayByID("") != nil {
+		t.Error("FindBayByID(\"\") should return nil")
 	}
-	if dock.FindWorkspaceByID("w99") != nil {
-		t.Error("FindWorkspaceByID for missing ID should return nil")
+	if dock.FindBayByID("w99") != nil {
+		t.Error("FindBayByID for missing ID should return nil")
 	}
-	hit := dock.FindWorkspaceByID("w3")
+	hit := dock.FindBayByID("w3")
 	if hit == nil || hit.Name != "cache-ttl" {
-		t.Errorf("FindWorkspaceByID(\"w3\"): got %+v, want workspace with Name cache-ttl", hit)
+		t.Errorf("FindBayByID(\"w3\"): got %+v, want bay with Name cache-ttl", hit)
 	}
 	// Confirm the returned pointer aliases the slice element.
 	hit.Description = "touched"
-	if dock.Workspaces[1].Description != "touched" {
-		t.Error("FindWorkspaceByID should return a pointer into the slice, not a copy")
+	if dock.Bays[1].Description != "touched" {
+		t.Error("FindBayByID should return a pointer into the slice, not a copy")
 	}
 }
 
@@ -1294,8 +1294,8 @@ func TestSaveAndLoad_PreservesID(t *testing.T) {
 	original := New()
 	original.Docks = append(original.Docks, Dock{
 		Name: "test",
-		Workspaces: []Workspace{
-			{ID: "w3", Name: "alpha", Type: WorkspaceTypeWorktree, Path: "/repo-worktrees/w3"},
+		Bays: []Bay{
+			{ID: "w3", Name: "alpha", Type: BayTypeWorktree, Path: "/repo-worktrees/w3"},
 		},
 	})
 	if err := Save(path, original); err != nil {
@@ -1305,8 +1305,8 @@ func TestSaveAndLoad_PreservesID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Docks[0].Workspaces[0].ID != "w3" {
-		t.Errorf("ID after round-trip = %q, want w3", loaded.Docks[0].Workspaces[0].ID)
+	if loaded.Docks[0].Bays[0].ID != "w3" {
+		t.Errorf("ID after round-trip = %q, want w3", loaded.Docks[0].Bays[0].ID)
 	}
 }
 
@@ -1324,16 +1324,16 @@ func TestDockEffectiveWorktreeDir(t *testing.T) {
 	}
 }
 
-// TestResolveWorkspace_NameHintMultipleDocks covers the cross-dock
+// TestResolveBay_NameHintMultipleDocks covers the cross-dock
 // hint format when the same Name appears in multiple docks.
-func TestResolveWorkspace_NameHintMultipleDocks(t *testing.T) {
+func TestResolveBay_NameHintMultipleDocks(t *testing.T) {
 	m := &Manifest{
 		Docks: []Dock{
-			{Name: "labs", Workspaces: []Workspace{{ID: "w1", Name: "shared"}}},
-			{Name: "labs2", Workspaces: []Workspace{{ID: "w1", Name: "shared"}}},
+			{Name: "labs", Bays: []Bay{{ID: "w1", Name: "shared"}}},
+			{Name: "labs2", Bays: []Bay{{ID: "w1", Name: "shared"}}},
 		},
 	}
-	_, _, err := m.ResolveWorkspace("shared")
+	_, _, err := m.ResolveBay("shared")
 	if err == nil {
 		t.Fatal("expected error for multi-dock Name lookup")
 	}

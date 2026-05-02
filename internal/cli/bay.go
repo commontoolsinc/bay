@@ -18,8 +18,8 @@ import (
 	"golang.org/x/term"
 )
 
-func newWsNewCmd() *cobra.Command {
-	var opts engine.WsNewOptions
+func newBayNewCmd() *cobra.Command {
+	var opts engine.BayNewOptions
 	var shell bool
 	var quiet bool
 	var dockFlag string
@@ -87,12 +87,12 @@ func newWsNewCmd() *cobra.Command {
 				opts.Agent = "" // resolve to dock/global default
 			}
 
-			ws, err := eng.WsNew(opts)
+			bay, err := eng.BayNew(opts)
 			if err != nil {
 				return err
 			}
 			if !quiet {
-				fmt.Printf("Created %s:%s\n", opts.Dock, ws.Name)
+				fmt.Printf("Created %s:%s\n", opts.Dock, bay.Name)
 				currentSession, tmuxErr := eng.Tmux.CurrentSession()
 				if tmuxErr != nil || os.Getenv("TMUX") == "" {
 					fmt.Printf("\nAttach with:\n  tmux attach -t %s\n", opts.Dock)
@@ -117,7 +117,7 @@ func newWsNewCmd() *cobra.Command {
 	return cmd
 }
 
-func newWsCloseCmd() *cobra.Command {
+func newBayCloseCmd() *cobra.Command {
 	var force, clean, done, dryRun bool
 	var dockFlag string
 
@@ -157,16 +157,16 @@ bay, or use --done/--clean to batch-close bays.
 				// Exclude the current bay so batch close doesn't kill
 				// the session the user is running from.
 				var exclude []string
-				if ctx, ctxErr := eng.CurrentContext(); ctxErr == nil && ctx.WorkspaceID != "" {
-					exclude = append(exclude, ctx.WorkspaceID)
+				if ctx, ctxErr := eng.CurrentContext(); ctxErr == nil && ctx.BayID != "" {
+					exclude = append(exclude, ctx.BayID)
 				}
 
 				var closed, skipped []string
 				var closeErr error
 				if done {
-					closed, skipped, closeErr = eng.WsCloseDone(dockName, force, dryRun, exclude...)
+					closed, skipped, closeErr = eng.BayCloseDone(dockName, force, dryRun, exclude...)
 				} else {
-					closed, skipped, closeErr = eng.WsCloseClean(dockName, force, dryRun, exclude...)
+					closed, skipped, closeErr = eng.BayCloseClean(dockName, force, dryRun, exclude...)
 				}
 
 				verb := "Closed"
@@ -189,12 +189,12 @@ bay, or use --done/--clean to batch-close bays.
 				return fmt.Errorf("specify a bay to close (bay close <id>), or use --done / --clean")
 			}
 
-			dockName, wsID, err := resolveWsArg(eng, args[0], dockFlag)
+			dockName, bayID, err := resolveBayArg(eng, args[0], dockFlag)
 			if err != nil {
 				return err
 			}
 
-			return eng.WsClose(dockName, wsID, force)
+			return eng.BayClose(dockName, bayID, force)
 		},
 	}
 
@@ -207,7 +207,7 @@ bay, or use --done/--clean to batch-close bays.
 	return cmd
 }
 
-func newWsCleanReviewCmd() *cobra.Command {
+func newBayCleanReviewCmd() *cobra.Command {
 	var dockFlag string
 
 	cmd := &cobra.Command{
@@ -227,24 +227,24 @@ whole worktree exactly matches a recoverable git ref.
 				return err
 			}
 
-			var dockName, wsID string
+			var dockName, bayID string
 			if len(args) == 0 {
-				dockName, wsID, err = eng.ResolveSelf()
+				dockName, bayID, err = eng.ResolveSelf()
 			} else {
-				dockName, wsID, err = resolveWsArg(eng, args[0], dockFlag)
+				dockName, bayID, err = resolveBayArg(eng, args[0], dockFlag)
 			}
 			if err != nil {
 				return err
 			}
 
-			ref, err := eng.WsCleanReview(dockName, wsID)
+			ref, err := eng.BayCleanReview(dockName, bayID)
 			if err != nil {
 				return err
 			}
 			if ref == "" {
-				fmt.Printf("%s:%s already clean\n", dockName, wsID)
+				fmt.Printf("%s:%s already clean\n", dockName, bayID)
 			} else {
-				fmt.Printf("Cleaned review changes in %s:%s (matched %s)\n", dockName, wsID, ref)
+				fmt.Printf("Cleaned review changes in %s:%s (matched %s)\n", dockName, bayID, ref)
 			}
 			return nil
 		},
@@ -253,7 +253,7 @@ whole worktree exactly matches a recoverable git ref.
 	return cmd
 }
 
-func newWsShowCmd() *cobra.Command {
+func newBayShowCmd() *cobra.Command {
 	var jsonOutput, short, plain, flash, popup, popupBody bool
 	var dockFlag string
 
@@ -272,7 +272,7 @@ func newWsShowCmd() *cobra.Command {
 			if len(args) > 0 {
 				target = args[0]
 			}
-			dockName, wsID, err := resolveWsArg(eng, target, dockFlag)
+			dockName, bayID, err := resolveBayArg(eng, target, dockFlag)
 			if err != nil {
 				if short || flash || popup || popupBody {
 					// Swallow the error so the keybindings leave the
@@ -289,30 +289,30 @@ func newWsShowCmd() *cobra.Command {
 				// bay now (rather than inside the popup) lets the
 				// popup inherit an explicit dock/name and avoids
 				// re-resolving against a possibly-different CWD.
-				return eng.Tmux.DisplayPopup(fmt.Sprintf("bay show %s --popup-body --dock %s", wsID, dockName))
+				return eng.Tmux.DisplayPopup(fmt.Sprintf("bay show %s --popup-body --dock %s", bayID, dockName))
 			}
 
 			if popupBody {
-				ws, wsErr := eng.WsShow(dockName, wsID)
-				if wsErr != nil {
+				bay, bayErr := eng.BayShow(dockName, bayID)
+				if bayErr != nil {
 					return nil
 				}
-				_ = eng.MarkPRCheckStale(dockName, wsID)
-				renderPopupBody(ws)
+				_ = eng.MarkPRCheckStale(dockName, bayID)
+				renderPopupBody(bay)
 				return nil
 			}
 
 			if short || flash {
-				ws, wsErr := eng.WsShow(dockName, wsID)
-				if wsErr != nil {
+				bay, bayErr := eng.BayShow(dockName, bayID)
+				if bayErr != nil {
 					return nil
 				}
 				// User interest signal: if they're looking at this
 				// bay and its PR is still missing, ask the monitor
 				// to re-check on its next tick (~3s) rather than waiting
 				// for the full PR TTL to elapse.
-				_ = eng.MarkPRCheckStale(dockName, wsID)
-				out := formatWorkspaceShort(ws)
+				_ = eng.MarkPRCheckStale(dockName, bayID)
+				out := formatBayShort(bay)
 				if flash {
 					// Route via tmux display-message so the status bar
 					// updates synchronously on keypress. Using tmux's
@@ -329,36 +329,36 @@ func newWsShowCmd() *cobra.Command {
 			}
 
 			eng.SyncAll()
-			wsInfo, err := eng.WorkspaceInfoByName(dockName, wsID)
+			bayInfo, err := eng.BayInfoByName(dockName, bayID)
 			if err != nil {
 				return err
 			}
 			// If the full read still has no PR after SyncAll, mark stale
 			// so the next monitor tick re-queries bypassing the TTL.
-			if wsInfo.PR == "" && wsInfo.Branch != "" {
-				_ = eng.MarkPRCheckStale(dockName, wsID)
+			if bayInfo.PR == "" && bayInfo.Branch != "" {
+				_ = eng.MarkPRCheckStale(dockName, bayID)
 			}
 			m, _ := eng.LoadManifest()
 			if m != nil {
-				if dock := m.FindDock(dockName); dock != nil && wsInfo.DefaultAgent == "" {
-					wsInfo.DefaultAgent = dock.Agent
+				if dock := m.FindDock(dockName); dock != nil && bayInfo.DefaultAgent == "" {
+					bayInfo.DefaultAgent = dock.Agent
 				}
 			}
 
 			if jsonOutput {
 				out := map[string]interface{}{
-					"name":          wsInfo.Name,
-					"description":   wsInfo.Description,
+					"name":          bayInfo.Name,
+					"description":   bayInfo.Description,
 					"dock":          dockName,
-					"type":          wsInfo.Type,
-					"path":          wsInfo.Path,
-					"branch":        wsInfo.Branch,
-					"pr":            wsInfo.PR,
-					"dirty":         wsInfo.Dirty,
-					"pending":       wsInfo.Pending,
-					"sync_status":   wsInfo.SyncStatus,
-					"default_agent": wsInfo.DefaultAgent,
-					"surfaces":      wsInfo.Surfaces,
+					"type":          bayInfo.Type,
+					"path":          bayInfo.Path,
+					"branch":        bayInfo.Branch,
+					"pr":            bayInfo.PR,
+					"dirty":         bayInfo.Dirty,
+					"pending":       bayInfo.Pending,
+					"sync_status":   bayInfo.SyncStatus,
+					"default_agent": bayInfo.DefaultAgent,
+					"surfaces":      bayInfo.Surfaces,
 				}
 				data, err := json.MarshalIndent(out, "", "  ")
 				if err != nil {
@@ -368,7 +368,7 @@ func newWsShowCmd() *cobra.Command {
 				return nil
 			}
 
-			fmt.Print(FormatWorkspaceShow(dockName, wsInfo, false))
+			fmt.Print(FormatBayShow(dockName, bayInfo, false))
 			return nil
 		},
 	}
@@ -385,7 +385,7 @@ func newWsShowCmd() *cobra.Command {
 	return cmd
 }
 
-// formatWorkspaceShort builds a one-line bay summary:
+// formatBayShort builds a one-line bay summary:
 // `compact-label — description — branch — #PR`, skipping empty fields.
 // The branch is omitted when it equals the bay name — bay
 // auto-derives bay names from branches, so in the common case
@@ -393,24 +393,24 @@ func newWsShowCmd() *cobra.Command {
 // Used by `bay show --short` (and the M-/ flash binding); the
 // description is truncated to its first line, since this output
 // must fit on a single tmux status row.
-func formatWorkspaceShort(ws *manifest.Workspace) string {
-	if ws == nil {
+func formatBayShort(bay *manifest.Bay) string {
+	if bay == nil {
 		return ""
 	}
 	var parts []string
-	label := engine.WorkspaceCompactLabel(ws)
+	label := engine.BayCompactLabel(bay)
 	if label != "" {
 		parts = append(parts, label)
 	}
-	if desc := engine.DescriptionFirstLine(ws.Description); desc != "" {
+	if desc := engine.DescriptionFirstLine(bay.Description); desc != "" {
 		parts = append(parts, desc)
 	}
-	if ws.Worktree != nil {
-		if ws.Worktree.Branch != "" && ws.Worktree.Branch != ws.Name && ws.Worktree.Branch != label {
-			parts = append(parts, ws.Worktree.Branch)
+	if bay.Worktree != nil {
+		if bay.Worktree.Branch != "" && bay.Worktree.Branch != bay.Name && bay.Worktree.Branch != label {
+			parts = append(parts, bay.Worktree.Branch)
 		}
-		if ws.Worktree.PR != "" {
-			parts = append(parts, "PR#"+ws.Worktree.PR)
+		if bay.Worktree.PR != "" {
+			parts = append(parts, "PR#"+bay.Worktree.PR)
 		}
 	}
 	return strings.Join(parts, dim(" — "))
@@ -422,13 +422,13 @@ func formatWorkspaceShort(ws *manifest.Workspace) string {
 // replaces the tail with a "+N more lines" hint. The dismiss hint is
 // absolute-positioned at the bottom-right of the popup so it stays
 // visually anchored regardless of how much body content was shown.
-func renderPopupBody(ws *manifest.Workspace) {
-	if ws == nil {
+func renderPopupBody(bay *manifest.Bay) {
+	if bay == nil {
 		return
 	}
 	fd := int(os.Stdin.Fd())
 	width, height := popupDims(fd)
-	content := buildPopupContent(ws, width, height)
+	content := buildPopupContent(bay, width, height)
 
 	fmt.Print(content)
 
@@ -457,23 +457,23 @@ func renderPopupBody(ws *manifest.Workspace) {
 // buildPopupContent renders the bay header and (wrapped, possibly
 // truncated) description for the popup. Isolated from the display path
 // so it can be unit-tested.
-func buildPopupContent(ws *manifest.Workspace, width, height int) string {
+func buildPopupContent(bay *manifest.Bay, width, height int) string {
 	var header strings.Builder
-	label := engine.WorkspaceCompactLabel(ws)
+	label := engine.BayCompactLabel(bay)
 	if label == "" {
-		label = ws.Name
+		label = bay.Name
 	}
 	fmt.Fprintln(&header, "\x1b[1m"+label+"\x1b[0m")
-	if ws.Path != "" {
-		fmt.Fprintln(&header, dim(ws.Path))
+	if bay.Path != "" {
+		fmt.Fprintln(&header, dim(bay.Path))
 	}
-	if ws.Worktree != nil {
+	if bay.Worktree != nil {
 		var meta []string
-		if ws.Worktree.Branch != "" && ws.Worktree.Branch != ws.Name {
-			meta = append(meta, "branch "+ws.Worktree.Branch)
+		if bay.Worktree.Branch != "" && bay.Worktree.Branch != bay.Name {
+			meta = append(meta, "branch "+bay.Worktree.Branch)
 		}
-		if ws.Worktree.PR != "" {
-			meta = append(meta, "PR#"+ws.Worktree.PR)
+		if bay.Worktree.PR != "" {
+			meta = append(meta, "PR#"+bay.Worktree.PR)
 		}
 		if len(meta) > 0 {
 			fmt.Fprintln(&header, dim(strings.Join(meta, " — ")))
@@ -481,10 +481,10 @@ func buildPopupContent(ws *manifest.Workspace, width, height int) string {
 	}
 	headerLines := strings.Count(header.String(), "\n")
 
-	if ws.Description == "" {
+	if bay.Description == "" {
 		return header.String() + "\n" + dim("(no description — set one with `bay describe`)")
 	}
-	body := wrapText(ws.Description, width)
+	body := wrapText(bay.Description, width)
 	body = clipBody(body, height, headerLines)
 	return header.String() + "\n" + body
 }
@@ -594,7 +594,7 @@ func wrapLine(line string, width int) string {
 	return b.String()
 }
 
-func newWsRenameCmd() *cobra.Command {
+func newBayRenameCmd() *cobra.Command {
 	var dockFlag string
 
 	cmd := &cobra.Command{
@@ -617,12 +617,12 @@ func newWsRenameCmd() *cobra.Command {
 				newName = args[1]
 			}
 
-			dockName, wsID, err := resolveWsArg(eng, source, dockFlag)
+			dockName, bayID, err := resolveBayArg(eng, source, dockFlag)
 			if err != nil {
 				return err
 			}
 
-			return eng.WsRename(dockName, wsID, newName)
+			return eng.BayRename(dockName, bayID, newName)
 		},
 	}
 
@@ -653,43 +653,43 @@ func runDescribe(args []string, dockFlag string, clear, edit bool) error {
 		haveDesc = true
 	}
 
-	dockName, wsID, err := resolveWsArg(eng, target, dockFlag)
+	dockName, bayID, err := resolveBayArg(eng, target, dockFlag)
 	if err != nil {
 		return err
 	}
 
 	// No-op read path: no args, no flags → print current description.
 	if !haveDesc && !clear && !edit {
-		ws, wsErr := eng.WsShow(dockName, wsID)
-		if wsErr != nil {
-			return wsErr
+		bay, bayErr := eng.BayShow(dockName, bayID)
+		if bayErr != nil {
+			return bayErr
 		}
-		if ws.Description != "" {
-			fmt.Println(ws.Description)
+		if bay.Description != "" {
+			fmt.Println(bay.Description)
 		}
 		return nil
 	}
 
 	if clear {
-		return eng.WsDescribe(dockName, wsID, "")
+		return eng.BayDescribe(dockName, bayID, "")
 	}
 
 	if edit {
 		if haveDesc {
 			return fmt.Errorf("--edit and a description argument are mutually exclusive")
 		}
-		ws, wsErr := eng.WsShow(dockName, wsID)
-		if wsErr != nil {
-			return wsErr
+		bay, bayErr := eng.BayShow(dockName, bayID)
+		if bayErr != nil {
+			return bayErr
 		}
-		newDesc, editErr := editDescription(ws.Description)
+		newDesc, editErr := editDescription(bay.Description)
 		if editErr != nil {
 			return editErr
 		}
-		return eng.WsDescribe(dockName, wsID, newDesc)
+		return eng.BayDescribe(dockName, bayID, newDesc)
 	}
 
-	return eng.WsDescribe(dockName, wsID, desc)
+	return eng.BayDescribe(dockName, bayID, desc)
 }
 
 // editDescription opens $EDITOR (or $VISUAL, or vi as a fallback) on a temp
@@ -832,9 +832,9 @@ func resolveCurrentDock(eng *engine.Engine) (string, error) {
 					if d.Path != "" && config.CanonicalPath(d.Path) == root {
 						return d.Name, nil
 					}
-					for j := range d.Workspaces {
-						ws := &d.Workspaces[j]
-						if ws.Path != "" && config.CanonicalPath(ws.Path) == root {
+					for j := range d.Bays {
+						bay := &d.Bays[j]
+						if bay.Path != "" && config.CanonicalPath(bay.Path) == root {
 							return d.Name, nil
 						}
 					}
@@ -847,18 +847,18 @@ func resolveCurrentDock(eng *engine.Engine) (string, error) {
 }
 
 // resolveTarget resolves "self" or a bay query. Bare IDs prefer the
-// current dock for disambiguation (see resolveBareWs).
+// current dock for disambiguation (see resolveBareBay).
 func resolveTarget(eng *engine.Engine, target string) (string, string, error) {
 	if target == "self" {
 		return eng.ResolveSelf()
 	}
-	if dock, ws, err := parseWsArg(target); err == nil && dock == "" {
-		return resolveBareWs(eng, ws)
+	if dock, bay, err := parseBayArg(target); err == nil && dock == "" {
+		return resolveBareBay(eng, bay)
 	}
-	return eng.ResolveWorkspace(target)
+	return eng.ResolveBay(target)
 }
 
-func newWsLsCmd() *cobra.Command {
+func newBayLsCmd() *cobra.Command {
 	var jsonOutput bool
 	var rowsOutput bool
 	var shortOutput bool
@@ -893,9 +893,9 @@ func newWsLsCmd() *cobra.Command {
 				if rowsOutput {
 					return printListViewJSON(view, true)
 				}
-				var bays []engine.WorkspaceInfo
+				var bays []engine.BayInfo
 				for _, d := range view.Docks {
-					bays = append(bays, d.Workspaces...)
+					bays = append(bays, d.Bays...)
 				}
 				data, err := json.MarshalIndent(bays, "", "  ")
 				if err != nil {
@@ -917,7 +917,7 @@ func newWsLsCmd() *cobra.Command {
 	return cmd
 }
 
-func newWsGoCmd() *cobra.Command {
+func newBayGoCmd() *cobra.Command {
 	var waiting, nextWaiting, pick bool
 
 	cmd := &cobra.Command{
@@ -930,9 +930,9 @@ func newWsGoCmd() *cobra.Command {
 				return err
 			}
 			if pick {
-				return wsGoPick(eng)
+				return bayGoPick(eng)
 			}
-			return wsGo(eng, args, waiting, nextWaiting)
+			return bayGo(eng, args, waiting, nextWaiting)
 		},
 	}
 
@@ -944,7 +944,7 @@ func newWsGoCmd() *cobra.Command {
 	return cmd
 }
 
-func newWsNextCmd() *cobra.Command {
+func newBayNextCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "next",
 		Short: "Switch to the next bay in the current dock",
@@ -953,12 +953,12 @@ func newWsNextCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return wsCycle(eng, true)
+			return bayCycle(eng, true)
 		},
 	}
 }
 
-func newWsPrevCmd() *cobra.Command {
+func newBayPrevCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "prev",
 		Short: "Switch to the previous bay in the current dock",
@@ -967,15 +967,15 @@ func newWsPrevCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return wsCycle(eng, false)
+			return bayCycle(eng, false)
 		},
 	}
 }
 
-// wsGoPick checks if there are enough bays to pick from, then
+// bayGoPick checks if there are enough bays to pick from, then
 // opens a tmux display-popup with "bay go". Avoids flashing an
 // empty popup when there's nothing to pick.
-func wsGoPick(eng *engine.Engine) error {
+func bayGoPick(eng *engine.Engine) error {
 	currentSession, err := eng.Tmux.CurrentSession()
 	if err != nil {
 		return nil
@@ -997,8 +997,8 @@ func wsGoPick(eng *engine.Engine) error {
 	return eng.Tmux.DisplayPopup("bay go")
 }
 
-// wsGo implements bay picker scoped to the current dock.
-func wsGo(eng *engine.Engine, args []string, waiting, nextWaiting bool) error {
+// bayGo implements bay picker scoped to the current dock.
+func bayGo(eng *engine.Engine, args []string, waiting, nextWaiting bool) error {
 	currentSession, err := eng.Tmux.CurrentSession()
 	if err != nil {
 		return fmt.Errorf("bay go requires tmux — use bay ls to see bays")
@@ -1055,13 +1055,13 @@ func wsGo(eng *engine.Engine, args []string, waiting, nextWaiting bool) error {
 		}
 		return eng.Tmux.SelectWindow(entries[0].TmuxWindowID)
 	default:
-		return pickWorkspace(eng, entries)
+		return pickBay(eng, entries)
 	}
 }
 
-// wsCycle moves to next/prev bay in the current dock and flashes the
+// bayCycle moves to next/prev bay in the current dock and flashes the
 // new position via the cycling indicator.
-func wsCycle(eng *engine.Engine, forward bool) error {
+func bayCycle(eng *engine.Engine, forward bool) error {
 	currentSession, err := eng.Tmux.CurrentSession()
 	if err != nil {
 		return fmt.Errorf("not in a tmux session")
@@ -1108,16 +1108,16 @@ func wsCycle(eng *engine.Engine, forward bool) error {
 	return eng.Tmux.SelectWindow(dockEntries[next].TmuxWindowID)
 }
 
-// pickWorkspace shows the built-in picker for bay selection.
-func pickWorkspace(eng *engine.Engine, entries []nav.Entry) error {
+// pickBay shows the built-in picker for bay selection.
+func pickBay(eng *engine.Engine, entries []nav.Entry) error {
 	currentWinID, _ := eng.Tmux.CurrentWindowID()
 	currentIdx := 0
-	maxWs, maxDesc, maxBranch, maxPR := 0, 0, 0, 0
+	maxBay, maxDesc, maxBranch, maxPR := 0, 0, 0, 0
 	descs := make([]string, len(entries))
 	for i, e := range entries {
 		descs[i] = engine.TruncateName(engine.DescriptionFirstLine(e.Description), pickerDescMaxLen)
-		if len(e.WsName) > maxWs {
-			maxWs = len(e.WsName)
+		if len(e.BayName) > maxBay {
+			maxBay = len(e.BayName)
 		}
 		if len(descs[i]) > maxDesc {
 			maxDesc = len(descs[i])
@@ -1151,12 +1151,12 @@ func pickWorkspace(eng *engine.Engine, entries []nav.Entry) error {
 		}
 		if maxDesc > 0 {
 			s := fmt.Sprintf("%-*s  %-*s  %-*s  %-*s%s",
-				maxWs, e.WsName, maxDesc, descs[i], maxBranch, e.Branch, maxPR, pr, tags)
+				maxBay, e.BayName, maxDesc, descs[i], maxBranch, e.Branch, maxPR, pr, tags)
 			items[i] = picker.Item{Display: s, Value: i}
 			continue
 		}
 		s := fmt.Sprintf("%-*s  %-*s  %-*s%s",
-			maxWs, e.WsName, maxBranch, e.Branch, maxPR, pr, tags)
+			maxBay, e.BayName, maxBranch, e.Branch, maxPR, pr, tags)
 		items[i] = picker.Item{Display: s, Value: i}
 	}
 

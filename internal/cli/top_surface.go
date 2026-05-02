@@ -20,7 +20,7 @@ type topNewCmdSpec struct {
 }
 
 func newTopNewSurfaceCmd(spec topNewCmdSpec) *cobra.Command {
-	var wsFlag, dockFlag, splitDir string
+	var bayFlag, dockFlag, splitDir string
 	var window, pane bool
 
 	cmd := &cobra.Command{
@@ -37,15 +37,15 @@ func newTopNewSurfaceCmd(spec topNewCmdSpec) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			dockName, wsName, err := resolveSurfaceWorkspace(eng, wsFlag, dockFlag)
+			dockName, bayName, err := resolveSurfaceBay(eng, bayFlag, dockFlag)
 			if err != nil {
 				return err
 			}
-			return runSurfaceNew(eng, dockName, wsName, opts)
+			return runSurfaceNew(eng, dockName, bayName, opts)
 		},
 	}
 
-	cmd.Flags().StringVar(&wsFlag, "bay", "", "bay ID (defaults to current)")
+	cmd.Flags().StringVar(&bayFlag, "bay", "", "bay ID (defaults to current)")
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (with --bay to disambiguate)")
 	cmd.Flags().StringVar(&splitDir, "split", "", "split direction (h or v)")
 	cmd.Flags().BoolVar(&pane, "pane", false, "split into current window (default; shorthand for --split v)")
@@ -143,7 +143,7 @@ func newTopNewCmdCmd() *cobra.Command {
 }
 
 func newTopNewEditCmd() *cobra.Command {
-	var wsFlag, dockFlag, editorFlag, splitDir string
+	var bayFlag, dockFlag, editorFlag, splitDir string
 	var window, pane bool
 
 	cmd := &cobra.Command{
@@ -164,7 +164,7 @@ use 'bay edit' instead.
 			if err != nil {
 				return err
 			}
-			target, err := editTargetFromArgs(args, wsFlag, dockFlag)
+			target, err := editTargetFromArgs(args, bayFlag, dockFlag)
 			if err != nil {
 				return err
 			}
@@ -172,7 +172,7 @@ use 'bay edit' instead.
 		},
 	}
 
-	cmd.Flags().StringVar(&wsFlag, "bay", "", "bay ID (defaults to current)")
+	cmd.Flags().StringVar(&bayFlag, "bay", "", "bay ID (defaults to current)")
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (with --bay to disambiguate)")
 	cmd.Flags().StringVar(&editorFlag, "editor", "", "editor command (overrides config for this invocation)")
 	cmd.Flags().StringVar(&splitDir, "split", "", "split direction (h or v)")
@@ -186,39 +186,39 @@ use 'bay edit' instead.
 // a positional arg plus --bay/--dock flags. Positional and flags are mutually
 // exclusive (each is a way to name a bay); --dock without --bay (or without a
 // positional) is an error.
-func editTargetFromArgs(args []string, wsFlag, dockFlag string) (string, error) {
+func editTargetFromArgs(args []string, bayFlag, dockFlag string) (string, error) {
 	if len(args) > 0 {
-		if wsFlag != "" || dockFlag != "" {
+		if bayFlag != "" || dockFlag != "" {
 			return "", fmt.Errorf("cannot combine positional bay with --bay/--dock")
 		}
 		return args[0], nil
 	}
-	if wsFlag == "" {
+	if bayFlag == "" {
 		if dockFlag != "" {
 			return "", fmt.Errorf("--dock requires --bay or a positional bay")
 		}
 		return "self", nil
 	}
 	if dockFlag != "" {
-		return dockFlag + ":" + wsFlag, nil
+		return dockFlag + ":" + bayFlag, nil
 	}
-	return wsFlag, nil
+	return bayFlag, nil
 }
 
-// resolveSurfaceWorkspace resolves the (dock, ws) for a surface-creation
+// resolveSurfaceBay resolves the (dock, bay) for a surface-creation
 // command. With no flags it uses the current bay; with --bay it looks up the
 // bay by ID (with --dock to disambiguate).
-func resolveSurfaceWorkspace(eng *engine.Engine, wsFlag, dockFlag string) (string, string, error) {
-	if wsFlag == "" && dockFlag == "" {
+func resolveSurfaceBay(eng *engine.Engine, bayFlag, dockFlag string) (string, string, error) {
+	if bayFlag == "" && dockFlag == "" {
 		return eng.ResolveSelf()
 	}
-	if wsFlag == "" {
+	if bayFlag == "" {
 		return "", "", fmt.Errorf("--dock requires --bay")
 	}
 	if dockFlag != "" {
-		return eng.ResolveWorkspace(dockFlag + ":" + wsFlag)
+		return eng.ResolveBay(dockFlag + ":" + bayFlag)
 	}
-	return resolveBareWs(eng, wsFlag)
+	return resolveBareBay(eng, bayFlag)
 }
 
 // newTopRestoreCmd is `bay restore` — top-level alias for `bay sf restore`.

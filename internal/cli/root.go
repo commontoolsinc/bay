@@ -95,25 +95,25 @@ func NewRootCmd(version string) *cobra.Command {
 	)
 
 	// Bay commands
-	bayNewCmd := newWsNewCmd()
+	bayNewCmd := newBayNewCmd()
 	bayNewCmd.GroupID = "bay"
-	bayCloseCmd := newWsCloseCmd()
+	bayCloseCmd := newBayCloseCmd()
 	bayCloseCmd.GroupID = "bay"
-	bayCleanReviewCmd := newWsCleanReviewCmd()
+	bayCleanReviewCmd := newBayCleanReviewCmd()
 	bayCleanReviewCmd.GroupID = "bay"
-	bayShowCmd := newWsShowCmd()
+	bayShowCmd := newBayShowCmd()
 	bayShowCmd.GroupID = "bay"
-	bayRenameCmd := newWsRenameCmd()
+	bayRenameCmd := newBayRenameCmd()
 	bayRenameCmd.GroupID = "bay"
 	bayDescribeCmd := newTopDescribeCmd()
 	bayDescribeCmd.GroupID = "bay"
-	bayLsCmd := newWsLsCmd()
+	bayLsCmd := newBayLsCmd()
 	bayLsCmd.GroupID = "bay"
-	bayGoCmd := newWsGoCmd()
+	bayGoCmd := newBayGoCmd()
 	bayGoCmd.GroupID = "navigation"
-	bayNextCmd := newWsNextCmd()
+	bayNextCmd := newBayNextCmd()
 	bayNextCmd.GroupID = "navigation"
-	bayPrevCmd := newWsPrevCmd()
+	bayPrevCmd := newBayPrevCmd()
 	bayPrevCmd.GroupID = "navigation"
 
 	// Surface commands (namespace + verbs + utility)

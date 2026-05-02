@@ -12,7 +12,7 @@ func testDocks() []engine.DockInfo {
 	return []engine.DockInfo{
 		{
 			Name: "api",
-			Workspaces: []engine.WorkspaceInfo{
+			Bays: []engine.BayInfo{
 				{
 					ID:           "w1",
 					Name:         "auth-fix",
@@ -44,7 +44,7 @@ func testDocks() []engine.DockInfo {
 		},
 		{
 			Name: "web",
-			Workspaces: []engine.WorkspaceInfo{
+			Bays: []engine.BayInfo{
 				{
 					Name:         "landing",
 					Type:         "worktree",
@@ -57,7 +57,7 @@ func testDocks() []engine.DockInfo {
 		},
 		{
 			Name: "ops",
-			Workspaces: []engine.WorkspaceInfo{
+			Bays: []engine.BayInfo{
 				{
 					Name:         "deploy",
 					Type:         "external",
@@ -82,13 +82,13 @@ func TestBuildListView_DefaultIncludesDocks(t *testing.T) {
 	}
 }
 
-// TestAlignWidth_IgnoresRowsWithoutMeta verifies the load-bearing rule:
+// TestAlignWidth_IgnoresRobayWithoutMeta verifies the load-bearing rule:
 // rows with empty meta don't contribute to the alignment width, so a long
 // meta-less row doesn't push the meta column out for its meta-having
 // siblings. This is the case the FormatListView caller relies on, but
 // it's hard to construct via the public DockInfo API — so we exercise
 // alignWidth directly.
-func TestAlignWidth_IgnoresRowsWithoutMeta(t *testing.T) {
+func TestAlignWidth_IgnoresRobayWithoutMeta(t *testing.T) {
 	rows := []alignedRow{
 		{prefix: "short", prefixWidth: 5, metaCols: []metaCol{{text: "branch=foo", width: 10}}},
 		{prefix: "longer-prefix-with-no-meta", prefixWidth: 26, metaCols: nil},
@@ -121,7 +121,7 @@ func TestFormatListView_AlignsMetaColumnsAcrossRows(t *testing.T) {
 	docks := []engine.DockInfo{
 		{
 			Name: "api",
-			Workspaces: []engine.WorkspaceInfo{
+			Bays: []engine.BayInfo{
 				{Name: "w1", SurfaceCount: 1, SyncStatus: "ok"},
 				{Name: "login-bug", Branch: "fix/login-bug", Dirty: true, SurfaceCount: 1, SyncStatus: "ok"},
 				{Name: "auth-refactor", Branch: "fix/auth-refactor", Dirty: true, SurfaceCount: 2, SyncStatus: "ok"},
@@ -151,11 +151,11 @@ func TestFormatListView_AlignsMetaColumnsAcrossRows(t *testing.T) {
 	}
 }
 
-// TestFormatListView_AlignsWorkspaceMetaWithinDock verifies that the meta
-// column on workspace lines starts at the same screen column for every
-// workspace in a dock, regardless of name length. This is the readability
+// TestFormatListView_AlignsBayMetaWithinDock verifies that the meta
+// column on bay lines starts at the same screen column for every
+// bay in a dock, regardless of name length. This is the readability
 // fix that turns a key=value run-on into a scannable column.
-func TestFormatListView_AlignsWorkspaceMetaWithinDock(t *testing.T) {
+func TestFormatListView_AlignsBayMetaWithinDock(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
 		Focus: ListFocus{Kind: FocusDock, Dock: "api"},
 	})
@@ -171,7 +171,7 @@ func TestFormatListView_AlignsWorkspaceMetaWithinDock(t *testing.T) {
 		}
 	}
 	if authLine == "" || cleanupLine == "" {
-		t.Fatalf("missing workspace lines:\n%s", out)
+		t.Fatalf("missing bay lines:\n%s", out)
 	}
 
 	authMetaStart := strings.Index(authLine, "br=")
@@ -180,25 +180,25 @@ func TestFormatListView_AlignsWorkspaceMetaWithinDock(t *testing.T) {
 		t.Fatalf("could not find meta start:\nauth:    %q\ncleanup: %q", authLine, cleanupLine)
 	}
 	if authMetaStart != cleanupMetaStart {
-		t.Errorf("workspace meta columns not aligned:\n  auth-fix br= at column %d\n  cleanup  br= at column %d\n  auth:    %q\n  cleanup: %q",
+		t.Errorf("bay meta columns not aligned:\n  auth-fix br= at column %d\n  cleanup  br= at column %d\n  auth:    %q\n  cleanup: %q",
 			authMetaStart, cleanupMetaStart, authLine, cleanupLine)
 	}
 }
 
 // TestFormatListView_AlignsSurfaceMetaAcrossDock verifies that in tree
-// mode, surface meta columns are aligned across ALL workspaces in a dock,
-// not just within each workspace. A long surface name in one workspace
-// pushes the meta column out for sibling surfaces under other workspaces
+// mode, surface meta columns are aligned across ALL bays in a dock,
+// not just within each bay. A long surface name in one bay
+// pushes the meta column out for sibling surfaces under other bays
 // too — the user's eye doesn't need to recalibrate as they scroll.
 func TestFormatListView_AlignsSurfaceMetaAcrossDock(t *testing.T) {
-	// Two workspaces in the same dock with different longest-surface
+	// Two bays in the same dock with different longest-surface
 	// names: auth-fix has "tests" (5 chars) and shorter; cleanup has
 	// only "shell" (5 chars). Both should align to the same dock-wide
 	// max so the meta column is stable.
 	docks := []engine.DockInfo{
 		{
 			Name: "api",
-			Workspaces: []engine.WorkspaceInfo{
+			Bays: []engine.BayInfo{
 				{
 					Name: "auth-fix",
 					Surfaces: []engine.SurfaceInfo{
@@ -221,7 +221,7 @@ func TestFormatListView_AlignsSurfaceMetaAcrossDock(t *testing.T) {
 	})
 	out := stripANSI(FormatListView(view, false, false))
 
-	// All three surface lines (across two workspaces) should have
+	// All three surface lines (across two bays) should have
 	// "type=" at the same column.
 	var typeColumns []int
 	for _, line := range strings.Split(out, "\n") {
@@ -244,7 +244,7 @@ func TestFormatListView_AlignsSurfaceMetaAcrossDock(t *testing.T) {
 	}
 }
 
-func TestBuildListView_DockFocusStopsAtWorkspacesByDefault(t *testing.T) {
+func TestBuildListView_DockFocusStopsAtBaysByDefault(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
 		Focus: ListFocus{Kind: FocusDock, Dock: "api"},
 	})
@@ -254,16 +254,16 @@ func TestBuildListView_DockFocusStopsAtWorkspacesByDefault(t *testing.T) {
 		t.Fatalf("dock focus output missing dock header:\n%s", out)
 	}
 	if !strings.Contains(out, "bay auth-fix") || !strings.Contains(out, "bay cleanup") {
-		t.Fatalf("dock focus output missing workspaces:\n%s", out)
+		t.Fatalf("dock focus output missing bays:\n%s", out)
 	}
 	if strings.Contains(out, "sf ") {
 		t.Fatalf("dock focus default should not recurse into surfaces:\n%s", out)
 	}
 }
 
-func TestBuildListView_WorkspaceFocusShowsFullTree(t *testing.T) {
+func TestBuildListView_BayFocusShowsFullTree(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
-		Focus: ListFocus{Kind: FocusWorkspace, Dock: "api", WorkspaceID: "w1"},
+		Focus: ListFocus{Kind: FocusBay, Dock: "api", BayID: "w1"},
 	})
 	out := stripANSI(FormatListView(view, false, false))
 
@@ -276,19 +276,19 @@ func TestBuildListView_WorkspaceFocusShowsFullTree(t *testing.T) {
 		"ty=cmd",
 	} {
 		if !strings.Contains(out, want) {
-			t.Fatalf("workspace focus output missing %q:\n%s", want, out)
+			t.Fatalf("bay focus output missing %q:\n%s", want, out)
 		}
 	}
 }
 
-func TestBuildListView_WorkspaceFocusRestrictsToDock(t *testing.T) {
+func TestBuildListView_BayFocusRestrictsToDock(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
-		Focus: ListFocus{Kind: FocusWorkspace, Dock: "api", WorkspaceID: "w1"},
+		Focus: ListFocus{Kind: FocusBay, Dock: "api", BayID: "w1"},
 	})
 	out := stripANSI(FormatListView(view, false, false))
 
 	if strings.Contains(out, "bay landing") {
-		t.Fatalf("workspace focus should not include workspaces from other docks:\n%s", out)
+		t.Fatalf("bay focus should not include bays from other docks:\n%s", out)
 	}
 }
 
@@ -306,15 +306,15 @@ func TestFormatListView_SuppressesSyncOKAndShowsStale(t *testing.T) {
 	}
 }
 
-func TestFormatWorkspaceShow_RendersMultiLineDescription(t *testing.T) {
-	ws := &engine.WorkspaceInfo{
+func TestFormatBayShow_RendersMultiLineDescription(t *testing.T) {
+	bay := &engine.BayInfo{
 		Name:        "auth-fix",
 		Description: "Login flow fixes\n\nhit rebase conflict on helper.ts\ntests green except auth_test.go",
 		Type:        "worktree",
 		Path:        "~/x",
 		SyncStatus:  "ok",
 	}
-	out := stripANSI(FormatWorkspaceShow("api", ws, false))
+	out := stripANSI(FormatBayShow("api", bay, false))
 	// First line is shown inline with the description label; each body
 	// line is on its own row indented to the value column.
 	for _, want := range []string{
@@ -323,13 +323,13 @@ func TestFormatWorkspaceShow_RendersMultiLineDescription(t *testing.T) {
 		"tests green except auth_test.go",
 	} {
 		if !strings.Contains(out, want) {
-			t.Fatalf("workspace show missing %q:\n%s", want, out)
+			t.Fatalf("bay show missing %q:\n%s", want, out)
 		}
 	}
 }
 
-func TestFormatWorkspaceShow_IncludesDefaultAgentAndSurfaces(t *testing.T) {
-	ws := &engine.WorkspaceInfo{
+func TestFormatBayShow_IncludesDefaultAgentAndSurfaces(t *testing.T) {
+	bay := &engine.BayInfo{
 		Name:         "auth-fix",
 		Type:         "worktree",
 		Path:         "~/projects/bay-wt/auth-fix",
@@ -343,7 +343,7 @@ func TestFormatWorkspaceShow_IncludesDefaultAgentAndSurfaces(t *testing.T) {
 		},
 	}
 
-	out := stripANSI(FormatWorkspaceShow("api", ws, false))
+	out := stripANSI(FormatBayShow("api", bay, false))
 	for _, want := range []string{
 		"bay auth-fix",
 		"dock api",
@@ -358,41 +358,41 @@ func TestFormatWorkspaceShow_IncludesDefaultAgentAndSurfaces(t *testing.T) {
 	}
 }
 
-// TestWorkspaceMetaCols_ShowsIDOnlyWhenDifferent confirms the conditional
+// TestBayMetaCols_ShobayIDOnlyWhenDifferent confirms the conditional
 // surfacing of the new id meta column: present when ID and Name diverge
-// (e.g., a renamed workspace), suppressed when they match (auto-named
-// workspaces would otherwise carry redundant id=w1 alongside name w1).
-func TestWorkspaceMetaCols_ShowsIDOnlyWhenDifferent(t *testing.T) {
-	same := engine.WorkspaceInfo{ID: "w1", Name: "w1", SyncStatus: "ok"}
-	if got := workspaceMetaCols(same, false, true); got[6].text != "" {
+// (e.g., a renamed bay), suppressed when they match (auto-named
+// bays would otherwise carry redundant id=w1 alongside name w1).
+func TestBayMetaCols_ShobayIDOnlyWhenDifferent(t *testing.T) {
+	same := engine.BayInfo{ID: "w1", Name: "w1", SyncStatus: "ok"}
+	if got := bayMetaCols(same, false, true); got[6].text != "" {
 		t.Errorf("expected no id col when ID==Name; got %q", got[6].text)
 	}
 
-	diff := engine.WorkspaceInfo{ID: "w1", Name: "auth-fix", SyncStatus: "ok"}
-	cols := workspaceMetaCols(diff, false, false)
+	diff := engine.BayInfo{ID: "w1", Name: "auth-fix", SyncStatus: "ok"}
+	cols := bayMetaCols(diff, false, false)
 	if !strings.Contains(cols[6].text, "w1") {
 		t.Errorf("expected id col to contain w1 when Name differs; got %q", cols[6].text)
 	}
 
-	// Empty Name (a state the design enables for unnamed workspaces) also
+	// Empty Name (a state the design enables for unnamed bays) also
 	// surfaces the ID — the alternative would be a row with no identifier.
-	empty := engine.WorkspaceInfo{ID: "w1", Name: "", SyncStatus: "ok"}
-	cols = workspaceMetaCols(empty, false, false)
+	empty := engine.BayInfo{ID: "w1", Name: "", SyncStatus: "ok"}
+	cols = bayMetaCols(empty, false, false)
 	if !strings.Contains(cols[6].text, "w1") {
 		t.Errorf("expected id col to contain w1 when Name is empty; got %q", cols[6].text)
 	}
 }
 
-// TestFormatWorkspaceShow_IncludesIDWhenDifferent confirms bay ws show
+// TestFormatBayShow_IncludesIDWhenDifferent confirms bay show
 // surfaces the ID row only when it adds information.
-func TestFormatWorkspaceShow_IncludesIDWhenDifferent(t *testing.T) {
-	wsSame := &engine.WorkspaceInfo{ID: "w1", Name: "w1", Type: "worktree", SyncStatus: "ok"}
-	if strings.Contains(stripANSI(FormatWorkspaceShow("api", wsSame, false)), "id w1") {
+func TestFormatBayShow_IncludesIDWhenDifferent(t *testing.T) {
+	baySame := &engine.BayInfo{ID: "w1", Name: "w1", Type: "worktree", SyncStatus: "ok"}
+	if strings.Contains(stripANSI(FormatBayShow("api", baySame, false)), "id w1") {
 		t.Error("ID row should be omitted when ID matches Name")
 	}
 
-	wsDiff := &engine.WorkspaceInfo{ID: "w1", Name: "auth-fix", Type: "worktree", SyncStatus: "ok"}
-	if !strings.Contains(stripANSI(FormatWorkspaceShow("api", wsDiff, false)), "id w1") {
+	bayDiff := &engine.BayInfo{ID: "w1", Name: "auth-fix", Type: "worktree", SyncStatus: "ok"}
+	if !strings.Contains(stripANSI(FormatBayShow("api", bayDiff, false)), "id w1") {
 		t.Error("ID row should appear when ID differs from Name")
 	}
 }
@@ -405,7 +405,7 @@ func TestLabelValueFormatsHumanReadableLabels(t *testing.T) {
 
 func TestFormatListRows_DenormalizesSurfaceRows(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
-		Focus:     ListFocus{Kind: FocusWorkspace, Dock: "api", WorkspaceID: "w1"},
+		Focus:     ListFocus{Kind: FocusBay, Dock: "api", BayID: "w1"},
 		Recursive: true,
 	})
 	rows := ListRows(view)
@@ -441,7 +441,7 @@ func TestBuildListView_FocusDockFiltersDocks(t *testing.T) {
 	}
 }
 
-func TestFormatListView_ShowsWaitingIndicator(t *testing.T) {
+func TestFormatListView_ShobayWaitingIndicator(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
 		Focus: ListFocus{Kind: FocusDock, Dock: "api"},
 	})
@@ -457,7 +457,7 @@ func TestFormatListView_HighlightsCurrentContext(t *testing.T) {
 		Focus: ListFocus{Kind: FocusDock, Dock: "api"},
 	})
 	view.CurrentDock = "api"
-	view.CurrentWsID = "w1"
+	view.CurrentBayID = "w1"
 
 	out := stripANSI(FormatListView(view, false, false))
 
@@ -465,11 +465,11 @@ func TestFormatListView_HighlightsCurrentContext(t *testing.T) {
 		t.Fatalf("current dock should have * marker:\n%s", out)
 	}
 	if !strings.Contains(out, "bay auth-fix *") {
-		t.Fatalf("current workspace should have * marker:\n%s", out)
+		t.Fatalf("current bay should have * marker:\n%s", out)
 	}
-	// Non-current workspace should NOT have marker.
+	// Non-current bay should NOT have marker.
 	if strings.Contains(out, "bay cleanup *") {
-		t.Fatalf("non-current workspace should not have * marker:\n%s", out)
+		t.Fatalf("non-current bay should not have * marker:\n%s", out)
 	}
 }
 
@@ -477,7 +477,7 @@ func TestFormatListView_NoHighlightWithoutContext(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
 		Focus: ListFocus{Kind: FocusDock, Dock: "api"},
 	})
-	// No CurrentDock/CurrentWs set.
+	// No CurrentDock/CurrentBay set.
 
 	out := stripANSI(FormatListView(view, false, false))
 
@@ -535,7 +535,7 @@ func TestFormatDockTree_IncludesDocksWithoutBays(t *testing.T) {
 	docks := []engine.DockInfo{
 		{
 			Name: "tools",
-			Workspaces: []engine.WorkspaceInfo{
+			Bays: []engine.BayInfo{
 				{Name: "scratch", Branch: "notes", SurfaceCount: 1, SyncStatus: "ok"},
 			},
 		},
