@@ -215,7 +215,7 @@ func (kb bayKeybinding) bindFlag() string {
 // canonicalLine() appends "|| true" to bay-invoking bindings so they are
 // silent in non-bay tmux sessions. Without it, tmux run-shell displays
 // 'bay ... returned 1' in the status line when bay exits with an error
-// (e.g., "not in a bay workspace"). Stderr is already invisible in
+// (e.g., "not in a bay"). Stderr is already invisible in
 // run-shell, so only the exit code needs masking.
 //
 // Navigation bindings are tmux-native so they work everywhere, including
@@ -243,29 +243,29 @@ var bayKeybindings = []bayKeybinding{
 	{key: "M-K", cmd: "select-pane -U", desc: "Option+K: select pane up (mirror of k)", isTmuxCommand: true},
 
 	// Bay picker
-	{key: "M-g", cmd: "bay go --pick", previousCmds: []string{"bay ws go --pick"}, desc: "Option+g: pick bay in dock", tmuxVerb: "run-shell"},
+	{key: "M-g", cmd: "bay go --pick", desc: "Option+g: pick bay in dock", tmuxVerb: "run-shell"},
 
 	// Creation
-	{key: "M-c", cmd: "bay new -q", previousCmds: []string{"bay ws new -q"}, desc: "Option+c: create bay in current dock", tmuxVerb: "run-shell"},
-	{key: "M-C", cmd: "bay new -q --agent", previousCmds: []string{"bay ws new -q --agent"}, desc: "Option+C: create bay with agent in current dock", tmuxVerb: "run-shell"},
+	{key: "M-c", cmd: "bay new -q", desc: "Option+c: create bay in current dock", tmuxVerb: "run-shell"},
+	{key: "M-C", cmd: "bay new -q --agent", desc: "Option+C: create bay with agent in current dock", tmuxVerb: "run-shell"},
 	{key: "M-s", cmd: "bay shell --pane", desc: "Option+s: shell as split pane", tmuxVerb: "run-shell"},
 	{key: "M-S", cmd: "bay shell --window", desc: "Option+S: shell in a new window", tmuxVerb: "run-shell"},
 	{key: "M-a", cmd: "bay agent --pane", desc: "Option+a: agent as split pane", tmuxVerb: "run-shell"},
 	{key: "M-A", cmd: "bay agent --window", desc: "Option+A: agent in a new window", tmuxVerb: "run-shell"},
-	{key: "M-e", cmd: "bay edit", previousCmds: []string{"bay edit --bay", "bay edit --ws"}, desc: "Option+e: bay editor", tmuxVerb: "run-shell"},
+	{key: "M-e", cmd: "bay edit", desc: "Option+e: bay editor", tmuxVerb: "run-shell"},
 	{key: "M-E", cmd: "bay edit --dock", desc: "Option+E: dock editor", tmuxVerb: "run-shell"},
 
 	// Navigation (dock-wide)
-	{key: "M-r", cmd: "bay go --next-waiting", previousCmds: []string{"bay ws go --next-waiting"}, desc: "Option+r: jump to next waiting bay", tmuxVerb: "run-shell"},
+	{key: "M-r", cmd: "bay go --next-waiting", desc: "Option+r: jump to next waiting bay", tmuxVerb: "run-shell"},
 
 	// Utility
 	{key: "M-w", cmd: "bay sf close self", desc: "Option+w: close current surface (or pane)", tmuxVerb: "run-shell"},
 	{key: "M-z", cmd: "bay sf restore", desc: "Option+z: restore most recently closed surface (undo-close)", tmuxVerb: "run-shell"},
-	{key: "M-/", cmd: "bay show --flash", previousCmds: []string{"bay ws show --flash"}, desc: "Option+/: flash current bay info (first line)", tmuxVerb: "run-shell"},
-	{key: "M-?", cmd: "bay show --popup", previousCmds: []string{"bay ws show --popup"}, desc: "Option+?: popup with full bay description", tmuxVerb: "run-shell"},
+	{key: "M-/", cmd: "bay show --flash", desc: "Option+/: flash current bay info (first line)", tmuxVerb: "run-shell"},
+	{key: "M-?", cmd: "bay show --popup", desc: "Option+?: popup with full bay description", tmuxVerb: "run-shell"},
 
 	// Command palette
-	{key: "M-p", cmd: "bay palette --split pane", previousCmds: []string{"bay palette"}, desc: "Option+p: command palette (Tab inside to flip mode)", tmuxVerb: "display-popup -w 80% -h 80% -E"},
+	{key: "M-p", cmd: "bay palette --split pane", desc: "Option+p: command palette (Tab inside to flip mode)", tmuxVerb: "display-popup -w 80% -h 80% -E"},
 
 	// Agent chord (M-o ...): pick an agent for the current bay, or
 	// chord through `b` to create a new bay seeded with one. The
@@ -309,12 +309,11 @@ func agentInBay(key, agent, mode string) bayKeybinding {
 
 func newBayWithAgent(key, agent string) bayKeybinding {
 	return bayKeybinding{
-		table:        tableAgentBay,
-		key:          key,
-		cmd:          "bay new -q --agent=" + agent,
-		previousCmds: []string{"bay ws new -q --agent=" + agent},
-		desc:         fmt.Sprintf("M-o b %s: new bay with %s", key, titleAgent(agent)),
-		tmuxVerb:     "run-shell",
+		table:    tableAgentBay,
+		key:      key,
+		cmd:      "bay new -q --agent=" + agent,
+		desc:     fmt.Sprintf("M-o b %s: new bay with %s", key, titleAgent(agent)),
+		tmuxVerb: "run-shell",
 	}
 }
 
@@ -397,7 +396,7 @@ func extractBayBlock(content string) (string, bool) {
 // bind-key/bind binding we can parse.
 //
 // For bay-invoking bindings the returned command is the quoted shell
-// contents (e.g. `bay ws new -q || true`); for tmux-native bindings
+// contents (e.g. `bay new -q || true`); for tmux-native bindings
 // it's the raw tmux command (e.g. `previous-window`, `select-pane -L`).
 //
 // Empty `table` means the binding is in the root table (`-n`); otherwise
@@ -609,7 +608,7 @@ func missingCanonicalLines(block string, kbs []bayKeybinding) []string {
 //   - Else, if the canonical command is UNIQUE within kbs AND appears
 //     bound at a different key (active or commented) → present. This
 //     preserves rebind tolerance for bindings with a 1:1 key↔command
-//     mapping (e.g. M-c → `bay ws new -q`).
+//     mapping (e.g. M-c → `bay new -q`).
 //   - Else → missing.
 //
 // The uniqueness guard matters because bay ships intentional command-
@@ -1165,7 +1164,7 @@ var agentHookSpecs = map[string]agentHookSpec{
 // installReadySignaling bundles the turn-complete signal: hooks for any
 // supported agent on PATH plus the tmux auto-clear hook. One prompt,
 // all-or-nothing — the pieces only work as a unit (without auto-clear,
-// flags get sticky and Option-R keeps landing on visited workspaces).
+// flags get sticky and Option-R keeps landing on visited bays).
 // Each piece is independently idempotent, so repeat runs are safe.
 func installReadySignaling(reader *bufio.Reader) {
 	home, err := os.UserHomeDir()

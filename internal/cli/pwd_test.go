@@ -9,8 +9,8 @@ import (
 
 func TestFormatPWD_OmitsMissingLevels(t *testing.T) {
 	out := stripANSI(formatPWD(&engine.Context{
-		Dock:      "api",
-		Workspace: "auth-fix",
+		Dock: "api",
+		Bay:  "auth-fix",
 	}))
 
 	if !strings.Contains(out, "dock api") || !strings.Contains(out, "bay auth-fix") {
@@ -24,7 +24,7 @@ func TestFormatPWD_OmitsMissingLevels(t *testing.T) {
 func TestFormatPWD_IncludesSurface(t *testing.T) {
 	out := stripANSI(formatPWD(&engine.Context{
 		Dock:      "api",
-		Workspace: "auth-fix",
+		Bay:       "auth-fix",
 		Surface:   "agent",
 		SurfaceID: 2,
 	}))

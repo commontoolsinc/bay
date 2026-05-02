@@ -4,9 +4,9 @@ import (
 	"github.com/commontoolsinc/bay/internal/engine"
 )
 
-// filterDirtyWorkspaces filters dock info to only include workspaces with
+// filterDirtyBays filters dock info to only include bays with
 // uncommitted changes. Relies on Dirty being populated by engine.List().
-func filterDirtyWorkspaces(docks []engine.DockInfo) []engine.DockInfo {
+func filterDirtyBays(docks []engine.DockInfo) []engine.DockInfo {
 	var result []engine.DockInfo
 	for _, d := range docks {
 		filtered := engine.DockInfo{
@@ -15,12 +15,12 @@ func filterDirtyWorkspaces(docks []engine.DockInfo) []engine.DockInfo {
 			Path:        d.Path,
 			WorktreeDir: d.WorktreeDir,
 		}
-		for _, ws := range d.Workspaces {
-			if ws.Dirty {
-				filtered.Workspaces = append(filtered.Workspaces, ws)
+		for _, bay := range d.Bays {
+			if bay.Dirty {
+				filtered.Bays = append(filtered.Bays, bay)
 			}
 		}
-		if len(filtered.Workspaces) > 0 {
+		if len(filtered.Bays) > 0 {
 			result = append(result, filtered)
 		}
 	}
@@ -41,8 +41,8 @@ func inferListFocus(eng *engine.Engine) ListFocus {
 		return ListFocus{Kind: FocusAll}
 	}
 	switch {
-	case ctx.WorkspaceID != "":
-		return ListFocus{Kind: FocusWorkspace, Dock: ctx.Dock, WorkspaceID: ctx.WorkspaceID}
+	case ctx.BayID != "":
+		return ListFocus{Kind: FocusBay, Dock: ctx.Dock, BayID: ctx.BayID}
 	case ctx.Dock != "":
 		return ListFocus{Kind: FocusDock, Dock: ctx.Dock}
 	default:

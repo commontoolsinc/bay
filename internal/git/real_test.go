@@ -40,7 +40,7 @@ func setupRemoteAndClone(t *testing.T) string {
 // TestReal_IsMergedIntoDefault_FreshBranchNotMerged verifies that a
 // brand-new branch with no commits above the default branch is NOT
 // detected as merged. This is the false-positive that caused the
-// tutorial's workspaces to immediately show status=done.
+// tutorial's bays to immediately show status=done.
 func TestReal_IsMergedIntoDefault_FreshBranchNotMerged(t *testing.T) {
 	clone := setupRemoteAndClone(t)
 

@@ -40,18 +40,18 @@ func TestRecordAgentType_DedupesAndCaps(t *testing.T) {
 
 func TestRecents_TopMRUDedupesFromBody(t *testing.T) {
 	r := &Recents{}
-	// Three uses of "go-ws", one of "edit-config", one more "go-ws".
-	r.recordAt("go-ws", "", 1)
-	r.recordAt("go-ws", "", 2)
+	// Three uses of "go-bay", one of "edit-config", one more "go-bay".
+	r.recordAt("go-bay", "", 1)
+	r.recordAt("go-bay", "", 2)
 	r.recordAt("edit-config", "", 3)
-	r.recordAt("go-ws", "", 4)
+	r.recordAt("go-bay", "", 4)
 
 	top := r.TopRecents(nil)
 	if len(top) != 2 {
-		t.Fatalf("top length=%d; want 2 (go-ws as MRU, edit-config in body)", len(top))
+		t.Fatalf("top length=%d; want 2 (go-bay as MRU, edit-config in body)", len(top))
 	}
-	if top[0].ID != "go-ws" {
-		t.Errorf("slot 1 = %q; want go-ws (MRU)", top[0].ID)
+	if top[0].ID != "go-bay" {
+		t.Errorf("slot 1 = %q; want go-bay (MRU)", top[0].ID)
 	}
 	if top[1].ID != "edit-config" {
 		t.Errorf("slot 2 = %q; want edit-config", top[1].ID)
@@ -119,7 +119,7 @@ func TestRecents_SaveLoadRoundTrip(t *testing.T) {
 	path := filepath.Join(dir, "palette-recents.json")
 
 	orig := &Recents{path: path}
-	orig.recordAt("go-ws", "", 1)
+	orig.recordAt("go-bay", "", 1)
 	orig.recordAt("new-agent-pick", "codex", 2)
 	orig.recordAgentTypeAt("codex", 2)
 	orig.recordAgentTypeAt("claude", 3)

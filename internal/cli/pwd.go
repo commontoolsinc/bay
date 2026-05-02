@@ -50,15 +50,15 @@ func formatPWD(ctx *engine.Context) string {
 	if ctx.Dock != "" {
 		parts = append(parts, labelValue("dock", ctx.Dock))
 	}
-	if ctx.Workspace != "" {
-		ws := ctx.Workspace
+	if ctx.Bay != "" {
+		bay := ctx.Bay
 		if ctx.Path != "" {
 			dir := filepath.Base(ctx.Path)
-			if dir != ctx.Workspace {
-				ws += " " + dim("(") + dim("dir") + " " + dir + dim(")")
+			if dir != ctx.Bay {
+				bay += " " + dim("(") + dim("dir") + " " + dir + dim(")")
 			}
 		}
-		parts = append(parts, labelValue("bay", ws))
+		parts = append(parts, labelValue("bay", bay))
 	}
 	if ctx.Surface != "" {
 		parts = append(parts, labelValue("surface", ctx.Surface))

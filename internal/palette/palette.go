@@ -47,11 +47,11 @@ type Scope int
 const (
 	ScopeAnywhere Scope = iota
 	ScopeInDock
-	ScopeInWorkspace
+	ScopeInBay
 )
 
 // satisfies reports whether `current` is at least as specific as `needed`.
-// InWorkspace satisfies InDock and Anywhere; InDock satisfies Anywhere.
+// InBay satisfies InDock and Anywhere; InDock satisfies Anywhere.
 func (current Scope) satisfies(needed Scope) bool {
 	return current >= needed
 }
@@ -62,8 +62,8 @@ type Section int
 const (
 	SectionNavigation Section = iota
 	SectionCreateSurface
-	SectionCreateWorkspace
-	SectionCurrentWorkspace
+	SectionCreateBay
+	SectionCurrentBay
 	SectionCurrentSurface
 	SectionAdmin
 )
@@ -75,9 +75,9 @@ func (s Section) Title() string {
 		return "Navigation"
 	case SectionCreateSurface:
 		return "Create — surface"
-	case SectionCreateWorkspace:
+	case SectionCreateBay:
 		return "Create — bay"
-	case SectionCurrentWorkspace:
+	case SectionCurrentBay:
 		return "Current bay"
 	case SectionCurrentSurface:
 		return "Current surface"
@@ -453,8 +453,8 @@ func (s *runState) renderSections(visible []int, width int) {
 	sections := []Section{
 		SectionNavigation,
 		SectionCreateSurface,
-		SectionCreateWorkspace,
-		SectionCurrentWorkspace,
+		SectionCreateBay,
+		SectionCurrentBay,
 		SectionCurrentSurface,
 		SectionAdmin,
 	}
@@ -518,10 +518,10 @@ func (s *runState) renderFiltered(visible []int, width int) {
 //   - adjacency ranks next: "ns-cmd" (adjacent) outranks "New shell"
 //     (boundary + gap).
 //   - word-boundary matches rank next: the first char after a space,
-//     hyphen, underscore, or punctuation gets a boundary bonus. "nw"
-//     against "New workspace" prefers the 'w' at the start of
-//     "workspace" over the 'w' inside "New", which is critical to
-//     ranking "New workspace" above "New shell" on an "nw" query.
+//     hyphen, underscore, or punctuation gets a boundary bonus. "nb"
+//     against "New bay" prefers the 'w' at the start of
+//     "bay" over the 'w' inside "New", which is critical to
+//     ranking "New bay" above "New shell" on an "nb" query.
 //   - within-word matches rank last: a middle-of-word match receives
 //     only the base per-char credit plus a small gap penalty.
 //
@@ -704,7 +704,7 @@ func clearLines(out io.Writer, lines int) {
 
 // Notice prints text to out and waits for any keypress before returning.
 // Used by palette actions that have something to display (current context,
-// workspace details, doctor output) but don't otherwise prompt the user.
+// bay details, doctor output) but don't otherwise prompt the user.
 // The popup closes as soon as this returns.
 func Notice(in, out *os.File, text string) {
 	fd := int(in.Fd())

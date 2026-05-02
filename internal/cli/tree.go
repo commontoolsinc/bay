@@ -34,7 +34,7 @@ func newTreeCmd() *cobra.Command {
 			_ = eng.MarkAllPRChecksStale()
 
 			if dirtyOnly {
-				docks = filterDirtyWorkspaces(docks)
+				docks = filterDirtyBays(docks)
 			}
 
 			view := BuildListView(docks, ListViewOptions{
@@ -53,11 +53,11 @@ func newTreeCmd() *cobra.Command {
 			// Print advice for stale or missing bays visible in the output.
 			hasStale, hasMissing := false, false
 			for _, d := range view.Docks {
-				for _, ws := range d.Workspaces {
-					if ws.SyncStatus == manifest.SyncStatusStale {
+				for _, bay := range d.Bays {
+					if bay.SyncStatus == manifest.SyncStatusStale {
 						hasStale = true
 					}
-					if ws.SyncStatus == manifest.SyncStatusMissing {
+					if bay.SyncStatus == manifest.SyncStatusMissing {
 						hasMissing = true
 					}
 				}
