@@ -443,6 +443,10 @@ func (e *Engine) buildBayInfo(bay *manifest.Bay, agent string, waitingWindows ma
 // This does NOT call List() or SyncAll — it loads the manifest and
 // builds info for just the requested bay. Callers that display
 // data should call SyncAll first.
+//
+// For the reserved home target with no persisted surfaces, builds the
+// info from a synthesized home Bay so the display path stays
+// consistent with manifest.ResolveBay.
 func (e *Engine) BayInfoByName(dockName, bayID string) (*BayInfo, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
@@ -454,7 +458,15 @@ func (e *Engine) BayInfoByName(dockName, bayID string) (*BayInfo, error) {
 	}
 	bay := dock.FindBayByID(bayID)
 	if bay == nil {
-		return nil, fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
+		if manifest.IsReservedBayID(bayID) {
+			if _, err := homePath(dock); err != nil {
+				return nil, err
+			}
+			home := manifest.SynthesizeHomeBay(dock)
+			bay = &home
+		} else {
+			return nil, fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
+		}
 	}
 	agent := e.resolvedDockAgent(dockName, m)
 	waitingWindows, _ := e.Tmux.WaitingOrBellWindowIDs(dockName)

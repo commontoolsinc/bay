@@ -98,7 +98,7 @@ func TestBayCleanReview_RejectsHomeBay(t *testing.T) {
 	}
 }
 
-func TestBayClose_HomeIsNoOp(t *testing.T) {
+func TestBayClose_HomeIsNoOpWhenEmpty(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	m, err := eng.LoadManifest()
@@ -129,6 +129,60 @@ func TestBayClose_HomeIsNoOp(t *testing.T) {
 	mockGit := eng.Git.(*git.Mock)
 	if got := len(mockGit.RemovedWorktrees()); got != 0 {
 		t.Fatalf("removed worktrees = %d, want 0", got)
+	}
+}
+
+func TestBayClose_HomeClosesAllSurfacesAndPreservesCheckout(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	// Create two home surfaces.
+	if err := eng.SurfaceAdd(SurfaceAddOptions{
+		DockName: "labs",
+		BayName:  manifest.HomeBayID,
+		Type:     manifest.SurfaceTypeShell,
+		Name:     "shell",
+	}); err != nil {
+		t.Fatalf("SurfaceAdd 1: %v", err)
+	}
+	if err := eng.SurfaceAdd(SurfaceAddOptions{
+		DockName: "labs",
+		BayName:  manifest.HomeBayID,
+		Type:     manifest.SurfaceTypeShell,
+		Name:     "logs",
+		SplitDir: "v",
+	}); err != nil {
+		t.Fatalf("SurfaceAdd 2: %v", err)
+	}
+
+	m, err := eng.LoadManifest()
+	if err != nil {
+		t.Fatalf("LoadManifest: %v", err)
+	}
+	dockPath := m.FindDock("labs").Path
+	home := m.FindDock("labs").FindBayByID(manifest.HomeBayID)
+	if home == nil || len(home.Surfaces) < 2 {
+		t.Fatalf("expected home with 2 surfaces, got %+v", home)
+	}
+
+	if err := eng.BayClose("labs", manifest.HomeBayID, true); err != nil {
+		t.Fatalf("BayClose(home): %v", err)
+	}
+
+	// Empty home should be removed; dock.Path untouched.
+	m2, _ := eng.LoadManifest()
+	dock2 := m2.FindDock("labs")
+	if dock2 == nil {
+		t.Fatal("dock disappeared after BayClose(home)")
+	}
+	if dock2.Path != dockPath {
+		t.Errorf("dock.Path = %q, want %q (must not be mutated)", dock2.Path, dockPath)
+	}
+	if h := dock2.FindBayByID(manifest.HomeBayID); h != nil {
+		t.Errorf("home should be removed after closing all surfaces, got %+v", h)
+	}
+	mockGit := eng.Git.(*git.Mock)
+	if got := len(mockGit.RemovedWorktrees()); got != 0 {
+		t.Errorf("removed worktrees = %d, want 0", got)
 	}
 }
 
@@ -303,5 +357,188 @@ func TestHome_NoCheckoutErrors(t *testing.T) {
 	}
 	if err := eng.Home("labs"); err == nil {
 		t.Fatal("Home with no checkout should error")
+	}
+}
+
+func TestSurfaceAdd_HomeAgentUsesDockDefault(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	// `bay agent --bay home` arrives via runSurfaceNew which fills in the
+	// dock default agent before calling SurfaceAdd. Mirror that here.
+	agent := eng.DefaultAgent("labs")
+	if agent == "" {
+		t.Fatal("test fixture should set a dock default agent")
+	}
+
+	if err := eng.SurfaceAdd(SurfaceAddOptions{
+		DockName: "labs",
+		BayName:  manifest.HomeBayID,
+		Type:     manifest.SurfaceTypeAgent,
+		Name:     "agent",
+		Agent:    agent,
+	}); err != nil {
+		t.Fatalf("SurfaceAdd(home agent): %v", err)
+	}
+
+	m, _ := eng.LoadManifest()
+	home := m.FindDock("labs").FindBayByID(manifest.HomeBayID)
+	if home == nil || len(home.Surfaces) != 1 {
+		t.Fatalf("home not materialized with one surface; got %+v", home)
+	}
+	s := home.Surfaces[0]
+	if s.Type != manifest.SurfaceTypeAgent {
+		t.Errorf("surface type = %q, want agent", s.Type)
+	}
+	if s.Agent == nil || *s.Agent != agent {
+		t.Errorf("agent = %v, want %q", s.Agent, agent)
+	}
+	if s.Tmux == nil {
+		t.Fatal("agent surface missing tmux attrs")
+	}
+}
+
+func TestEmptyHome_HiddenFromList(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	docks, err := eng.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	for _, d := range docks {
+		if d.Name != "labs" {
+			continue
+		}
+		for _, b := range d.Bays {
+			if b.ID == manifest.HomeBayID {
+				t.Errorf("empty home should not appear in List(); got %+v", b)
+			}
+		}
+	}
+}
+
+func TestVisibleHome_AppearsInList(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if err := eng.SurfaceAdd(SurfaceAddOptions{
+		DockName: "labs",
+		BayName:  manifest.HomeBayID,
+		Type:     manifest.SurfaceTypeShell,
+		Name:     "shell",
+	}); err != nil {
+		t.Fatalf("SurfaceAdd(home): %v", err)
+	}
+
+	docks, err := eng.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	found := false
+	for _, d := range docks {
+		if d.Name != "labs" {
+			continue
+		}
+		for _, b := range d.Bays {
+			if b.ID == manifest.HomeBayID {
+				found = true
+				if b.Type != string(manifest.BayTypeHome) {
+					t.Errorf("home in List has Type=%q, want %q", b.Type, manifest.BayTypeHome)
+				}
+			}
+		}
+	}
+	if !found {
+		t.Error("visible home (with surfaces) should appear in List()")
+	}
+}
+
+func TestSync_EmptyHomeIsRemovedNotOrphanGraced(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	// Materialize home with a shell.
+	if err := eng.SurfaceAdd(SurfaceAddOptions{
+		DockName: "labs",
+		BayName:  manifest.HomeBayID,
+		Type:     manifest.SurfaceTypeShell,
+		Name:     "shell",
+	}); err != nil {
+		t.Fatalf("SurfaceAdd: %v", err)
+	}
+
+	// Kill the home pane natively (simulate user `exit`/Ctrl-D).
+	m, _ := eng.LoadManifest()
+	home := m.FindDock("labs").FindBayByID(manifest.HomeBayID)
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if err := mockTmux.KillPane(home.Surfaces[0].Tmux.PaneID); err != nil {
+		t.Fatalf("KillPane: %v", err)
+	}
+
+	eng.SyncAll()
+
+	m2, _ := eng.LoadManifest()
+	dock := m2.FindDock("labs")
+	if h := dock.FindBayByID(manifest.HomeBayID); h != nil {
+		t.Errorf("sync should drop empty home, got %+v (PendingCloseAt=%d)", h, h.PendingCloseAt)
+	}
+}
+
+func TestBayShow_SynthesizesEmptyHome(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	bay, err := eng.BayShow("labs", manifest.HomeBayID)
+	if err != nil {
+		t.Fatalf("BayShow(home) on empty home: %v", err)
+	}
+	if bay == nil {
+		t.Fatal("BayShow returned nil bay")
+	}
+	if bay.ID != manifest.HomeBayID || bay.Name != manifest.HomeBayID {
+		t.Errorf("ID/Name = %q/%q, want home/home", bay.ID, bay.Name)
+	}
+	if bay.Type != manifest.BayTypeHome {
+		t.Errorf("Type = %q, want %q", bay.Type, manifest.BayTypeHome)
+	}
+	m, _ := eng.LoadManifest()
+	if bay.Path != m.FindDock("labs").Path {
+		t.Errorf("Path = %q, want dock.Path %q", bay.Path, m.FindDock("labs").Path)
+	}
+}
+
+func TestBayInfoByName_SynthesizesEmptyHome(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	info, err := eng.BayInfoByName("labs", manifest.HomeBayID)
+	if err != nil {
+		t.Fatalf("BayInfoByName(home) on empty home: %v", err)
+	}
+	if info.ID != manifest.HomeBayID {
+		t.Errorf("ID = %q, want home", info.ID)
+	}
+	if info.Type != string(manifest.BayTypeHome) {
+		t.Errorf("Type = %q, want home", info.Type)
+	}
+	if info.Dirty {
+		t.Error("home info should not be marked dirty (worktree-only signal)")
+	}
+}
+
+func TestBayNew_AutoBootstrapDoesNotCreateHome(t *testing.T) {
+	// `bay new foo` auto-bootstrapping a dock should create only foo;
+	// home stays unmaterialized because foo's window keeps the session alive.
+	// Engine-level: BayNew on an existing dock with no bays must not insert
+	// a home Bay alongside the new one.
+	eng, _ := testEngine(t)
+
+	bay, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true})
+	if err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+	if bay == nil {
+		t.Fatal("BayNew returned nil")
+	}
+
+	m, _ := eng.LoadManifest()
+	dock := m.FindDock("labs")
+	if h := dock.FindBayByID(manifest.HomeBayID); h != nil {
+		t.Errorf("BayNew should not auto-create home, got %+v", h)
 	}
 }

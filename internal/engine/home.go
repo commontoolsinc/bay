@@ -133,6 +133,41 @@ func (e *Engine) addHomeShell(dockName string) error {
 	})
 }
 
+// closeHomeBay closes every home surface in the dock, leaving the dock
+// checkout untouched. Empty home is dropped from the manifest by
+// SurfaceClose's home-aware path. Returns nil when the dock has no
+// persisted home (the no-op case for `bay close home` against an
+// empty home).
+//
+// Phase 3 will replace this with the "last home surface dismisses the
+// dock UI on confirmation" flow; for now closing the last home surface
+// falls back to a `~` placeholder via ensureHomeOrPlaceholderIfLastWindow.
+func (e *Engine) closeHomeBay(dockName string) error {
+	m, err := e.LoadManifest()
+	if err != nil {
+		return err
+	}
+	dock := m.FindDock(dockName)
+	if dock == nil {
+		return fmt.Errorf("unknown dock %q", dockName)
+	}
+	home := dock.FindBayByID(manifest.HomeBayID)
+	if home == nil || len(home.Surfaces) == 0 {
+		return nil
+	}
+	// Snapshot surface names — SurfaceClose mutates home.Surfaces.
+	names := make([]string, len(home.Surfaces))
+	for i, s := range home.Surfaces {
+		names[i] = s.Name
+	}
+	for _, name := range names {
+		if err := e.SurfaceClose(dockName, manifest.HomeBayID, name, true); err != nil {
+			return fmt.Errorf("closing home surface %q: %w", name, err)
+		}
+	}
+	return nil
+}
+
 // ensureDockSession brings the dock's tmux session up if it's not already
 // running, persisting any new SessionID marker. Used by the home surface
 // path so `bay home` from outside tmux can stand the dock up on demand.

@@ -442,10 +442,16 @@ func (e *Engine) applyBaySyncUpdate(m *manifest.Manifest, update baySyncUpdate, 
 			}
 			bay.Surfaces = live
 			changed = true
-			// If the strip emptied the bay, schedule auto-close
-			// after a grace window. The user has that long to re-open
-			// a surface (bay sf new --bay <id>) to cancel.
-			if len(bay.Surfaces) == 0 && bay.PendingCloseAt == 0 {
+			// Empty home is hidden, not orphan-graced. Drop the
+			// persisted entry so the next sync doesn't keep re-entering
+			// the orphan finalize path against a no-op BayClose. If the
+			// user wants home back, `bay home` recreates it.
+			if len(bay.Surfaces) == 0 && bay.Type == manifest.BayTypeHome {
+				_ = dock.RemoveBay(bay.ID)
+			} else if len(bay.Surfaces) == 0 && bay.PendingCloseAt == 0 {
+				// If the strip emptied a worktree/external bay, schedule
+				// auto-close after a grace window. The user has that long
+				// to re-open a surface (bay sf new --bay <id>) to cancel.
 				bay.PendingCloseAt = time.Now().Unix() + orphanGraceSeconds
 			}
 		}

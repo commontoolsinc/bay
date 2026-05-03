@@ -575,7 +575,7 @@ func (e *Engine) BayCleanReview(dockName, bayID string) (string, error) {
 
 func (e *Engine) BayClose(dockName, bayID string, force bool) error {
 	if manifest.IsReservedBayID(bayID) {
-		return nil
+		return e.closeHomeBay(dockName)
 	}
 	windowIDs, err := e.closeBayState(dockName, bayID, force)
 	if err != nil {
@@ -822,6 +822,10 @@ func (e *Engine) BayRename(dockName, bayID, newName string) error {
 // Callers that display data to the user (bay show, bay sf ls)
 // should call SyncAll first. Callers that just need bay state
 // for an operation (navigation, close, restart) can skip the sync.
+//
+// For the reserved home target with no persisted surfaces, returns a
+// synthesized home Bay so display paths stay consistent with
+// manifest.ResolveBay (which already synthesizes empty home).
 func (e *Engine) BayShow(dockName, bayID string) (*manifest.Bay, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
@@ -833,6 +837,13 @@ func (e *Engine) BayShow(dockName, bayID string) (*manifest.Bay, error) {
 	}
 	bay := dock.FindBayByID(bayID)
 	if bay == nil {
+		if manifest.IsReservedBayID(bayID) {
+			if _, err := homePath(dock); err != nil {
+				return nil, err
+			}
+			home := manifest.SynthesizeHomeBay(dock)
+			return &home, nil
+		}
 		return nil, fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
 	}
 	return bay, nil
