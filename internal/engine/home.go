@@ -169,20 +169,20 @@ func (e *Engine) selectSurface(s *manifest.Surface) bool {
 }
 
 func (e *Engine) ensureDockSessionForHomeSurface(dockName string, dock *manifest.Dock) error {
-	persistCreatedSessionID := !dockHasRecordedTmuxSurfaces(dock)
-	sessionID, sessionCreated, err := e.ensureSessionForBay(dockName, dock.SessionID)
-	if err != nil {
+	if dockHasRecordedTmuxSurfaces(dock) {
+		_, _, err := e.ensureSessionForBay(dockName, dock.SessionID)
 		return err
 	}
-	if !sessionCreated || !persistCreatedSessionID || dock.SessionID != "" {
-		return nil
+	sessionID, err := e.ensureSession(dockName, dock.SessionID)
+	if err != nil {
+		return err
 	}
 	return e.withManifestMaybe(func(m *manifest.Manifest) (bool, error) {
 		dock := m.FindDock(dockName)
 		if dock == nil {
 			return false, fmt.Errorf("unknown dock %q", dockName)
 		}
-		if dock.SessionID != "" {
+		if dockHasRecordedTmuxSurfaces(dock) || dock.SessionID == sessionID {
 			return false, nil
 		}
 		dock.SessionID = sessionID

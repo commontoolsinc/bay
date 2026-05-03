@@ -270,6 +270,9 @@ func (e *Engine) DockClose(name string, force bool) error {
 	// iteration. Names may be empty; IDs are the stable handle.
 	var bayIDs []string
 	for _, bay := range dock.Bays {
+		if bay.Type == manifest.BayTypeHome || manifest.IsReservedBayID(bay.ID) {
+			continue
+		}
 		bayIDs = append(bayIDs, bay.ID)
 	}
 

@@ -942,6 +942,9 @@ func (e *Engine) ResolveSelf() (string, string, error) {
 			dock := &m.Docks[i]
 			for j := range dock.Bays {
 				bay := &dock.Bays[j]
+				if bay.Type == manifest.BayTypeHome {
+					continue
+				}
 				if config.IsPathUnder(cwd, bay.Path) {
 					return dock.Name, bay.ID, nil
 				}

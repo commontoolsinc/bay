@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -502,5 +503,116 @@ func TestEditAllParentDir_HomeDoesNotChangeDockEditorTarget(t *testing.T) {
 	}
 	if got != want {
 		t.Fatalf("EditAllParentDir = %q, want %q", got, want)
+	}
+}
+
+func TestDockClose_HomeOnlyDockCloses(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+
+	if err := eng.DockClose("labs", false); err != nil {
+		t.Fatalf("DockClose(home-only): %v", err)
+	}
+	m, err := eng.LoadManifest()
+	if err != nil {
+		t.Fatalf("LoadManifest: %v", err)
+	}
+	if dock := m.FindDock("labs"); dock != nil {
+		t.Fatalf("dock still present after DockClose: %+v", dock)
+	}
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if has, _ := mockTmux.HasSession("labs"); has {
+		t.Fatal("tmux session still exists after DockClose")
+	}
+	mockGit := eng.Git.(*git.Mock)
+	if got := len(mockGit.RemovedWorktrees()); got != 0 {
+		t.Fatalf("removed worktrees = %d, want 0", got)
+	}
+}
+
+func TestResolveSelf_DockPathDoesNotInferHomeFromCWD(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+	m, err := eng.LoadManifest()
+	if err != nil {
+		t.Fatalf("LoadManifest: %v", err)
+	}
+	dock := m.FindDock("labs")
+	home := dock.FindBayByID(manifest.HomeBayID)
+	if home == nil || len(home.Surfaces) != 1 || home.Surfaces[0].Tmux == nil {
+		t.Fatalf("home = %+v, want one tmux surface", home)
+	}
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dock.Path); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+
+	if _, _, err := eng.ResolveSelf(); err == nil {
+		t.Fatal("ResolveSelf from dock path inferred home; want no bay")
+	}
+	ctx, err := eng.CurrentContext()
+	if err != nil {
+		t.Fatalf("CurrentContext: %v", err)
+	}
+	if ctx.Dock != "labs" || ctx.BayID != "" || ctx.Bay != "" {
+		t.Fatalf("CurrentContext from dock path = %#v, want dock-only context", ctx)
+	}
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.SetCurrentSession("labs")
+	mockTmux.SetCurrentWindowID(home.Surfaces[0].Tmux.WindowID)
+	mockTmux.SetCurrentPaneID(home.Surfaces[0].Tmux.PaneID)
+	dockName, bayID, err := eng.ResolveSelf()
+	if err != nil {
+		t.Fatalf("ResolveSelf in home tmux surface: %v", err)
+	}
+	if dockName != "labs" || bayID != manifest.HomeBayID {
+		t.Fatalf("ResolveSelf in home tmux surface = (%q, %q), want (labs, home)", dockName, bayID)
+	}
+}
+
+func TestSurfaceAdd_HomeClaimsExistingUntaggedSession(t *testing.T) {
+	eng, _ := testEngine(t)
+	withDeterministicSessionID(t, "home-session-uuid")
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if err := mockTmux.NewSession("labs"); err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	if err := eng.SurfaceAdd(SurfaceAddOptions{
+		DockName: "labs",
+		BayName:  manifest.HomeBayID,
+		Type:     manifest.SurfaceTypeShell,
+		Name:     "shell",
+	}); err != nil {
+		t.Fatalf("SurfaceAdd(home): %v", err)
+	}
+
+	m, err := eng.LoadManifest()
+	if err != nil {
+		t.Fatalf("LoadManifest: %v", err)
+	}
+	dock := m.FindDock("labs")
+	if dock.SessionID != "home-session-uuid" {
+		t.Fatalf("dock.SessionID = %q, want home-session-uuid", dock.SessionID)
+	}
+	marker, _ := mockTmux.GetSessionOption("labs", sessionIDOption)
+	if marker != "home-session-uuid" {
+		t.Fatalf("tmux marker = %q, want home-session-uuid", marker)
+	}
+	home := dock.FindBayByID(manifest.HomeBayID)
+	if home == nil || len(home.Surfaces) != 1 || home.Surfaces[0].Tmux == nil {
+		t.Fatalf("home = %+v, want one tmux surface", home)
 	}
 }
