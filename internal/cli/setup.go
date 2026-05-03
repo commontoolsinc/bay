@@ -272,7 +272,7 @@ var bayKeybindings = []bayKeybinding{
 	// display-message entries act as a one-tap reminder of the
 	// available letters; lowercase=pane, Shift=window matches the
 	// rest of bay's creation keys.
-	{key: "M-o", cmd: `display-message -d 2000 "agent: c Claude, x Codex, g Gemini | Shift=window | b=bay" \; switch-client -T ` + tableAgent, desc: "Option+o: agent chord launcher", isTmuxCommand: true},
+	{key: "M-o", cmd: `display-message -d 2000 "agent: c Claude, x Codex, g Gemini | Shift=window | b=bay | h=home" \; switch-client -T ` + tableAgent, desc: "Option+o: agent/home chord launcher", isTmuxCommand: true},
 
 	agentInBay("c", "claude", "pane"),
 	agentInBay("C", "claude", "window"),
@@ -282,10 +282,18 @@ var bayKeybindings = []bayKeybinding{
 	agentInBay("G", "gemini", "window"),
 
 	{table: tableAgent, key: "b", cmd: `display-message -d 2000 "bay: c Claude, x Codex, g Gemini" \; switch-client -T ` + tableAgentBay, desc: "M-o b: new-bay-with-agent submenu", isTmuxCommand: true},
+	{table: tableAgent, key: "h", cmd: `display-message -d 2000 "home: Enter go, s shell, e editor, c Claude, x Codex, g Gemini" \; switch-client -T ` + tableHome, desc: "M-o h: home submenu", isTmuxCommand: true},
 
 	newBayWithAgent("c", "claude"),
 	newBayWithAgent("x", "codex"),
 	newBayWithAgent("g", "gemini"),
+
+	homeBinding("Enter", "bay home", "go home"),
+	homeBinding("s", "bay shell --bay home", "home shell"),
+	homeBinding("e", "bay edit --bay home", "home editor"),
+	homeBinding("c", "bay agent claude --bay home", "Claude in home"),
+	homeBinding("x", "bay agent codex --bay home", "Codex in home"),
+	homeBinding("g", "bay agent gemini --bay home", "Gemini in home"),
 }
 
 // Tmux key-table names for the M-o agent chord. Used both for the
@@ -295,6 +303,7 @@ var bayKeybindings = []bayKeybinding{
 const (
 	tableAgent    = "bay-agent"
 	tableAgentBay = "bay-agent-bay"
+	tableHome     = "bay-home"
 )
 
 func agentInBay(key, agent, mode string) bayKeybinding {
@@ -313,6 +322,16 @@ func newBayWithAgent(key, agent string) bayKeybinding {
 		key:      key,
 		cmd:      "bay new -q --agent=" + agent,
 		desc:     fmt.Sprintf("M-o b %s: new bay with %s", key, titleAgent(agent)),
+		tmuxVerb: "run-shell",
+	}
+}
+
+func homeBinding(key, cmd, desc string) bayKeybinding {
+	return bayKeybinding{
+		table:    tableHome,
+		key:      key,
+		cmd:      cmd,
+		desc:     "M-o h " + key + ": " + desc,
 		tmuxVerb: "run-shell",
 	}
 }

@@ -115,6 +115,9 @@ func ValidateBayName(name string) error {
 	if err := ValidateName(name); err != nil {
 		return err
 	}
+	if manifest.IsHomeBayID(name) {
+		return homeReservedError()
+	}
 	if manifest.IsBayID(name) {
 		return fmt.Errorf("invalid bay name %q: matches the reserved bay ID pattern (^w[1-9]\\d*$); pick a different name", name)
 	}

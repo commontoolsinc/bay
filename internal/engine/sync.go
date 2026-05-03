@@ -213,8 +213,14 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 		now := time.Now().Unix()
 		for di := range m.Docks {
 			dock := &m.Docks[di]
-			for wi := range dock.Bays {
+			for wi := 0; wi < len(dock.Bays); wi++ {
 				bay := &dock.Bays[wi]
+				if bay.Type == manifest.BayTypeHome && len(bay.Surfaces) == 0 {
+					_ = dock.RemoveBay(bay.ID)
+					changed = true
+					wi--
+					continue
+				}
 				if bay.PendingCloseAt == 0 {
 					continue
 				}
@@ -442,9 +448,16 @@ func (e *Engine) applyBaySyncUpdate(m *manifest.Manifest, update baySyncUpdate, 
 			}
 			bay.Surfaces = live
 			changed = true
-			// If the strip emptied the bay, schedule auto-close
-			// after a grace window. The user has that long to re-open
-			// a surface (bay sf new --bay <id>) to cancel.
+			// Empty home is hidden, not orphan-cleaned. If the user
+			// killed the last home pane natively, do not recreate it
+			// behind them.
+			if bay.Type == manifest.BayTypeHome && len(bay.Surfaces) == 0 {
+				_ = dock.RemoveBay(bay.ID)
+				return true, discoveredClosed
+			}
+			// If the strip emptied a work bay, schedule auto-close after
+			// a grace window. The user has that long to re-open a surface
+			// (bay sf new --bay <id>) to cancel.
 			if len(bay.Surfaces) == 0 && bay.PendingCloseAt == 0 {
 				bay.PendingCloseAt = time.Now().Unix() + orphanGraceSeconds
 			}

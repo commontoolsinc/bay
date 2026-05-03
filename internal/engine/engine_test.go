@@ -92,6 +92,7 @@ func TestValidateBayName(t *testing.T) {
 		{"w1", true},
 		{"w42", true},
 		{"w999", true},
+		{"home", true},
 
 		// Looks ID-shaped but isn't canonical — accepted (also accepted
 		// by ValidateName).
@@ -116,6 +117,140 @@ func TestValidateBayName(t *testing.T) {
 			t.Errorf("ValidateBayName(%q) error=%v, wantErr=%v", tt.name, err, tt.wantErr)
 		}
 	}
+}
+
+func TestHome_CreatesShellAtDockCheckout(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+
+	m, _ := eng.LoadManifest()
+	dock := m.FindDock("labs")
+	home := dock.FindBayByID(manifest.HomeBayID)
+	if home == nil {
+		t.Fatal("home bay missing")
+	}
+	if home.Name != manifest.HomeBayID || home.Type != manifest.BayTypeHome {
+		t.Fatalf("home identity = id:%q name:%q type:%q", home.ID, home.Name, home.Type)
+	}
+	if home.Path != dock.Path {
+		t.Fatalf("home path = %q, want dock path %q", home.Path, dock.Path)
+	}
+	if home.Worktree != nil {
+		t.Fatal("home must not have worktree attrs")
+	}
+	if len(home.Surfaces) != 1 || home.Surfaces[0].Type != manifest.SurfaceTypeShell {
+		t.Fatalf("home surfaces = %+v, want one shell", home.Surfaces)
+	}
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	windows, _ := mockTmux.ListWindows("labs")
+	for _, w := range windows {
+		val, _ := mockTmux.GetWindowOption(w.ID, "@bay-placeholder")
+		if val == "1" {
+			t.Errorf("placeholder window %q should have been replaced by home", w.Name)
+		}
+	}
+}
+
+func TestSurfaceAdd_MaterializesHome(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if err := eng.SurfaceAdd(SurfaceAddOptions{
+		DockName: "labs",
+		BayName:  manifest.HomeBayID,
+		Type:     manifest.SurfaceTypeAgent,
+		Name:     "agent",
+		Agent:    "claude",
+		SplitDir: "",
+	}); err != nil {
+		t.Fatalf("SurfaceAdd(home): %v", err)
+	}
+
+	m, _ := eng.LoadManifest()
+	home := m.FindDock("labs").FindBayByID(manifest.HomeBayID)
+	if home == nil {
+		t.Fatal("home bay missing")
+	}
+	if len(home.Surfaces) != 1 {
+		t.Fatalf("home surfaces = %d, want 1", len(home.Surfaces))
+	}
+	if got := home.Surfaces[0]; got.Type != manifest.SurfaceTypeAgent || got.Agent == nil || *got.Agent != "claude" {
+		t.Fatalf("home surface = %+v, want claude agent", got)
+	}
+}
+
+func TestSurfaceClose_LastHomeWithOtherBaysHidesHome(t *testing.T) {
+	eng, _ := testEngine(t)
+	bay, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true})
+	if err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+	repoPath := config.ExpandPath(mustDock(t, eng, "labs").Path)
+
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+	if err := eng.SurfaceClose("labs", manifest.HomeBayID, "shell", true); err != nil {
+		t.Fatalf("SurfaceClose(home): %v", err)
+	}
+
+	m, _ := eng.LoadManifest()
+	dock := m.FindDock("labs")
+	if dock.FindBayByID(manifest.HomeBayID) != nil {
+		t.Fatal("empty home should be hidden")
+	}
+	if dock.FindBayByID(bay.ID) == nil {
+		t.Fatal("worktree bay should remain")
+	}
+	if _, err := os.Stat(repoPath); err != nil {
+		t.Fatalf("dock checkout should remain: %v", err)
+	}
+	if has, _ := eng.Tmux.(*tmux.Mock).HasSession("labs"); !has {
+		t.Fatal("dock session should remain while other bays have surfaces")
+	}
+}
+
+func TestSurfaceClose_LastHomeOnlyDismissesSession(t *testing.T) {
+	eng, _ := testEngine(t)
+	repoPath := config.ExpandPath(mustDock(t, eng, "labs").Path)
+
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+	if err := eng.SurfaceClose("labs", manifest.HomeBayID, "shell", true); err != nil {
+		t.Fatalf("SurfaceClose(home): %v", err)
+	}
+
+	m, _ := eng.LoadManifest()
+	dock := m.FindDock("labs")
+	if dock == nil {
+		t.Fatal("dock should remain registered")
+	}
+	if dock.FindBayByID(manifest.HomeBayID) != nil {
+		t.Fatal("empty home should be hidden")
+	}
+	if _, err := os.Stat(repoPath); err != nil {
+		t.Fatalf("dock checkout should remain: %v", err)
+	}
+	if has, _ := eng.Tmux.(*tmux.Mock).HasSession("labs"); has {
+		t.Fatal("last home close should dismiss the dock tmux session")
+	}
+}
+
+func mustDock(t *testing.T, eng *Engine, name string) *manifest.Dock {
+	t.Helper()
+	m, err := eng.LoadManifest()
+	if err != nil {
+		t.Fatalf("LoadManifest: %v", err)
+	}
+	dock := m.FindDock(name)
+	if dock == nil {
+		t.Fatalf("dock %q missing", name)
+	}
+	return dock
 }
 
 // TestAbbreviateBranch_AvoidsReservedPattern guards the case where a
@@ -2353,8 +2488,9 @@ func TestPlaceholder_CleanedOnBayNew(t *testing.T) {
 	_ = bay
 }
 
-func TestPlaceholder_CreatedOnLastBayClose(t *testing.T) {
-	// Closing the last bay should leave a placeholder.
+func TestHomeShell_CreatedOnLastBayClose(t *testing.T) {
+	// Closing the last worktree bay should leave a home shell instead of a
+	// placeholder.
 	eng, _ := testEngine(t)
 
 	eng.BayNew(BayNewOptions{Dock: "labs"})
@@ -2369,20 +2505,28 @@ func TestPlaceholder_CreatedOnLastBayClose(t *testing.T) {
 	// Session should still exist
 	has, _ := mockTmux.HasSession("labs")
 	if !has {
-		t.Fatal("session should still exist (placeholder keeps it alive)")
+		t.Fatal("session should still exist (home keeps it alive)")
 	}
 
-	// Should have a placeholder window
+	// Should have a home bay/window, with no placeholder.
+	m, _ := eng.LoadManifest()
+	home := m.FindDock("labs").FindBayByID(manifest.HomeBayID)
+	if home == nil {
+		t.Fatal("expected home bay after closing last worktree bay")
+	}
+	if home.Type != manifest.BayTypeHome {
+		t.Fatalf("home type = %q, want %q", home.Type, manifest.BayTypeHome)
+	}
+	if len(home.Surfaces) != 1 || home.Surfaces[0].Type != manifest.SurfaceTypeShell {
+		t.Fatalf("home surfaces = %+v, want one shell", home.Surfaces)
+	}
+
 	windows, _ := mockTmux.ListWindows("labs")
-	foundPlaceholder := false
 	for _, w := range windows {
 		val, _ := mockTmux.GetWindowOption(w.ID, "@bay-placeholder")
 		if val == "1" {
-			foundPlaceholder = true
+			t.Errorf("placeholder window %q should not be created", w.Name)
 		}
-	}
-	if !foundPlaceholder {
-		t.Error("expected a placeholder window after closing last bay")
 	}
 }
 

@@ -114,7 +114,7 @@ window until the next status-interval tick.`,
 					out = "#" + bay.Worktree.PR
 				}
 			case "status":
-				if bay.Path != "" {
+				if bay.Type == manifest.BayTypeWorktree && bay.Path != "" {
 					if dirty, err := g.IsDirty(bay.Path); err == nil && dirty {
 						out = "dirty"
 					}
@@ -146,7 +146,7 @@ window until the next status-interval tick.`,
 				}
 
 				status := ""
-				if bay.Path != "" {
+				if bay.Type == manifest.BayTypeWorktree && bay.Path != "" {
 					if dirty, err := g.IsDirty(bay.Path); err == nil && dirty {
 						status = "dirty"
 					} else if bay.IsMerged() {

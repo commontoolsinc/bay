@@ -10,6 +10,7 @@ For developers who work on multiple branches simultaneously and use tmux as thei
 cd ~/projects/myproject
 bay new                      # auto-bootstrap dock + create worktree
 bay new --agent              # new worktree with the dock's default agent
+bay home                     # jump to the dock checkout shell
 bay edit                        # open editor for current bay
 bay shell                       # split a shell into the current bay
 bay go                       # fuzzy-pick a bay in the current dock
@@ -20,6 +21,7 @@ bay recover                     # reconstruct everything after reboot
 ## What it does
 
 - **Worktree lifecycle** — create, close, rename bays backed by git worktrees or external directories. Safety checks on close (dirty files, unlanded commits). Each bay is an isolated checkout.
+- **Home checkout** — every dock has a reserved `home` target for its canonical checkout. It replaces empty `~` placeholder windows and is never deleted by bay.
 - **Surface model** — each bay contains one or more **surfaces** (agent panes, shell panes, command panes, GUI editors). Bay tracks them all and recovers them after reboot.
 - **Editor integration** — `bay edit` opens your bay in cursor, VS Code, zed, nvim, or vim. `bay edit --dock` for multi-root.
 - **Agent support** — optionally launch AI agents (Claude Code, Codex, Gemini). Agent surfaces resume on restart and on undo-close via configured `resume_args`. Closing an agent surface prompts for confirmation.

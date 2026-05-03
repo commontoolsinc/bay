@@ -93,6 +93,9 @@ func newDockNewCmd() *cobra.Command {
 			if initErr := eng.DockInit(name); initErr != nil {
 				fmt.Fprintf(os.Stderr, "Warning: dock checkout setup failed: %v\n", initErr)
 			}
+			if err := eng.Home(name); err != nil {
+				return err
+			}
 			fmt.Printf("Dock %q created.\n", name)
 			return nil
 		},

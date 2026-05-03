@@ -349,6 +349,9 @@ func (e *Engine) closeBayState(dockName, bayID string, force bool) ([]string, er
 	}
 	bay := dock.FindBayByID(bayID)
 	if bay == nil {
+		if isHomeBayID(bayID) {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
 	}
 
@@ -428,6 +431,22 @@ func (e *Engine) closeBayState(dockName, bayID string, force bool) ([]string, er
 			_ = e.Git.DeleteBranch(repoPath, bay.Worktree.Branch)
 		}
 		_ = os.Remove(dock.EffectiveWorktreeDir())
+	}
+
+	if bay.Type == manifest.BayTypeHome {
+		if err := e.withManifest(func(m *manifest.Manifest) error {
+			dock := m.FindDock(dockName)
+			if dock == nil {
+				return fmt.Errorf("unknown dock %q", dockName)
+			}
+			if dock.FindBayByID(bayID) == nil {
+				return nil
+			}
+			return dock.RemoveBay(bayID)
+		}); err != nil {
+			return nil, err
+		}
+		return windowIDs, nil
 	}
 
 	// Archive the bay. Disambiguate name if it already exists
@@ -571,12 +590,23 @@ func (e *Engine) BayClose(dockName, bayID string, force bool) error {
 	if err != nil {
 		return err
 	}
+	dismissDockUI := false
+	if isHomeBayID(bayID) {
+		if m, loadErr := e.LoadManifest(); loadErr == nil {
+			if dock := m.FindDock(dockName); dock != nil {
+				dismissDockUI = !dockHasSurfacesExcept(dock, "")
+			}
+		}
+	}
 	// Manifest is saved. Now kill the windows — bay may die mid-call if
 	// it's running in one of these panes, but the user-visible state is
 	// already correct.
 	for _, id := range windowIDs {
-		e.ensurePlaceholderIfLastWindow(dockName, id)
+		e.ensureHomeIfLastWindow(dockName, id, isHomeBayID(bayID))
 		_ = e.Tmux.KillWindow(id)
+	}
+	if dismissDockUI {
+		_ = e.Tmux.KillSession(dockName)
 	}
 
 	// Re-evaluate tab name lengths now that bay count changed.
@@ -637,6 +667,10 @@ func (e *Engine) bayCloseBatch(dockName string, force, dryRun bool, skip baySkip
 		}
 		for j := range d.Bays {
 			bay := &d.Bays[j]
+			if bay.Type == manifest.BayTypeHome {
+				skipped = append(skipped, d.Name+":"+bay.ID+" (home)")
+				continue
+			}
 			if excludeSet[bay.ID] {
 				continue
 			}
@@ -700,7 +734,7 @@ func (e *Engine) bayCloseBatch(dockName string, force, dryRun bool, skip baySkip
 	// closed-bay's manifest entry is already persisted.
 	for _, p := range pending {
 		for _, id := range p.windowIDs {
-			e.ensurePlaceholderIfLastWindow(p.dock, id)
+			e.ensureHomeIfLastWindow(p.dock, id, false)
 			_ = e.Tmux.KillWindow(id)
 		}
 	}
@@ -745,6 +779,9 @@ func (e *Engine) BayUpdate(dockName, bayID string, branch, pr *string) error {
 // Descriptions appear in the bay picker and in ls/tree output; they
 // have no effect on tmux tab names, which stay short by design.
 func (e *Engine) BayDescribe(dockName, bayID, desc string) error {
+	if isHomeBayID(bayID) {
+		return homeReservedError()
+	}
 	desc = strings.TrimSpace(desc)
 	if err := ValidateDescription(desc); err != nil {
 		return err
@@ -766,6 +803,9 @@ func (e *Engine) BayDescribe(dockName, bayID, desc string) error {
 
 // BayRename renames a bay.
 func (e *Engine) BayRename(dockName, bayID, newName string) error {
+	if isHomeBayID(bayID) {
+		return homeReservedError()
+	}
 	if err := ValidateBayName(newName); err != nil {
 		return err
 	}
@@ -809,6 +849,13 @@ func (e *Engine) BayShow(dockName, bayID string) (*manifest.Bay, error) {
 	}
 	bay := dock.FindBayByID(bayID)
 	if bay == nil {
+		if isHomeBayID(bayID) {
+			home, err := newHomeBay(dock)
+			if err != nil {
+				return nil, err
+			}
+			return &home, nil
+		}
 		return nil, fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
 	}
 	return bay, nil
@@ -876,6 +923,39 @@ func (e *Engine) ResolveBay(query string) (string, string, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return "", "", err
+	}
+	if parts := strings.SplitN(query, ":", 2); len(parts) == 2 && isHomeBayID(parts[1]) {
+		dock := m.FindDock(parts[0])
+		if dock == nil {
+			return "", "", fmt.Errorf("dock %q not found", parts[0])
+		}
+		if _, err := homePath(dock); err != nil {
+			return "", "", err
+		}
+		if existing := dock.FindBayByID(manifest.HomeBayID); existing != nil && existing.Type != manifest.BayTypeHome {
+			return "", "", fmt.Errorf("dock %q has a non-home bay with reserved ID %q", dock.Name, manifest.HomeBayID)
+		}
+		if existing := dock.FindBay(manifest.HomeBayID); existing != nil && existing.ID != manifest.HomeBayID {
+			return "", "", fmt.Errorf("dock %q has a non-home bay named %q; rename or close it before using home", dock.Name, manifest.HomeBayID)
+		}
+		return dock.Name, manifest.HomeBayID, nil
+	}
+	if isHomeBayID(query) {
+		var matches []string
+		for i := range m.Docks {
+			dock := &m.Docks[i]
+			if dock.Path != "" {
+				matches = append(matches, dock.Name)
+			}
+		}
+		switch len(matches) {
+		case 0:
+			return "", "", fmt.Errorf("no dock checkout found for home")
+		case 1:
+			return matches[0], manifest.HomeBayID, nil
+		default:
+			return "", "", fmt.Errorf("bay ID %q is ambiguous; found in docks: %s", manifest.HomeBayID, strings.Join(matches, ", "))
+		}
 	}
 	bay, dock, resolveErr := m.ResolveBay(query)
 	if resolveErr != nil {
@@ -966,6 +1046,9 @@ func BayDirTag(bay *manifest.Bay) string {
 func BayCompactLabel(bay *manifest.Bay) string {
 	if bay == nil {
 		return ""
+	}
+	if bay.Type == manifest.BayTypeHome || bay.ID == manifest.HomeBayID {
+		return manifest.HomeBayID
 	}
 	dirTag := BayDirTag(bay)
 	if dirTag == "" {
@@ -1414,6 +1497,9 @@ func (e *Engine) positionNewWindow(dockName, windowID, bayID string, m *manifest
 	if bayID == "" {
 		// New bay: goes after the last window of the last existing bay.
 		for i := len(dock.Bays) - 1; i >= 0; i-- {
+			if dock.Bays[i].Type == manifest.BayTypeHome {
+				continue
+			}
 			if id := lastWindowIDInBay(dock, dock.Bays[i].ID); id != "" {
 				afterID = id
 				break

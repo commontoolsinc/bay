@@ -273,7 +273,7 @@ func bayMetaCols(bay engine.BayInfo, showCounts, short bool) []metaCol {
 	}
 	cols[1] = metaField("br", bay.Branch, short)
 	// Show directory basename only when it differs from the bay name.
-	if bay.Path != "" {
+	if bay.Path != "" && bay.Type != string(manifest.BayTypeHome) {
 		dir := filepath.Base(bay.Path)
 		if dir != bay.Name {
 			cols[2] = metaField("dir", dir, short)

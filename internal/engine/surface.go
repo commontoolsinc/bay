@@ -161,7 +161,24 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 	}
 	bay := dock.FindBayByID(bayID)
 	if bay == nil {
-		return fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
+		if isHomeBayID(bayID) {
+			var home manifest.Bay
+			home, err = newHomeBay(dock)
+			if err != nil {
+				return err
+			}
+			bay = &home
+		} else {
+			return fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
+		}
+	}
+	if isHomeBayID(bay.ID) {
+		if bay.Type != manifest.BayTypeHome {
+			return fmt.Errorf("dock %q has a non-home bay with reserved ID %q", dockName, manifest.HomeBayID)
+		}
+		if err := e.ensureSessionForDock(dockName); err != nil {
+			return err
+		}
 	}
 
 	// Determine the layout group — find an existing tmux window to split into,
@@ -229,7 +246,11 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 			return fmt.Errorf("creating tmux window: %w", err)
 		}
 		e.cleanPlaceholders(dockName)
-		e.positionNewWindow(dockName, winID, bayID, nil)
+		if bay.Type == manifest.BayTypeHome && len(bay.Surfaces) == 0 {
+			_ = e.Tmux.MoveWindow(winID, 0)
+		} else {
+			e.positionNewWindow(dockName, winID, bayID, nil)
+		}
 
 		tmuxWindowID = winID
 		layoutGroup = nextLayoutGroup(bay)
@@ -275,8 +296,22 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 		}
 		bay := dock.FindBayByID(bayID)
 		if bay == nil {
-			rollbackSurface()
-			return fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
+			if isHomeBayID(bayID) {
+				var err error
+				bay, err = ensureHomeBay(dock)
+				if err != nil {
+					rollbackSurface()
+					return err
+				}
+			} else {
+				rollbackSurface()
+				return fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
+			}
+		} else if isHomeBayID(bayID) {
+			if _, err := ensureHomeBay(dock); err != nil {
+				rollbackSurface()
+				return err
+			}
 		}
 
 		surface.Name = uniqueSurfaceName(bay, name)
@@ -345,6 +380,8 @@ func (e *Engine) DockSurfaceClose(dockName, surfaceName string) error {
 func (e *Engine) SurfaceClose(dockName, bayID, surfaceName string, force bool) error {
 	var windowIDToKill, paneIDToKill string
 	bayEmpty := false
+	homeSurface := false
+	dismissDockUI := false
 
 	err := e.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)
@@ -355,6 +392,7 @@ func (e *Engine) SurfaceClose(dockName, bayID, surfaceName string, force bool) e
 		if bay == nil {
 			return fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
 		}
+		homeSurface = bay.Type == manifest.BayTypeHome
 		s := bay.FindSurface(surfaceName)
 		if s == nil {
 			return fmt.Errorf("surface %q not found in bay %q", surfaceName, bayID)
@@ -380,6 +418,10 @@ func (e *Engine) SurfaceClose(dockName, bayID, surfaceName string, force bool) e
 		}
 		bay.LastActive = time.Now().Unix()
 		bayEmpty = len(bay.Surfaces) == 0
+		if homeSurface && bayEmpty {
+			dismissDockUI = !dockHasSurfacesExcept(dock, bay.ID)
+			removeHomeBayIfEmpty(dock)
+		}
 		return nil
 	})
 	if err != nil {
@@ -390,15 +432,21 @@ func (e *Engine) SurfaceClose(dockName, bayID, surfaceName string, force bool) e
 	// mid-call if it's running in the pane being killed, but the
 	// user-visible state is already correct.
 	if windowIDToKill != "" {
-		e.ensurePlaceholderIfLastWindow(dockName, windowIDToKill)
+		e.ensureHomeIfLastWindow(dockName, windowIDToKill, homeSurface)
 		_ = e.Tmux.KillWindow(windowIDToKill)
 	} else if paneIDToKill != "" {
 		_ = e.Tmux.KillPane(paneIDToKill)
+	}
+	if dismissDockUI {
+		_ = e.Tmux.KillSession(dockName)
 	}
 
 	// Bay became empty. With force, close immediately; without,
 	// schedule the grace-windowed auto-close (see orphan-hygiene.md).
 	if bayEmpty {
+		if homeSurface {
+			return nil
+		}
 		if force {
 			if err := e.BayClose(dockName, bayID, force); err != nil {
 				return fmt.Errorf("surface closed, but bay %q not removed: %w", bayID, err)

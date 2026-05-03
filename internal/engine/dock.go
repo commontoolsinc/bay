@@ -288,7 +288,7 @@ func (e *Engine) DockClose(name string, force bool) error {
 				// did before bailing out — otherwise the bays we
 				// closed earlier in the loop would have orphan windows.
 				for _, id := range killedWindowIDs {
-					e.ensurePlaceholderIfLastWindow(name, id)
+					e.ensureHomeIfLastWindow(name, id, false)
 					_ = e.Tmux.KillWindow(id)
 				}
 				return fmt.Errorf("bay %q: %w", bayID, err)
@@ -394,7 +394,7 @@ func (e *Engine) buildBayInfo(bay *manifest.Bay, agent string, waitingWindows ma
 	}
 
 	// Compute dirty state from git.
-	if bay.Path != "" && statErr == nil {
+	if bay.Type == manifest.BayTypeWorktree && bay.Path != "" && statErr == nil {
 		if dirty, err := e.Git.IsDirty(bayPath); err == nil {
 			bayInfo.Dirty = dirty
 		}
@@ -452,7 +452,15 @@ func (e *Engine) BayInfoByName(dockName, bayID string) (*BayInfo, error) {
 	}
 	bay := dock.FindBayByID(bayID)
 	if bay == nil {
-		return nil, fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
+		if isHomeBayID(bayID) {
+			home, err := newHomeBay(dock)
+			if err != nil {
+				return nil, err
+			}
+			bay = &home
+		} else {
+			return nil, fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
+		}
 	}
 	agent := e.resolvedDockAgent(dockName, m)
 	waitingWindows, _ := e.Tmux.WaitingOrBellWindowIDs(dockName)

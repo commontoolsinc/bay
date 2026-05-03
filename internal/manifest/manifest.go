@@ -22,7 +22,11 @@ const CurrentVersion = 6
 const (
 	BayTypeWorktree BayType = "worktree"
 	BayTypeExternal BayType = "external"
+	BayTypeHome     BayType = "home"
 )
+
+// HomeBayID is the reserved bay ID for a dock's canonical checkout.
+const HomeBayID = "home"
 
 // SurfaceType constants — the semantic role of a surface.
 const (
@@ -129,6 +133,11 @@ func (b *Bay) IsMerged() bool {
 func IsBayID(s string) bool {
 	_, ok := parseBayIDNum(s)
 	return ok
+}
+
+// IsHomeBayID reports whether s is the reserved home bay ID.
+func IsHomeBayID(s string) bool {
+	return s == HomeBayID
 }
 
 // parseBayIDNum extracts the integer suffix from a bay ID.
@@ -711,6 +720,9 @@ func (d *Dock) FindBayByID(id string) *Bay {
 // is non-empty and already taken in the dock. Empty-Name bays are
 // always allowed; they'll display via their ID until a Name is set.
 func (d *Dock) AddBay(bay Bay) error {
+	if bay.ID != "" && d.FindBayByID(bay.ID) != nil {
+		return fmt.Errorf("bay ID %q already exists in dock %q", bay.ID, d.Name)
+	}
 	if bay.Name != "" && d.FindBay(bay.Name) != nil {
 		return fmt.Errorf("bay %q already exists in dock %q", bay.Name, d.Name)
 	}

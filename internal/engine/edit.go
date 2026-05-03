@@ -19,7 +19,25 @@ func (e *Engine) Edit(dockName, bayID string) (string, error) {
 		}
 		bay := dock.FindBayByID(bayID)
 		if bay == nil {
+			if isHomeBayID(bayID) {
+				home, homeErr := homePath(dock)
+				if homeErr != nil {
+					return homeErr
+				}
+				path = home
+				return nil
+			}
 			return fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
+		}
+		if bay.Type == manifest.BayTypeHome {
+			home, homeErr := homePath(dock)
+			if homeErr != nil {
+				return homeErr
+			}
+			path = home
+			bay.Path = path
+			bay.LastActive = time.Now().Unix()
+			return nil
 		}
 		bay.LastActive = time.Now().Unix()
 		path = bay.Path

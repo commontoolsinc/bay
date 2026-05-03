@@ -92,14 +92,14 @@ func TestDetectScope(t *testing.T) {
 	}
 }
 
-func TestBuildPaletteEntries_HasExpected24Entries(t *testing.T) {
+func TestBuildPaletteEntries_HasExpected29Entries(t *testing.T) {
 	// Pin the entry count + unique-ID invariant. The design locks in 24
-	// v1 entries; anything that adds or removes a command should touch
-	// this test intentionally.
+	// v1 entries plus 5 home entries; anything that adds or removes a
+	// command should touch this test intentionally.
 	env := testPaletteEnv()
 	entries := buildPaletteEntries(env, palette.ModeWindow)
 
-	const want = 24
+	const want = 29
 	if len(entries) != want {
 		t.Errorf("buildPaletteEntries returned %d entries; want %d", len(entries), want)
 	}
@@ -144,7 +144,7 @@ func TestBuildPaletteEntries_AgentPickEntriesSupportBoundRecents(t *testing.T) {
 	}
 	entries := buildPaletteEntries(env, palette.ModeWindow)
 
-	for _, id := range []string{"new-agent-pick", "new-bay-agent-pick"} {
+	for _, id := range []string{"new-agent-pick", "new-bay-agent-pick", "home-agent-pick"} {
 		entry := findEntry(t, entries, id)
 		if entry.ActionWithParam == nil {
 			t.Fatalf("%s ActionWithParam is nil; bound recents would reopen the picker", id)

@@ -70,6 +70,13 @@ has:
 |------|-----|--------------------------|
 | **Worktree** | git worktree | yes — creates and deletes it, safety checks on close |
 | **External** | any user path | no — bay remembers it for recovery |
+| **Home** | dock checkout | no — reserved ID `home`; bay never deletes `dock.path` |
+
+Every dock has a logical home target for its canonical checkout.
+`bay home` focuses the home shell, creating it if needed. Empty home is
+hidden from normal lists and navigation; visible home participates like
+other bays. `bay new home`, `bay rename home`, and
+`bay describe home` are rejected because `home` is reserved.
 
 ### Dirty and merged
 
@@ -335,6 +342,7 @@ qualified form: `id:surface-name` or `dock:id:surface-name`.
 | `bay close [id]` | required (no default; use `--done`/`--clean` for batch) |
 | `bay close --done` | bays not dirty or pending in current dock |
 | `bay close --clean` | all non-dirty bays in current dock |
+| `bay home` | focus/create checkout shell in current dock |
 | `bay pwd` | current bay context |
 | `bay surface new <kind> [name]` | current bay |
 | `bay surface ls` | surfaces in current bay |
@@ -344,6 +352,7 @@ qualified form: `id:surface-name` or `dock:id:surface-name`.
 | `bay dock ls [name]` | current dock from tmux session, or all docks |
 | `bay dock tree [name]` | current dock from tmux session |
 | `bay go [query]` | bays in current dock |
+| `bay go home` | focus/create checkout shell |
 | `bay surface go [query]` | surfaces in current bay |
 | `bay edit [id]` | current bay |
 | `bay shell [name]` | current bay, surface auto-named "shell" |
@@ -380,6 +389,9 @@ bay new auth-fix --agent                 # with dock's default agent
 bay new auth-fix --description "Login flow fixes"
 ```
 
+`home` is reserved for the dock checkout; use `bay home` instead of
+`bay new home`.
+
 #### `bay close [id] [--force] [--done] [--clean] [--dry-run]`
 
 Close a bay and all its surfaces. For worktree bays,
@@ -402,6 +414,7 @@ Batch flags (without an ID):
 bay close w1
 bay close self
 bay close self --force
+bay close home
 bay close --done
 bay close --done --dry-run
 bay close --clean
@@ -423,6 +436,10 @@ surfaces, sync runs `BayClose(force=false)` — clean + landed
 finalizes the teardown; dirty or unlanded clears `PendingCloseAt`
 to stop retries and leaves a permanent orphan for the user to
 resolve manually.
+
+`bay close home` closes home surfaces and leaves the dock checkout
+untouched. If home is the last live surface in the dock, closing it
+dismisses the tmux UI while keeping the dock registered.
 
 Direct `bay close <id>`, `--done`, `--clean`, and
 `bay sf close --force` close immediately (no grace).
@@ -650,6 +667,7 @@ Rename a surface. With one arg, renames the current surface.
 bay shell [name]       → shell as split pane (--window for new window)
 bay agent [type]       → agent as split pane (--window for new window)
 bay edit [bay]         → bay editor (--dock for all bays)
+bay home               → focus/create checkout shell
 bay restore            → bay surface restore (undo-close)
 bay ls                 → list bays in current dock
 bay tree               → list everything
@@ -657,7 +675,7 @@ bay pwd                → show current bay context
 bay recover            → reconstruct state after reboot
 ```
 
-#### `bay edit [bay] [--dock] [--editor CMD] [--window|--split h|v]`
+#### `bay edit [bay] [--bay BAY] [--dock] [--editor CMD] [--window|--split h|v]`
 
 Open the bay's root directory in an editor. Use the editor's
 file browser to navigate within the project. To edit individual files,
@@ -675,6 +693,7 @@ Editor resolution: `--editor` flag > `default_editor` in config >
 ```
 bay edit                    # open current bay (default)
 bay edit w1                 # open specific bay by ID
+bay edit --bay home         # open the dock checkout
 bay edit --editor vim       # use a specific editor this time
 bay edit --dock             # dock editor (all bays)
 bay edit --window           # terminal editor in new window
@@ -708,6 +727,21 @@ bay shell                   # shell as split pane
 bay shell logs              # named "logs"
 bay shell --window          # shell in new window
 bay shell logs --bay w1       # in a different bay
+bay shell --bay home          # shell in the dock checkout
+```
+
+#### `bay home`
+
+Focus the most recent home surface in the current dock. If home has no
+surfaces, create a shell at the dock checkout path. Empty home is hidden
+from `bay ls`, `bay tree`, `bay go`, and bay cycling.
+
+```
+bay home
+bay go home
+bay shell --bay home
+bay agent --bay home
+bay edit --bay home
 ```
 
 ### Global commands

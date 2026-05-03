@@ -146,9 +146,16 @@ might have a `dev` dock for one project and an `ops` dock for another.
 Each dock owns one local git checkout and has optional defaults for
 agent and terminal.
 
-When a dock is created, its tmux session starts with a placeholder `~`
-window. This disappears when you create your first bay and
-reappears when you close your last.
+Every dock also has a reserved **home** bay for the canonical checkout
+at `dock.path`. `bay home` focuses the checkout shell, creating it when
+needed. Empty home is hidden from `bay ls`, `bay tree`, and normal bay
+cycling; once it has a surface, it behaves like a bay for shells,
+agents, editors, navigation, and recovery. Bay never deletes
+`dock.path`.
+
+Empty dock sessions use a home shell instead of a placeholder `~`
+window. `bay new` auto-bootstrap still creates only the requested
+worktree bay.
 
 ```
 bay dock new dev --path ~/projects/myproject
@@ -162,7 +169,7 @@ bay dock close dev --force
 
 ### Bays
 
-A **bay** is a working directory with metadata. Two types:
+A **bay** is a working directory with metadata. Three types:
 
 - **Worktree** -- bay creates a git worktree from the dock's checkout.
   Bay owns the lifecycle: creation, safety checks on close, cleanup.
@@ -170,6 +177,8 @@ A **bay** is a working directory with metadata. Two types:
 - **External** -- bay points at an existing directory you own. Bay
   manages tmux surfaces and recovery, but does not create or delete
   the directory.
+- **Home** -- reserved ID `home`, pointing at the dock checkout. It is
+  materialized only while it has surfaces and is lifecycle-protected.
 
 Each bay has three identity concepts:
 
@@ -539,6 +548,8 @@ bay close <id> --force                   # skip safety checks (keeps unlanded br
 bay close --done                         # close bays not dirty or pending
 bay close --clean                        # close all non-dirty bays
 bay close --done --dry-run               # preview what --done would close
+bay home                                 # focus/create checkout shell
+bay close home                           # close home surfaces, never delete dock.path
 bay show [id]                            # detailed view (default: current)
 bay show [id] --json                     # machine-readable
 bay show [id] --short                    # one-line summary (id — name — branch — #PR)
@@ -554,6 +565,7 @@ bay ls                                   # list bays in current dock
 bay ls --json                            # machine-readable bay list
 bay tree                                 # full tree (bays + surfaces)
 bay go [query]                           # bay picker (intra-dock)
+bay go home                              # focus/create checkout shell
 bay go --waiting                         # filter to waiting bays
 bay go --next-waiting                    # cycle to next waiting bay
 bay next                                 # next bay in dock
@@ -599,9 +611,12 @@ Common surface shortcuts:
 ```
 bay shell [name]                # shell as split pane (default)
 bay shell [name] --window       # shell in new window
+bay shell --bay home            # shell in the dock checkout
 bay agent [type]                # agent as split pane
 bay agent --window              # agent in new window
+bay agent [type] --bay home     # agent in the dock checkout
 bay edit [id]                   # open bay in editor (default)
+bay edit --bay home             # open dock checkout in editor
 bay edit --editor vim           # use a specific editor this time
 bay edit --window               # editor in new window
 bay edit --dock                 # dock editor (all bays)
@@ -731,6 +746,12 @@ reminding you of the letters.
 | `Option+o b c` | New bay in current dock with Claude |
 | `Option+o b x` | New bay in current dock with Codex |
 | `Option+o b g` | New bay in current dock with Gemini |
+| `Option+o h Enter` | Go to home |
+| `Option+o h s` | Shell in home |
+| `Option+o h e` | Editor in home |
+| `Option+o h c` | Claude in home |
+| `Option+o h x` | Codex in home |
+| `Option+o h g` | Gemini in home |
 
 ### Pattern
 
