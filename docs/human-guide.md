@@ -171,10 +171,8 @@ A **bay** is a working directory with metadata. Three types:
   manages tmux surfaces and recovery, but does not create or delete
   the directory.
 - **Home** -- a reserved per-dock pseudo-bay backed by the dock's
-  canonical checkout (`dock.path`). Phase 1 reserves `home` as a
-  target only; shells, agents, editors, navigation, palette entries,
-  and keybindings arrive in later phases. Bay never deletes the
-  canonical checkout.
+  canonical checkout (`dock.path`). Bay never deletes the canonical
+  checkout. See [Home bay](#home-bay) below.
 
 Each bay has three identity concepts:
 
@@ -222,6 +220,42 @@ In `bay ls` / `bay tree`, only the first line is shown and its length
 adapts to terminal width (floored at 15 characters, capped at 80). Pipe
 the output or set `COLUMNS=200 bay tree` to force a wider layout; piped
 output always uses the full 80-character cap.
+
+### Home bay
+
+Every dock has a reserved per-dock pseudo-bay called `home` rooted at
+the dock's checkout. It exists so the canonical checkout is reachable
+through bay alongside worktree bays, without the worktree-bay
+disposability rules.
+
+```
+bay home                          # focus or create a home shell
+bay shell --bay home              # shell surface in home
+bay agent --bay home              # dock default agent in home
+bay agent codex --bay home        # specific agent in home
+bay surface new edit --bay home   # editor on the dock checkout
+bay edit --bay home               # same, top-level shortcut
+bay go home                       # focus or materialize home
+```
+
+`bay home` from inside a registered dock focuses the most recent home
+surface, or creates a shell at the dock checkout when none exists. The
+first home window lands at tmux tab index 0 so the dock checkout sits
+at the leftmost tab; user re-orders are respected after that.
+
+Empty home is hidden: it doesn't appear in `bay ls`, `bay tree`, `bay
+go`, or next/previous bay cycling. It only shows up after it has at
+least one surface. When it has surfaces it behaves like any other bay
+in those views.
+
+`bay dock new` creates a home shell instead of a `~` placeholder, so
+the new dock's tmux session opens in a useful shell at the checkout.
+Closing the last non-home surface in a dock also creates a home shell
+to keep the session alive.
+
+Home is dock-owned: `bay close` never deletes the dock checkout, and
+worktree-only commands (`bay rename home`, `bay describe home`, `bay
+update home`, `bay clean-review home`) reject the home handle.
 
 ### Surfaces
 
@@ -562,8 +596,10 @@ bay tree                                 # full tree (bays + surfaces)
 bay go [query]                           # bay picker (intra-dock)
 bay go --waiting                         # filter to waiting bays
 bay go --next-waiting                    # cycle to next waiting bay
+bay go home                              # focus or materialize home
 bay next                                 # next bay in dock
 bay prev                                 # prev bay in dock
+bay home                                 # focus or create the dock-checkout shell
 ```
 
 ### Surface management

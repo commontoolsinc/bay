@@ -144,32 +144,164 @@ func TestResolveBay_HomeWithDockPrefix(t *testing.T) {
 	}
 }
 
-func TestSurfaceAdd_RejectsHomeUntilSurfacePhase(t *testing.T) {
+func TestSurfaceAdd_HomeMaterializesBayAtDockPath(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	err := eng.SurfaceAdd(SurfaceAddOptions{
+	if err := eng.SurfaceAdd(SurfaceAddOptions{
 		DockName: "labs",
 		BayName:  manifest.HomeBayID,
 		Type:     manifest.SurfaceTypeShell,
 		Name:     "shell",
-	})
-	if err == nil || !strings.Contains(err.Error(), "not available yet") {
-		t.Fatalf("SurfaceAdd(home) error = %v", err)
+	}); err != nil {
+		t.Fatalf("SurfaceAdd(home): %v", err)
 	}
 
-	mockTmux := eng.Tmux.(*tmux.Mock)
-	for _, call := range mockTmux.Calls {
-		if call.Method == "NewWindow" || call.Method == "SplitWindow" {
-			t.Fatalf("SurfaceAdd(home) should not create tmux surfaces; saw %s", call.Method)
-		}
+	m, err := eng.LoadManifest()
+	if err != nil {
+		t.Fatalf("LoadManifest: %v", err)
+	}
+	dock := m.FindDock("labs")
+	if dock == nil {
+		t.Fatal("missing labs dock")
+	}
+	home := dock.FindBayByID(manifest.HomeBayID)
+	if home == nil {
+		t.Fatal("home bay not persisted after first surface")
+	}
+	if home.Type != manifest.BayTypeHome {
+		t.Errorf("home.Type = %q, want %q", home.Type, manifest.BayTypeHome)
+	}
+	if home.Path != dock.Path {
+		t.Errorf("home.Path = %q, want %q (dock.Path)", home.Path, dock.Path)
+	}
+	if home.Worktree != nil {
+		t.Errorf("home.Worktree = %+v, want nil", home.Worktree)
+	}
+	if got := len(home.Surfaces); got != 1 {
+		t.Fatalf("home surfaces = %d, want 1", got)
+	}
+	if home.Surfaces[0].Name != "shell" || home.Surfaces[0].Type != manifest.SurfaceTypeShell {
+		t.Errorf("home surface = %+v, want shell/shell", home.Surfaces[0])
 	}
 }
 
-func TestEdit_RejectsHomeUntilSurfacePhase(t *testing.T) {
+func TestSurfaceAdd_HomeFirstWindowGoesToTabIndex0(t *testing.T) {
+	eng, _ := testEngine(t)
+	mockTmux := eng.Tmux.(*tmux.Mock)
+
+	if err := eng.SurfaceAdd(SurfaceAddOptions{
+		DockName: "labs",
+		BayName:  manifest.HomeBayID,
+		Type:     manifest.SurfaceTypeShell,
+		Name:     "shell",
+	}); err != nil {
+		t.Fatalf("SurfaceAdd(home): %v", err)
+	}
+
+	moved := false
+	for _, call := range mockTmux.Calls {
+		if call.Method == "MoveWindow" && len(call.Args) >= 2 && call.Args[1] == "0" {
+			moved = true
+		}
+	}
+	if !moved {
+		t.Error("first home surface should be moved to tab index 0")
+	}
+}
+
+func TestSurfaceClose_LastHomeSurfaceRemovesPersistedHome(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	_, err := eng.Edit("labs", manifest.HomeBayID)
-	if err == nil || !strings.Contains(err.Error(), "not available yet") {
-		t.Fatalf("Edit(home) error = %v", err)
+	if err := eng.SurfaceAdd(SurfaceAddOptions{
+		DockName: "labs",
+		BayName:  manifest.HomeBayID,
+		Type:     manifest.SurfaceTypeShell,
+		Name:     "shell",
+	}); err != nil {
+		t.Fatalf("SurfaceAdd(home): %v", err)
+	}
+
+	if err := eng.SurfaceClose("labs", manifest.HomeBayID, "shell", false); err != nil {
+		t.Fatalf("SurfaceClose: %v", err)
+	}
+
+	m, err := eng.LoadManifest()
+	if err != nil {
+		t.Fatalf("LoadManifest: %v", err)
+	}
+	dock := m.FindDock("labs")
+	if dock == nil {
+		t.Fatal("missing labs dock")
+	}
+	if home := dock.FindBayByID(manifest.HomeBayID); home != nil {
+		t.Errorf("empty home should not be persisted; got %+v", home)
+	}
+}
+
+func TestEdit_HomeReturnsDockPath(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	m, err := eng.LoadManifest()
+	if err != nil {
+		t.Fatalf("LoadManifest: %v", err)
+	}
+	dockPath := m.FindDock("labs").Path
+
+	got, err := eng.Edit("labs", manifest.HomeBayID)
+	if err != nil {
+		t.Fatalf("Edit(home): %v", err)
+	}
+	if got != dockPath {
+		t.Errorf("Edit(home) = %q, want %q (dock.Path)", got, dockPath)
+	}
+}
+
+func TestHome_FocusesExistingSurface(t *testing.T) {
+	eng, _ := testEngine(t)
+	mockTmux := eng.Tmux.(*tmux.Mock)
+
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home(labs) initial: %v", err)
+	}
+
+	m, _ := eng.LoadManifest()
+	home := m.FindDock("labs").FindBayByID(manifest.HomeBayID)
+	if home == nil || len(home.Surfaces) != 1 {
+		t.Fatalf("home not materialized; bay = %+v", home)
+	}
+	wantWindow := home.Surfaces[0].Tmux.WindowID
+
+	mockTmux.Calls = nil
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home(labs) follow-up: %v", err)
+	}
+
+	// Second invocation should focus, not create.
+	for _, call := range mockTmux.Calls {
+		if call.Method == "NewWindow" {
+			t.Error("Home() with existing surface created a new window")
+		}
+	}
+	selected := false
+	for _, call := range mockTmux.Calls {
+		if call.Method == "SelectWindow" && len(call.Args) > 0 && call.Args[0] == wantWindow {
+			selected = true
+		}
+	}
+	if !selected {
+		t.Errorf("Home() did not select existing home window %s", wantWindow)
+	}
+}
+
+func TestHome_NoCheckoutErrors(t *testing.T) {
+	eng, _ := testEngine(t)
+	if err := eng.withManifest(func(m *manifest.Manifest) error {
+		m.FindDock("labs").Path = ""
+		return nil
+	}); err != nil {
+		t.Fatalf("clearing dock path: %v", err)
+	}
+	if err := eng.Home("labs"); err == nil {
+		t.Fatal("Home with no checkout should error")
 	}
 }

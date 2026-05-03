@@ -393,8 +393,10 @@ func (e *Engine) buildBayInfo(bay *manifest.Bay, agent string, waitingWindows ma
 		bayInfo.SyncStatus = manifest.SyncStatusMissing
 	}
 
-	// Compute dirty state from git.
-	if bay.Path != "" && statErr == nil {
+	// Compute dirty state from git. Skipped for home — home represents
+	// the dock checkout, not a worktree, and dirtiness on the canonical
+	// checkout isn't a bay-level concern.
+	if bay.Type == manifest.BayTypeWorktree && bay.Path != "" && statErr == nil {
 		if dirty, err := e.Git.IsDirty(bayPath); err == nil {
 			bayInfo.Dirty = dirty
 		}

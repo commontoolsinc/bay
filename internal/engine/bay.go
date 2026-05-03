@@ -585,7 +585,7 @@ func (e *Engine) BayClose(dockName, bayID string, force bool) error {
 	// it's running in one of these panes, but the user-visible state is
 	// already correct.
 	for _, id := range windowIDs {
-		e.ensurePlaceholderIfLastWindow(dockName, id)
+		e.ensureHomeOrPlaceholderIfLastWindow(dockName, id, false)
 		_ = e.Tmux.KillWindow(id)
 	}
 
@@ -647,6 +647,11 @@ func (e *Engine) bayCloseBatch(dockName string, force, dryRun bool, skip baySkip
 		}
 		for j := range d.Bays {
 			bay := &d.Bays[j]
+			// Home is dock-owned and outside batch close — `bay close --all`
+			// will eventually close home as its own step (see home-bay design).
+			if bay.Type == manifest.BayTypeHome {
+				continue
+			}
 			if excludeSet[bay.ID] {
 				continue
 			}
@@ -710,7 +715,7 @@ func (e *Engine) bayCloseBatch(dockName string, force, dryRun bool, skip baySkip
 	// closed-bay's manifest entry is already persisted.
 	for _, p := range pending {
 		for _, id := range p.windowIDs {
-			e.ensurePlaceholderIfLastWindow(p.dock, id)
+			e.ensureHomeOrPlaceholderIfLastWindow(p.dock, id, false)
 			_ = e.Tmux.KillWindow(id)
 		}
 	}
@@ -1431,8 +1436,13 @@ func (e *Engine) positionNewWindow(dockName, windowID, bayID string, m *manifest
 
 	var afterID string
 	if bayID == "" {
-		// New bay: goes after the last window of the last existing bay.
+		// New bay: goes after the last window of the last existing
+		// non-home bay. Home sits at index 0; new bays should land
+		// after worktree/external bays, not adjacent to home.
 		for i := len(dock.Bays) - 1; i >= 0; i-- {
+			if dock.Bays[i].Type == manifest.BayTypeHome {
+				continue
+			}
 			if id := lastWindowIDInBay(dock, dock.Bays[i].ID); id != "" {
 				afterID = id
 				break

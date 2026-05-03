@@ -1016,6 +1016,12 @@ func bayGo(eng *engine.Engine, args []string, waiting, nextWaiting bool) error {
 		return fmt.Errorf("bay go requires tmux — use bay ls to see bays")
 	}
 
+	// Direct `bay go home`: route to Home so an empty home bay can be
+	// materialized rather than coming back as no-match.
+	if len(args) == 1 && manifest.IsReservedBayID(args[0]) && !waiting && !nextWaiting {
+		return eng.Home(currentSession)
+	}
+
 	m, err := eng.LoadManifest()
 	if err != nil {
 		return err

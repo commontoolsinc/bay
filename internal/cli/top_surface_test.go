@@ -40,20 +40,29 @@ func TestRunSurfaceNew_Shell(t *testing.T) {
 	}
 }
 
-func TestRunSurfaceNew_RejectsHomeBeforeCreatingSurface(t *testing.T) {
-	eng, mockTmux, _, _ := testNavEngine(t)
-	mockTmux.Calls = nil
+func TestRunSurfaceNew_HomeShellMaterializesHomeBay(t *testing.T) {
+	eng, _, _, _ := testNavEngine(t)
 
 	err := runSurfaceNew(eng, "labs", manifest.HomeBayID, surfaceNewOpts{
-		Type: manifest.SurfaceTypeAgent,
+		Type:     manifest.SurfaceTypeShell,
+		SplitDir: "",
 	})
-	if err == nil || !strings.Contains(err.Error(), "not available yet") {
-		t.Fatalf("runSurfaceNew(home) error = %v, want home surface-phase rejection", err)
+	if err != nil {
+		t.Fatalf("runSurfaceNew(home, shell): %v", err)
 	}
-	for _, call := range mockTmux.Calls {
-		if call.Method == "NewWindow" || call.Method == "SplitWindow" {
-			t.Fatalf("runSurfaceNew(home) should not create tmux surfaces; saw %s", call.Method)
-		}
+
+	bay, err := eng.BayShow("labs", manifest.HomeBayID)
+	if err != nil {
+		t.Fatalf("BayShow(home): %v", err)
+	}
+	if bay.Type != manifest.BayTypeHome {
+		t.Errorf("home bay type = %q, want %q", bay.Type, manifest.BayTypeHome)
+	}
+	if got := len(bay.Surfaces); got != 1 {
+		t.Fatalf("home surfaces = %d, want 1", got)
+	}
+	if bay.Surfaces[0].Type != manifest.SurfaceTypeShell {
+		t.Errorf("home surface type = %q, want shell", bay.Surfaces[0].Type)
 	}
 }
 

@@ -10,9 +10,21 @@ import (
 // Edit returns the bay path for opening in an editor and bumps
 // LastActive so the monitor's activity gate keeps fetching merge data
 // for this bay's repo.
+//
+// For the reserved home target, returns dock.Path without persisting a
+// home Bay — the editor surface itself is what materializes home (via
+// SurfaceAdd called by runEditCreate).
 func (e *Engine) Edit(dockName, bayID string) (string, error) {
 	if manifest.IsReservedBayID(bayID) {
-		return "", fmt.Errorf("home editor surfaces are not available yet; home is reserved for a later phase")
+		m, err := e.LoadManifest()
+		if err != nil {
+			return "", err
+		}
+		dock := m.FindDock(dockName)
+		if dock == nil {
+			return "", fmt.Errorf("unknown dock %q", dockName)
+		}
+		return homePath(dock)
 	}
 	var path string
 	err := e.withManifest(func(m *manifest.Manifest) error {

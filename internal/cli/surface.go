@@ -101,9 +101,6 @@ func runSurfaceNew(eng *engine.Engine, dockName, bayName string, opts surfaceNew
 	if err := validateSurfaceName(opts.Name); err != nil {
 		return err
 	}
-	if manifest.IsReservedBayID(bayName) {
-		return fmt.Errorf("home surfaces are not available yet; home is reserved for a later phase")
-	}
 
 	agent := opts.Agent
 	if opts.Type == manifest.SurfaceTypeAgent && agent == "" {

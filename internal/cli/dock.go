@@ -93,6 +93,12 @@ func newDockNewCmd() *cobra.Command {
 			if initErr := eng.DockInit(name); initErr != nil {
 				fmt.Fprintf(os.Stderr, "Warning: dock checkout setup failed: %v\n", initErr)
 			}
+			// Materialize a home shell so the empty dock has a useful
+			// surface at dock.Path instead of a `~` placeholder.
+			// Best-effort — failing here doesn't undo the dock creation.
+			if homeErr := eng.Home(name); homeErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: home shell not created: %v\n", homeErr)
+			}
 			fmt.Printf("Dock %q created.\n", name)
 			return nil
 		},

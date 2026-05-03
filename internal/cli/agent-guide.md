@@ -72,10 +72,30 @@ has:
 | **External** | any user path | no — bay remembers it for recovery |
 | **Home** | dock checkout (`dock.path`) | no — bay never deletes the canonical checkout |
 
-`home` is a reserved per-dock pseudo-bay. Phase 1 only reserves the
-target and resolver shape; shells, agents, editors, navigation,
-palette entries, and keybindings are deferred to later home-bay
-phases. Normal bays cannot use `home` as an ID or display name.
+`home` is a reserved per-dock pseudo-bay rooted at the dock's
+checkout. It is addressable wherever a bay target is accepted:
+
+```
+bay home                       # focus or create a home shell
+bay shell --bay home           # add a shell surface in home
+bay agent --bay home           # dock default agent in home
+bay agent codex --bay home     # specific agent in home
+bay surface new edit --bay home  # editor on the dock checkout
+bay edit --bay home            # same, top-level edit shortcut
+bay go home                    # focus or materialize home
+```
+
+Empty home is hidden from `bay ls`, `bay tree`, `bay go`, and
+next/previous bay cycling — it appears only after it has at least one
+surface. Direct commands (`bay home`, `bay go home`, `bay shell --bay
+home`, palette Home actions) materialize an empty home on demand.
+`bay close home` is currently a no-op; Phase 4 will close all home
+surfaces.
+
+Normal bays cannot use `home` as an ID or display name. `bay new`,
+`bay rename`, `bay describe`, `bay update`, and `bay clean-review`
+reject the home handle. Closing a home surface never touches
+`dock.path`.
 
 ### Dirty and merged
 
@@ -579,6 +599,16 @@ intended for human use. Agents should invoke the underlying commands
 #### `bay next` / `bay prev`
 
 Cycle to the next or previous bay within the current dock.
+
+#### `bay home`
+
+Focus the most recent home surface in the current dock. If home has
+no surfaces yet, create a shell at the dock checkout (`dock.path`).
+The first home window is placed at tmux tab index 0.
+
+Use `bay go home` from any dock context for the same behavior, or
+`bay shell --bay home` / `bay agent --bay home` to add specific home
+surfaces directly.
 
 ### Surface commands
 

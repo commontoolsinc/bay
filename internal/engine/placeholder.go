@@ -214,25 +214,55 @@ func (e *Engine) cleanPlaceholders(session string) {
 // ensurePlaceholderIfLastWindow checks if killing windowID would leave the
 // session empty, and if so, creates a placeholder first.
 func (e *Engine) ensurePlaceholderIfLastWindow(session, windowID string) {
-	windows, err := e.Tmux.ListWindows(session)
-	if err != nil {
+	if !e.lastRealWindow(session, windowID) {
 		return
 	}
-	// Count non-placeholder windows (excluding the one about to be killed)
-	remaining := 0
+	e.createPlaceholderWindow(session)
+}
+
+// ensureHomeOrPlaceholderIfLastWindow is like ensurePlaceholderIfLastWindow
+// but creates a home shell (when the dock has a checkout) instead of a `~`
+// placeholder. closingHome means the surface being killed is itself a home
+// surface — in that case we fall back to a `~` placeholder rather than
+// rematerializing home behind the user.
+func (e *Engine) ensureHomeOrPlaceholderIfLastWindow(session, windowID string, closingHome bool) {
+	if !e.lastRealWindow(session, windowID) {
+		return
+	}
+	if !closingHome {
+		m, err := e.LoadManifest()
+		if err == nil {
+			if dock := m.FindDock(session); dock != nil && dock.Path != "" {
+				if err := e.addHomeShell(session); err == nil {
+					return
+				}
+			}
+		}
+	}
+	e.createPlaceholderWindow(session)
+}
+
+// lastRealWindow reports whether killing windowID would leave session
+// without any non-placeholder windows.
+func (e *Engine) lastRealWindow(session, windowID string) bool {
+	windows, err := e.Tmux.ListWindows(session)
+	if err != nil {
+		return false
+	}
 	for _, win := range windows {
 		if win.ID == windowID {
 			continue
 		}
 		val, _ := e.Tmux.GetWindowOption(win.ID, "@bay-placeholder")
 		if val != "1" {
-			remaining++
+			return false
 		}
 	}
-	if remaining > 0 {
-		return // other real windows exist
-	}
-	// This is the last real window — create a placeholder to keep the session alive
+	return true
+}
+
+// createPlaceholderWindow creates a new `~` placeholder window in session.
+func (e *Engine) createPlaceholderWindow(session string) {
 	phID, err := e.Tmux.NewWindow(session, placeholderName, "")
 	if err != nil {
 		return
