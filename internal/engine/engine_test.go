@@ -92,6 +92,7 @@ func TestValidateBayName(t *testing.T) {
 		{"w1", true},
 		{"w42", true},
 		{"w999", true},
+		{"home", true},
 
 		// Looks ID-shaped but isn't canonical — accepted (also accepted
 		// by ValidateName).
@@ -130,6 +131,8 @@ func TestAbbreviateBranch_AvoidsReservedPattern(t *testing.T) {
 		{"fix/w1", branchAbbrevReservedPrefix + "w1"},
 		{"feature/w42", branchAbbrevReservedPrefix + "w42"},
 		{"w3", branchAbbrevReservedPrefix + "w3"},
+		{"home", branchAbbrevReservedPrefix + "home"},
+		{"feature/home", branchAbbrevReservedPrefix + "home"},
 		{"fix/auth", "auth"}, // unaffected
 	}
 	for _, tt := range tests {

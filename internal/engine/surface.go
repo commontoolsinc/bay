@@ -150,6 +150,9 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 	agent := opts.Agent
 	cmd := opts.Command
 	splitDir := opts.SplitDir
+	if manifest.IsReservedBayID(bayID) {
+		return fmt.Errorf("home surfaces are not available yet; home is reserved for a later phase")
+	}
 	m, err := e.LoadManifest()
 	if err != nil {
 		return err

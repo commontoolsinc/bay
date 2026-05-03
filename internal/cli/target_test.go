@@ -360,6 +360,34 @@ func TestResolveBayArg_BareAmbiguousWhenCurrentDockLacksIt(t *testing.T) {
 	}
 }
 
+func TestResolveBayArg_BareHomeUsesCurrentDock(t *testing.T) {
+	eng := bayArgFixture(t)
+	chdirTo(t, eng, "labs", "w2")
+
+	dock, bay, err := resolveBayArg(eng, manifest.HomeBayID, "")
+	if err != nil {
+		t.Fatalf("resolveBayArg(home): %v", err)
+	}
+	if dock != "labs" || bay != manifest.HomeBayID {
+		t.Fatalf("got (%q, %q), want (labs, home)", dock, bay)
+	}
+}
+
+func TestResolveBayArg_BareHomeWithoutContextFailsClearly(t *testing.T) {
+	eng := bayArgFixture(t)
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	_, _, err := resolveBayArg(eng, manifest.HomeBayID, "")
+	if err == nil || !strings.Contains(err.Error(), "dock context") {
+		t.Fatalf("resolveBayArg(home) error = %v, want dock-context guidance", err)
+	}
+}
+
 // --- resolveSurfaceArgOrSelf ---
 
 // selfFixture builds a bay with two surfaces and pins the tmux mock to

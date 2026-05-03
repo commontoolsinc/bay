@@ -11,6 +11,9 @@ import (
 // LastActive so the monitor's activity gate keeps fetching merge data
 // for this bay's repo.
 func (e *Engine) Edit(dockName, bayID string) (string, error) {
+	if manifest.IsReservedBayID(bayID) {
+		return "", fmt.Errorf("home editor surfaces are not available yet; home is reserved for a later phase")
+	}
 	var path string
 	err := e.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)

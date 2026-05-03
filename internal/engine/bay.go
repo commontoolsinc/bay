@@ -45,12 +45,16 @@ func (e *Engine) BayNew(opts BayNewOptions) (*manifest.Bay, error) {
 	var branchExists bool
 
 	nameExplicit := opts.Name != ""
+	if manifest.IsReservedBayID(opts.Name) {
+		return nil, fmt.Errorf("home is reserved for the dock checkout; use `bay home`")
+	}
 	displayName := opts.Name
 	if displayName == "" && opts.Branch != "" {
 		displayName = uniqueBayName(dock, nil, abbreviateBranch(opts.Branch))
 	}
 	// Validate explicit/branch-derived name early. Names matching the
-	// reserved ID pattern (^w[1-9]\d*$) are rejected here.
+	// reserved ID pattern (^w[1-9]\d*$) or reserved home handle are
+	// rejected here.
 	if displayName != "" {
 		if err := ValidateBayName(displayName); err != nil {
 			return nil, err
@@ -526,6 +530,9 @@ func (e *Engine) CheckDirtyChanges(bay *manifest.Bay) (dirty bool, blocking bool
 // exactly matches a durable ref. It returns the matched ref, or "" when the
 // worktree was already clean.
 func (e *Engine) BayCleanReview(dockName, bayID string) (string, error) {
+	if manifest.IsReservedBayID(bayID) {
+		return "", fmt.Errorf("home is reserved; clean-review does not apply to the home pseudo-bay")
+	}
 	m, err := e.LoadManifest()
 	if err != nil {
 		return "", err
@@ -567,6 +574,9 @@ func (e *Engine) BayCleanReview(dockName, bayID string) (string, error) {
 }
 
 func (e *Engine) BayClose(dockName, bayID string, force bool) error {
+	if manifest.IsReservedBayID(bayID) {
+		return nil
+	}
 	windowIDs, err := e.closeBayState(dockName, bayID, force)
 	if err != nil {
 		return err
@@ -709,6 +719,9 @@ func (e *Engine) bayCloseBatch(dockName string, force, dryRun bool, skip baySkip
 
 // BayUpdate updates bay metadata (branch, PR).
 func (e *Engine) BayUpdate(dockName, bayID string, branch, pr *string) error {
+	if manifest.IsReservedBayID(bayID) {
+		return fmt.Errorf("home is reserved; branch/PR metadata does not apply to the home pseudo-bay")
+	}
 	return e.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)
 		if dock == nil {
@@ -745,6 +758,9 @@ func (e *Engine) BayUpdate(dockName, bayID string, branch, pr *string) error {
 // Descriptions appear in the bay picker and in ls/tree output; they
 // have no effect on tmux tab names, which stay short by design.
 func (e *Engine) BayDescribe(dockName, bayID, desc string) error {
+	if manifest.IsReservedBayID(bayID) {
+		return fmt.Errorf("home is reserved; describe is not supported on the home pseudo-bay")
+	}
 	desc = strings.TrimSpace(desc)
 	if err := ValidateDescription(desc); err != nil {
 		return err
@@ -766,6 +782,9 @@ func (e *Engine) BayDescribe(dockName, bayID, desc string) error {
 
 // BayRename renames a bay.
 func (e *Engine) BayRename(dockName, bayID, newName string) error {
+	if manifest.IsReservedBayID(bayID) {
+		return fmt.Errorf("home is reserved; rename is not supported on the home pseudo-bay")
+	}
 	if err := ValidateBayName(newName); err != nil {
 		return err
 	}

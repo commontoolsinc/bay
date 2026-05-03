@@ -40,6 +40,23 @@ func TestRunSurfaceNew_Shell(t *testing.T) {
 	}
 }
 
+func TestRunSurfaceNew_RejectsHomeBeforeCreatingSurface(t *testing.T) {
+	eng, mockTmux, _, _ := testNavEngine(t)
+	mockTmux.Calls = nil
+
+	err := runSurfaceNew(eng, "labs", manifest.HomeBayID, surfaceNewOpts{
+		Type: manifest.SurfaceTypeAgent,
+	})
+	if err == nil || !strings.Contains(err.Error(), "not available yet") {
+		t.Fatalf("runSurfaceNew(home) error = %v, want home surface-phase rejection", err)
+	}
+	for _, call := range mockTmux.Calls {
+		if call.Method == "NewWindow" || call.Method == "SplitWindow" {
+			t.Fatalf("runSurfaceNew(home) should not create tmux surfaces; saw %s", call.Method)
+		}
+	}
+}
+
 func TestRunSurfaceNew_Agent(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
 	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {

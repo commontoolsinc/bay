@@ -475,6 +475,50 @@ func TestAddBay_DuplicateName(t *testing.T) {
 	}
 }
 
+func TestAddBay_RejectsReservedHomeForNormalBays(t *testing.T) {
+	d := &Dock{Name: "labs"}
+	cases := []Bay{
+		{ID: HomeBayID, Type: BayTypeWorktree, Path: "/repo-worktrees/w1"},
+		{Name: HomeBayID, Type: BayTypeExternal, Path: "/projects/external"},
+	}
+	for _, b := range cases {
+		if err := d.AddBay(b); err == nil {
+			t.Errorf("AddBay(%+v) = nil, want reserved-home error", b)
+		}
+	}
+}
+
+func TestAddBay_AllowsHomeShape(t *testing.T) {
+	d := &Dock{Name: "labs", Path: "/projects/labs"}
+	err := d.AddBay(Bay{
+		ID:   HomeBayID,
+		Name: HomeBayID,
+		Type: BayTypeHome,
+		Path: "/projects/labs",
+	})
+	if err != nil {
+		t.Fatalf("AddBay(home) error = %v", err)
+	}
+	if got := d.FindBayByID(HomeBayID); got == nil || got.Type != BayTypeHome {
+		t.Fatalf("home bay not inserted correctly: %+v", got)
+	}
+}
+
+func TestAddBay_RejectsMalformedHomeShape(t *testing.T) {
+	d := &Dock{Name: "labs", Path: "/projects/labs"}
+	cases := []Bay{
+		{ID: "", Name: HomeBayID, Type: BayTypeHome, Path: "/projects/labs"},
+		{ID: HomeBayID, Name: "checkout", Type: BayTypeHome, Path: "/projects/labs"},
+		{ID: HomeBayID, Name: HomeBayID, Type: BayTypeHome, Path: "/projects/other"},
+		{ID: HomeBayID, Name: HomeBayID, Type: BayTypeHome, Path: "/projects/labs", Worktree: &WorktreeAttrs{}},
+	}
+	for _, b := range cases {
+		if err := d.AddBay(b); err == nil {
+			t.Errorf("AddBay(%+v) = nil, want malformed-home error", b)
+		}
+	}
+}
+
 func TestRemoveBay(t *testing.T) {
 	d := &Dock{
 		Name: "labs",
@@ -730,6 +774,159 @@ func TestResolveBay_NotFound(t *testing.T) {
 	_, _, err := m.ResolveBay("nonexistent")
 	if err == nil {
 		t.Fatal("expected error for not found")
+	}
+}
+
+func TestIsReservedBayID(t *testing.T) {
+	cases := []struct {
+		s    string
+		want bool
+	}{
+		{HomeBayID, true},
+		{"Home", false},
+		{"home1", false},
+		{"w1", false},
+		{"", false},
+	}
+	for _, c := range cases {
+		if got := IsReservedBayID(c.s); got != c.want {
+			t.Errorf("IsReservedBayID(%q) = %v, want %v", c.s, got, c.want)
+		}
+	}
+}
+
+func TestResolveBay_HomeWithDockPrefixSynthesizesEmpty(t *testing.T) {
+	m := &Manifest{
+		Docks: []Dock{
+			{Name: "labs", Path: "/projects/labs"},
+		},
+	}
+
+	bay, dock, err := m.ResolveBay("labs:home")
+	if err != nil {
+		t.Fatalf("ResolveBay(labs:home): %v", err)
+	}
+	if dock == nil || dock.Name != "labs" {
+		t.Fatalf("dock = %+v, want labs", dock)
+	}
+	if bay.ID != HomeBayID || bay.Name != HomeBayID {
+		t.Errorf("ID/Name = %q/%q, want home/home", bay.ID, bay.Name)
+	}
+	if bay.Type != BayTypeHome {
+		t.Errorf("Type = %q, want %q", bay.Type, BayTypeHome)
+	}
+	if bay.Path != "/projects/labs" {
+		t.Errorf("Path = %q, want /projects/labs", bay.Path)
+	}
+	if bay.Worktree != nil {
+		t.Errorf("Worktree = %+v, want nil", bay.Worktree)
+	}
+	if bay.Surfaces == nil {
+		t.Error("Surfaces is nil, want non-nil empty slice")
+	}
+}
+
+func TestSynthesizeHomeBay_ShapeIsPhase2Compatible(t *testing.T) {
+	d := &Dock{Name: "labs", Path: "/projects/labs"}
+
+	bay := SynthesizeHomeBay(d)
+	if bay.ID != HomeBayID || bay.Name != HomeBayID {
+		t.Errorf("ID/Name = %q/%q, want home/home", bay.ID, bay.Name)
+	}
+	if bay.Type != BayTypeHome {
+		t.Errorf("Type = %q, want %q", bay.Type, BayTypeHome)
+	}
+	if bay.Path != "/projects/labs" {
+		t.Errorf("Path = %q, want /projects/labs", bay.Path)
+	}
+	if bay.Worktree != nil {
+		t.Errorf("Worktree = %+v, want nil", bay.Worktree)
+	}
+	if bay.Surfaces == nil || len(bay.Surfaces) != 0 {
+		t.Errorf("Surfaces = %+v, want non-nil empty slice", bay.Surfaces)
+	}
+}
+
+func TestResolveBay_HomePersistedWins(t *testing.T) {
+	m := &Manifest{
+		Docks: []Dock{
+			{
+				Name: "labs",
+				Path: "/projects/labs",
+				Bays: []Bay{
+					{
+						ID:   HomeBayID,
+						Name: HomeBayID,
+						Type: BayTypeHome,
+						Path: "/projects/labs",
+						Surfaces: []Surface{
+							{ID: 7, Name: "shell", Type: SurfaceTypeShell, Backend: SurfaceBackendTmux, Tmux: &TmuxAttrs{}},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	bay, _, err := m.ResolveBay("labs:home")
+	if err != nil {
+		t.Fatalf("ResolveBay(labs:home): %v", err)
+	}
+	if len(bay.Surfaces) != 1 || bay.Surfaces[0].ID != 7 {
+		t.Fatalf("got synthesized or wrong home bay: %+v", bay)
+	}
+}
+
+func TestResolveBay_HomeConflictingManifestFailsClearly(t *testing.T) {
+	tests := []struct {
+		name string
+		dock Dock
+		want string
+	}{
+		{
+			name: "reserved ID used by worktree",
+			dock: Dock{Name: "labs", Path: "/projects/labs", Bays: []Bay{
+				{ID: HomeBayID, Name: "bad", Type: BayTypeWorktree},
+			}},
+			want: "non-home bay with reserved ID",
+		},
+		{
+			name: "reserved name used by normal bay",
+			dock: Dock{Name: "labs", Path: "/projects/labs", Bays: []Bay{
+				{ID: "w1", Name: HomeBayID, Type: BayTypeExternal},
+			}},
+			want: "non-home bay named",
+		},
+		{
+			name: "home path differs from dock path",
+			dock: Dock{Name: "labs", Path: "/projects/labs", Bays: []Bay{
+				{ID: HomeBayID, Name: HomeBayID, Type: BayTypeHome, Path: "/projects/other"},
+			}},
+			want: "expected dock path",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &Manifest{Docks: []Dock{tt.dock}}
+			_, _, err := m.ResolveBay("labs:home")
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("ResolveBay(labs:home) error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveBay_BareHomeRequiresDock(t *testing.T) {
+	m := &Manifest{
+		Docks: []Dock{
+			{Name: "labs", Path: "/projects/labs"},
+			{Name: "docs", Path: "/projects/docs"},
+		},
+	}
+
+	_, _, err := m.ResolveBay(HomeBayID)
+	if err == nil || !strings.Contains(err.Error(), "dock context") {
+		t.Fatalf("ResolveBay(home) error = %v, want dock-context guidance", err)
 	}
 }
 
