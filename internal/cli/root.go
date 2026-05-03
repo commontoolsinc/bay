@@ -62,6 +62,7 @@ Quick start:
   bay new                 create a bay
   bay surface new shell   create a shell surface
   bay agent               launch dock's default agent
+  bay home                focus/create dock checkout shell
   bay go [query]          jump to a bay
   bay surface go [query]  jump to a surface
   bay ls                  list bays in this dock
@@ -107,6 +108,8 @@ func NewRootCmd(version string) *cobra.Command {
 	bayRenameCmd.GroupID = "bay"
 	bayDescribeCmd := newTopDescribeCmd()
 	bayDescribeCmd.GroupID = "bay"
+	homeCmd := newHomeCmd()
+	homeCmd.GroupID = "bay"
 	bayLsCmd := newBayLsCmd()
 	bayLsCmd.GroupID = "bay"
 	bayGoCmd := newBayGoCmd()
@@ -162,6 +165,7 @@ func NewRootCmd(version string) *cobra.Command {
 		bayShowCmd,
 		bayRenameCmd,
 		bayDescribeCmd,
+		homeCmd,
 		bayLsCmd,
 		bayGoCmd,
 		bayNextCmd,

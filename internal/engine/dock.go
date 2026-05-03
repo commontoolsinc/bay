@@ -270,6 +270,9 @@ func (e *Engine) DockClose(name string, force bool) error {
 	// iteration. Names may be empty; IDs are the stable handle.
 	var bayIDs []string
 	for _, bay := range dock.Bays {
+		if bay.Type == manifest.BayTypeHome || manifest.IsReservedBayID(bay.ID) {
+			continue
+		}
 		bayIDs = append(bayIDs, bay.ID)
 	}
 
@@ -394,7 +397,7 @@ func (e *Engine) buildBayInfo(bay *manifest.Bay, agent string, waitingWindows ma
 	}
 
 	// Compute dirty state from git.
-	if bay.Path != "" && statErr == nil {
+	if bay.Type != manifest.BayTypeHome && bay.Path != "" && statErr == nil {
 		if dirty, err := e.Git.IsDirty(bayPath); err == nil {
 			bayInfo.Dirty = dirty
 		}

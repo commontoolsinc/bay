@@ -72,10 +72,13 @@ has:
 | **External** | any user path | no — bay remembers it for recovery |
 | **Home** | dock checkout (`dock.path`) | no — bay never deletes the canonical checkout |
 
-`home` is a reserved per-dock pseudo-bay. Phase 1 only reserves the
-target and resolver shape; shells, agents, editors, navigation,
-palette entries, and keybindings are deferred to later home-bay
-phases. Normal bays cannot use `home` as an ID or display name.
+`home` is a reserved per-dock pseudo-bay. It materializes when it has
+surfaces and is hidden from normal `bay ls`, `bay tree`, `bay go`, and
+cycling while empty. Use `bay home`, `bay shell --bay home`,
+`bay agent --bay home`, `bay edit --bay home`, or
+`bay surface new cmd ... --bay home` to work in the dock checkout.
+Normal bays cannot use `home` as an ID or display name. Bay never
+deletes the canonical checkout.
 
 ### Dirty and merged
 
@@ -351,8 +354,9 @@ qualified form: `id:surface-name` or `dock:id:surface-name`.
 | `bay dock tree [name]` | current dock from tmux session |
 | `bay go [query]` | bays in current dock |
 | `bay surface go [query]` | surfaces in current bay |
-| `bay edit [id]` | current bay |
-| `bay shell [name]` | current bay, surface auto-named "shell" |
+| `bay edit [id]` / `bay edit --bay home` | current bay; `home` targets dock checkout |
+| `bay shell [name]` / `bay shell --bay home` | current bay; surface auto-named "shell" |
+| `bay home` | current dock; creates/focuses home shell |
 
 ## Commands
 
@@ -386,6 +390,19 @@ bay new auth-fix --agent                 # with dock's default agent
 bay new auth-fix --description "Login flow fixes"
 ```
 
+`home` is reserved. `bay new home` fails with guidance to use
+`bay home`.
+
+#### `bay home`
+
+Focus the most recent home surface in the current dock. If home has no
+surfaces, create a shell at the dock checkout path.
+
+```
+bay home
+bay go home
+```
+
 #### `bay close [id] [--force] [--done] [--clean] [--dry-run]`
 
 Close a bay and all its surfaces. For worktree bays,
@@ -396,7 +413,10 @@ treated as review changes bay can recreate, and close proceeds. If the
 branch has been pushed, its HEAD is included in a merged PR, or its
 patches are already on the default branch after a squash merge or
 cherry-pick, bay deletes the local branch on close — no stale branches
-left behind. Pass `self` to close the current bay.
+left behind. Pass `self` to close the current bay. `bay close home`
+closes home surfaces and leaves the dock checkout untouched when other
+dock surfaces remain; closing the last home surface is deferred to the
+home close-confirmation phase.
 
 Batch flags (without an ID):
 - `--done`: close bays that are not dirty and not pending (have
@@ -407,6 +427,7 @@ Batch flags (without an ID):
 ```
 bay close w1
 bay close self
+bay close home
 bay close self --force
 bay close --done
 bay close --done --dry-run
@@ -598,6 +619,7 @@ bay surface new agent codex                 # agent as split pane
 bay surface new cmd "npm test" tests        # named cmd surface
 bay surface new shell --window              # shell in new tmux window
 bay surface new shell --bay w1               # in a different bay
+bay surface new cmd "git pull --ff-only" --bay home
 bay sf new edit                             # editor surface
 ```
 
@@ -658,6 +680,7 @@ Rename a surface. With one arg, renames the current surface.
 bay shell [name]       → shell as split pane (--window for new window)
 bay agent [type]       → agent as split pane (--window for new window)
 bay edit [bay]         → bay editor (--dock for all bays)
+bay home               → focus/create dock checkout shell
 bay restore            → bay surface restore (undo-close)
 bay ls                 → list bays in current dock
 bay tree               → list everything
@@ -683,6 +706,7 @@ Editor resolution: `--editor` flag > `default_editor` in config >
 ```
 bay edit                    # open current bay (default)
 bay edit w1                 # open specific bay by ID
+bay edit --bay home         # open the dock checkout
 bay edit --editor vim       # use a specific editor this time
 bay edit --dock             # dock editor (all bays)
 bay edit --window           # terminal editor in new window
@@ -716,6 +740,8 @@ bay shell                   # shell as split pane
 bay shell logs              # named "logs"
 bay shell --window          # shell in new window
 bay shell logs --bay w1       # in a different bay
+bay shell --bay home        # shell in dock checkout
+bay agent codex --bay home  # agent in dock checkout
 ```
 
 ### Global commands
@@ -797,8 +823,10 @@ bay dock recover <name>
 bay dock sync [name]
 ```
 
-`bay dock new` runs `bay dock init` after creating the dock. `bay dock init`
-sets up bay awareness: appends a one-liner to each agent's project file
+`bay dock new` runs `bay dock init` after creating the dock, then opens
+a `home` shell at the dock checkout path. Auto-bootstrap through
+`bay new` creates only the requested worktree bay. `bay dock init` sets
+up bay awareness: appends a one-liner to each agent's project file
 (e.g., `CLAUDE.local.md`) pointing to `bay agent-guide`, and creates
 `.worktreeinclude` if missing. `bay dock sync` copies `.worktreeinclude`
 matches from the checkout into existing worktrees.

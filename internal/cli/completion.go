@@ -158,6 +158,10 @@ func registerCompletions(root *cobra.Command) {
 			cmd.RegisterFlagCompletionFunc("dock", dockFlagCompl)
 		}
 	}
+	if cmd := findCmd(root, "edit"); cmd != nil {
+		cmd.RegisterFlagCompletionFunc("bay", bayFlagCompl)
+		cmd.RegisterFlagCompletionFunc("dock-name", dockFlagCompl)
+	}
 	for _, path := range []string{"surface new shell", "surface new agent", "surface new cmd"} {
 		if cmd := findCmd(root, path); cmd != nil {
 			cmd.RegisterFlagCompletionFunc("split", splitCompletions)

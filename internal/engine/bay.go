@@ -353,6 +353,9 @@ func (e *Engine) closeBayState(dockName, bayID string, force bool) ([]string, er
 	}
 	bay := dock.FindBayByID(bayID)
 	if bay == nil {
+		if manifest.IsReservedBayID(bayID) {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
 	}
 
@@ -413,6 +416,25 @@ func (e *Engine) closeBayState(dockName, bayID string, force bool) ([]string, er
 			seen[s.Tmux.WindowID] = true
 			windowIDs = append(windowIDs, s.Tmux.WindowID)
 		}
+	}
+
+	if bay.Type == manifest.BayTypeHome {
+		if err := e.rejectIfLastHomeWindowClose(dockName, windowIDs); err != nil {
+			return nil, err
+		}
+		if err := e.withManifest(func(m *manifest.Manifest) error {
+			dock := m.FindDock(dockName)
+			if dock == nil {
+				return fmt.Errorf("unknown dock %q", dockName)
+			}
+			if dock.FindBayByID(bayID) == nil {
+				return nil
+			}
+			return dock.RemoveBay(bayID)
+		}); err != nil {
+			return nil, err
+		}
+		return windowIDs, nil
 	}
 
 	// Remove worktree from disk. This is destructive of the worktree
@@ -574,9 +596,6 @@ func (e *Engine) BayCleanReview(dockName, bayID string) (string, error) {
 }
 
 func (e *Engine) BayClose(dockName, bayID string, force bool) error {
-	if manifest.IsReservedBayID(bayID) {
-		return nil
-	}
 	windowIDs, err := e.closeBayState(dockName, bayID, force)
 	if err != nil {
 		return err
@@ -585,7 +604,9 @@ func (e *Engine) BayClose(dockName, bayID string, force bool) error {
 	// it's running in one of these panes, but the user-visible state is
 	// already correct.
 	for _, id := range windowIDs {
-		e.ensurePlaceholderIfLastWindow(dockName, id)
+		if !manifest.IsReservedBayID(bayID) {
+			e.ensureHomeIfLastWindow(dockName, id)
+		}
 		_ = e.Tmux.KillWindow(id)
 	}
 
@@ -647,6 +668,9 @@ func (e *Engine) bayCloseBatch(dockName string, force, dryRun bool, skip baySkip
 		}
 		for j := range d.Bays {
 			bay := &d.Bays[j]
+			if bay.Type == manifest.BayTypeHome {
+				continue
+			}
 			if excludeSet[bay.ID] {
 				continue
 			}
@@ -710,7 +734,7 @@ func (e *Engine) bayCloseBatch(dockName string, force, dryRun bool, skip baySkip
 	// closed-bay's manifest entry is already persisted.
 	for _, p := range pending {
 		for _, id := range p.windowIDs {
-			e.ensurePlaceholderIfLastWindow(p.dock, id)
+			e.ensureHomeIfLastWindow(p.dock, id)
 			_ = e.Tmux.KillWindow(id)
 		}
 	}
@@ -918,6 +942,9 @@ func (e *Engine) ResolveSelf() (string, string, error) {
 			dock := &m.Docks[i]
 			for j := range dock.Bays {
 				bay := &dock.Bays[j]
+				if bay.Type == manifest.BayTypeHome {
+					continue
+				}
 				if config.IsPathUnder(cwd, bay.Path) {
 					return dock.Name, bay.ID, nil
 				}
@@ -985,6 +1012,9 @@ func BayDirTag(bay *manifest.Bay) string {
 func BayCompactLabel(bay *manifest.Bay) string {
 	if bay == nil {
 		return ""
+	}
+	if bay.Type == manifest.BayTypeHome || bay.ID == manifest.HomeBayID {
+		return manifest.HomeBayID
 	}
 	dirTag := BayDirTag(bay)
 	if dirTag == "" {
@@ -1433,6 +1463,9 @@ func (e *Engine) positionNewWindow(dockName, windowID, bayID string, m *manifest
 	if bayID == "" {
 		// New bay: goes after the last window of the last existing bay.
 		for i := len(dock.Bays) - 1; i >= 0; i-- {
+			if dock.Bays[i].Type == manifest.BayTypeHome {
+				continue
+			}
 			if id := lastWindowIDInBay(dock, dock.Bays[i].ID); id != "" {
 				afterID = id
 				break

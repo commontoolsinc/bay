@@ -2356,8 +2356,9 @@ func TestPlaceholder_CleanedOnBayNew(t *testing.T) {
 	_ = bay
 }
 
-func TestPlaceholder_CreatedOnLastBayClose(t *testing.T) {
-	// Closing the last bay should leave a placeholder.
+func TestHome_CreatedOnLastBayClose(t *testing.T) {
+	// Closing the last non-home bay should leave a home shell instead
+	// of the legacy placeholder.
 	eng, _ := testEngine(t)
 
 	eng.BayNew(BayNewOptions{Dock: "labs"})
@@ -2372,20 +2373,29 @@ func TestPlaceholder_CreatedOnLastBayClose(t *testing.T) {
 	// Session should still exist
 	has, _ := mockTmux.HasSession("labs")
 	if !has {
-		t.Fatal("session should still exist (placeholder keeps it alive)")
+		t.Fatal("session should still exist (home keeps it alive)")
 	}
 
-	// Should have a placeholder window
+	m, err := eng.LoadManifest()
+	if err != nil {
+		t.Fatalf("LoadManifest: %v", err)
+	}
+	dock := m.FindDock("labs")
+	if dock == nil {
+		t.Fatal("missing labs dock")
+	}
+	home := dock.FindBayByID(manifest.HomeBayID)
+	if home == nil || len(home.Surfaces) != 1 {
+		t.Fatalf("home = %+v, want one shell surface", home)
+	}
+
+	// Should not have a placeholder window.
 	windows, _ := mockTmux.ListWindows("labs")
-	foundPlaceholder := false
 	for _, w := range windows {
 		val, _ := mockTmux.GetWindowOption(w.ID, "@bay-placeholder")
 		if val == "1" {
-			foundPlaceholder = true
+			t.Fatalf("placeholder window %q should not remain after home creation", w.Name)
 		}
-	}
-	if !foundPlaceholder {
-		t.Error("expected a placeholder window after closing last bay")
 	}
 }
 

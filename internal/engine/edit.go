@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
@@ -11,9 +12,6 @@ import (
 // LastActive so the monitor's activity gate keeps fetching merge data
 // for this bay's repo.
 func (e *Engine) Edit(dockName, bayID string) (string, error) {
-	if manifest.IsReservedBayID(bayID) {
-		return "", fmt.Errorf("home editor surfaces are not available yet; home is reserved for a later phase")
-	}
 	var path string
 	err := e.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)
@@ -22,7 +20,30 @@ func (e *Engine) Edit(dockName, bayID string) (string, error) {
 		}
 		bay := dock.FindBayByID(bayID)
 		if bay == nil {
+			if manifest.IsReservedBayID(bayID) {
+				if err := validateResolvableHome(dock); err != nil {
+					return err
+				}
+				home, err := homePath(dock)
+				if err != nil {
+					return err
+				}
+				path = config.ExpandPath(home)
+				return nil
+			}
 			return fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
+		}
+		if manifest.IsReservedBayID(bayID) {
+			if err := validateResolvableHome(dock); err != nil {
+				return err
+			}
+			home, err := homePath(dock)
+			if err != nil {
+				return err
+			}
+			bay.LastActive = time.Now().Unix()
+			path = config.ExpandPath(home)
+			return nil
 		}
 		bay.LastActive = time.Now().Unix()
 		path = bay.Path

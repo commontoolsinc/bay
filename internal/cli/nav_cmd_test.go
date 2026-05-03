@@ -335,6 +335,23 @@ func findSubstring(s, sub string) bool {
 
 // --- bayCycle ---
 
+func TestBayGoHomeMaterializesHome(t *testing.T) {
+	eng, mockTmux, _, _ := testNavEngine(t)
+	mockTmux.SetCurrentSession("labs")
+
+	if err := bayGo(eng, []string{manifest.HomeBayID}, false, false); err != nil {
+		t.Fatalf("bayGo(home): %v", err)
+	}
+
+	bay, err := eng.BayShow("labs", manifest.HomeBayID)
+	if err != nil {
+		t.Fatalf("BayShow(home): %v", err)
+	}
+	if bay.Type != manifest.BayTypeHome || len(bay.Surfaces) != 1 {
+		t.Fatalf("home = %+v, want one materialized surface", bay)
+	}
+}
+
 func TestBayCycle_Forward(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 
@@ -361,6 +378,35 @@ func TestBayCycle_Forward(t *testing.T) {
 	}
 	if !foundSelect {
 		t.Error("expected SelectWindow for second bay")
+	}
+}
+
+func TestBayCycle_IncludesVisibleHome(t *testing.T) {
+	eng, mockTmux, _, _ := testNavEngine(t)
+
+	eng.BayNew(engine.BayNewOptions{Dock: "labs"})
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: manifest.HomeBayID, Type: manifest.SurfaceTypeShell, Name: "shell"}); err != nil {
+		t.Fatalf("SurfaceAdd(home): %v", err)
+	}
+
+	bay1, _ := eng.BayShow("labs", "w1")
+	home, _ := eng.BayShow("labs", manifest.HomeBayID)
+	mockTmux.SetCurrentSession("labs")
+	mockTmux.SetCurrentWindowID(bay1.Surfaces[0].Tmux.WindowID)
+
+	mockTmux.Calls = nil
+	if err := bayCycle(eng, true); err != nil {
+		t.Fatalf("bayCycle: %v", err)
+	}
+
+	foundSelect := false
+	for _, call := range mockTmux.Calls {
+		if call.Method == "SelectWindow" && call.Args[0] == home.Surfaces[0].Tmux.WindowID {
+			foundSelect = true
+		}
+	}
+	if !foundSelect {
+		t.Fatalf("expected SelectWindow for home, calls: %+v", mockTmux.Calls)
 	}
 }
 

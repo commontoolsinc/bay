@@ -223,6 +223,12 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 					changed = true
 					continue
 				}
+				if bay.Type == manifest.BayTypeHome {
+					bay.PendingCloseAt = 0
+					removeHomeBayIfEmpty(dock)
+					changed = true
+					continue
+				}
 				if bay.PendingCloseAt <= now {
 					toFinalize = append(toFinalize, orphanCandidate{dock.Name, bay.ID})
 				}
@@ -445,7 +451,9 @@ func (e *Engine) applyBaySyncUpdate(m *manifest.Manifest, update baySyncUpdate, 
 			// If the strip emptied the bay, schedule auto-close
 			// after a grace window. The user has that long to re-open
 			// a surface (bay sf new --bay <id>) to cancel.
-			if len(bay.Surfaces) == 0 && bay.PendingCloseAt == 0 {
+			if len(bay.Surfaces) == 0 && bay.Type == manifest.BayTypeHome {
+				removeHomeBayIfEmpty(dock)
+			} else if len(bay.Surfaces) == 0 && bay.PendingCloseAt == 0 {
 				bay.PendingCloseAt = time.Now().Unix() + orphanGraceSeconds
 			}
 		}

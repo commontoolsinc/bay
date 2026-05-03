@@ -40,20 +40,56 @@ func TestRunSurfaceNew_Shell(t *testing.T) {
 	}
 }
 
-func TestRunSurfaceNew_RejectsHomeBeforeCreatingSurface(t *testing.T) {
+func TestRunSurfaceNew_HomeCreatesSurface(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 	mockTmux.Calls = nil
 
 	err := runSurfaceNew(eng, "labs", manifest.HomeBayID, surfaceNewOpts{
+		Type: manifest.SurfaceTypeShell,
+	})
+	if err != nil {
+		t.Fatalf("runSurfaceNew(home): %v", err)
+	}
+	bay, err := eng.BayShow("labs", manifest.HomeBayID)
+	if err != nil {
+		t.Fatalf("BayShow(home): %v", err)
+	}
+	if bay.Type != manifest.BayTypeHome || len(bay.Surfaces) != 1 {
+		t.Fatalf("home bay = %+v, want one home surface", bay)
+	}
+	sawNewWindow := false
+	for _, call := range mockTmux.Calls {
+		if call.Method == "NewWindow" && len(call.Args) >= 2 && call.Args[1] == manifest.HomeBayID {
+			sawNewWindow = true
+		}
+	}
+	if !sawNewWindow {
+		t.Fatalf("runSurfaceNew(home) did not create a home window; calls: %+v", mockTmux.Calls)
+	}
+}
+
+func TestRunSurfaceNew_HomeAgentUsesDockDefault(t *testing.T) {
+	eng, _, _, _ := testNavEngine(t)
+
+	err := runSurfaceNew(eng, "labs", manifest.HomeBayID, surfaceNewOpts{
 		Type: manifest.SurfaceTypeAgent,
 	})
-	if err == nil || !strings.Contains(err.Error(), "not available yet") {
-		t.Fatalf("runSurfaceNew(home) error = %v, want home surface-phase rejection", err)
+	if err != nil {
+		t.Fatalf("runSurfaceNew(home agent): %v", err)
 	}
-	for _, call := range mockTmux.Calls {
-		if call.Method == "NewWindow" || call.Method == "SplitWindow" {
-			t.Fatalf("runSurfaceNew(home) should not create tmux surfaces; saw %s", call.Method)
-		}
+	bay, err := eng.BayShow("labs", manifest.HomeBayID)
+	if err != nil {
+		t.Fatalf("BayShow(home): %v", err)
+	}
+	if len(bay.Surfaces) != 1 {
+		t.Fatalf("home surfaces = %+v, want one agent", bay.Surfaces)
+	}
+	added := bay.Surfaces[0]
+	if added.Type != manifest.SurfaceTypeAgent {
+		t.Fatalf("home surface type = %s, want agent", added.Type)
+	}
+	if added.Agent == nil || *added.Agent != "claude" {
+		t.Fatalf("home agent = %v, want dock default claude", added.Agent)
 	}
 }
 
@@ -188,6 +224,38 @@ func TestRunSurfaceNew_NameWithColonIsRejected(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "cannot contain ':'") {
 		t.Errorf("expected colon-rejection error, got %v", err)
+	}
+}
+
+func TestRunEditCreate_HomeCreatesEditorAtDockPath(t *testing.T) {
+	eng, mockTmux, _, _ := testNavEngine(t)
+	m, _ := eng.LoadManifest()
+	dockPath := m.FindDock("labs").Path
+	mockTmux.Calls = nil
+
+	if err := runEditCreate(eng, "labs:"+manifest.HomeBayID, "vim", ""); err != nil {
+		t.Fatalf("runEditCreate(home): %v", err)
+	}
+
+	home, err := eng.BayShow("labs", manifest.HomeBayID)
+	if err != nil {
+		t.Fatalf("BayShow(home): %v", err)
+	}
+	if len(home.Surfaces) != 1 || home.Surfaces[0].Type != manifest.SurfaceTypeEditor {
+		t.Fatalf("home surfaces = %+v, want one editor", home.Surfaces)
+	}
+	if home.Surfaces[0].Command == nil || *home.Surfaces[0].Command != "vim "+dockPath {
+		t.Fatalf("editor command = %v, want vim %s", home.Surfaces[0].Command, dockPath)
+	}
+
+	sawRespawn := false
+	for _, call := range mockTmux.Calls {
+		if call.Method == "RespawnPane" && len(call.Args) >= 3 && call.Args[1] == dockPath && call.Args[2] == "vim "+dockPath {
+			sawRespawn = true
+		}
+	}
+	if !sawRespawn {
+		t.Fatalf("home editor should run at dock path %q; calls: %+v", dockPath, mockTmux.Calls)
 	}
 }
 
