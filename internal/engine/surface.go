@@ -399,11 +399,6 @@ func (e *Engine) SurfaceClose(dockName, bayID, surfaceName string, force bool) e
 		if s == nil {
 			return fmt.Errorf("surface %q not found in bay %q", surfaceName, bayID)
 		}
-		if homeSurface && len(bay.Surfaces) == 1 && s.Tmux != nil && s.Tmux.WindowID != "" {
-			if err := e.rejectIfLastHomeWindowClose(dockName, []string{s.Tmux.WindowID}); err != nil {
-				return err
-			}
-		}
 
 		// Capture what we'll kill before the surface is removed from
 		// the in-memory manifest (RemoveSurface invalidates s).
@@ -412,6 +407,29 @@ func (e *Engine) SurfaceClose(dockName, bayID, surfaceName string, force bool) e
 				windowIDToKill = s.Tmux.WindowID
 			} else if s.Tmux.PaneID != "" {
 				paneIDToKill = s.Tmux.PaneID
+			}
+		}
+		if homeSurface {
+			closingWindowID := ""
+			if windowIDToKill != "" {
+				if exists, _ := e.Tmux.WindowExists(windowIDToKill); exists {
+					closingWindowID = windowIDToKill
+				}
+			} else if paneIDToKill != "" && s.Tmux != nil && s.Tmux.WindowID != "" {
+				if exists, _ := e.Tmux.PaneExists(paneIDToKill); exists {
+					panes, err := e.Tmux.ListPanes(s.Tmux.WindowID)
+					if err != nil {
+						return fmt.Errorf("checking home panes: %w", err)
+					}
+					if len(panes) <= 1 {
+						closingWindowID = s.Tmux.WindowID
+					}
+				}
+			}
+			if closingWindowID != "" {
+				if err := e.rejectIfLastHomeWindowClose(dockName, []string{closingWindowID}); err != nil {
+					return err
+				}
 			}
 		}
 

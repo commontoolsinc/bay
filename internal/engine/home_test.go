@@ -417,6 +417,53 @@ func TestSurfaceClose_HomeLastSurfaceRejectsUntilCloseConfirmationPhase(t *testi
 	}
 }
 
+func TestSurfaceClose_HomeLastLivePaneRejectsWithStaleRecordedSurface(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+	m, _ := eng.LoadManifest()
+	home := m.FindDock("labs").FindBayByID(manifest.HomeBayID)
+	live := home.Surfaces[0]
+	winID := live.Tmux.WindowID
+
+	if err := eng.withManifest(func(m *manifest.Manifest) error {
+		home := m.FindDock("labs").FindBayByID(manifest.HomeBayID)
+		home.Surfaces = append(home.Surfaces, manifest.Surface{
+			ID:      live.ID + 1,
+			Name:    "stale",
+			Type:    manifest.SurfaceTypeShell,
+			Backend: manifest.SurfaceBackendTmux,
+			Tmux: &manifest.TmuxAttrs{
+				PaneID:      "%999",
+				WindowID:    winID,
+				LayoutGroup: live.Tmux.LayoutGroup,
+				SplitFrom:   live.ID,
+				SplitDir:    "v",
+			},
+		})
+		return nil
+	}); err != nil {
+		t.Fatalf("seed stale home surface: %v", err)
+	}
+
+	err := eng.SurfaceClose("labs", manifest.HomeBayID, live.Name, false)
+	if err == nil || !strings.Contains(err.Error(), "not implemented until the home-bay close confirmation phase") {
+		t.Fatalf("SurfaceClose(last live home pane) error = %v", err)
+	}
+
+	m2, _ := eng.LoadManifest()
+	home = m2.FindDock("labs").FindBayByID(manifest.HomeBayID)
+	if home == nil || len(home.Surfaces) != 2 {
+		t.Fatalf("home after rejected close = %+v, want unchanged live+stale surfaces", home)
+	}
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if exists, _ := mockTmux.WindowExists(winID); !exists {
+		t.Fatalf("home window %s was killed after rejected close", winID)
+	}
+}
+
 func TestHomeVisibility_EmptyHiddenVisibleListed(t *testing.T) {
 	eng, _ := testEngine(t)
 
