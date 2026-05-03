@@ -70,6 +70,15 @@ has:
 |------|-----|--------------------------|
 | **Worktree** | git worktree | yes — creates and deletes it, safety checks on close |
 | **External** | any user path | no — bay remembers it for recovery |
+| **Home** | dock checkout (`dock.path`) | no — bay never deletes the canonical checkout |
+
+`home` is a reserved per-dock pseudo-bay. Address it as `<dock>:home`.
+`bay new home`, `bay rename home`, and `bay describe home` are
+rejected; the label and shape are fixed. Phase 1 ships only the
+reservation and resolver — surfaces, navigation, and the `bay home`
+command land in later phases. Currently `bay close home` is a
+no-op and `bay shell/agent/edit --bay home` return a "Phase 2"
+message. See `docs/design/home-bay.md` for the full design.
 
 ### Dirty and merged
 
@@ -467,9 +476,11 @@ bay show self --json
 #### `bay rename [id] <new-name>`
 
 Rename a bay's display label. The new Name must match
-`[a-zA-Z0-9_-]+` and cannot match the reserved ID pattern
-`^w[1-9]\d*$`. With one arg, renames the current bay. After
-rename, the ID is unchanged — it's still the CLI key.
+`[a-zA-Z0-9_-]+`, cannot match the reserved ID pattern
+`^w[1-9]\d*$`, and cannot equal the reserved `home` handle. With
+one arg, renames the current bay. After rename, the ID is unchanged
+— it's still the CLI key. Renaming the home pseudo-bay itself is
+rejected.
 
 ```
 bay rename mem-refactor                 # rename current bay

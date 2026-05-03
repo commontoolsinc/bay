@@ -107,16 +107,21 @@ func ValidateName(name string) error {
 }
 
 // ValidateBayName extends ValidateName by reserving the canonical
-// bay ID pattern (^w[1-9]\d*$). Bay IDs and Names share the
-// same identifier namespace (both can be passed to commands), so allowing
-// a Name to look like an ID would create ambiguous CLI references.
-// Names like w1 / w42 are rejected; w0, w01, my-w1, bay1, W1 are fine.
+// bay ID pattern (^w[1-9]\d*$) and reserved IDs ("home"). Bay IDs
+// and Names share the same identifier namespace (both can be passed
+// to commands), so allowing a Name to look like an ID — or to
+// collide with a reserved pseudo-bay handle — would create ambiguous
+// CLI references. Names like w1 / w42 / home are rejected; w0, w01,
+// my-w1, bay1, W1 are fine.
 func ValidateBayName(name string) error {
 	if err := ValidateName(name); err != nil {
 		return err
 	}
 	if manifest.IsBayID(name) {
 		return fmt.Errorf("invalid bay name %q: matches the reserved bay ID pattern (^w[1-9]\\d*$); pick a different name", name)
+	}
+	if manifest.IsReservedBayID(name) {
+		return fmt.Errorf("invalid bay name %q: reserved for bay's built-in pseudo-bay; pick a different name", name)
 	}
 	return nil
 }
@@ -218,11 +223,12 @@ func abbreviateBranch(branch string) string {
 	if result == "" {
 		return branch // fallback to raw branch if sanitization empties it
 	}
-	// Names that match the reserved bay ID pattern (^w[1-9]\d*$) are
-	// rejected by ValidateBayName, so a branch like fix/w1 would
+	// Names matching the reserved bay ID pattern (^w[1-9]\d*$) or a
+	// reserved built-in handle ("home") are rejected by
+	// ValidateBayName, so branches like fix/w1 or feature/home would
 	// otherwise produce an unnameable bay. Prefix so the result is
 	// always a legal Name.
-	if manifest.IsBayID(result) {
+	if manifest.IsBayID(result) || manifest.IsReservedBayID(result) {
 		result = branchAbbrevReservedPrefix + result
 	}
 	return result

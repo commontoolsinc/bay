@@ -162,7 +162,7 @@ bay dock close dev --force
 
 ### Bays
 
-A **bay** is a working directory with metadata. Two types:
+A **bay** is a working directory with metadata. Three types:
 
 - **Worktree** -- bay creates a git worktree from the dock's checkout.
   Bay owns the lifecycle: creation, safety checks on close, cleanup.
@@ -170,6 +170,13 @@ A **bay** is a working directory with metadata. Two types:
 - **External** -- bay points at an existing directory you own. Bay
   manages tmux surfaces and recovery, but does not create or delete
   the directory.
+- **Home** -- a reserved per-dock pseudo-bay backed by the dock's
+  canonical checkout (`dock.path`). Every dock has one, addressable
+  as `<dock>:home`. `home` is reserved as both an ID and a Name:
+  `bay new home`, `bay rename home`, and `bay describe home` are all
+  rejected. Bay never deletes `dock.path`. Phase 1 ships only the
+  reservation; surfaces, navigation, and the `bay home` command land
+  in later phases — see `docs/design/home-bay.md`.
 
 Each bay has three identity concepts:
 
@@ -315,9 +322,10 @@ A bare ID resolves to the current dock first; if absent there, falls
 through to a cross-dock search (which errors on ambiguity). Pass
 `--dock <name>` to target a different dock without changing context.
 
-Bay **Names** must match `[a-zA-Z0-9_-]+` and cannot match the
-reserved ID pattern `^w[1-9]\d*$` — that namespace is bay's. If you
-type a Name where bay expects an ID, the error names the ID for you:
+Bay **Names** must match `[a-zA-Z0-9_-]+`, cannot match the reserved
+ID pattern `^w[1-9]\d*$`, and cannot equal the reserved `home`
+handle — those namespaces are bay's. If you type a Name where bay
+expects an ID, the error names the ID for you:
 `bay "auth-fix" not found; did you mean "w1"?`.
 
 ## Configuration

@@ -10,7 +10,14 @@ import (
 // Edit returns the bay path for opening in an editor and bumps
 // LastActive so the monitor's activity gate keeps fetching merge data
 // for this bay's repo.
+//
+// Rejects the home pseudo-bay in Phase 1: editing dock.Path requires
+// surface materialization (terminal editors create a tracked editor
+// surface) which arrives in Phase 2.
 func (e *Engine) Edit(dockName, bayID string) (string, error) {
+	if bayID == manifest.HomeBayID {
+		return "", fmt.Errorf("home editor is not yet implemented (Phase 2)")
+	}
 	var path string
 	err := e.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)

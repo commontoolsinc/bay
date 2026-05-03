@@ -145,6 +145,12 @@ type SurfaceAddOptions struct {
 func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 	dockName := opts.DockName
 	bayID := opts.BayName
+	if bayID == manifest.HomeBayID {
+		// Phase 1 ships only the reserved-target plumbing. Home
+		// surface materialization (window creation at dock.Path,
+		// placeholder replacement) lands in Phase 2.
+		return fmt.Errorf("home surfaces are not yet implemented (Phase 2)")
+	}
 	surfaceType := opts.Type
 	name := opts.Name
 	agent := opts.Agent

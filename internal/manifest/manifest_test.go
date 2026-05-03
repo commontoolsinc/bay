@@ -1344,3 +1344,122 @@ func TestResolveBay_NameHintMultipleDocks(t *testing.T) {
 		t.Errorf("expected multi-dock hint listing both candidates, got %v", err)
 	}
 }
+
+func TestIsReservedBayID(t *testing.T) {
+	cases := []struct {
+		s    string
+		want bool
+	}{
+		{"home", true},
+		{"Home", false}, // case-sensitive
+		{"home1", false},
+		{"w1", false},
+		{"", false},
+	}
+	for _, c := range cases {
+		if got := IsReservedBayID(c.s); got != c.want {
+			t.Errorf("IsReservedBayID(%q) = %v, want %v", c.s, got, c.want)
+		}
+	}
+}
+
+// SynthesizeHomeBay must produce the shape Phase 2 will persist:
+// stable ID/Name/Type, Path bound to dock.Path, no Worktree, empty
+// (non-nil) Surfaces. Locking the shape here keeps the synthesized
+// and persisted forms interchangeable for downstream callers.
+func TestSynthesizeHomeBay_ShapeIsPhase2Compatible(t *testing.T) {
+	d := &Dock{Name: "labs", Path: "/projects/labs"}
+	bay := SynthesizeHomeBay(d)
+	if bay.ID != HomeBayID || bay.Name != HomeBayID {
+		t.Errorf("ID/Name = %q/%q, want home/home", bay.ID, bay.Name)
+	}
+	if bay.Type != BayTypeHome {
+		t.Errorf("Type = %q, want %q", bay.Type, BayTypeHome)
+	}
+	if bay.Path != "/projects/labs" {
+		t.Errorf("Path = %q, want /projects/labs", bay.Path)
+	}
+	if bay.Worktree != nil {
+		t.Errorf("Worktree = %+v, want nil", bay.Worktree)
+	}
+	if bay.Surfaces == nil {
+		t.Error("Surfaces is nil; Phase 2 persistence sets []Surface{}")
+	}
+}
+
+func TestResolveBay_HomeWithDockPrefix(t *testing.T) {
+	m := &Manifest{Docks: []Dock{{Name: "labs", Path: "/projects/labs"}}}
+	bay, dock, err := m.ResolveBay("labs:home")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if dock == nil || dock.Name != "labs" {
+		t.Fatalf("dock = %+v, want name=labs", dock)
+	}
+	if bay == nil || bay.ID != HomeBayID || bay.Type != BayTypeHome || bay.Path != "/projects/labs" {
+		t.Errorf("synthesized home = %+v", bay)
+	}
+}
+
+// A persisted home entry (added by Phase 2's surface-materialization
+// path) must win over the synthesized fallback so callers see real
+// surface state.
+func TestResolveBay_HomePersistedWins(t *testing.T) {
+	m := &Manifest{
+		Docks: []Dock{
+			{
+				Name: "labs",
+				Path: "/projects/labs",
+				Bays: []Bay{
+					{
+						ID: HomeBayID, Name: HomeBayID, Type: BayTypeHome, Path: "/projects/labs",
+						Surfaces: []Surface{
+							{ID: 7, Name: "shell", Type: SurfaceTypeShell, Backend: SurfaceBackendTmux, Tmux: &TmuxAttrs{}},
+						},
+					},
+				},
+			},
+		},
+	}
+	bay, _, err := m.ResolveBay("labs:home")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(bay.Surfaces) != 1 || bay.Surfaces[0].ID != 7 {
+		t.Errorf("expected persisted home with surface id 7, got %+v", bay.Surfaces)
+	}
+}
+
+// Bare "home" cannot resolve at the manifest layer because every
+// dock has its own home. CLI's resolveBareBay handles disambiguation
+// by trying the current dock first.
+func TestResolveBay_BareHomeRequiresDock(t *testing.T) {
+	m := &Manifest{Docks: []Dock{
+		{Name: "labs", Path: "/projects/labs"},
+		{Name: "loom", Path: "/projects/loom"},
+	}}
+	_, _, err := m.ResolveBay("home")
+	if err == nil {
+		t.Fatal("expected error for bare home query")
+	}
+	if !strings.Contains(err.Error(), "dock context") {
+		t.Errorf("expected dock-context guidance, got %v", err)
+	}
+}
+
+func TestAddBay_RejectsReservedHandleForNonHomeType(t *testing.T) {
+	d := &Dock{Name: "labs"}
+	cases := []Bay{
+		{ID: HomeBayID, Type: BayTypeWorktree, Path: "/x"},
+		{Name: HomeBayID, Type: BayTypeExternal, Path: "/x"},
+	}
+	for _, b := range cases {
+		if err := d.AddBay(b); err == nil {
+			t.Errorf("AddBay(%+v) = nil, want reserved-handle error", b)
+		}
+	}
+	// A real BayTypeHome entry is admitted (Phase 2 will use this).
+	if err := d.AddBay(Bay{ID: HomeBayID, Name: HomeBayID, Type: BayTypeHome, Path: "/projects/labs"}); err != nil {
+		t.Errorf("AddBay(home pseudo-bay) errored: %v", err)
+	}
+}

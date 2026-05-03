@@ -92,6 +92,7 @@ func TestValidateBayName(t *testing.T) {
 		{"w1", true},
 		{"w42", true},
 		{"w999", true},
+		{"home", true}, // reserved built-in pseudo-bay handle
 
 		// Looks ID-shaped but isn't canonical — accepted (also accepted
 		// by ValidateName).
@@ -118,10 +119,11 @@ func TestValidateBayName(t *testing.T) {
 	}
 }
 
-// TestAbbreviateBranch_AvoidsReservedPattern guards the case where a
-// branch like fix/w1 would otherwise produce a Name matching the
-// reserved ID pattern; abbreviateBranch must prefix it so the result
-// stays a legal Name.
+// TestAbbreviateBranch_AvoidsReservedPattern guards branches whose
+// derived Name would collide with a reserved handle (the canonical
+// w<N> ID pattern, or the reserved "home" built-in). Without the
+// rewrite, ValidateBayName would later reject the derived Name and
+// `bay new --branch feature/home` would fail outright.
 func TestAbbreviateBranch_AvoidsReservedPattern(t *testing.T) {
 	tests := []struct {
 		branch string
@@ -130,6 +132,8 @@ func TestAbbreviateBranch_AvoidsReservedPattern(t *testing.T) {
 		{"fix/w1", branchAbbrevReservedPrefix + "w1"},
 		{"feature/w42", branchAbbrevReservedPrefix + "w42"},
 		{"w3", branchAbbrevReservedPrefix + "w3"},
+		{"home", branchAbbrevReservedPrefix + "home"},
+		{"feature/home", branchAbbrevReservedPrefix + "home"},
 		{"fix/auth", "auth"}, // unaffected
 	}
 	for _, tt := range tests {

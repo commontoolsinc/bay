@@ -22,7 +22,24 @@ const CurrentVersion = 6
 const (
 	BayTypeWorktree BayType = "worktree"
 	BayTypeExternal BayType = "external"
+	// BayTypeHome is the dock's canonical-checkout pseudo-bay. It points
+	// at Dock.Path, has no Worktree, and is never deleted by close
+	// paths. See docs/design/home-bay.md.
+	BayTypeHome BayType = "home"
 )
+
+// HomeBayID is the reserved ID and Name used by every dock's home bay.
+const HomeBayID = "home"
+
+// IsReservedBayID reports whether s is reserved by bay for a built-in
+// pseudo-bay. Distinct from IsBayID, which checks the canonical w<N>
+// generation pattern: reserved IDs are addressable but not generated.
+// Currently only "home"; new entries here propagate automatically to
+// ValidateBayName, abbreviateBranch's collision rewrite, and AddBay's
+// defensive guard.
+func IsReservedBayID(s string) bool {
+	return s == HomeBayID
+}
 
 // SurfaceType constants — the semantic role of a surface.
 const (
@@ -710,9 +727,16 @@ func (d *Dock) FindBayByID(id string) *Bay {
 // AddBay adds a bay. Returns an error if the bay's Name
 // is non-empty and already taken in the dock. Empty-Name bays are
 // always allowed; they'll display via their ID until a Name is set.
+//
+// Reserved IDs/Names ("home") are admitted only for matching reserved
+// types (BayTypeHome). A worktree or external bay holding a reserved
+// handle would shadow the resolver's pseudo-bay contract.
 func (d *Dock) AddBay(bay Bay) error {
 	if bay.Name != "" && d.FindBay(bay.Name) != nil {
 		return fmt.Errorf("bay %q already exists in dock %q", bay.Name, d.Name)
+	}
+	if (IsReservedBayID(bay.ID) || IsReservedBayID(bay.Name)) && bay.Type != BayTypeHome {
+		return fmt.Errorf("bay handle %q is reserved", HomeBayID)
 	}
 	if bay.Surfaces == nil {
 		bay.Surfaces = []Surface{}
@@ -853,6 +877,13 @@ func (b *Bay) RemoveSurface(name string) error {
 // looks like a Name (i.e. it doesn't match a known ID), the error
 // message hints at the canonical ID for any bay with a matching
 // Name, so users who type a friendly Name see a one-step fix.
+//
+// Reserved IDs ("home") always resolve when dock-qualified: a
+// persisted entry wins, otherwise SynthesizeHomeBay returns a fresh
+// non-persisted Bay value backed by Dock.Path. Bare reserved IDs
+// require dock context (every dock has its own home), so the manifest
+// layer rejects them; CLI's resolveBareBay disambiguates by trying
+// the current dock first.
 func (m *Manifest) ResolveBay(query string) (*Bay, *Dock, error) {
 	// Try "dock:id" format.
 	if parts := strings.SplitN(query, ":", 2); len(parts) == 2 {
@@ -860,11 +891,18 @@ func (m *Manifest) ResolveBay(query string) (*Bay, *Dock, error) {
 		if d == nil {
 			return nil, nil, fmt.Errorf("dock %q not found", parts[0])
 		}
+		if parts[1] == HomeBayID {
+			return resolveHomeBay(d), d, nil
+		}
 		bay := d.FindBayByID(parts[1])
 		if bay == nil {
 			return nil, nil, bayNotFoundError(parts[1], parts[0], dockNameHints(d, parts[1]))
 		}
 		return bay, d, nil
+	}
+
+	if query == HomeBayID {
+		return nil, nil, fmt.Errorf("home requires a dock context; use \"<dock>:home\" or run from a known dock")
 	}
 
 	// Bare ID: search all docks.
@@ -893,6 +931,36 @@ func (m *Manifest) ResolveBay(query string) (*Bay, *Dock, error) {
 		}
 		return nil, nil, fmt.Errorf("bay ID %q is ambiguous; found in docks: %s", query, strings.Join(docks, ", "))
 	}
+}
+
+// SynthesizeHomeBay returns a fresh, non-persisted home Bay value for
+// dock. Phase 2 will persist this same shape once the first home
+// surface is created, so callers can treat the synthesized and
+// persisted forms identically.
+func SynthesizeHomeBay(d *Dock) Bay {
+	path := ""
+	if d != nil {
+		path = d.Path
+	}
+	return Bay{
+		ID:       HomeBayID,
+		Name:     HomeBayID,
+		Type:     BayTypeHome,
+		Path:     path,
+		Surfaces: []Surface{},
+	}
+}
+
+// resolveHomeBay returns d's persisted home entry if one exists,
+// otherwise a fresh synthesized value. The synthesized result is a
+// heap allocation; mutations on it do not persist. Phase 2's
+// ensureHomeBay path will be the persistence entry point.
+func resolveHomeBay(d *Dock) *Bay {
+	if existing := d.FindBayByID(HomeBayID); existing != nil {
+		return existing
+	}
+	home := SynthesizeHomeBay(d)
+	return &home
 }
 
 // nameHint pairs an ID with its parent dock for "did you mean" output.
