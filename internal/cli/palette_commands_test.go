@@ -6,6 +6,7 @@ import (
 
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/engine"
+	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/commontoolsinc/bay/internal/palette"
 )
 
@@ -161,6 +162,93 @@ func TestBuildPaletteEntries_AgentPickEntriesSupportBoundRecents(t *testing.T) {
 		if entry.ParamValid("retired") {
 			t.Fatalf("%s ParamValid(retired)=true; unknown agent should be filtered", id)
 		}
+	}
+}
+
+func TestPaletteCloseSurface_LastHomeUsesDoubleTapConfirmation(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	eng, mockTmux, _, _ := testNavEngine(t)
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+	m, _ := eng.LoadManifest()
+	home := m.FindDock("labs").FindBayByID(manifest.HomeBayID)
+	winID := home.Surfaces[0].Tmux.WindowID
+
+	env := testPaletteEnv()
+	env.Engine = eng
+	env.Ctx = &engine.Context{
+		Dock:    "labs",
+		BayID:   manifest.HomeBayID,
+		Bay:     manifest.HomeBayID,
+		Surface: "shell",
+	}
+	entry := findEntry(t, buildPaletteEntries(env, palette.ModeWindow), "close-surface")
+
+	if _, err := entry.Action(); err != nil {
+		t.Fatalf("close-surface first: %v", err)
+	}
+	if exists, _ := mockTmux.WindowExists(winID); !exists {
+		t.Fatalf("first palette close killed home window %s", winID)
+	}
+	msgs := mockTmux.DisplayMessages()
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "dismiss dock") {
+		t.Fatalf("first palette close messages = %v, want dismissal guidance", msgs)
+	}
+
+	if _, err := entry.Action(); err != nil {
+		t.Fatalf("close-surface second: %v", err)
+	}
+	if has, _ := mockTmux.HasSession("labs"); has {
+		t.Fatal("tmux session still exists after confirmed palette close")
+	}
+	m2, _ := eng.LoadManifest()
+	if home := m2.FindDock("labs").FindBayByID(manifest.HomeBayID); home != nil {
+		t.Fatalf("home persisted after confirmed palette close: %+v", home)
+	}
+}
+
+func TestPaletteCloseBay_LastHomeUsesDoubleTapConfirmation(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	eng, mockTmux, _, _ := testNavEngine(t)
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+	m, _ := eng.LoadManifest()
+	home := m.FindDock("labs").FindBayByID(manifest.HomeBayID)
+	winID := home.Surfaces[0].Tmux.WindowID
+
+	env := testPaletteEnv()
+	env.Engine = eng
+	env.Ctx = &engine.Context{
+		Dock:  "labs",
+		BayID: manifest.HomeBayID,
+		Bay:   manifest.HomeBayID,
+	}
+	entry := findEntry(t, buildPaletteEntries(env, palette.ModeWindow), "close-bay")
+
+	if _, err := entry.Action(); err != nil {
+		t.Fatalf("close-bay first: %v", err)
+	}
+	if exists, _ := mockTmux.WindowExists(winID); !exists {
+		t.Fatalf("first palette close-bay killed home window %s", winID)
+	}
+	msgs := mockTmux.DisplayMessages()
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "dismiss dock") {
+		t.Fatalf("first palette close-bay messages = %v, want dismissal guidance", msgs)
+	}
+
+	if _, err := entry.Action(); err != nil {
+		t.Fatalf("close-bay second: %v", err)
+	}
+	if has, _ := mockTmux.HasSession("labs"); has {
+		t.Fatal("tmux session still exists after confirmed palette close-bay")
+	}
+	m2, _ := eng.LoadManifest()
+	if home := m2.FindDock("labs").FindBayByID(manifest.HomeBayID); home != nil {
+		t.Fatalf("home persisted after confirmed palette close-bay: %+v", home)
 	}
 }
 

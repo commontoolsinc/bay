@@ -329,9 +329,15 @@ func (e *Engine) BayNew(opts BayNewOptions) (*manifest.Bay, error) {
 	return updatedBay, nil
 }
 
+type closeBayResult struct {
+	windowIDs   []string
+	dismissDock bool
+}
+
 // closeBayState does the safety checks, worktree removal, archive,
 // and manifest update for a bay — but NOT the destructive tmux
-// kill. Returns the tmux window IDs the caller should kill afterward.
+// kill. Returns the tmux window IDs the caller should kill afterward,
+// or dismissDock for the confirmed last-home close path.
 //
 // This split exists so callers can defer all destructive tmux work until
 // every manifest update has been persisted. When bay is invoked from
@@ -341,22 +347,22 @@ func (e *Engine) BayNew(opts BayNewOptions) (*manifest.Bay, error) {
 // the manifest update first, the worst case is that bay dies between
 // the manifest write and the kill — leaving the manifest correct and
 // the pane briefly orphaned (next bay invocation will skip it).
-func (e *Engine) closeBayState(dockName, bayID string, force bool) ([]string, error) {
+func (e *Engine) closeBayState(dockName, bayID string, force bool) (closeBayResult, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
-		return nil, err
+		return closeBayResult{}, err
 	}
 
 	dock := m.FindDock(dockName)
 	if dock == nil {
-		return nil, fmt.Errorf("unknown dock %q", dockName)
+		return closeBayResult{}, fmt.Errorf("unknown dock %q", dockName)
 	}
 	bay := dock.FindBayByID(bayID)
 	if bay == nil {
 		if manifest.IsReservedBayID(bayID) {
-			return nil, nil
+			return closeBayResult{}, nil
 		}
-		return nil, fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
+		return closeBayResult{}, fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
 	}
 
 	// Safety checks for worktree bays + determine if the branch
@@ -372,10 +378,10 @@ func (e *Engine) closeBayState(dockName, bayID string, force bool) ([]string, er
 		if _, statErr := os.Stat(bay.Path); statErr == nil {
 			dirty, blockingDirty, err := e.CheckDirtyChanges(bay)
 			if err != nil {
-				return nil, fmt.Errorf("bay %q has uncommitted changes; %w (use --force to override)", bayID, err)
+				return closeBayResult{}, fmt.Errorf("bay %q has uncommitted changes; %w (use --force to override)", bayID, err)
 			}
 			if blockingDirty {
-				return nil, fmt.Errorf("bay %q has uncommitted changes (use --force to override)", bayID)
+				return closeBayResult{}, fmt.Errorf("bay %q has uncommitted changes (use --force to override)", bayID)
 			}
 			if dirty {
 				forceRemoveWorktree = true
@@ -383,10 +389,10 @@ func (e *Engine) closeBayState(dockName, bayID string, force bool) ([]string, er
 
 			unpushed, err := e.HasUnlandedCommits(bay)
 			if err != nil {
-				return nil, fmt.Errorf("bay %q: could not verify push status: %w (use --force to override)", bayID, err)
+				return closeBayResult{}, fmt.Errorf("bay %q: could not verify push status: %w (use --force to override)", bayID, err)
 			}
 			if unpushed {
-				return nil, fmt.Errorf("bay %q has unlanded commits (use --force to override)", bayID)
+				return closeBayResult{}, fmt.Errorf("bay %q has unlanded commits (use --force to override)", bayID)
 			}
 			// Safety checks passed → branch work exists remotely or has landed.
 			if bay.Worktree != nil && bay.Worktree.Branch != "" {
@@ -409,18 +415,18 @@ func (e *Engine) closeBayState(dockName, bayID string, force bool) ([]string, er
 
 	// Collect window IDs (deduped) the caller should kill once all
 	// manifest state is persisted.
-	seen := map[string]bool{}
-	var windowIDs []string
-	for _, s := range bay.Surfaces {
-		if s.Tmux != nil && s.Tmux.WindowID != "" && !seen[s.Tmux.WindowID] {
-			seen[s.Tmux.WindowID] = true
-			windowIDs = append(windowIDs, s.Tmux.WindowID)
-		}
-	}
+	windowIDs := windowIDsForBay(bay)
 
 	if bay.Type == manifest.BayTypeHome {
-		if err := e.rejectIfLastHomeWindowClose(dockName, windowIDs); err != nil {
-			return nil, err
+		dismissDock, err := e.homeCloseWouldDismissDock(dockName, windowIDs)
+		if err != nil {
+			if !force {
+				return closeBayResult{}, err
+			}
+			dismissDock = len(windowIDs) > 0
+		}
+		if dismissDock && !force {
+			return closeBayResult{}, lastHomeCloseError(dockName)
 		}
 		if err := e.withManifest(func(m *manifest.Manifest) error {
 			dock := m.FindDock(dockName)
@@ -430,11 +436,17 @@ func (e *Engine) closeBayState(dockName, bayID string, force bool) ([]string, er
 			if dock.FindBayByID(bayID) == nil {
 				return nil
 			}
-			return dock.RemoveBay(bayID)
+			if err := dock.RemoveBay(bayID); err != nil {
+				return err
+			}
+			if dismissDock {
+				dock.SessionID = ""
+			}
+			return nil
 		}); err != nil {
-			return nil, err
+			return closeBayResult{}, err
 		}
-		return windowIDs, nil
+		return closeBayResult{windowIDs: windowIDs, dismissDock: dismissDock}, nil
 	}
 
 	// Remove worktree from disk. This is destructive of the worktree
@@ -444,7 +456,7 @@ func (e *Engine) closeBayState(dockName, bayID string, force bool) ([]string, er
 		repoPath := config.ExpandPath(dock.Path)
 		if err := e.Git.RemoveWorktree(repoPath, bay.Path, forceRemoveWorktree); err != nil {
 			if !force {
-				return nil, fmt.Errorf("removing worktree: %w", err)
+				return closeBayResult{}, fmt.Errorf("removing worktree: %w", err)
 			}
 		}
 		// Delete the local branch now that the worktree is gone.
@@ -482,9 +494,9 @@ func (e *Engine) closeBayState(dockName, bayID string, force bool) ([]string, er
 		}
 		return dock.RemoveBay(bayID)
 	}); err != nil {
-		return nil, err
+		return closeBayResult{}, err
 	}
-	return windowIDs, nil
+	return closeBayResult{windowIDs: windowIDs}, nil
 }
 
 // HasUnlandedCommits reports whether committed work in bay is not safely
@@ -596,14 +608,18 @@ func (e *Engine) BayCleanReview(dockName, bayID string) (string, error) {
 }
 
 func (e *Engine) BayClose(dockName, bayID string, force bool) error {
-	windowIDs, err := e.closeBayState(dockName, bayID, force)
+	result, err := e.closeBayState(dockName, bayID, force)
 	if err != nil {
 		return err
+	}
+	if result.dismissDock {
+		_ = e.Tmux.KillSession(dockName)
+		return nil
 	}
 	// Manifest is saved. Now kill the windows — bay may die mid-call if
 	// it's running in one of these panes, but the user-visible state is
 	// already correct.
-	for _, id := range windowIDs {
+	for _, id := range result.windowIDs {
 		if !manifest.IsReservedBayID(bayID) {
 			e.ensureHomeIfLastWindow(dockName, id)
 		}
@@ -721,13 +737,13 @@ func (e *Engine) bayCloseBatch(dockName string, force, dryRun bool, skip baySkip
 	var pending []pendingKill
 	for _, t := range targets {
 		label := t.dock + ":" + t.id
-		ids, closeErr := e.closeBayState(t.dock, t.id, force)
+		result, closeErr := e.closeBayState(t.dock, t.id, force)
 		if closeErr != nil {
 			skipped = append(skipped, label+" ("+closeErr.Error()+")")
 			continue
 		}
 		closed = append(closed, label)
-		pending = append(pending, pendingKill{dock: t.dock, windowIDs: ids})
+		pending = append(pending, pendingKill{dock: t.dock, windowIDs: result.windowIDs})
 	}
 
 	// Second pass: kill tmux windows. Safe to die at any point — every

@@ -155,8 +155,9 @@ attempt. Interactive command-line invocations close the last surface on
 the first command.
 
 Closing an agent surface prompts for confirmation when stdin is a
-terminal — agents carry valuable conversation context. Use --force to
-skip close confirmations.`,
+terminal — agents carry valuable conversation context. Closing the final
+home surface dismisses the dock UI/session after the same quick second
+attempt. Use --force to skip close confirmations.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -220,6 +221,7 @@ func runSurfaceClose(eng *engine.Engine, args []string, bayFlag, dockFlag string
 	//   - agent y/N: agent surfaces carry conversation context worth
 	//     protecting on its own. Skipped when the last-surface check has
 	//     already fired — one confirmation is enough.
+	closeForce := force
 	if !force {
 		bay, err := eng.BayShow(dockName, bayName)
 		if err != nil {
@@ -228,6 +230,22 @@ func runSurfaceClose(eng *engine.Engine, args []string, bayFlag, dockFlag string
 		switch s := bay.FindSurface(sName); {
 		case s == nil:
 			// Surface not in manifest; let SurfaceClose surface the error.
+		case bay.Type == manifest.BayTypeHome:
+			dismisses, err := eng.SurfaceCloseWouldDismissDock(dockName, bayName, sName)
+			if err != nil {
+				return err
+			}
+			if dismisses {
+				if !confirmLastHomeClose(homeCloseFlash(eng), dockName) {
+					return nil
+				}
+				closeForce = true
+			} else if s.Type == manifest.SurfaceTypeAgent {
+				if !confirmAgentClose(s.Name) {
+					fmt.Fprintln(os.Stderr, "not closing.")
+					return nil
+				}
+			}
 		case len(bay.Surfaces) == 1 && shouldConfirmLastSurfaceClose():
 			if msg, err := lastSurfaceCloseRefusal(eng, bay); err != nil {
 				return err
@@ -246,7 +264,7 @@ func runSurfaceClose(eng *engine.Engine, args []string, bayFlag, dockFlag string
 		}
 	}
 
-	return eng.SurfaceClose(dockName, bayName, sName, force)
+	return eng.SurfaceClose(dockName, bayName, sName, closeForce)
 }
 
 func lastSurfaceCloseRefusal(eng *engine.Engine, bay *manifest.Bay) (string, error) {
@@ -372,6 +390,14 @@ func notify(eng *engine.Engine, msg string) {
 func notifyFor(eng *engine.Engine, msg string, durationMs int) {
 	_ = eng.Tmux.DisplayMessageAsync(msg, durationMs)
 	fmt.Fprintln(os.Stderr, msg)
+}
+
+func homeCloseFlash(eng *engine.Engine) flashFunc {
+	return func(msg string, durationMs int) error {
+		_ = eng.Tmux.DisplayMessage(msg, durationMs)
+		fmt.Fprintln(os.Stderr, msg)
+		return nil
+	}
 }
 
 func printClosedQueue(eng *engine.Engine, dockName string) error {

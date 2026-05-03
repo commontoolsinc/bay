@@ -384,6 +384,7 @@ func (e *Engine) SurfaceClose(dockName, bayID, surfaceName string, force bool) e
 	var windowIDToKill, paneIDToKill string
 	bayEmpty := false
 	homeSurface := false
+	dismissDock := false
 
 	err := e.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)
@@ -406,31 +407,28 @@ func (e *Engine) SurfaceClose(dockName, bayID, surfaceName string, force bool) e
 			if countSurfacesInLayoutGroup(bay, s.Tmux.LayoutGroup) <= 1 {
 				windowIDToKill = s.Tmux.WindowID
 			} else if s.Tmux.PaneID != "" {
-				paneIDToKill = s.Tmux.PaneID
+				if exists, _ := e.Tmux.PaneExists(s.Tmux.PaneID); exists {
+					panes, err := e.Tmux.ListPanes(s.Tmux.WindowID)
+					if err != nil {
+						return fmt.Errorf("checking panes: %w", err)
+					}
+					if len(panes) <= 1 {
+						windowIDToKill = s.Tmux.WindowID
+					} else {
+						paneIDToKill = s.Tmux.PaneID
+					}
+				}
 			}
 		}
 		if homeSurface {
-			closingWindowID := ""
-			if windowIDToKill != "" {
-				if exists, _ := e.Tmux.WindowExists(windowIDToKill); exists {
-					closingWindowID = windowIDToKill
-				}
-			} else if paneIDToKill != "" && s.Tmux != nil && s.Tmux.WindowID != "" {
-				if exists, _ := e.Tmux.PaneExists(paneIDToKill); exists {
-					panes, err := e.Tmux.ListPanes(s.Tmux.WindowID)
-					if err != nil {
-						return fmt.Errorf("checking home panes: %w", err)
-					}
-					if len(panes) <= 1 {
-						closingWindowID = s.Tmux.WindowID
-					}
-				}
+			wouldDismiss, err := e.homeSurfaceCloseWouldDismissDock(dockName, bay, s)
+			if err != nil {
+				return err
 			}
-			if closingWindowID != "" {
-				if err := e.rejectIfLastHomeWindowClose(dockName, []string{closingWindowID}); err != nil {
-					return err
-				}
+			if wouldDismiss && !force {
+				return lastHomeCloseError(dockName)
 			}
+			dismissDock = wouldDismiss
 		}
 
 		// Queue an undo entry (tmux-backed surfaces only).
@@ -443,7 +441,13 @@ func (e *Engine) SurfaceClose(dockName, bayID, surfaceName string, force bool) e
 		}
 		bay.LastActive = time.Now().Unix()
 		bayEmpty = len(bay.Surfaces) == 0
-		if homeSurface && bayEmpty {
+		if dismissDock {
+			if err := dock.RemoveBay(bayID); err != nil {
+				return err
+			}
+			dock.SessionID = ""
+			bayEmpty = true
+		} else if homeSurface && bayEmpty {
 			removeHomeBayIfEmpty(dock)
 		}
 		return nil
@@ -455,6 +459,10 @@ func (e *Engine) SurfaceClose(dockName, bayID, surfaceName string, force bool) e
 	// Manifest is saved. Now do the destructive tmux work — bay may die
 	// mid-call if it's running in the pane being killed, but the
 	// user-visible state is already correct.
+	if dismissDock {
+		_ = e.Tmux.KillSession(dockName)
+		return nil
+	}
 	if windowIDToKill != "" {
 		if !homeSurface {
 			e.ensureHomeIfLastWindow(dockName, windowIDToKill)
