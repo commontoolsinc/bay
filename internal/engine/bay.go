@@ -45,11 +45,10 @@ func (e *Engine) BayNew(opts BayNewOptions) (*manifest.Bay, error) {
 	var branchExists bool
 
 	nameExplicit := opts.Name != ""
-	// Reject the reserved home handle with the design's bespoke
-	// guidance — accepting it as an alias would suggest bay was
-	// creating a new worktree at dock.path. Also catches the rare
-	// case of a branch sanitizing to "home" before generic
-	// ValidateBayName would reject it less specifically.
+	// Bespoke guidance: accepting "home" as an alias would suggest
+	// bay was creating a new worktree at dock.path. Branch-derived
+	// names that sanitize to "home" are pre-rewritten by
+	// abbreviateBranch, so they never reach this guard.
 	if opts.Name == manifest.HomeBayID {
 		return nil, fmt.Errorf("home is reserved for the dock checkout; use `bay home`")
 	}

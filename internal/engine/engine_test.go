@@ -131,7 +131,9 @@ func TestAbbreviateBranch_AvoidsReservedPattern(t *testing.T) {
 		{"fix/w1", branchAbbrevReservedPrefix + "w1"},
 		{"feature/w42", branchAbbrevReservedPrefix + "w42"},
 		{"w3", branchAbbrevReservedPrefix + "w3"},
-		{"fix/auth", "auth"}, // unaffected
+		{"home", branchAbbrevReservedPrefix + "home"},         // reserved handle
+		{"feature/home", branchAbbrevReservedPrefix + "home"}, // reserved after prefix strip
+		{"fix/auth", "auth"},                                  // unaffected
 	}
 	for _, tt := range tests {
 		if got := abbreviateBranch(tt.branch); got != tt.want {

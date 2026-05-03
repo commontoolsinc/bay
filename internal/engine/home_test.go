@@ -8,10 +8,10 @@ import (
 	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
-// TestBayNew_RejectsHomeName ensures `bay new home` (or any path that
-// reaches BayNew with opts.Name == "home") fails with the design's
-// bespoke guidance — accepting it as an alias would suggest bay is
-// creating a new worktree at dock.path. See docs/design/home-bay.md.
+// Bespoke guidance, not the generic ValidateBayName message:
+// accepting "home" would suggest bay was creating a new worktree at
+// dock.path. Also asserts no worktree is created — the rejection
+// must short-circuit before any disk side effects.
 func TestBayNew_RejectsHomeName(t *testing.T) {
 	eng, _ := testEngine(t)
 

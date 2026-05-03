@@ -223,11 +223,11 @@ func abbreviateBranch(branch string) string {
 	if result == "" {
 		return branch // fallback to raw branch if sanitization empties it
 	}
-	// Names that match the reserved bay ID pattern (^w[1-9]\d*$) are
-	// rejected by ValidateBayName, so a branch like fix/w1 would
-	// otherwise produce an unnameable bay. Prefix so the result is
-	// always a legal Name.
-	if manifest.IsBayID(result) {
+	// Names that match the reserved bay ID pattern (^w[1-9]\d*$) or
+	// the reserved "home" handle are rejected by ValidateBayName, so
+	// branches like fix/w1 or feature/home would otherwise produce an
+	// unnameable bay. Prefix so the result is always a legal Name.
+	if manifest.IsBayID(result) || manifest.IsReservedBayID(result) {
 		result = branchAbbrevReservedPrefix + result
 	}
 	return result
