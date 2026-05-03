@@ -92,6 +92,7 @@ func TestValidateBayName(t *testing.T) {
 		{"w1", true},
 		{"w42", true},
 		{"w999", true},
+		{"home", true}, // reserved for the dock's home pseudo-bay
 
 		// Looks ID-shaped but isn't canonical — accepted (also accepted
 		// by ValidateName).

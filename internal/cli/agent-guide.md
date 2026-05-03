@@ -70,6 +70,16 @@ has:
 |------|-----|--------------------------|
 | **Worktree** | git worktree | yes — creates and deletes it, safety checks on close |
 | **External** | any user path | no — bay remembers it for recovery |
+| **Home** | dock checkout (`dock.path`) | no — bay never deletes the canonical checkout |
+
+`home` is a reserved per-dock pseudo-bay backed by the dock's
+canonical checkout. Every dock has one, addressable as `home` or
+`<dock>:home`. It is hidden from `bay ls`, `bay go`, and bay
+cycling until it has surfaces, but is always reachable through
+direct commands. `bay new home`, `bay rename home`, and
+`bay describe home` are rejected: home's label is fixed and it
+should not carry user-authored context. Close paths never delete
+`dock.path`. See `docs/design/home-bay.md` for the full design.
 
 ### Dirty and merged
 
@@ -467,9 +477,11 @@ bay show self --json
 #### `bay rename [id] <new-name>`
 
 Rename a bay's display label. The new Name must match
-`[a-zA-Z0-9_-]+` and cannot match the reserved ID pattern
-`^w[1-9]\d*$`. With one arg, renames the current bay. After
-rename, the ID is unchanged — it's still the CLI key.
+`[a-zA-Z0-9_-]+`, cannot match the reserved ID pattern
+`^w[1-9]\d*$`, and cannot equal the reserved `home` handle.
+With one arg, renames the current bay. After rename, the ID is
+unchanged — it's still the CLI key. Renaming the home pseudo-bay
+itself is rejected.
 
 ```
 bay rename mem-refactor                 # rename current bay

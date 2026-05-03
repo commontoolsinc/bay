@@ -107,16 +107,21 @@ func ValidateName(name string) error {
 }
 
 // ValidateBayName extends ValidateName by reserving the canonical
-// bay ID pattern (^w[1-9]\d*$). Bay IDs and Names share the
-// same identifier namespace (both can be passed to commands), so allowing
-// a Name to look like an ID would create ambiguous CLI references.
-// Names like w1 / w42 are rejected; w0, w01, my-w1, bay1, W1 are fine.
+// bay ID pattern (^w[1-9]\d*$) and the reserved "home" handle. Bay
+// IDs and Names share the same identifier namespace (both can be
+// passed to commands), so allowing a Name to look like an ID — or
+// to collide with the home pseudo-bay — would create ambiguous CLI
+// references. Names like w1 / w42 / home are rejected; w0, w01,
+// my-w1, bay1, W1 are fine.
 func ValidateBayName(name string) error {
 	if err := ValidateName(name); err != nil {
 		return err
 	}
 	if manifest.IsBayID(name) {
 		return fmt.Errorf("invalid bay name %q: matches the reserved bay ID pattern (^w[1-9]\\d*$); pick a different name", name)
+	}
+	if manifest.IsReservedBayID(name) {
+		return fmt.Errorf("invalid bay name %q: reserved for the dock's home pseudo-bay; pick a different name", name)
 	}
 	return nil
 }

@@ -45,12 +45,21 @@ func (e *Engine) BayNew(opts BayNewOptions) (*manifest.Bay, error) {
 	var branchExists bool
 
 	nameExplicit := opts.Name != ""
+	// Reject the reserved home handle with the design's bespoke
+	// guidance — accepting it as an alias would suggest bay was
+	// creating a new worktree at dock.path. Also catches the rare
+	// case of a branch sanitizing to "home" before generic
+	// ValidateBayName would reject it less specifically.
+	if opts.Name == manifest.HomeBayID {
+		return nil, fmt.Errorf("home is reserved for the dock checkout; use `bay home`")
+	}
 	displayName := opts.Name
 	if displayName == "" && opts.Branch != "" {
 		displayName = uniqueBayName(dock, nil, abbreviateBranch(opts.Branch))
 	}
 	// Validate explicit/branch-derived name early. Names matching the
-	// reserved ID pattern (^w[1-9]\d*$) are rejected here.
+	// reserved ID pattern (^w[1-9]\d*$) or the reserved "home" handle
+	// are rejected here.
 	if displayName != "" {
 		if err := ValidateBayName(displayName); err != nil {
 			return nil, err
@@ -567,6 +576,12 @@ func (e *Engine) BayCleanReview(dockName, bayID string) (string, error) {
 }
 
 func (e *Engine) BayClose(dockName, bayID string, force bool) error {
+	if bayID == manifest.HomeBayID {
+		// Step 1: home has no surfaces yet (Step 2 adds them). The
+		// canonical-checkout invariant — never delete dock.Path — is
+		// guaranteed by routing around closeBayState entirely.
+		return nil
+	}
 	windowIDs, err := e.closeBayState(dockName, bayID, force)
 	if err != nil {
 		return err
@@ -707,8 +722,12 @@ func (e *Engine) bayCloseBatch(dockName string, force, dryRun bool, skip baySkip
 	return closed, skipped, nil
 }
 
-// BayUpdate updates bay metadata (branch, PR).
+// BayUpdate updates bay metadata (branch, PR). Rejects the home
+// pseudo-bay: it has no worktree and no PR/branch to track.
 func (e *Engine) BayUpdate(dockName, bayID string, branch, pr *string) error {
+	if bayID == manifest.HomeBayID {
+		return fmt.Errorf("home is reserved; branch/PR metadata does not apply to the home pseudo-bay")
+	}
 	return e.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)
 		if dock == nil {
@@ -744,7 +763,14 @@ func (e *Engine) BayUpdate(dockName, bayID string, branch, pr *string) error {
 // BayDescribe sets (or clears, if desc is "") a bay's description.
 // Descriptions appear in the bay picker and in ls/tree output; they
 // have no effect on tmux tab names, which stay short by design.
+//
+// Rejects the home pseudo-bay: home should not carry user-authored
+// context like a normal bay (the dock checkout is fixed; the label
+// is fixed). See docs/design/home-bay.md.
 func (e *Engine) BayDescribe(dockName, bayID, desc string) error {
+	if bayID == manifest.HomeBayID {
+		return fmt.Errorf("home is reserved; describe is not supported on the home pseudo-bay")
+	}
 	desc = strings.TrimSpace(desc)
 	if err := ValidateDescription(desc); err != nil {
 		return err
@@ -764,8 +790,13 @@ func (e *Engine) BayDescribe(dockName, bayID, desc string) error {
 	})
 }
 
-// BayRename renames a bay.
+// BayRename renames a bay. Rejects the home pseudo-bay (the label
+// is fixed) and rejects renaming any bay to the reserved "home"
+// handle. See docs/design/home-bay.md.
 func (e *Engine) BayRename(dockName, bayID, newName string) error {
+	if bayID == manifest.HomeBayID {
+		return fmt.Errorf("home is reserved; rename is not supported on the home pseudo-bay")
+	}
 	if err := ValidateBayName(newName); err != nil {
 		return err
 	}

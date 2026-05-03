@@ -22,7 +22,23 @@ const CurrentVersion = 6
 const (
 	BayTypeWorktree BayType = "worktree"
 	BayTypeExternal BayType = "external"
+	// BayTypeHome is the dock's canonical-checkout pseudo-bay. Backed by
+	// Dock.Path, never owns a worktree, never deleted by close paths.
+	// See docs/design/home-bay.md.
+	BayTypeHome BayType = "home"
 )
+
+// HomeBayID is the reserved ID/Name used by every dock's home bay.
+// Reserved across creation/rename: ValidateBayName rejects it as a Name,
+// and BayNew rejects it as an explicit name with bespoke guidance.
+const HomeBayID = "home"
+
+// IsReservedBayID reports whether s is reserved by bay (currently just
+// "home"). Distinct from IsBayID, which checks the canonical w<N>
+// generation pattern; reserved IDs are not generated but are addressable.
+func IsReservedBayID(s string) bool {
+	return s == HomeBayID
+}
 
 // SurfaceType constants — the semantic role of a surface.
 const (
@@ -710,9 +726,16 @@ func (d *Dock) FindBayByID(id string) *Bay {
 // AddBay adds a bay. Returns an error if the bay's Name
 // is non-empty and already taken in the dock. Empty-Name bays are
 // always allowed; they'll display via their ID until a Name is set.
+//
+// The reserved ID/Name "home" is admitted only for BayTypeHome —
+// every other type with that handle would shadow the dock's home
+// pseudo-bay and break the resolver's home-target contract.
 func (d *Dock) AddBay(bay Bay) error {
 	if bay.Name != "" && d.FindBay(bay.Name) != nil {
 		return fmt.Errorf("bay %q already exists in dock %q", bay.Name, d.Name)
+	}
+	if (bay.ID == HomeBayID || bay.Name == HomeBayID) && bay.Type != BayTypeHome {
+		return fmt.Errorf("bay ID/name %q is reserved for the dock's home pseudo-bay", HomeBayID)
 	}
 	if bay.Surfaces == nil {
 		bay.Surfaces = []Surface{}
@@ -853,6 +876,13 @@ func (b *Bay) RemoveSurface(name string) error {
 // looks like a Name (i.e. it doesn't match a known ID), the error
 // message hints at the canonical ID for any bay with a matching
 // Name, so users who type a friendly Name see a one-step fix.
+//
+// "home" is the reserved per-dock pseudo-bay. With a dock prefix
+// ("labs:home"), it always resolves — to the persisted home entry if
+// one exists, otherwise a synthesized empty home backed by dock.Path.
+// A bare "home" requires dock context (every dock has its own home),
+// so it errors at the manifest layer; the CLI layer disambiguates by
+// trying the current dock first via resolveBareBay.
 func (m *Manifest) ResolveBay(query string) (*Bay, *Dock, error) {
 	// Try "dock:id" format.
 	if parts := strings.SplitN(query, ":", 2); len(parts) == 2 {
@@ -860,11 +890,18 @@ func (m *Manifest) ResolveBay(query string) (*Bay, *Dock, error) {
 		if d == nil {
 			return nil, nil, fmt.Errorf("dock %q not found", parts[0])
 		}
+		if parts[1] == HomeBayID {
+			return resolveHomeBay(d), d, nil
+		}
 		bay := d.FindBayByID(parts[1])
 		if bay == nil {
 			return nil, nil, bayNotFoundError(parts[1], parts[0], dockNameHints(d, parts[1]))
 		}
 		return bay, d, nil
+	}
+
+	if query == HomeBayID {
+		return nil, nil, fmt.Errorf("home requires a dock context; use \"<dock>:home\" or run from a known dock")
 	}
 
 	// Bare ID: search all docks.
@@ -892,6 +929,23 @@ func (m *Manifest) ResolveBay(query string) (*Bay, *Dock, error) {
 			docks = append(docks, match.dock.Name)
 		}
 		return nil, nil, fmt.Errorf("bay ID %q is ambiguous; found in docks: %s", query, strings.Join(docks, ", "))
+	}
+}
+
+// resolveHomeBay returns d's persisted home entry if one exists,
+// otherwise a synthesized empty home Bay. The synthesized value is a
+// fresh allocation — callers that mutate it will not observe changes
+// in the manifest. Step 2 materializes the home bay before any state
+// mutation. See docs/design/home-bay.md.
+func resolveHomeBay(d *Dock) *Bay {
+	if existing := d.FindBayByID(HomeBayID); existing != nil {
+		return existing
+	}
+	return &Bay{
+		ID:   HomeBayID,
+		Name: HomeBayID,
+		Type: BayTypeHome,
+		Path: d.Path,
 	}
 }
 

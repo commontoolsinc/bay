@@ -658,6 +658,14 @@ func runDescribe(args []string, dockFlag string, clear, edit bool) error {
 		return err
 	}
 
+	// Reject describe on the home pseudo-bay across read, write, edit,
+	// and clear paths. The engine guards write/edit/clear, but the
+	// read path goes through BayShow, which would otherwise return
+	// the less-specific "bay not found".
+	if bayID == manifest.HomeBayID {
+		return fmt.Errorf("home is reserved; describe is not supported on the home pseudo-bay")
+	}
+
 	// No-op read path: no args, no flags → print current description.
 	if !haveDesc && !clear && !edit {
 		bay, bayErr := eng.BayShow(dockName, bayID)
