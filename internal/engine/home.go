@@ -168,7 +168,7 @@ func (e *Engine) selectSurface(s *manifest.Surface) bool {
 	return true
 }
 
-func (e *Engine) ensureSessionForHomeSurface(dockName string, dock *manifest.Dock) error {
+func (e *Engine) ensureDockSessionForHomeSurface(dockName string, dock *manifest.Dock) error {
 	persistCreatedSessionID := !dockHasRecordedTmuxSurfaces(dock)
 	sessionID, sessionCreated, err := e.ensureSessionForBay(dockName, dock.SessionID)
 	if err != nil {

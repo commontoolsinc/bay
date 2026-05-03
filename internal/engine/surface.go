@@ -178,7 +178,7 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 		if err := validateResolvableHome(dock); err != nil {
 			return err
 		}
-		if err := e.ensureSessionForHomeSurface(dockName, dock); err != nil {
+		if err := e.ensureDockSessionForHomeSurface(dockName, dock); err != nil {
 			return err
 		}
 	}

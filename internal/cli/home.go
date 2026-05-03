@@ -1,6 +1,9 @@
 package cli
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/commontoolsinc/bay/internal/engine"
+	"github.com/spf13/cobra"
+)
 
 func newHomeCmd() *cobra.Command {
 	return &cobra.Command{
@@ -14,11 +17,15 @@ create a shell surface at the dock checkout path.`,
 			if err != nil {
 				return err
 			}
-			dockName, err := resolveCurrentDock(eng)
-			if err != nil {
-				return err
-			}
-			return eng.Home(dockName)
+			return runHome(eng)
 		},
 	}
+}
+
+func runHome(eng *engine.Engine) error {
+	dockName, err := resolveCurrentDock(eng)
+	if err != nil {
+		return err
+	}
+	return eng.Home(dockName)
 }
