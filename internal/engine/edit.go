@@ -64,7 +64,7 @@ func (e *Engine) EditAll(dockName string) ([]string, error) {
 	}
 	var paths []string
 	for _, bay := range dock.Bays {
-		if bay.Path != "" {
+		if !isHomeBayRecord(&bay) && bay.Path != "" {
 			paths = append(paths, bay.Path)
 		}
 	}

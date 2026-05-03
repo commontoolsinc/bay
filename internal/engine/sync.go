@@ -213,25 +213,36 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 		now := time.Now().Unix()
 		for di := range m.Docks {
 			dock := &m.Docks[di]
-			for wi := range dock.Bays {
+			for wi := 0; wi < len(dock.Bays); {
 				bay := &dock.Bays[wi]
+				if isHomeBayRecord(bay) {
+					if bay.PendingCloseAt != 0 {
+						bay.PendingCloseAt = 0
+						changed = true
+					}
+					if len(bay.Surfaces) == 0 {
+						if removeHomeBayIfEmpty(dock) {
+							changed = true
+							continue
+						}
+					}
+					wi++
+					continue
+				}
 				if bay.PendingCloseAt == 0 {
+					wi++
 					continue
 				}
 				if len(bay.Surfaces) > 0 {
 					bay.PendingCloseAt = 0
 					changed = true
-					continue
-				}
-				if bay.Type == manifest.BayTypeHome {
-					bay.PendingCloseAt = 0
-					removeHomeBayIfEmpty(dock)
-					changed = true
+					wi++
 					continue
 				}
 				if bay.PendingCloseAt <= now {
 					toFinalize = append(toFinalize, orphanCandidate{dock.Name, bay.ID})
 				}
+				wi++
 			}
 		}
 
@@ -274,7 +285,7 @@ func (e *Engine) probeBaySync(dock *manifest.Dock, bay *manifest.Bay, sessionOwn
 		path:       bay.Path,
 	}
 
-	if bay.Path != "" && bay.Worktree != nil {
+	if !isHomeBayRecord(bay) && bay.Path != "" && bay.Worktree != nil {
 		bayPath := config.ExpandPath(bay.Path)
 		if _, err := os.Stat(bayPath); err == nil {
 			branch, err := e.Git.CurrentBranch(bayPath)
@@ -345,9 +356,14 @@ func (e *Engine) applyBaySyncUpdate(m *manifest.Manifest, update baySyncUpdate, 
 		return false, nil
 	}
 
-	bay := findBayByPath(dock, update.path)
-	if bay == nil {
+	var bay *manifest.Bay
+	if manifest.IsReservedBayID(update.originalID) {
 		bay = dock.FindBayByID(update.originalID)
+	} else {
+		bay = findBayByPath(dock, update.path)
+		if bay == nil {
+			bay = dock.FindBayByID(update.originalID)
+		}
 	}
 	if bay == nil {
 		return false, nil
@@ -451,7 +467,7 @@ func (e *Engine) applyBaySyncUpdate(m *manifest.Manifest, update baySyncUpdate, 
 			// If the strip emptied the bay, schedule auto-close
 			// after a grace window. The user has that long to re-open
 			// a surface (bay sf new --bay <id>) to cancel.
-			if len(bay.Surfaces) == 0 && bay.Type == manifest.BayTypeHome {
+			if len(bay.Surfaces) == 0 && isHomeBayRecord(bay) {
 				removeHomeBayIfEmpty(dock)
 			} else if len(bay.Surfaces) == 0 && bay.PendingCloseAt == 0 {
 				bay.PendingCloseAt = time.Now().Unix() + orphanGraceSeconds

@@ -372,7 +372,7 @@ func (e *Engine) buildBayInfo(bay *manifest.Bay, agent string, waitingWindows ma
 
 	branch := ""
 	pr := ""
-	if bay.Worktree != nil {
+	if !isHomeBayRecord(bay) && bay.Worktree != nil {
 		branch = bay.Worktree.Branch
 		pr = bay.Worktree.PR
 	}
@@ -385,7 +385,7 @@ func (e *Engine) buildBayInfo(bay *manifest.Bay, agent string, waitingWindows ma
 		Path:         bay.Path,
 		Branch:       branch,
 		PR:           pr,
-		Pending:      bay.Worktree != nil && bay.Worktree.Branch != "" && !bay.IsMerged(),
+		Pending:      !isHomeBayRecord(bay) && bay.Worktree != nil && bay.Worktree.Branch != "" && !bay.IsMerged(),
 		Missing:      bay.Path != "" && statErr != nil,
 		DefaultAgent: agent,
 		SyncStatus:   manifest.SyncStatusOK,
@@ -397,7 +397,7 @@ func (e *Engine) buildBayInfo(bay *manifest.Bay, agent string, waitingWindows ma
 	}
 
 	// Compute dirty state from git.
-	if bay.Type != manifest.BayTypeHome && bay.Path != "" && statErr == nil {
+	if !isHomeBayRecord(bay) && bay.Path != "" && statErr == nil {
 		if dirty, err := e.Git.IsDirty(bayPath); err == nil {
 			bayInfo.Dirty = dirty
 		}

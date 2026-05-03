@@ -105,6 +105,20 @@ func TestBayNew_BareAgentFlag(t *testing.T) {
 	}
 }
 
+func TestBayClose_BatchFlagsRejectBayID(t *testing.T) {
+	for _, flag := range []string{"--done", "--clean", "--all"} {
+		t.Run(flag, func(t *testing.T) {
+			cmd := newBayCloseCmd()
+			cmd.SetArgs([]string{"w1", flag})
+
+			err := cmd.Execute()
+			if err == nil || !strings.Contains(err.Error(), "batch close flags do not take a bay ID") {
+				t.Fatalf("bay close w1 %s error = %v, want batch flag/id rejection", flag, err)
+			}
+		})
+	}
+}
+
 // TestSurfaceNew_SubcommandsHaveBayAndDockFlags pins that surface new's
 // subcommands (shell, agent, cmd) accept --bay and --dock.
 func TestSurfaceNew_SubcommandsHaveBayAndDockFlags(t *testing.T) {

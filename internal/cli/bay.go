@@ -121,7 +121,7 @@ func newBayNewCmd() *cobra.Command {
 }
 
 func newBayCloseCmd() *cobra.Command {
-	var force, clean, done, dryRun bool
+	var force, clean, done, all, dryRun bool
 	var dockFlag string
 
 	cmd := &cobra.Command{
@@ -129,7 +129,7 @@ func newBayCloseCmd() *cobra.Command {
 		Aliases: []string{"rm"},
 		Short:   "Close a bay and all its surfaces",
 		Long: `Close a bay and all its windows. Pass "self" to close the current
-bay, or use --done/--clean to batch-close bays.
+bay, or use --done/--clean/--all to batch-close bays.
 
   bay close w1               close a specific bay
   bay close labs:w1          dock-qualified
@@ -138,15 +138,29 @@ bay, or use --done/--clean to batch-close bays.
   bay close home             close home surfaces; final home dismisses dock UI after confirmation
   bay close --done           close bays that are not dirty or pending
   bay close --clean          close all non-dirty bays
+  bay close --all            close all bays, then home after confirmation if final
   bay close --done --dry-run preview what --done would close`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			batchFlags := 0
+			for _, enabled := range []bool{clean, done, all} {
+				if enabled {
+					batchFlags++
+				}
+			}
+			if batchFlags > 1 {
+				return fmt.Errorf("use only one of --done, --clean, or --all")
+			}
+			if batchFlags > 0 && len(args) > 0 {
+				return fmt.Errorf("batch close flags do not take a bay ID; use bay close <id> or bay close --done/--clean/--all")
+			}
+
 			eng, err := newEngine()
 			if err != nil {
 				return err
 			}
 
-			if clean || done {
+			if clean || done || all {
 				dockName := dockFlag
 				if dockName == "" {
 					sess, tmuxErr := eng.Tmux.CurrentSession()
@@ -167,7 +181,9 @@ bay, or use --done/--clean to batch-close bays.
 
 				var closed, skipped []string
 				var closeErr error
-				if done {
+				if all {
+					closed, skipped, closeErr = runBayCloseAll(eng, dockName, force, dryRun)
+				} else if done {
 					closed, skipped, closeErr = eng.BayCloseDone(dockName, force, dryRun, exclude...)
 				} else {
 					closed, skipped, closeErr = eng.BayCloseClean(dockName, force, dryRun, exclude...)
@@ -190,7 +206,7 @@ bay, or use --done/--clean to batch-close bays.
 			}
 
 			if len(args) == 0 {
-				return fmt.Errorf("specify a bay to close (bay close <id>), or use --done / --clean")
+				return fmt.Errorf("specify a bay to close (bay close <id>), or use --done / --clean / --all")
 			}
 
 			dockName, bayID, err := resolveBayArg(eng, args[0], dockFlag)
@@ -205,7 +221,8 @@ bay, or use --done/--clean to batch-close bays.
 	cmd.Flags().BoolVar(&force, "force", false, "force close even if dirty; skip home dismissal confirmation")
 	cmd.Flags().BoolVar(&done, "done", false, "close bays that are not dirty or pending")
 	cmd.Flags().BoolVar(&clean, "clean", false, "close all non-dirty bays")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "preview what --done/--clean would close")
+	cmd.Flags().BoolVar(&all, "all", false, "close all bays, then home after confirmation if final")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "preview what --done/--clean/--all would close")
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare bay ID)")
 
 	return cmd
@@ -226,6 +243,26 @@ func runBayClose(eng *engine.Engine, dockName, bayID string, force bool) error {
 		}
 	}
 	return eng.BayClose(dockName, bayID, closeForce)
+}
+
+func runBayCloseAll(eng *engine.Engine, dockName string, force, dryRun bool) ([]string, []string, error) {
+	if dockName == "" {
+		return nil, nil, fmt.Errorf("bay close --all requires a dock context or --dock")
+	}
+	homeDismissForce := force
+	if !force && !dryRun {
+		dismisses, err := eng.BayCloseAllWouldDismissDock(dockName)
+		if err != nil {
+			return nil, nil, err
+		}
+		if dismisses {
+			if !confirmLastHomeClose(homeCloseFlash(eng), dockName) {
+				return nil, nil, nil
+			}
+			homeDismissForce = true
+		}
+	}
+	return eng.BayCloseAll(dockName, force, homeDismissForce, dryRun)
 }
 
 func newBayCleanReviewCmd() *cobra.Command {

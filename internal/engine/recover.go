@@ -7,6 +7,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
@@ -213,7 +214,20 @@ func (e *Engine) recoverDockBays(dock *manifest.Dock, m *manifest.Manifest) reco
 	for i := range dock.Bays {
 		bay := &dock.Bays[i]
 
-		if _, err := os.Stat(bay.Path); err != nil {
+		if isHomeBayRecord(bay) {
+			if err := validateHomeBayLifecycleShape(dock, bay); err != nil {
+				outcome.errs = append(outcome.errs, err.Error())
+				continue
+			}
+			if len(bay.Surfaces) == 0 {
+				continue
+			}
+		}
+		cwd, ok := recoverBayCWD(dock, bay)
+		if !ok {
+			continue
+		}
+		if _, err := os.Stat(cwd); err != nil {
 			continue
 		}
 
@@ -243,7 +257,7 @@ func (e *Engine) recoverDockBays(dock *manifest.Dock, m *manifest.Manifest) reco
 
 			if existingWindowID != "" {
 				// Window exists — reconcile panes.
-				outcome.changed = e.reconcileSurfaces(dock.Name, existingWindowID, bay, surfaceIndices, m, &outcome) || outcome.changed
+				outcome.changed = e.reconcileSurfaces(dock.Name, existingWindowID, cwd, bay, surfaceIndices, m, &outcome) || outcome.changed
 			} else {
 				// Window gone — recreate it. Primary windows (group 1) get
 				// the bay compact label; secondary windows get :surfacename.
@@ -252,7 +266,7 @@ func (e *Engine) recoverDockBays(dock *manifest.Dock, m *manifest.Manifest) reco
 				if layoutGroup > 1 && len(surfaceIndices) > 0 {
 					windowName = ":" + bay.Surfaces[surfaceIndices[0]].Name
 				}
-				newWindowID, err := e.Tmux.NewWindow(dock.Name, windowName, bay.Path)
+				newWindowID, err := e.Tmux.NewWindow(dock.Name, windowName, cwd)
 				if err != nil {
 					outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: create window: %v", bay.Name, err))
 					continue
@@ -279,7 +293,7 @@ func (e *Engine) recoverDockBays(dock *manifest.Dock, m *manifest.Manifest) reco
 							continue
 						}
 						s.Tmux.PaneID = panes[0].ID
-						if err := e.recoverSurfaceLaunch(dock.Name, s, s.Tmux.PaneID, m, true); err != nil {
+						if err := e.recoverSurfaceLaunch(dock.Name, s, s.Tmux.PaneID, cwd, m, true); err != nil {
 							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", bay.Name, s.Name, err))
 						}
 					} else {
@@ -293,13 +307,13 @@ func (e *Engine) recoverDockBays(dock *manifest.Dock, m *manifest.Manifest) reco
 							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", bay.Name, s.Name, err))
 							continue
 						}
-						newPaneID, err := e.Tmux.SplitWindow(splitTargetID, dir, bay.Path, false)
+						newPaneID, err := e.Tmux.SplitWindow(splitTargetID, dir, cwd, false)
 						if err != nil {
 							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: split window: %v", bay.Name, s.Name, err))
 							continue
 						}
 						s.Tmux.PaneID = newPaneID
-						if err := e.recoverSurfaceLaunch(dock.Name, s, newPaneID, m, true); err != nil {
+						if err := e.recoverSurfaceLaunch(dock.Name, s, newPaneID, cwd, m, true); err != nil {
 							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", bay.Name, s.Name, err))
 						}
 					}
@@ -315,7 +329,7 @@ func (e *Engine) recoverDockBays(dock *manifest.Dock, m *manifest.Manifest) reco
 }
 
 // reconcileSurfaces checks existing panes against manifest surfaces and repairs missing ones.
-func (e *Engine) reconcileSurfaces(dockName, tmuxWindowID string, bay *manifest.Bay, surfaceIndices []int, m *manifest.Manifest, outcome *recoverOutcome) bool {
+func (e *Engine) reconcileSurfaces(dockName, tmuxWindowID, cwd string, bay *manifest.Bay, surfaceIndices []int, m *manifest.Manifest, outcome *recoverOutcome) bool {
 	tmuxPanes, err := e.Tmux.ListPanes(tmuxWindowID)
 	if err != nil {
 		outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: list panes for %s: %v", bay.Name, tmuxWindowID, err))
@@ -347,22 +361,35 @@ func (e *Engine) reconcileSurfaces(dockName, tmuxWindowID string, bay *manifest.
 			outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", bay.Name, s.Name, err))
 			continue
 		}
-		newPaneID, err := e.Tmux.SplitWindow(splitTargetID, dir, bay.Path, false)
+		newPaneID, err := e.Tmux.SplitWindow(splitTargetID, dir, cwd, false)
 		if err != nil {
 			outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: split window: %v", bay.Name, s.Name, err))
 			continue
 		}
 		s.Tmux.PaneID = newPaneID
 		changed = true
-		if err := e.recoverSurfaceLaunch(dockName, s, newPaneID, m, true); err != nil {
+		if err := e.recoverSurfaceLaunch(dockName, s, newPaneID, cwd, m, true); err != nil {
 			outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", bay.Name, s.Name, err))
 		}
 	}
 	return changed
 }
 
+func recoverBayCWD(dock *manifest.Dock, bay *manifest.Bay) (string, bool) {
+	if isHomeBayRecord(bay) {
+		if dock == nil || dock.Path == "" {
+			return "", false
+		}
+		return config.ExpandPath(dock.Path), true
+	}
+	if bay == nil || bay.Path == "" {
+		return "", false
+	}
+	return config.ExpandPath(bay.Path), true
+}
+
 // recoverSurfaceLaunch sends the appropriate launch command to a recovered surface.
-func (e *Engine) recoverSurfaceLaunch(dockName string, s *manifest.Surface, tmuxPaneID string, m *manifest.Manifest, newlyCreated bool) error {
+func (e *Engine) recoverSurfaceLaunch(dockName string, s *manifest.Surface, tmuxPaneID, cwd string, m *manifest.Manifest, newlyCreated bool) error {
 	if tmuxPaneID == "" {
 		return fmt.Errorf("missing tmux pane id")
 	}
@@ -400,6 +427,12 @@ func (e *Engine) recoverSurfaceLaunch(dockName string, s *manifest.Surface, tmux
 		}
 	case manifest.SurfaceTypeShell:
 		// No command needed.
+	case manifest.SurfaceTypeEditor:
+		if s.Command != nil && *s.Command != "" {
+			if err := e.Tmux.RespawnPane(tmuxPaneID, cwd, *s.Command); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -509,6 +542,9 @@ func mergeRecoveredDockRuntimeState(dst, src *manifest.Dock) bool {
 }
 
 func findBayForRecoveryMerge(dock *manifest.Dock, src *manifest.Bay) *manifest.Bay {
+	if isHomeBayRecord(src) {
+		return dock.FindBayByID(manifest.HomeBayID)
+	}
 	for i := range dock.Bays {
 		if dock.Bays[i].Path == src.Path {
 			return &dock.Bays[i]

@@ -182,7 +182,7 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 			return err
 		}
 	}
-	cwd := homeSurfaceCWD(bay)
+	cwd := homeSurfaceCWD(dock, bay)
 
 	// Determine the layout group — find an existing tmux window to split into,
 	// or create a new one.
@@ -395,7 +395,12 @@ func (e *Engine) SurfaceClose(dockName, bayID, surfaceName string, force bool) e
 		if bay == nil {
 			return fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
 		}
-		homeSurface = bay.Type == manifest.BayTypeHome
+		homeSurface = isHomeBayRecord(bay)
+		if homeSurface {
+			if err := validateHomeBayLifecycleShape(dock, bay); err != nil {
+				return err
+			}
+		}
 		s := bay.FindSurface(surfaceName)
 		if s == nil {
 			return fmt.Errorf("surface %q not found in bay %q", surfaceName, bayID)
