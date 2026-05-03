@@ -15,7 +15,7 @@ import (
 
 func newEditCmd() *cobra.Command {
 	var dockScope bool
-	var editorFlag, splitDir string
+	var editorFlag, splitDir, bayFlag, dockNameFlag string
 	var window, pane bool
 
 	cmd := &cobra.Command{
@@ -27,6 +27,7 @@ for a new tmux window.
 
   bay edit                    bay editor as a split pane
   bay edit w1                 specific bay as a split pane
+  bay edit --bay home         edit the dock checkout
   bay edit --dock             dock editor (all bays)
   bay edit --dock src/main.go focus dock editor on a file
   bay edit --dock .           focus dock editor on cwd
@@ -47,6 +48,9 @@ Editor resolution order:
 			}
 
 			if dockScope {
+				if bayFlag != "" || dockNameFlag != "" {
+					return fmt.Errorf("--dock cannot be combined with --bay")
+				}
 				focusPath := ""
 				if len(args) > 0 {
 					focusPath = args[0]
@@ -55,15 +59,17 @@ Editor resolution order:
 			}
 
 			sd := resolveSplit(splitDir, window, pane)
-			target := "self"
-			if len(args) > 0 {
-				target = args[0]
+			target, err := editTargetFromArgs(args, bayFlag, dockNameFlag)
+			if err != nil {
+				return err
 			}
 			return runEditCreate(eng, target, editorFlag, sd)
 		},
 	}
 
 	cmd.Flags().BoolVar(&dockScope, "dock", false, "dock-scoped editor (all bays)")
+	cmd.Flags().StringVar(&bayFlag, "bay", "", "bay ID (defaults to current)")
+	cmd.Flags().StringVar(&dockNameFlag, "dock-name", "", "dock name (with --bay to disambiguate)")
 	cmd.Flags().StringVar(&editorFlag, "editor", "", "editor command (overrides config for this invocation)")
 	cmd.Flags().StringVar(&splitDir, "split", "", "split direction (h or v)")
 	cmd.Flags().BoolVar(&pane, "pane", false, "split into current window (default; shorthand for --split v)")

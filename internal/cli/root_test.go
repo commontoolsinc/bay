@@ -15,7 +15,7 @@ func TestNewRootCmd(t *testing.T) {
 	expected := map[string]bool{
 		"dock": false, "surface": false,
 		"new": false, "close": false, "clean-review": false, "show": false, "rename": false, "describe": false,
-		"go": false, "ls": false, "next": false, "prev": false, "tree": false, "pwd": false,
+		"home": false, "go": false, "ls": false, "next": false, "prev": false, "tree": false, "pwd": false,
 		"recover": false, "doctor": false, "setup": false, "monitor": false, "version": false,
 		"shell": false, "edit": false, "status-line": false,
 		"agent-guide": false,

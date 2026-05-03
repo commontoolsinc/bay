@@ -93,6 +93,7 @@ bay agent                   # launch default agent as a split pane
 bay agent claude            # launch a specific agent as a split pane
 bay shell                   # open a shell as a split pane
 bay edit                    # open the editor
+bay home                    # focus/create a shell in the dock checkout
 ```
 
 ### Navigate
@@ -146,9 +147,11 @@ might have a `dev` dock for one project and an `ops` dock for another.
 Each dock owns one local git checkout and has optional defaults for
 agent and terminal.
 
-When a dock is created, its tmux session starts with a placeholder `~`
-window. This disappears when you create your first bay and
-reappears when you close your last.
+When a dock is created explicitly, bay opens a `home` shell in the
+dock checkout. Auto-bootstrap through `bay new` creates only the
+requested worktree bay. If the last non-home surface in a dock closes,
+bay creates or focuses a home shell instead of leaving an empty
+placeholder.
 
 ```
 bay dock new dev --path ~/projects/myproject
@@ -171,10 +174,11 @@ A **bay** is a working directory with metadata. Three types:
   manages tmux surfaces and recovery, but does not create or delete
   the directory.
 - **Home** -- a reserved per-dock pseudo-bay backed by the dock's
-  canonical checkout (`dock.path`). Phase 1 reserves `home` as a
-  target only; shells, agents, editors, navigation, palette entries,
-  and keybindings arrive in later phases. Bay never deletes the
-  canonical checkout.
+  canonical checkout (`dock.path`). Home supports shell, agent,
+  command, and editor surfaces and appears in `bay ls`, `bay tree`,
+  `bay go`, and cycling while it has surfaces. Empty home stays hidden
+  from normal lists and pickers. Bay never deletes the canonical
+  checkout.
 
 Each bay has three identity concepts:
 
@@ -541,6 +545,7 @@ bay new [name] --dir <path>              # external bay
 bay new [name] --description "<text>"    # set description at creation time
 bay new [name] -q                        # suppress output (scripting)
 bay close <id>                           # close + delete pushed branch ('self' for current)
+bay close home                           # close home surfaces; keeps dock checkout
 bay close <id> --force                   # skip safety checks (keeps unlanded branches)
 bay close --done                         # close bays not dirty or pending
 bay close --clean                        # close all non-dirty bays
@@ -560,6 +565,7 @@ bay ls                                   # list bays in current dock
 bay ls --json                            # machine-readable bay list
 bay tree                                 # full tree (bays + surfaces)
 bay go [query]                           # bay picker (intra-dock)
+bay go home                              # focus/create home shell
 bay go --waiting                         # filter to waiting bays
 bay go --next-waiting                    # cycle to next waiting bay
 bay next                                 # next bay in dock
@@ -578,6 +584,7 @@ bay surface new edit [id]                  # editor surface as split pane
 bay surface new shell [name] --window      # shell in a new tmux window
 bay surface new shell [name] --split h     # horizontal split
 bay surface new shell [name] --bay <id>    # target a different bay
+bay surface new cmd "git pull --ff-only" --bay home  # command in dock checkout
 bay surface close <name>                   # close a surface (prompts on agents)
 bay surface close <name> --force           # skip close confirmations
 bay surface restore                        # restore the most recently closed surface
@@ -605,12 +612,16 @@ Common surface shortcuts:
 ```
 bay shell [name]                # shell as split pane (default)
 bay shell [name] --window       # shell in new window
+bay shell --bay home            # shell in dock checkout
 bay agent [type]                # agent as split pane
 bay agent --window              # agent in new window
+bay agent codex --bay home      # agent in dock checkout
 bay edit [id]                   # open bay in editor (default)
+bay edit --bay home             # edit dock checkout
 bay edit --editor vim           # use a specific editor this time
 bay edit --window               # editor in new window
 bay edit --dock                 # dock editor (all bays)
+bay home                        # focus/create dock checkout shell
 bay restore                     # alias for bay surface restore (undo-close)
 bay rename [id] <new-name>      # rename bay (defaults to current)
 ```
@@ -640,7 +651,7 @@ matches open an interactive picker.
 ### Docks
 
 ```
-bay dock new <name> --path <path>           # create dock + tmux session
+bay dock new <name> --path <path>           # create dock + home shell
 bay dock new <name> --path <path> --agent <a>  # with default agent
 bay dock new <name> --terminal <t>          # with host terminal
 bay dock init [name]                        # set up bay files in checkout
@@ -799,6 +810,7 @@ individual files, open a shell and launch your editor from there.
 ```
 bay edit                    # current bay (default)
 bay edit w1                 # specific bay
+bay edit --bay home         # dock checkout
 bay edit --editor vim       # use a specific editor this time
 bay edit --dock             # dock editor (all bays)
 bay edit --window           # new window instead of split pane
@@ -1126,9 +1138,9 @@ Run `bay setup` again. It replaces the bay keybinding block in
 `~/.tmux.conf` while preserving your other settings.
 
 **"What's the ~ window?"**
-A placeholder that keeps the tmux session alive when no bays are
-open. It disappears when you create a bay and reappears when you
-close your last one.
+A legacy placeholder that keeps a tmux session alive when bay cannot
+open a real surface. Checkout-backed docks now use a `home` shell for
+normal empty-dock cases.
 
 **"How does bay know my branch and PR without me telling it?"**
 Branch is detected via `git rev-parse` on every sync cycle. PR number

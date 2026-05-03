@@ -1052,6 +1052,9 @@ func bayGo(eng *engine.Engine, args []string, waiting, nextWaiting bool) error {
 	if len(args) > 0 {
 		query = args[0]
 	}
+	if query == manifest.HomeBayID && !waiting {
+		return eng.Home(currentSession)
+	}
 	if query != "" {
 		entries = nav.FuzzyMatch(entries, query)
 	}

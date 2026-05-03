@@ -40,20 +40,31 @@ func TestRunSurfaceNew_Shell(t *testing.T) {
 	}
 }
 
-func TestRunSurfaceNew_RejectsHomeBeforeCreatingSurface(t *testing.T) {
+func TestRunSurfaceNew_HomeCreatesSurface(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 	mockTmux.Calls = nil
 
 	err := runSurfaceNew(eng, "labs", manifest.HomeBayID, surfaceNewOpts{
-		Type: manifest.SurfaceTypeAgent,
+		Type: manifest.SurfaceTypeShell,
 	})
-	if err == nil || !strings.Contains(err.Error(), "not available yet") {
-		t.Fatalf("runSurfaceNew(home) error = %v, want home surface-phase rejection", err)
+	if err != nil {
+		t.Fatalf("runSurfaceNew(home): %v", err)
 	}
+	bay, err := eng.BayShow("labs", manifest.HomeBayID)
+	if err != nil {
+		t.Fatalf("BayShow(home): %v", err)
+	}
+	if bay.Type != manifest.BayTypeHome || len(bay.Surfaces) != 1 {
+		t.Fatalf("home bay = %+v, want one home surface", bay)
+	}
+	sawNewWindow := false
 	for _, call := range mockTmux.Calls {
-		if call.Method == "NewWindow" || call.Method == "SplitWindow" {
-			t.Fatalf("runSurfaceNew(home) should not create tmux surfaces; saw %s", call.Method)
+		if call.Method == "NewWindow" && len(call.Args) >= 2 && call.Args[1] == manifest.HomeBayID {
+			sawNewWindow = true
 		}
+	}
+	if !sawNewWindow {
+		t.Fatalf("runSurfaceNew(home) did not create a home window; calls: %+v", mockTmux.Calls)
 	}
 }
 

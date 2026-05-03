@@ -286,13 +286,15 @@ It's optional — everything works without it, but the keybindings make
 navigation instant.
 
 **Multiple checkouts:** create a separate dock for another checkout:
-`bay dock new backend --path ~/projects/backend`.
+`bay dock new backend --path ~/projects/backend`. Explicit dock
+creation opens a `home` shell in that checkout.
 
 **Agent awareness:** new docks add a one-liner to your project's
 `CLAUDE.local.md` (or equivalent) so agents know about bay commands.
 
 **Explicit control:** The zero-config flow creates docks automatically.
-For more control: `bay dock new myproject --path ~/projects/myproject`.
+For more control: `bay dock new myproject --path ~/projects/myproject`
+creates the dock and opens its checkout as `home`.
 
 **Status line:** Add `#(bay status-line full --window #{window_id})` to
 your tmux `status-right` to always see your current bay label, branch,

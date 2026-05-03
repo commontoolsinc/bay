@@ -12,6 +12,7 @@ bay new                      # auto-bootstrap dock + create worktree
 bay new --agent              # new worktree with the dock's default agent
 bay edit                        # open editor for current bay
 bay shell                       # split a shell into the current bay
+bay home                        # focus/create shell in the dock checkout
 bay go                       # fuzzy-pick a bay in the current dock
 bay surface go               # fuzzy-pick a surface in the current bay
 bay recover                     # reconstruct everything after reboot
@@ -21,6 +22,7 @@ bay recover                     # reconstruct everything after reboot
 
 - **Worktree lifecycle** — create, close, rename bays backed by git worktrees or external directories. Safety checks on close (dirty files, unlanded commits). Each bay is an isolated checkout.
 - **Surface model** — each bay contains one or more **surfaces** (agent panes, shell panes, command panes, GUI editors). Bay tracks them all and recovers them after reboot.
+- **Home checkout surfaces** — `bay home` and `--bay home` open shells, agents, editors, or command panes in the dock's canonical checkout without giving it worktree cleanup behavior.
 - **Editor integration** — `bay edit` opens your bay in cursor, VS Code, zed, nvim, or vim. `bay edit --dock` for multi-root.
 - **Agent support** — optionally launch AI agents (Claude Code, Codex, Gemini). Agent surfaces resume on restart and on undo-close via configured `resume_args`. Closing an agent surface prompts for confirmation.
 - **Scoped navigation** — `bay surface go` picks surfaces within the current bay; `bay go` picks bays within the current dock. Cycling flashes a brief position indicator.
