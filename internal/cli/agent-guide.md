@@ -341,9 +341,10 @@ qualified form: `id:surface-name` or `dock:id:surface-name`.
 | `bay new [name]` | current dock from tmux session, or auto-bootstrap from CWD |
 | `bay ls` | bays in current dock (errors outside a dock) |
 | `bay show [id]` | current bay |
-| `bay close [id]` | required (no default; use `--done`/`--clean` for batch) |
+| `bay close [id]` | required (no default; use `--done`/`--clean`/`--all` for batch) |
 | `bay close --done` | bays not dirty or pending in current dock |
 | `bay close --clean` | all non-dirty bays in current dock |
+| `bay close --all` | all bays in current dock, then home after confirmation if final |
 | `bay pwd` | current bay context |
 | `bay surface new <kind> [name]` | current bay |
 | `bay surface ls` | surfaces in current bay |
@@ -403,7 +404,7 @@ bay home
 bay go home
 ```
 
-#### `bay close [id] [--force] [--done] [--clean] [--dry-run]`
+#### `bay close [id] [--force] [--done] [--clean] [--all] [--dry-run]`
 
 Close a bay and all its surfaces. For worktree bays,
 checks for uncommitted changes and unlanded commits. Refuses if dirty
@@ -422,6 +423,9 @@ Batch flags (without an ID):
 - `--done`: close bays that are not dirty and not pending (have
   no unmerged branch). The conservative default for cleanup.
 - `--clean`: close all non-dirty bays regardless of merge status.
+- `--all`: close all worktree/external bays, then close home surfaces;
+  final home dismissal uses the same confirmation/`--force` behavior as
+  `bay close home`.
 - `--dry-run`: preview what would be closed without closing anything.
 
 ```
@@ -432,6 +436,7 @@ bay close self --force
 bay close --done
 bay close --done --dry-run
 bay close --clean
+bay close --all
 ```
 
 `bay clean-review [id]` clears dirty review changes without closing the
@@ -451,7 +456,7 @@ finalizes the teardown; dirty or unlanded clears `PendingCloseAt`
 to stop retries and leaves a permanent orphan for the user to
 resolve manually.
 
-Direct `bay close <id>`, `--done`, `--clean`, and
+Direct `bay close <id>`, `--done`, `--clean`, `--all`, and
 `bay sf close --force` close immediately (no grace).
 
 **Undo-close interaction.** `bay sf close` (and `Option+W`) and

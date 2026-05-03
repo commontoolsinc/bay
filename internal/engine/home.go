@@ -18,14 +18,43 @@ func homePath(dock *manifest.Dock) (string, error) {
 	return dock.Path, nil
 }
 
-func homeSurfaceCWD(bay *manifest.Bay) string {
-	if bay != nil && bay.Type == manifest.BayTypeHome {
-		return config.ExpandPath(bay.Path)
+func isHomeBayRecord(bay *manifest.Bay) bool {
+	return bay != nil && (bay.Type == manifest.BayTypeHome || manifest.IsReservedBayID(bay.ID))
+}
+
+func validateHomeBayLifecycleShape(dock *manifest.Dock, bay *manifest.Bay) error {
+	if !isHomeBayRecord(bay) {
+		return nil
+	}
+	if dock == nil {
+		return fmt.Errorf("unknown dock")
+	}
+	if bay.Type != manifest.BayTypeHome {
+		return fmt.Errorf("dock %q has a non-home bay with reserved ID %q; repair the manifest before using home", dock.Name, manifest.HomeBayID)
+	}
+	if bay.ID != manifest.HomeBayID || bay.Name != manifest.HomeBayID {
+		return fmt.Errorf("dock %q has a malformed home bay: home bay must use reserved ID/name %q (got id=%q name=%q)", dock.Name, manifest.HomeBayID, bay.ID, bay.Name)
+	}
+	if bay.Path != dock.Path {
+		return fmt.Errorf("dock %q has a malformed home bay: home bay path %q does not match expected dock path %q", dock.Name, bay.Path, dock.Path)
+	}
+	if bay.Worktree != nil {
+		return fmt.Errorf("dock %q has a malformed home bay: home bay %q must not have worktree metadata", dock.Name, manifest.HomeBayID)
+	}
+	return nil
+}
+
+func homeSurfaceCWD(dock *manifest.Dock, bay *manifest.Bay) string {
+	if isHomeBayRecord(bay) {
+		if path, err := homePath(dock); err == nil {
+			return config.ExpandPath(path)
+		}
+		return ""
 	}
 	if bay == nil {
 		return ""
 	}
-	return bay.Path
+	return config.ExpandPath(bay.Path)
 }
 
 func newHomeBay(dock *manifest.Dock) (manifest.Bay, error) {
@@ -70,12 +99,23 @@ func removeHomeBayIfEmpty(dock *manifest.Dock) bool {
 	if dock == nil {
 		return false
 	}
-	home := dock.FindBayByID(manifest.HomeBayID)
-	if home == nil || home.Type != manifest.BayTypeHome || len(home.Surfaces) > 0 {
-		return false
+	for i := range dock.Bays {
+		home := &dock.Bays[i]
+		if !isHomeBayRecord(home) {
+			continue
+		}
+		if len(home.Surfaces) > 0 {
+			return false
+		}
+		if home.ID != "" {
+			if err := dock.RemoveBay(home.ID); err == nil {
+				return true
+			}
+		}
+		dock.Bays = append(dock.Bays[:i], dock.Bays[i+1:]...)
+		return true
 	}
-	_ = dock.RemoveBay(manifest.HomeBayID)
-	return true
+	return false
 }
 
 func lastHomeCloseError(dockName string) error {
@@ -223,6 +263,9 @@ func (e *Engine) Home(dockName string) error {
 		if e.focusHomeSurface(home) {
 			return nil
 		}
+		if err := e.removeHomeBayRecords(dockName); err != nil {
+			return err
+		}
 	}
 	return e.SurfaceAdd(SurfaceAddOptions{
 		DockName: dockName,
@@ -230,6 +273,23 @@ func (e *Engine) Home(dockName string) error {
 		Type:     manifest.SurfaceTypeShell,
 		Name:     "shell",
 		SplitDir: "",
+	})
+}
+
+func (e *Engine) removeHomeBayRecords(dockName string) error {
+	return e.withManifest(func(m *manifest.Manifest) error {
+		dock := m.FindDock(dockName)
+		if dock == nil {
+			return fmt.Errorf("unknown dock %q", dockName)
+		}
+		home := dock.FindBayByID(manifest.HomeBayID)
+		if home == nil {
+			return nil
+		}
+		if err := validateHomeBayLifecycleShape(dock, home); err != nil {
+			return err
+		}
+		return dock.RemoveBay(manifest.HomeBayID)
 	})
 }
 

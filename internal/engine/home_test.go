@@ -219,6 +219,416 @@ func TestBayCloseBatch_LastNonHomeCreatesHomeShell(t *testing.T) {
 	}
 }
 
+func TestBayCloseCleanAndDoneSkipExistingHome(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if _, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true}); err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: manifest.HomeBayID, Type: manifest.SurfaceTypeShell, Name: "shell"}); err != nil {
+		t.Fatalf("SurfaceAdd(home): %v", err)
+	}
+
+	closed, skipped, err := eng.BayCloseClean("labs", true, false)
+	if err != nil {
+		t.Fatalf("BayCloseClean: %v", err)
+	}
+	if len(closed) != 1 || closed[0] != "labs:w1" || len(skipped) != 0 {
+		t.Fatalf("BayCloseClean closed=%v skipped=%v, want labs:w1 only", closed, skipped)
+	}
+	if home := mustEngineHome(t, eng); home == nil || len(home.Surfaces) != 1 {
+		t.Fatalf("home after BayCloseClean = %+v, want one preserved surface", home)
+	}
+
+	closed, skipped, err = eng.BayCloseDone("labs", true, false)
+	if err == nil || !strings.Contains(err.Error(), "no bays found") {
+		t.Fatalf("BayCloseDone after worktree close error = %v, want no bays found", err)
+	}
+	if len(closed) != 0 || len(skipped) != 0 {
+		t.Fatalf("BayCloseDone closed=%v skipped=%v, want none", closed, skipped)
+	}
+	if home := mustEngineHome(t, eng); home == nil || len(home.Surfaces) != 1 {
+		t.Fatalf("home after BayCloseDone = %+v, want one preserved surface", home)
+	}
+}
+
+func TestSyncAll_StripsDeadHomeSurfaceWithLiveNonHome(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	bay, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true})
+	if err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+	if err := os.MkdirAll(bay.Path, 0o755); err != nil {
+		t.Fatalf("MkdirAll bay path: %v", err)
+	}
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: manifest.HomeBayID, Type: manifest.SurfaceTypeShell, Name: "shell"}); err != nil {
+		t.Fatalf("SurfaceAdd(home): %v", err)
+	}
+
+	m, _ := eng.LoadManifest()
+	dockPath := m.FindDock("labs").Path
+	home := m.FindDock("labs").FindBayByID(manifest.HomeBayID)
+	if home == nil || len(home.Surfaces) != 1 || home.Surfaces[0].Tmux == nil {
+		t.Fatalf("home = %+v, want one tmux surface", home)
+	}
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if err := mockTmux.KillPane(home.Surfaces[0].Tmux.PaneID); err != nil {
+		t.Fatalf("KillPane(home): %v", err)
+	}
+
+	eng.SyncAll()
+
+	m2, _ := eng.LoadManifest()
+	dock := m2.FindDock("labs")
+	if dock == nil {
+		t.Fatal("dock disappeared")
+	}
+	if dock.Path != dockPath {
+		t.Fatalf("dock.Path = %q, want %q", dock.Path, dockPath)
+	}
+	if home := dock.FindBayByID(manifest.HomeBayID); home != nil {
+		t.Fatalf("empty home should be removed after sync strip, got %+v", home)
+	}
+	if got := dock.FindBayByID(bay.ID); got == nil || got.PendingCloseAt != 0 {
+		t.Fatalf("non-home bay after home strip = %+v, want live and not pending", got)
+	}
+	mockGit := eng.Git.(*git.Mock)
+	for _, call := range mockGit.RemovedWorktrees() {
+		if len(call.Args) >= 2 && call.Args[1] == dockPath {
+			t.Fatalf("sync pruned dock.path as a worktree: %+v", call)
+		}
+	}
+}
+
+func TestSyncAll_PreservesRecordedHomeWhenSessionDead(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+	m, _ := eng.LoadManifest()
+	dockPath := m.FindDock("labs").Path
+	home := m.FindDock("labs").FindBayByID(manifest.HomeBayID)
+	if home == nil || len(home.Surfaces) != 1 {
+		t.Fatalf("home = %+v, want one recorded surface", home)
+	}
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if err := mockTmux.KillSession("labs"); err != nil {
+		t.Fatalf("KillSession: %v", err)
+	}
+	mockTmux.Calls = nil
+
+	eng.SyncAll()
+
+	m2, _ := eng.LoadManifest()
+	dock := m2.FindDock("labs")
+	if dock == nil || dock.Path != dockPath {
+		t.Fatalf("dock after sync = %+v, want registered dock at %q", dock, dockPath)
+	}
+	home = dock.FindBayByID(manifest.HomeBayID)
+	if home == nil || len(home.Surfaces) != 1 {
+		t.Fatalf("home after dead-session sync = %+v, want preserved for recovery", home)
+	}
+	for _, call := range mockTmux.Calls {
+		if call.Method == "NewWindow" || call.Method == "SetWindowOption" {
+			t.Fatalf("sync recreated tmux UI after native session death; calls: %+v", mockTmux.Calls)
+		}
+	}
+}
+
+func TestHome_AfterNativeSessionDeathDropsStaleHomeRecords(t *testing.T) {
+	eng, _ := testEngine(t)
+	withDeterministicSessionID(t, "first-home-session", "second-home-session")
+
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+	m, _ := eng.LoadManifest()
+	dockPath := m.FindDock("labs").Path
+	stalePane := m.FindDock("labs").FindBayByID(manifest.HomeBayID).Surfaces[0].Tmux.PaneID
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if err := mockTmux.KillSession("labs"); err != nil {
+		t.Fatalf("KillSession: %v", err)
+	}
+	mockTmux.Calls = nil
+
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home after session death: %v", err)
+	}
+
+	m2, _ := eng.LoadManifest()
+	dock := m2.FindDock("labs")
+	home := dock.FindBayByID(manifest.HomeBayID)
+	if home == nil || len(home.Surfaces) != 1 {
+		t.Fatalf("home after explicit recreate = %+v, want one fresh shell", home)
+	}
+	if home.Surfaces[0].Tmux == nil || home.Surfaces[0].Tmux.PaneID == stalePane {
+		t.Fatalf("home kept stale pane %q in surfaces: %+v", stalePane, home.Surfaces)
+	}
+	if dock.SessionID != "second-home-session" {
+		t.Fatalf("dock.SessionID = %q, want second-home-session", dock.SessionID)
+	}
+	sawDockPathWindow := false
+	for _, call := range mockTmux.Calls {
+		if call.Method == "NewWindow" && len(call.Args) >= 3 && call.Args[2] == dockPath {
+			sawDockPathWindow = true
+		}
+	}
+	if !sawDockPathWindow {
+		t.Fatalf("bay home did not recreate a shell at dock path %q; calls: %+v", dockPath, mockTmux.Calls)
+	}
+}
+
+func TestRecover_RestoresRecordedHomeSurfacesAtDockPath(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: manifest.HomeBayID, Type: manifest.SurfaceTypeShell, Name: "shell"}); err != nil {
+		t.Fatalf("SurfaceAdd home shell: %v", err)
+	}
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: manifest.HomeBayID, Type: manifest.SurfaceTypeCmd, Name: "tests", Command: "go test ./...", SplitDir: "h"}); err != nil {
+		t.Fatalf("SurfaceAdd home cmd: %v", err)
+	}
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: manifest.HomeBayID, Type: manifest.SurfaceTypeAgent, Name: "codex-agent", Agent: "codex"}); err != nil {
+		t.Fatalf("SurfaceAdd home agent: %v", err)
+	}
+
+	m, _ := eng.LoadManifest()
+	dockPath := m.FindDock("labs").Path
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.Reset()
+
+	if _, err := eng.Recover(); err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+
+	home := mustEngineHome(t, eng)
+	if len(home.Surfaces) != 3 {
+		t.Fatalf("recovered home surfaces = %+v, want 3", home.Surfaces)
+	}
+	if s := home.FindSurface("shell"); s == nil || s.Type != manifest.SurfaceTypeShell {
+		t.Fatalf("shell surface after recover = %+v", s)
+	}
+	if s := home.FindSurface("tests"); s == nil || s.Type != manifest.SurfaceTypeCmd || s.Command == nil || *s.Command != "go test ./..." {
+		t.Fatalf("cmd surface after recover = %+v", s)
+	}
+	if s := home.FindSurface("codex-agent"); s == nil || s.Type != manifest.SurfaceTypeAgent || s.Agent == nil || *s.Agent != "codex" {
+		t.Fatalf("agent surface after recover = %+v", s)
+	}
+
+	sawNewWindowAtDockPath := false
+	sawSplitAtDockPath := false
+	sawAgentLaunch := false
+	sawCmdLaunch := false
+	for _, call := range mockTmux.Calls {
+		if call.Method == "NewWindow" && len(call.Args) >= 3 && call.Args[2] == dockPath {
+			sawNewWindowAtDockPath = true
+		}
+		if call.Method == "SplitWindow" && len(call.Args) >= 3 && call.Args[2] == dockPath {
+			sawSplitAtDockPath = true
+		}
+		if call.Method == "SendKeys" && len(call.Args) >= 2 && strings.HasPrefix(call.Args[1], "codex") {
+			sawAgentLaunch = true
+		}
+		if call.Method == "SendKeys" && len(call.Args) >= 2 && call.Args[1] == "go test ./..." {
+			sawCmdLaunch = true
+		}
+	}
+	if !sawNewWindowAtDockPath || !sawSplitAtDockPath {
+		t.Fatalf("home recovery did not launch at dock path %q; calls: %+v", dockPath, mockTmux.Calls)
+	}
+	if !sawAgentLaunch || !sawCmdLaunch {
+		t.Fatalf("home recovery did not relaunch recorded agent/cmd surfaces; calls: %+v", mockTmux.Calls)
+	}
+}
+
+func TestRecover_DoesNotMaterializeEmptyHome(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if err := eng.withManifest(func(m *manifest.Manifest) error {
+		dock := m.FindDock("labs")
+		home := manifest.SynthesizeHomeBay(dock)
+		return dock.AddBay(home)
+	}); err != nil {
+		t.Fatalf("seed empty home: %v", err)
+	}
+	m, _ := eng.LoadManifest()
+	dockPath := m.FindDock("labs").Path
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.Reset()
+	if _, err := eng.Recover(); err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+
+	for _, call := range mockTmux.Calls {
+		if call.Method == "NewWindow" && len(call.Args) >= 3 && call.Args[1] == manifest.HomeBayID && call.Args[2] == dockPath {
+			t.Fatalf("recovery materialized empty home; calls: %+v", mockTmux.Calls)
+		}
+	}
+	m2, _ := eng.LoadManifest()
+	if home := m2.FindDock("labs").FindBayByID(manifest.HomeBayID); home != nil && len(home.Surfaces) != 0 {
+		t.Fatalf("empty home recovered surfaces unexpectedly: %+v", home)
+	}
+}
+
+func TestRecover_RejectsMalformedHomeWithoutGitWorktreeChecks(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if err := eng.withManifest(func(m *manifest.Manifest) error {
+		dock := m.FindDock("labs")
+		dock.Bays = append(dock.Bays, manifest.Bay{
+			ID:       manifest.HomeBayID,
+			Name:     manifest.HomeBayID,
+			Type:     manifest.BayTypeHome,
+			Path:     dock.Path,
+			Worktree: &manifest.WorktreeAttrs{Branch: "feature/not-home"},
+			Surfaces: []manifest.Surface{
+				{
+					ID:      1,
+					Name:    "shell",
+					Type:    manifest.SurfaceTypeShell,
+					Backend: manifest.SurfaceBackendTmux,
+					Tmux:    &manifest.TmuxAttrs{WindowID: "@99", PaneID: "%99", LayoutGroup: 1},
+				},
+			},
+		})
+		return nil
+	}); err != nil {
+		t.Fatalf("seed malformed home: %v", err)
+	}
+
+	_, err := eng.Recover()
+	if err == nil || !strings.Contains(err.Error(), "must not have worktree metadata") {
+		t.Fatalf("Recover malformed home error = %v, want clear home invariant error", err)
+	}
+	mockGit := eng.Git.(*git.Mock)
+	if calls := mockGit.Calls("CurrentBranch"); len(calls) != 0 {
+		t.Fatalf("recovery treated home as a git worktree; CurrentBranch calls: %+v", calls)
+	}
+	if calls := mockGit.Calls("IsDirty"); len(calls) != 0 {
+		t.Fatalf("recovery checked home dirty state; IsDirty calls: %+v", calls)
+	}
+}
+
+func TestApplyBaySyncUpdate_RemovesMalformedReservedHomeInsteadOfPendingClose(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	m, err := eng.LoadManifest()
+	if err != nil {
+		t.Fatalf("LoadManifest: %v", err)
+	}
+	dock := m.FindDock("labs")
+	if dock == nil {
+		t.Fatal("missing labs dock")
+	}
+	dock.Bays = append(dock.Bays, manifest.Bay{
+		ID:   manifest.HomeBayID,
+		Name: manifest.HomeBayID,
+		Type: manifest.BayTypeExternal,
+		Path: dock.Path,
+		Surfaces: []manifest.Surface{
+			{
+				ID:      1,
+				Name:    "shell",
+				Type:    manifest.SurfaceTypeShell,
+				Backend: manifest.SurfaceBackendTmux,
+				Tmux:    &manifest.TmuxAttrs{WindowID: "@99", PaneID: "%99", LayoutGroup: 1},
+			},
+		},
+	})
+
+	changed, _ := eng.applyBaySyncUpdate(m, baySyncUpdate{
+		dockName:       "labs",
+		originalID:     manifest.HomeBayID,
+		deadSurfaceIDs: map[int]bool{1: true},
+	}, true)
+	if !changed {
+		t.Fatal("applyBaySyncUpdate changed=false, want malformed reserved home removed")
+	}
+	if home := dock.FindBayByID(manifest.HomeBayID); home != nil {
+		t.Fatalf("malformed empty home after dead-surface strip = %+v, want removed", home)
+	}
+}
+
+func TestBayCloseAll_ClosesHomeAfterNonHomeAndPersistsBeforeKill(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	bay, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true})
+	if err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+	if err := os.MkdirAll(bay.Path, 0o755); err != nil {
+		t.Fatalf("MkdirAll bay path: %v", err)
+	}
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: manifest.HomeBayID, Type: manifest.SurfaceTypeShell, Name: "shell"}); err != nil {
+		t.Fatalf("SurfaceAdd(home): %v", err)
+	}
+
+	m, _ := eng.LoadManifest()
+	dockPath := m.FindDock("labs").Path
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.Calls = nil
+	checkedBeforeKill := false
+	mockTmux.OnKill = func(method, target string) {
+		checkedBeforeKill = true
+		mid, err := eng.LoadManifest()
+		if err != nil {
+			t.Fatalf("LoadManifest during %s: %v", method, err)
+		}
+		dock := mid.FindDock("labs")
+		if dock == nil {
+			t.Fatal("dock disappeared before destructive tmux call")
+		}
+		if dock.Path != dockPath {
+			t.Fatalf("dock.Path during %s = %q, want %q", method, dock.Path, dockPath)
+		}
+		if got := dock.FindBayByID(bay.ID); got != nil {
+			t.Fatalf("non-home bay still persisted during %s: %+v", method, got)
+		}
+		if home := dock.FindBayByID(manifest.HomeBayID); home != nil {
+			t.Fatalf("home still persisted during %s: %+v", method, home)
+		}
+	}
+
+	closed, skipped, err := eng.BayCloseAll("labs", true, true, false)
+	if err != nil {
+		t.Fatalf("BayCloseAll: %v", err)
+	}
+	if len(closed) != 2 || closed[0] != "labs:"+bay.ID || closed[1] != "labs:"+manifest.HomeBayID || len(skipped) != 0 {
+		t.Fatalf("closed=%v skipped=%v, want non-home then home", closed, skipped)
+	}
+	if !checkedBeforeKill {
+		t.Fatal("no destructive tmux call observed")
+	}
+
+	m2, _ := eng.LoadManifest()
+	dock := m2.FindDock("labs")
+	if dock == nil || dock.Path != dockPath {
+		t.Fatalf("dock after close all = %+v, want registered dock at %q", dock, dockPath)
+	}
+	if dock.FindBayByID(bay.ID) != nil || dock.FindBayByID(manifest.HomeBayID) != nil {
+		t.Fatalf("bays after close all = %+v, want none", dock.Bays)
+	}
+	if dock.SessionID != "" {
+		t.Fatalf("dock.SessionID = %q, want cleared after final home dismissal", dock.SessionID)
+	}
+	mockGit := eng.Git.(*git.Mock)
+	for _, call := range mockGit.RemovedWorktrees() {
+		if len(call.Args) >= 2 && call.Args[1] == dockPath {
+			t.Fatalf("BayCloseAll removed dock.path as a worktree: %+v", call)
+		}
+	}
+	for _, call := range mockTmux.Calls {
+		if call.Method == "NewWindow" {
+			t.Fatalf("BayCloseAll created a replacement home/placeholder window; calls: %+v", mockTmux.Calls)
+		}
+	}
+}
+
 func TestResolveBay_HomeWithDockPrefix(t *testing.T) {
 	eng, _ := testEngine(t)
 
@@ -925,4 +1335,17 @@ func TestSurfaceAdd_HomeClaimsExistingUntaggedSession(t *testing.T) {
 	if home == nil || len(home.Surfaces) != 1 || home.Surfaces[0].Tmux == nil {
 		t.Fatalf("home = %+v, want one tmux surface", home)
 	}
+}
+
+func mustEngineHome(t *testing.T, eng *Engine) *manifest.Bay {
+	t.Helper()
+	m, err := eng.LoadManifest()
+	if err != nil {
+		t.Fatalf("LoadManifest: %v", err)
+	}
+	dock := m.FindDock("labs")
+	if dock == nil {
+		t.Fatal("missing labs dock")
+	}
+	return dock.FindBayByID(manifest.HomeBayID)
 }

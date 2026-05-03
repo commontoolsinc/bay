@@ -661,6 +661,63 @@ func TestRunBayClose_HomeDoubleTapDismissesDock(t *testing.T) {
 	}
 }
 
+func TestRunBayCloseAll_UsesHomeConfirmationForFinalDismissal(t *testing.T) {
+	origHome := confirmLastHomeClose
+	t.Cleanup(func() { confirmLastHomeClose = origHome })
+
+	eng, mockTmux, _, _ := testNavEngine(t)
+	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: manifest.HomeBayID, Type: manifest.SurfaceTypeShell, Name: "shell"}); err != nil {
+		t.Fatalf("SurfaceAdd(home): %v", err)
+	}
+
+	confirmCalls := 0
+	confirmLastHomeClose = func(_ flashFunc, dock string) bool {
+		confirmCalls++
+		if dock != "labs" {
+			t.Fatalf("confirm dock = %q, want labs", dock)
+		}
+		return false
+	}
+
+	closed, skipped, err := runBayCloseAll(eng, "labs", false, false)
+	if err != nil {
+		t.Fatalf("runBayCloseAll declined: %v", err)
+	}
+	if confirmCalls != 1 {
+		t.Fatalf("home confirmation calls = %d, want 1", confirmCalls)
+	}
+	if len(closed) != 0 || len(skipped) != 0 {
+		t.Fatalf("declined close-all closed=%v skipped=%v, want none", closed, skipped)
+	}
+	if _, err := eng.BayShow("labs", "w1"); err != nil {
+		t.Fatalf("declined close-all removed non-home bay: %v", err)
+	}
+	if home := mustBay(t, eng, "labs", manifest.HomeBayID); len(home.Surfaces) != 1 {
+		t.Fatalf("declined close-all changed home: %+v", home.Surfaces)
+	}
+
+	confirmLastHomeClose = func(_ flashFunc, dock string) bool {
+		confirmCalls++
+		return true
+	}
+	closed, skipped, err = runBayCloseAll(eng, "labs", false, false)
+	if err != nil {
+		t.Fatalf("runBayCloseAll confirmed: %v", err)
+	}
+	if confirmCalls != 2 {
+		t.Fatalf("home confirmation calls = %d, want 2", confirmCalls)
+	}
+	if len(closed) != 2 || closed[0] != "labs:w1" || closed[1] != "labs:"+manifest.HomeBayID || len(skipped) != 0 {
+		t.Fatalf("confirmed close-all closed=%v skipped=%v, want w1 then home", closed, skipped)
+	}
+	if has, _ := mockTmux.HasSession("labs"); has {
+		t.Fatal("tmux session still exists after confirmed close-all")
+	}
+}
+
 func mustBay(t *testing.T, eng *engine.Engine, dockName, bayID string) *manifest.Bay {
 	t.Helper()
 	bay, err := eng.BayShow(dockName, bayID)

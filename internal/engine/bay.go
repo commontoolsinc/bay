@@ -348,6 +348,10 @@ type closeBayResult struct {
 // the manifest write and the kill — leaving the manifest correct and
 // the pane briefly orphaned (next bay invocation will skip it).
 func (e *Engine) closeBayState(dockName, bayID string, force bool) (closeBayResult, error) {
+	return e.closeBayStateWithAdditionalClosingWindows(dockName, bayID, force, nil)
+}
+
+func (e *Engine) closeBayStateWithAdditionalClosingWindows(dockName, bayID string, force bool, additionalClosingWindowIDs []string) (closeBayResult, error) {
 	m, err := e.LoadManifest()
 	if err != nil {
 		return closeBayResult{}, err
@@ -363,6 +367,11 @@ func (e *Engine) closeBayState(dockName, bayID string, force bool) (closeBayResu
 			return closeBayResult{}, nil
 		}
 		return closeBayResult{}, fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
+	}
+	if isHomeBayRecord(bay) {
+		if err := validateHomeBayLifecycleShape(dock, bay); err != nil {
+			return closeBayResult{}, err
+		}
 	}
 
 	// Safety checks for worktree bays + determine if the branch
@@ -418,7 +427,9 @@ func (e *Engine) closeBayState(dockName, bayID string, force bool) (closeBayResu
 	windowIDs := windowIDsForBay(bay)
 
 	if bay.Type == manifest.BayTypeHome {
-		dismissDock, err := e.homeCloseWouldDismissDock(dockName, windowIDs)
+		closingWindowIDs := append([]string{}, windowIDs...)
+		closingWindowIDs = append(closingWindowIDs, additionalClosingWindowIDs...)
+		dismissDock, err := e.homeCloseWouldDismissDock(dockName, closingWindowIDs)
 		if err != nil {
 			if !force {
 				return closeBayResult{}, err
@@ -652,6 +663,43 @@ func (e *Engine) BayCloseDone(dockName string, force, dryRun bool, exclude ...st
 	}, exclude...)
 }
 
+// BayCloseAll closes all persisted bays in a dock, closing home after all
+// worktree/external bays. force controls worktree safety gates; forceHomeDismiss
+// only bypasses the final-home dismissal confirmation after the caller has
+// already confirmed it.
+func (e *Engine) BayCloseAll(dockName string, force, forceHomeDismiss, dryRun bool) ([]string, []string, error) {
+	return e.bayCloseAll(dockName, force, forceHomeDismiss, dryRun)
+}
+
+// BayCloseAllWouldDismissDock reports whether bay close --all would close the
+// last real tmux windows in the dock and therefore dismiss the dock UI/session.
+func (e *Engine) BayCloseAllWouldDismissDock(dockName string) (bool, error) {
+	m, err := e.LoadManifest()
+	if err != nil {
+		return false, err
+	}
+	dock := m.FindDock(dockName)
+	if dock == nil {
+		return false, fmt.Errorf("unknown dock %q", dockName)
+	}
+	hasHome := false
+	var closingWindowIDs []string
+	for i := range dock.Bays {
+		bay := &dock.Bays[i]
+		if isHomeBayRecord(bay) {
+			if err := validateHomeBayLifecycleShape(dock, bay); err != nil {
+				return false, err
+			}
+			hasHome = len(bay.Surfaces) > 0
+		}
+		closingWindowIDs = append(closingWindowIDs, windowIDsForBay(bay)...)
+	}
+	if !hasHome {
+		return false, nil
+	}
+	return e.homeCloseWouldDismissDock(dockName, closingWindowIDs)
+}
+
 // bayCloseBatch is the shared implementation for batch-close operations.
 // An optional skip function can pre-filter bays before the safety
 // checks in closeBayState.
@@ -684,7 +732,7 @@ func (e *Engine) bayCloseBatch(dockName string, force, dryRun bool, skip baySkip
 		}
 		for j := range d.Bays {
 			bay := &d.Bays[j]
-			if bay.Type == manifest.BayTypeHome {
+			if isHomeBayRecord(bay) {
 				continue
 			}
 			if excludeSet[bay.ID] {
@@ -753,6 +801,141 @@ func (e *Engine) bayCloseBatch(dockName string, force, dryRun bool, skip baySkip
 			e.ensureHomeIfLastWindow(p.dock, id)
 			_ = e.Tmux.KillWindow(id)
 		}
+	}
+	return closed, skipped, nil
+}
+
+func (e *Engine) bayCloseAll(dockName string, force, forceHomeDismiss, dryRun bool) (closed []string, skipped []string, err error) {
+	m, err := e.LoadManifest()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	type target struct {
+		dock string
+		id   string
+		home bool
+	}
+	var targets []target
+	var homeTargets []target
+
+	for i := range m.Docks {
+		d := &m.Docks[i]
+		if dockName != "" && d.Name != dockName {
+			continue
+		}
+		for j := range d.Bays {
+			bay := &d.Bays[j]
+			t := target{dock: d.Name, id: bay.ID, home: isHomeBayRecord(bay)}
+			if isHomeBayRecord(bay) {
+				if len(bay.Surfaces) > 0 {
+					homeTargets = append(homeTargets, t)
+				}
+				continue
+			}
+			targets = append(targets, t)
+		}
+	}
+	targets = append(targets, homeTargets...)
+
+	if len(targets) == 0 {
+		return nil, nil, fmt.Errorf("no bays found")
+	}
+
+	if dryRun {
+		nonHomeSkipped := map[string]bool{}
+		for _, t := range targets {
+			label := t.dock + ":" + t.id
+			if t.home && nonHomeSkipped[t.dock] {
+				skipped = append(skipped, label+" (non-home bay skipped)")
+				continue
+			}
+			bay := m.FindDock(t.dock).FindBayByID(t.id)
+			if bay != nil && !isHomeBayRecord(bay) && bay.Path != "" && !force {
+				if dirty, err := e.HasBlockingDirtyChanges(bay); err == nil && dirty {
+					skipped = append(skipped, label+" (dirty)")
+					nonHomeSkipped[t.dock] = true
+					continue
+				}
+				if unpushed, err := e.HasUnlandedCommits(bay); err == nil && unpushed {
+					skipped = append(skipped, label+" (unlanded)")
+					nonHomeSkipped[t.dock] = true
+					continue
+				}
+			}
+			closed = append(closed, label)
+		}
+		return closed, skipped, nil
+	}
+
+	type pendingKill struct {
+		dock        string
+		windowIDs   []string
+		dismissDock bool
+	}
+	var pending []pendingKill
+	closingByDock := map[string][]string{}
+	nonHomeSkipped := map[string]bool{}
+
+	for _, t := range targets {
+		label := t.dock + ":" + t.id
+		if t.home && nonHomeSkipped[t.dock] {
+			skipped = append(skipped, label+" (non-home bay skipped)")
+			continue
+		}
+		closeForce := force
+		var additionalClosing []string
+		if t.home {
+			closeForce = force || forceHomeDismiss
+			additionalClosing = closingByDock[t.dock]
+		}
+		result, closeErr := e.closeBayStateWithAdditionalClosingWindows(t.dock, t.id, closeForce, additionalClosing)
+		if closeErr != nil {
+			skipped = append(skipped, label+" ("+closeErr.Error()+")")
+			if !t.home {
+				nonHomeSkipped[t.dock] = true
+			}
+			continue
+		}
+		closed = append(closed, label)
+		pending = append(pending, pendingKill{dock: t.dock, windowIDs: result.windowIDs, dismissDock: result.dismissDock})
+		closingByDock[t.dock] = append(closingByDock[t.dock], result.windowIDs...)
+	}
+
+	currentWindowID, _ := e.Tmux.CurrentWindowID()
+	dismissDocks := map[string]bool{}
+	for _, p := range pending {
+		if p.dismissDock {
+			dismissDocks[p.dock] = true
+		}
+	}
+	killedSessions := map[string]bool{}
+	type delayedKill struct {
+		dock     string
+		windowID string
+	}
+	var currentKills []delayedKill
+	for _, p := range pending {
+		if dismissDocks[p.dock] {
+			if !killedSessions[p.dock] {
+				_ = e.Tmux.KillSession(p.dock)
+				killedSessions[p.dock] = true
+			}
+			continue
+		}
+		for _, id := range p.windowIDs {
+			if id == currentWindowID {
+				currentKills = append(currentKills, delayedKill{dock: p.dock, windowID: id})
+				continue
+			}
+			_ = e.Tmux.KillWindow(id)
+		}
+	}
+	for _, k := range currentKills {
+		if dismissDocks[k.dock] {
+			continue
+		}
+		_ = e.Tmux.KillWindow(k.windowID)
 	}
 	return closed, skipped, nil
 }
@@ -958,7 +1141,7 @@ func (e *Engine) ResolveSelf() (string, string, error) {
 			dock := &m.Docks[i]
 			for j := range dock.Bays {
 				bay := &dock.Bays[j]
-				if bay.Type == manifest.BayTypeHome {
+				if isHomeBayRecord(bay) {
 					continue
 				}
 				if config.IsPathUnder(cwd, bay.Path) {
@@ -1479,7 +1662,7 @@ func (e *Engine) positionNewWindow(dockName, windowID, bayID string, m *manifest
 	if bayID == "" {
 		// New bay: goes after the last window of the last existing bay.
 		for i := len(dock.Bays) - 1; i >= 0; i-- {
-			if dock.Bays[i].Type == manifest.BayTypeHome {
+			if isHomeBayRecord(&dock.Bays[i]) {
 				continue
 			}
 			if id := lastWindowIDInBay(dock, dock.Bays[i].ID); id != "" {

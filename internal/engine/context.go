@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/commontoolsinc/bay/internal/config"
-	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
 // Context describes the current Bay location resolved from cwd and tmux.
@@ -58,7 +57,7 @@ func (e *Engine) CurrentContext() (*Context, error) {
 		dock := &m.Docks[i]
 		for j := range dock.Bays {
 			bay := &dock.Bays[j]
-			if bay.Type == manifest.BayTypeHome {
+			if isHomeBayRecord(bay) {
 				continue
 			}
 			if cwd != "" && config.IsPathUnder(cwd, bay.Path) {
