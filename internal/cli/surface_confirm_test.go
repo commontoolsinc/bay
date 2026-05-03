@@ -414,3 +414,258 @@ func TestConfirmLastSurfaceClose_DifferentBay_DoesNotCarry(t *testing.T) {
 		t.Error("close on w2 should not be accepted by w1's pending tap")
 	}
 }
+
+func TestConfirmLastHomeClose_DefaultBehaviorAndMessage(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	var msgs []string
+	flash := func(msg string, _ int) error {
+		msgs = append(msgs, msg)
+		return nil
+	}
+
+	if confirmLastHomeClose(flash, "labs") {
+		t.Fatal("first call should require a second tap")
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("first call should flash a message, got %d", len(msgs))
+	}
+	if !strings.Contains(msgs[0], "dismiss dock") || !strings.Contains(msgs[0], "UI/session") {
+		t.Fatalf("home close message = %q, want dock UI/session wording", msgs[0])
+	}
+	if !strings.Contains(msgs[0], "stays registered") {
+		t.Fatalf("home close message = %q, want registered-dock wording", msgs[0])
+	}
+
+	if !confirmLastHomeClose(flash, "labs") {
+		t.Fatal("second call within window should accept")
+	}
+	if confirmLastHomeClose(flash, "labs") {
+		t.Error("third call should require a fresh tap")
+	}
+}
+
+func TestRunSurfaceClose_LastHomeDoubleTapDismissesDock(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	eng, mockTmux, _, _ := testNavEngine(t)
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+	m, _ := eng.LoadManifest()
+	dockPath := m.FindDock("labs").Path
+	home := m.FindDock("labs").FindBayByID(manifest.HomeBayID)
+	winID := home.Surfaces[0].Tmux.WindowID
+
+	if err := runSurfaceClose(eng, []string{"shell"}, manifest.HomeBayID, "labs", false); err != nil {
+		t.Fatalf("runSurfaceClose first: %v", err)
+	}
+	m1, _ := eng.LoadManifest()
+	if home := m1.FindDock("labs").FindBayByID(manifest.HomeBayID); home == nil || len(home.Surfaces) != 1 {
+		t.Fatalf("first attempt changed home = %+v, want unchanged", home)
+	}
+	if exists, _ := mockTmux.WindowExists(winID); !exists {
+		t.Fatalf("first attempt killed home window %s", winID)
+	}
+	if has, _ := mockTmux.HasSession("labs"); !has {
+		t.Fatal("first attempt killed the session")
+	}
+	msgs := mockTmux.DisplayMessages()
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "dismiss dock") || !strings.Contains(msgs[0], "UI/session") {
+		t.Fatalf("first attempt messages = %v, want home-specific dismissal guidance", msgs)
+	}
+
+	mockTmux.Calls = nil
+	if err := runSurfaceClose(eng, []string{"shell"}, manifest.HomeBayID, "labs", false); err != nil {
+		t.Fatalf("runSurfaceClose second: %v", err)
+	}
+	m2, _ := eng.LoadManifest()
+	dock := m2.FindDock("labs")
+	if dock == nil {
+		t.Fatal("dock disappeared after confirmed home close")
+	}
+	if dock.Path != dockPath {
+		t.Fatalf("dock.Path = %q, want %q", dock.Path, dockPath)
+	}
+	if home := dock.FindBayByID(manifest.HomeBayID); home != nil {
+		t.Fatalf("home persisted after confirmed close: %+v", home)
+	}
+	if has, _ := mockTmux.HasSession("labs"); has {
+		t.Fatal("tmux session still exists after confirmed home close")
+	}
+	for _, call := range mockTmux.Calls {
+		if call.Method == "NewWindow" {
+			t.Fatalf("confirmed home close should not create a replacement window; calls: %+v", mockTmux.Calls)
+		}
+		if call.Method == "SetWindowOption" && len(call.Args) >= 3 && call.Args[1] == "@bay-placeholder" {
+			t.Fatalf("confirmed home close should not create a placeholder; calls: %+v", mockTmux.Calls)
+		}
+	}
+}
+
+func TestRunSurfaceClose_LastHomeForceSkipsConfirmation(t *testing.T) {
+	origHome := confirmLastHomeClose
+	origAgent := confirmAgentClose
+	t.Cleanup(func() {
+		confirmLastHomeClose = origHome
+		confirmAgentClose = origAgent
+	})
+	confirmLastHomeClose = func(_ flashFunc, dock string) bool {
+		t.Fatalf("home confirmation should not fire with --force for dock %q", dock)
+		return false
+	}
+	confirmAgentClose = func(name string) bool {
+		t.Fatalf("agent confirmation should not fire with --force for surface %q", name)
+		return false
+	}
+
+	eng, mockTmux, _, _ := testNavEngine(t)
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+
+	if err := runSurfaceClose(eng, []string{"shell"}, manifest.HomeBayID, "labs", true); err != nil {
+		t.Fatalf("runSurfaceClose --force: %v", err)
+	}
+	if has, _ := mockTmux.HasSession("labs"); has {
+		t.Fatal("tmux session still exists after forced home close")
+	}
+}
+
+func TestRunSurfaceClose_LastHomeAgentUsesOnlyHomeConfirmation(t *testing.T) {
+	origHome := confirmLastHomeClose
+	origAgent := confirmAgentClose
+	origShould := shouldConfirmLastSurfaceClose
+	t.Cleanup(func() {
+		confirmLastHomeClose = origHome
+		confirmAgentClose = origAgent
+		shouldConfirmLastSurfaceClose = origShould
+	})
+	shouldConfirmLastSurfaceClose = func() bool { return false }
+	homeCalls := 0
+	agentCalls := 0
+	confirmLastHomeClose = func(_ flashFunc, dock string) bool {
+		homeCalls++
+		if dock != "labs" {
+			t.Fatalf("home confirmation dock = %q, want labs", dock)
+		}
+		return false
+	}
+	confirmAgentClose = func(name string) bool {
+		agentCalls++
+		return true
+	}
+
+	eng, _, _, _ := testNavEngine(t)
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{
+		DockName: "labs",
+		BayName:  manifest.HomeBayID,
+		Type:     manifest.SurfaceTypeAgent,
+		Name:     "claude",
+		Agent:    "claude",
+	}); err != nil {
+		t.Fatalf("SurfaceAdd(home agent): %v", err)
+	}
+
+	if err := runSurfaceClose(eng, []string{"claude"}, manifest.HomeBayID, "labs", false); err != nil {
+		t.Fatalf("runSurfaceClose home agent: %v", err)
+	}
+	if homeCalls != 1 {
+		t.Fatalf("home confirmation calls = %d, want 1", homeCalls)
+	}
+	if agentCalls != 0 {
+		t.Fatalf("agent confirmation calls = %d, want 0", agentCalls)
+	}
+	home, _ := eng.BayShow("labs", manifest.HomeBayID)
+	if len(home.Surfaces) != 1 {
+		t.Fatalf("declined home confirmation should keep agent surface, got %+v", home.Surfaces)
+	}
+}
+
+func TestRunBayClose_HomeForceDismissesDock(t *testing.T) {
+	origHome := confirmLastHomeClose
+	t.Cleanup(func() { confirmLastHomeClose = origHome })
+	confirmLastHomeClose = func(_ flashFunc, dock string) bool {
+		t.Fatalf("home confirmation should not fire with bay close --force for dock %q", dock)
+		return false
+	}
+
+	eng, mockTmux, _, _ := testNavEngine(t)
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+	m, _ := eng.LoadManifest()
+	dockPath := m.FindDock("labs").Path
+
+	if err := runBayClose(eng, "labs", manifest.HomeBayID, true); err != nil {
+		t.Fatalf("runBayClose(home --force): %v", err)
+	}
+	m2, _ := eng.LoadManifest()
+	dock := m2.FindDock("labs")
+	if dock == nil {
+		t.Fatal("dock disappeared after bay close home --force")
+	}
+	if dock.Path != dockPath {
+		t.Fatalf("dock.Path = %q, want %q", dock.Path, dockPath)
+	}
+	if home := dock.FindBayByID(manifest.HomeBayID); home != nil {
+		t.Fatalf("home persisted after bay close home --force: %+v", home)
+	}
+	if has, _ := mockTmux.HasSession("labs"); has {
+		t.Fatal("tmux session still exists after bay close home --force")
+	}
+}
+
+func TestRunBayClose_HomeDoubleTapDismissesDock(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	eng, mockTmux, _, _ := testNavEngine(t)
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+	m, _ := eng.LoadManifest()
+	dockPath := m.FindDock("labs").Path
+	home := m.FindDock("labs").FindBayByID(manifest.HomeBayID)
+	winID := home.Surfaces[0].Tmux.WindowID
+
+	if err := runBayClose(eng, "labs", manifest.HomeBayID, false); err != nil {
+		t.Fatalf("runBayClose first: %v", err)
+	}
+	if exists, _ := mockTmux.WindowExists(winID); !exists {
+		t.Fatalf("first bay close attempt killed home window %s", winID)
+	}
+	if home := mustBay(t, eng, "labs", manifest.HomeBayID); len(home.Surfaces) != 1 {
+		t.Fatalf("first bay close attempt changed home surfaces: %+v", home.Surfaces)
+	}
+	msgs := mockTmux.DisplayMessages()
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "dismiss dock") {
+		t.Fatalf("first bay close messages = %v, want home dismissal guidance", msgs)
+	}
+
+	if err := runBayClose(eng, "labs", manifest.HomeBayID, false); err != nil {
+		t.Fatalf("runBayClose second: %v", err)
+	}
+	m2, _ := eng.LoadManifest()
+	dock := m2.FindDock("labs")
+	if dock == nil {
+		t.Fatal("dock disappeared after confirmed bay close home")
+	}
+	if dock.Path != dockPath {
+		t.Fatalf("dock.Path = %q, want %q", dock.Path, dockPath)
+	}
+	if home := dock.FindBayByID(manifest.HomeBayID); home != nil {
+		t.Fatalf("home persisted after confirmed bay close home: %+v", home)
+	}
+	if has, _ := mockTmux.HasSession("labs"); has {
+		t.Fatal("tmux session still exists after confirmed bay close home")
+	}
+}
+
+func mustBay(t *testing.T, eng *engine.Engine, dockName, bayID string) *manifest.Bay {
+	t.Helper()
+	bay, err := eng.BayShow(dockName, bayID)
+	if err != nil {
+		t.Fatalf("BayShow(%s:%s): %v", dockName, bayID, err)
+	}
+	return bay
+}

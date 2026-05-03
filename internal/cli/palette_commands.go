@@ -302,7 +302,7 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 			Section: palette.SectionCurrentBay,
 			Needs:   palette.ScopeInBay,
 			Action: func() (string, error) {
-				return "", env.Engine.BayClose(env.Ctx.Dock, env.Ctx.BayID, false)
+				return "", runBayClose(env.Engine, env.Ctx.Dock, env.Ctx.BayID, false)
 			},
 		},
 
@@ -334,7 +334,16 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 				if env.Ctx.Surface == "" {
 					return "", fmt.Errorf("no current surface")
 				}
-				return "", env.Engine.SurfaceClose(env.Ctx.Dock, env.Ctx.BayID, env.Ctx.Surface, false)
+				force := false
+				if dismisses, err := env.Engine.SurfaceCloseWouldDismissDock(env.Ctx.Dock, env.Ctx.BayID, env.Ctx.Surface); err != nil {
+					return "", err
+				} else if dismisses {
+					if !confirmLastHomeClose(homeCloseFlash(env.Engine), env.Ctx.Dock) {
+						return "", nil
+					}
+					force = true
+				}
+				return "", env.Engine.SurfaceClose(env.Ctx.Dock, env.Ctx.BayID, env.Ctx.Surface, force)
 			},
 		},
 		{

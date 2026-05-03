@@ -355,12 +355,20 @@ func TestBayClose_HomeClosesMaterializedSurfaces(t *testing.T) {
 	if exists, _ := mockTmux.WindowExists(winID); exists {
 		t.Fatalf("home window %s still exists after close", winID)
 	}
+	if has, _ := mockTmux.HasSession("labs"); !has {
+		t.Fatal("tmux session should remain while non-home windows are live")
+	}
+	for _, call := range mockTmux.Calls {
+		if call.Method == "KillSession" {
+			t.Fatalf("BayClose(home) should not kill session with non-home windows live; calls: %+v", mockTmux.Calls)
+		}
+	}
 	if _, err := eng.BayShow("labs", "w1"); err != nil {
 		t.Fatalf("non-home bay disappeared after BayClose(home): %v", err)
 	}
 }
 
-func TestBayClose_HomeLastSurfaceRejectsUntilCloseConfirmationPhase(t *testing.T) {
+func TestBayClose_HomeLastSurfaceRequiresConfirmation(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	if err := eng.Home("labs"); err != nil {
@@ -371,7 +379,7 @@ func TestBayClose_HomeLastSurfaceRejectsUntilCloseConfirmationPhase(t *testing.T
 	winID := home.Surfaces[0].Tmux.WindowID
 
 	err := eng.BayClose("labs", manifest.HomeBayID, false)
-	if err == nil || !strings.Contains(err.Error(), "not implemented until the home-bay close confirmation phase") {
+	if err == nil || !strings.Contains(err.Error(), "dismisses the dock UI/session") {
 		t.Fatalf("BayClose(last home) error = %v", err)
 	}
 
@@ -392,7 +400,182 @@ func TestBayClose_HomeLastSurfaceRejectsUntilCloseConfirmationPhase(t *testing.T
 	}
 }
 
-func TestSurfaceClose_HomeLastSurfaceRejectsUntilCloseConfirmationPhase(t *testing.T) {
+func TestBayClose_HomeForceDismissesLastHomeDock(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+	m, _ := eng.LoadManifest()
+	dockPath := m.FindDock("labs").Path
+	agent := m.FindDock("labs").Agent
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.Calls = nil
+	checkedBeforeKill := false
+	mockTmux.OnKill = func(method, target string) {
+		if method != "KillSession" || target != "labs" {
+			return
+		}
+		checkedBeforeKill = true
+		mid, err := eng.LoadManifest()
+		if err != nil {
+			t.Fatalf("LoadManifest during KillSession: %v", err)
+		}
+		dock := mid.FindDock("labs")
+		if dock == nil {
+			t.Fatal("dock was unregistered before KillSession")
+		}
+		if dock.Path != dockPath {
+			t.Fatalf("dock.Path during KillSession = %q, want %q", dock.Path, dockPath)
+		}
+		if dock.Agent != agent {
+			t.Fatalf("dock agent during KillSession = %q, want %q", dock.Agent, agent)
+		}
+		if home := dock.FindBayByID(manifest.HomeBayID); home != nil {
+			t.Fatalf("home persisted during KillSession: %+v", home)
+		}
+	}
+
+	if err := eng.BayClose("labs", manifest.HomeBayID, true); err != nil {
+		t.Fatalf("BayClose(home --force): %v", err)
+	}
+	if !checkedBeforeKill {
+		t.Fatal("KillSession hook did not run")
+	}
+
+	m2, _ := eng.LoadManifest()
+	dock := m2.FindDock("labs")
+	if dock == nil {
+		t.Fatal("dock disappeared after confirmed home dismissal")
+	}
+	if dock.Path != dockPath {
+		t.Fatalf("dock.Path = %q, want %q", dock.Path, dockPath)
+	}
+	if dock.Agent != agent {
+		t.Fatalf("dock agent = %q, want %q", dock.Agent, agent)
+	}
+	if home := dock.FindBayByID(manifest.HomeBayID); home != nil {
+		t.Fatalf("home bay persisted after confirmed dismissal: %+v", home)
+	}
+	if has, _ := mockTmux.HasSession("labs"); has {
+		t.Fatal("tmux session still exists after confirmed home dismissal")
+	}
+	mockGit := eng.Git.(*git.Mock)
+	if got := len(mockGit.RemovedWorktrees()); got != 0 {
+		t.Fatalf("removed worktrees = %d, want 0", got)
+	}
+	for _, call := range mockTmux.Calls {
+		if call.Method == "NewWindow" {
+			t.Fatalf("confirmed dismissal should not create a replacement window; calls: %+v", mockTmux.Calls)
+		}
+		if call.Method == "SetWindowOption" && len(call.Args) >= 3 && call.Args[1] == "@bay-placeholder" {
+			t.Fatalf("confirmed dismissal should not create a placeholder; calls: %+v", mockTmux.Calls)
+		}
+	}
+}
+
+func TestBayClose_HomeForceRemovesPersistedHomeWhenSessionGone(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+	m, _ := eng.LoadManifest()
+	dockPath := m.FindDock("labs").Path
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if err := mockTmux.KillSession("labs"); err != nil {
+		t.Fatalf("seed KillSession: %v", err)
+	}
+	mockTmux.Calls = nil
+
+	if err := eng.BayClose("labs", manifest.HomeBayID, true); err != nil {
+		t.Fatalf("BayClose(home --force) with missing session: %v", err)
+	}
+	m2, _ := eng.LoadManifest()
+	dock := m2.FindDock("labs")
+	if dock == nil {
+		t.Fatal("dock disappeared")
+	}
+	if dock.Path != dockPath {
+		t.Fatalf("dock.Path = %q, want %q", dock.Path, dockPath)
+	}
+	if home := dock.FindBayByID(manifest.HomeBayID); home != nil {
+		t.Fatalf("home persisted after forced close with missing session: %+v", home)
+	}
+	if dock.SessionID != "" {
+		t.Fatalf("dock.SessionID = %q, want cleared", dock.SessionID)
+	}
+}
+
+func TestBayClose_HomePlaceholderDoesNotPreventDismissal(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	placeholderID, err := mockTmux.NewWindow("labs", "~", "")
+	if err != nil {
+		t.Fatalf("NewWindow placeholder: %v", err)
+	}
+	if err := mockTmux.SetWindowOption(placeholderID, "@bay-placeholder", "1"); err != nil {
+		t.Fatalf("SetWindowOption placeholder: %v", err)
+	}
+
+	err = eng.BayClose("labs", manifest.HomeBayID, false)
+	if err == nil || !strings.Contains(err.Error(), "dismisses the dock UI/session") {
+		t.Fatalf("BayClose(home with placeholder) error = %v", err)
+	}
+	if has, _ := mockTmux.HasSession("labs"); !has {
+		t.Fatal("unconfirmed close killed the session")
+	}
+
+	if err := eng.BayClose("labs", manifest.HomeBayID, true); err != nil {
+		t.Fatalf("BayClose(home --force): %v", err)
+	}
+	if has, _ := mockTmux.HasSession("labs"); has {
+		t.Fatal("placeholder kept session alive after confirmed dismissal")
+	}
+}
+
+func TestBayClose_HomeArbitraryTildeWindowKeepsSessionLive(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+	m, _ := eng.LoadManifest()
+	home := m.FindDock("labs").FindBayByID(manifest.HomeBayID)
+	homeWinID := home.Surfaces[0].Tmux.WindowID
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	tildeID, err := mockTmux.NewWindow("labs", "~", m.FindDock("labs").Path)
+	if err != nil {
+		t.Fatalf("NewWindow arbitrary ~: %v", err)
+	}
+
+	if err := eng.BayClose("labs", manifest.HomeBayID, false); err != nil {
+		t.Fatalf("BayClose(home with arbitrary ~): %v", err)
+	}
+	if exists, _ := mockTmux.WindowExists(homeWinID); exists {
+		t.Fatalf("home window %s still exists", homeWinID)
+	}
+	if exists, _ := mockTmux.WindowExists(tildeID); !exists {
+		t.Fatalf("arbitrary ~ window %s was treated as home/placeholder", tildeID)
+	}
+	if has, _ := mockTmux.HasSession("labs"); !has {
+		t.Fatal("session should remain because arbitrary ~ is a live window")
+	}
+	for _, call := range mockTmux.Calls {
+		if call.Method == "KillSession" {
+			t.Fatalf("arbitrary ~ should prevent dock dismissal; calls: %+v", mockTmux.Calls)
+		}
+	}
+}
+
+func TestSurfaceClose_HomeLastSurfaceRequiresConfirmation(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	if err := eng.Home("labs"); err != nil {
@@ -403,7 +586,7 @@ func TestSurfaceClose_HomeLastSurfaceRejectsUntilCloseConfirmationPhase(t *testi
 	winID := home.Surfaces[0].Tmux.WindowID
 
 	err := eng.SurfaceClose("labs", manifest.HomeBayID, "shell", false)
-	if err == nil || !strings.Contains(err.Error(), "not implemented until the home-bay close confirmation phase") {
+	if err == nil || !strings.Contains(err.Error(), "dismisses the dock UI/session") {
 		t.Fatalf("SurfaceClose(last home) error = %v", err)
 	}
 
@@ -417,7 +600,7 @@ func TestSurfaceClose_HomeLastSurfaceRejectsUntilCloseConfirmationPhase(t *testi
 	}
 }
 
-func TestSurfaceClose_HomeLastLivePaneRejectsWithStaleRecordedSurface(t *testing.T) {
+func TestSurfaceClose_HomeLastLivePaneRequiresConfirmationWithStaleRecordedSurface(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	if err := eng.Home("labs"); err != nil {
@@ -449,7 +632,7 @@ func TestSurfaceClose_HomeLastLivePaneRejectsWithStaleRecordedSurface(t *testing
 	}
 
 	err := eng.SurfaceClose("labs", manifest.HomeBayID, live.Name, false)
-	if err == nil || !strings.Contains(err.Error(), "not implemented until the home-bay close confirmation phase") {
+	if err == nil || !strings.Contains(err.Error(), "dismisses the dock UI/session") {
 		t.Fatalf("SurfaceClose(last live home pane) error = %v", err)
 	}
 
@@ -461,6 +644,86 @@ func TestSurfaceClose_HomeLastLivePaneRejectsWithStaleRecordedSurface(t *testing
 	mockTmux := eng.Tmux.(*tmux.Mock)
 	if exists, _ := mockTmux.WindowExists(winID); !exists {
 		t.Fatalf("home window %s was killed after rejected close", winID)
+	}
+
+	if err := eng.SurfaceClose("labs", manifest.HomeBayID, live.Name, true); err != nil {
+		t.Fatalf("SurfaceClose(last live home pane --force): %v", err)
+	}
+	m3, _ := eng.LoadManifest()
+	if home := m3.FindDock("labs").FindBayByID(manifest.HomeBayID); home != nil {
+		t.Fatalf("stale home records persisted after confirmed dismissal: %+v", home)
+	}
+	if has, _ := mockTmux.HasSession("labs"); has {
+		t.Fatal("tmux session still exists after confirmed stale-record dismissal")
+	}
+}
+
+func TestHome_AfterDismissalRecreatesUsableHomeShell(t *testing.T) {
+	eng, _ := testEngine(t)
+	withDeterministicSessionID(t, "first-home-session", "second-home-session")
+
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home create: %v", err)
+	}
+	m, _ := eng.LoadManifest()
+	dockPath := m.FindDock("labs").Path
+	if got := m.FindDock("labs").SessionID; got != "first-home-session" {
+		t.Fatalf("initial dock.SessionID = %q, want first-home-session", got)
+	}
+
+	if err := eng.SurfaceClose("labs", manifest.HomeBayID, "shell", true); err != nil {
+		t.Fatalf("SurfaceClose(home --force): %v", err)
+	}
+	m2, _ := eng.LoadManifest()
+	if home := m2.FindDock("labs").FindBayByID(manifest.HomeBayID); home != nil {
+		t.Fatalf("home persisted after dismissal: %+v", home)
+	}
+	if got := m2.FindDock("labs").SessionID; got != "" {
+		t.Fatalf("dismissed dock SessionID = %q, want cleared", got)
+	}
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if has, _ := mockTmux.HasSession("labs"); has {
+		t.Fatal("session still exists after dismissal")
+	}
+	mockTmux.Calls = nil
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home recreate: %v", err)
+	}
+
+	m3, _ := eng.LoadManifest()
+	dock := m3.FindDock("labs")
+	if dock == nil {
+		t.Fatal("dock disappeared")
+	}
+	if dock.Path != dockPath {
+		t.Fatalf("dock.Path = %q, want %q", dock.Path, dockPath)
+	}
+	if dock.SessionID != "second-home-session" {
+		t.Fatalf("recreated dock.SessionID = %q, want second-home-session", dock.SessionID)
+	}
+	home := dock.FindBayByID(manifest.HomeBayID)
+	if home == nil || len(home.Surfaces) != 1 || home.Surfaces[0].Type != manifest.SurfaceTypeShell {
+		t.Fatalf("recreated home = %+v, want one shell", home)
+	}
+	if has, _ := mockTmux.HasSession("labs"); !has {
+		t.Fatal("Home did not recreate tmux session")
+	}
+	sawNewHomeWindow := false
+	for _, call := range mockTmux.Calls {
+		if call.Method == "NewWindow" && len(call.Args) >= 3 && call.Args[2] == dockPath {
+			sawNewHomeWindow = true
+		}
+	}
+	if !sawNewHomeWindow {
+		t.Fatalf("Home did not create a shell at dock path %q; calls: %+v", dockPath, mockTmux.Calls)
+	}
+	windows, _ := mockTmux.ListWindows("labs")
+	for _, w := range windows {
+		val, _ := mockTmux.GetWindowOption(w.ID, "@bay-placeholder")
+		if val == "1" {
+			t.Fatalf("recreated home should not leave placeholder %s", w.ID)
+		}
 	}
 }
 

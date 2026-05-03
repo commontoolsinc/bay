@@ -135,6 +135,7 @@ bay, or use --done/--clean to batch-close bays.
   bay close labs:w1          dock-qualified
   bay close w1 --dock labs   same, with flag
   bay close self             close the current bay
+  bay close home             close home surfaces; final home dismisses dock UI after confirmation
   bay close --done           close bays that are not dirty or pending
   bay close --clean          close all non-dirty bays
   bay close --done --dry-run preview what --done would close`,
@@ -197,17 +198,34 @@ bay, or use --done/--clean to batch-close bays.
 				return err
 			}
 
-			return eng.BayClose(dockName, bayID, force)
+			return runBayClose(eng, dockName, bayID, force)
 		},
 	}
 
-	cmd.Flags().BoolVar(&force, "force", false, "force close even if dirty")
+	cmd.Flags().BoolVar(&force, "force", false, "force close even if dirty; skip home dismissal confirmation")
 	cmd.Flags().BoolVar(&done, "done", false, "close bays that are not dirty or pending")
 	cmd.Flags().BoolVar(&clean, "clean", false, "close all non-dirty bays")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "preview what --done/--clean would close")
 	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare bay ID)")
 
 	return cmd
+}
+
+func runBayClose(eng *engine.Engine, dockName, bayID string, force bool) error {
+	closeForce := force
+	if !force {
+		dismisses, err := eng.BayCloseWouldDismissDock(dockName, bayID)
+		if err != nil {
+			return err
+		}
+		if dismisses {
+			if !confirmLastHomeClose(homeCloseFlash(eng), dockName) {
+				return nil
+			}
+			closeForce = true
+		}
+	}
+	return eng.BayClose(dockName, bayID, closeForce)
 }
 
 func newBayCleanReviewCmd() *cobra.Command {

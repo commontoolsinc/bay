@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
 // closeConfirmWindow is the second-tap deadline. Short enough that two
@@ -55,6 +57,26 @@ var confirmLastSurfaceClose = func(flash flashFunc, dockName, bayName string) bo
 		int(closeConfirmWindow/time.Millisecond),
 	)
 	return false
+}
+
+// confirmLastHomeClose uses the same double-tap record as normal last-surface
+// close, but with wording that makes clear the action dismisses the dock tmux
+// UI/session and does not unregister the dock.
+var confirmLastHomeClose = func(flash flashFunc, dockName string) bool {
+	path := bayPaths().CloseConfirm
+	if recordedRecently(path, dockName, manifest.HomeBayID, time.Now()) {
+		_ = os.Remove(path)
+		return true
+	}
+	if err := writeCloseConfirm(path, dockName, manifest.HomeBayID, time.Now()); err != nil {
+		return true
+	}
+	_ = flash(homeCloseConfirmMessage(dockName), int(closeConfirmWindow/time.Millisecond))
+	return false
+}
+
+func homeCloseConfirmMessage(dockName string) string {
+	return fmt.Sprintf("press again to dismiss dock %q UI/session; dock stays registered", dockName)
 }
 
 // recordedRecently reports whether a close-confirm record exists for

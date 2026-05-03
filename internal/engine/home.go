@@ -79,12 +79,12 @@ func removeHomeBayIfEmpty(dock *manifest.Dock) bool {
 }
 
 func lastHomeCloseError(dockName string) error {
-	return fmt.Errorf("closing the last home surface in dock %q is not implemented until the home-bay close confirmation phase; use `bay dock close %s` to close the dock", dockName, dockName)
+	return fmt.Errorf("closing the last home surface in dock %q dismisses the dock UI/session; confirm the close or use --force", dockName)
 }
 
-func (e *Engine) rejectIfLastHomeWindowClose(dockName string, closingWindowIDs []string) error {
+func (e *Engine) homeCloseWouldDismissDock(dockName string, closingWindowIDs []string) (bool, error) {
 	if len(closingWindowIDs) == 0 {
-		return nil
+		return false, nil
 	}
 	closing := map[string]bool{}
 	for _, id := range closingWindowIDs {
@@ -94,7 +94,7 @@ func (e *Engine) rejectIfLastHomeWindowClose(dockName string, closingWindowIDs [
 	}
 	windows, err := e.Tmux.ListWindows(dockName)
 	if err != nil {
-		return fmt.Errorf("checking remaining dock windows: %w", err)
+		return false, fmt.Errorf("checking remaining dock windows: %w", err)
 	}
 	for _, win := range windows {
 		if closing[win.ID] {
@@ -102,10 +102,105 @@ func (e *Engine) rejectIfLastHomeWindowClose(dockName string, closingWindowIDs [
 		}
 		val, _ := e.Tmux.GetWindowOption(win.ID, "@bay-placeholder")
 		if val != "1" {
-			return nil
+			return false, nil
 		}
 	}
-	return lastHomeCloseError(dockName)
+	return true, nil
+}
+
+func (e *Engine) homeSurfaceCloseWouldDismissDock(dockName string, bay *manifest.Bay, s *manifest.Surface) (bool, error) {
+	if bay == nil || bay.Type != manifest.BayTypeHome || s == nil || s.Tmux == nil || s.Tmux.WindowID == "" {
+		return false, nil
+	}
+	if exists, _ := e.Tmux.WindowExists(s.Tmux.WindowID); !exists {
+		return false, nil
+	}
+	closingWindowID := ""
+	if countSurfacesInLayoutGroup(bay, s.Tmux.LayoutGroup) <= 1 {
+		closingWindowID = s.Tmux.WindowID
+	} else if s.Tmux.PaneID != "" {
+		if exists, _ := e.Tmux.PaneExists(s.Tmux.PaneID); exists {
+			panes, err := e.Tmux.ListPanes(s.Tmux.WindowID)
+			if err != nil {
+				return false, fmt.Errorf("checking home panes: %w", err)
+			}
+			if len(panes) <= 1 {
+				closingWindowID = s.Tmux.WindowID
+			}
+		}
+	}
+	if closingWindowID == "" {
+		return false, nil
+	}
+	return e.homeCloseWouldDismissDock(dockName, []string{closingWindowID})
+}
+
+// BayCloseWouldDismissDock reports whether closing the target bay would dismiss
+// the dock tmux UI. It returns true only for the final live home window in a
+// dock; bay-owned placeholder windows are ignored, while arbitrary untagged
+// windows still count as live UI.
+func (e *Engine) BayCloseWouldDismissDock(dockName, bayID string) (bool, error) {
+	m, err := e.LoadManifest()
+	if err != nil {
+		return false, err
+	}
+	dock := m.FindDock(dockName)
+	if dock == nil {
+		return false, fmt.Errorf("unknown dock %q", dockName)
+	}
+	bay := dock.FindBayByID(bayID)
+	if bay == nil {
+		if manifest.IsReservedBayID(bayID) {
+			return false, nil
+		}
+		return false, fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
+	}
+	if bay.Type != manifest.BayTypeHome {
+		return false, nil
+	}
+	return e.homeCloseWouldDismissDock(dockName, windowIDsForBay(bay))
+}
+
+// SurfaceCloseWouldDismissDock reports whether closing a surface would dismiss
+// the dock tmux UI. It counts live tmux panes/windows rather than trusting only
+// recorded manifest surfaces, so stale home records cannot mask the final live
+// pane.
+func (e *Engine) SurfaceCloseWouldDismissDock(dockName, bayID, surfaceName string) (bool, error) {
+	m, err := e.LoadManifest()
+	if err != nil {
+		return false, err
+	}
+	dock := m.FindDock(dockName)
+	if dock == nil {
+		return false, fmt.Errorf("unknown dock %q", dockName)
+	}
+	bay := dock.FindBayByID(bayID)
+	if bay == nil {
+		return false, fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
+	}
+	if bay.Type != manifest.BayTypeHome {
+		return false, nil
+	}
+	s := bay.FindSurface(surfaceName)
+	if s == nil {
+		return false, fmt.Errorf("surface %q not found in bay %q", surfaceName, bayID)
+	}
+	return e.homeSurfaceCloseWouldDismissDock(dockName, bay, s)
+}
+
+func windowIDsForBay(bay *manifest.Bay) []string {
+	seen := map[string]bool{}
+	var windowIDs []string
+	if bay == nil {
+		return windowIDs
+	}
+	for _, s := range bay.Surfaces {
+		if s.Tmux != nil && s.Tmux.WindowID != "" && !seen[s.Tmux.WindowID] {
+			seen[s.Tmux.WindowID] = true
+			windowIDs = append(windowIDs, s.Tmux.WindowID)
+		}
+	}
+	return windowIDs
 }
 
 // Home focuses the most recent home surface in a dock, creating a home shell
