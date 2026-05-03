@@ -22,7 +22,14 @@ const CurrentVersion = 6
 const (
 	BayTypeWorktree BayType = "worktree"
 	BayTypeExternal BayType = "external"
+	// BayTypeHome is the dock's canonical-checkout pseudo-bay. It is
+	// backed by Dock.Path, has no worktree metadata, and is never deleted
+	// by worktree lifecycle paths.
+	BayTypeHome BayType = "home"
 )
+
+// HomeBayID is the reserved ID/Name for every dock's home pseudo-bay.
+const HomeBayID = "home"
 
 // SurfaceType constants — the semantic role of a surface.
 const (
@@ -94,7 +101,7 @@ func (d Dock) EffectiveWorktreeDir() string {
 type Bay struct {
 	ID             string         `json:"id"`                         // stable handle (^w[1-9]\d*$); set at creation, never changes; unique within dock
 	Name           string         `json:"name"`                       // user-facing display label, renameable; not a CLI key. Empty until set explicitly or filled from a branch.
-	Type           BayType        `json:"type"`                       // "worktree" or "external"
+	Type           BayType        `json:"type"`                       // "worktree", "external", or "home"
 	Path           string         `json:"path,omitempty"`             // absolute path to the working directory
 	Description    string         `json:"description,omitempty"`      // short free-form label shown in picker/ls/tree
 	LastFocused    int            `json:"last_focused,omitempty"`     // surface ID; 0 = none yet
@@ -129,6 +136,12 @@ func (b *Bay) IsMerged() bool {
 func IsBayID(s string) bool {
 	_, ok := parseBayIDNum(s)
 	return ok
+}
+
+// IsReservedBayID reports whether s is reserved by bay as a non-generated
+// bay ID. Reserved IDs are addressable but cannot be used by normal bays.
+func IsReservedBayID(s string) bool {
+	return s == HomeBayID
 }
 
 // parseBayIDNum extracts the integer suffix from a bay ID.
@@ -707,12 +720,23 @@ func (d *Dock) FindBayByID(id string) *Bay {
 	return nil
 }
 
-// AddBay adds a bay. Returns an error if the bay's Name
-// is non-empty and already taken in the dock. Empty-Name bays are
-// always allowed; they'll display via their ID until a Name is set.
+// AddBay adds a bay. Returns an error if the bay's Name is non-empty and
+// already taken in the dock. Empty-Name bays are always allowed; they'll
+// display via their ID until a Name is set.
+//
+// The reserved home handle is admitted only for BayTypeHome with the fixed
+// home shape. Normal worktree/external bays must not shadow a dock's logical
+// home target in either the ID or Name namespace.
 func (d *Dock) AddBay(bay Bay) error {
 	if bay.Name != "" && d.FindBay(bay.Name) != nil {
 		return fmt.Errorf("bay %q already exists in dock %q", bay.Name, d.Name)
+	}
+	if bay.Type == BayTypeHome {
+		if err := validateHomeBayShape(d, &bay); err != nil {
+			return err
+		}
+	} else if IsReservedBayID(bay.ID) || IsReservedBayID(bay.Name) {
+		return fmt.Errorf("bay ID/name %q is reserved for the dock's home pseudo-bay", HomeBayID)
 	}
 	if bay.Surfaces == nil {
 		bay.Surfaces = []Surface{}
@@ -846,13 +870,19 @@ func (b *Bay) RemoveSurface(name string) error {
 
 // --- Bay resolution ---
 
-// ResolveBay resolves a query that may be "dock:id" or a bare ID.
-// Returns pointers to the bay and its parent dock.
+// ResolveBay resolves a query that may be "dock:id" or a bare ID. Returns
+// pointers to the bay and its parent dock.
 //
 // Strict resolution: only IDs are accepted as CLI keys. If the query
 // looks like a Name (i.e. it doesn't match a known ID), the error
 // message hints at the canonical ID for any bay with a matching
 // Name, so users who type a friendly Name see a one-step fix.
+//
+// "home" is reserved per dock. A dock-qualified home query resolves to a
+// persisted BayTypeHome entry when one exists, or a synthesized empty home
+// bay backed by Dock.Path. Bare home has no manifest-wide answer because
+// every dock has its own home; callers with current-dock context should
+// qualify it before calling this resolver.
 func (m *Manifest) ResolveBay(query string) (*Bay, *Dock, error) {
 	// Try "dock:id" format.
 	if parts := strings.SplitN(query, ":", 2); len(parts) == 2 {
@@ -860,11 +890,22 @@ func (m *Manifest) ResolveBay(query string) (*Bay, *Dock, error) {
 		if d == nil {
 			return nil, nil, fmt.Errorf("dock %q not found", parts[0])
 		}
+		if IsReservedBayID(parts[1]) {
+			bay, err := resolveReservedBay(d, parts[1])
+			if err != nil {
+				return nil, nil, err
+			}
+			return bay, d, nil
+		}
 		bay := d.FindBayByID(parts[1])
 		if bay == nil {
 			return nil, nil, bayNotFoundError(parts[1], parts[0], dockNameHints(d, parts[1]))
 		}
 		return bay, d, nil
+	}
+
+	if IsReservedBayID(query) {
+		return nil, nil, fmt.Errorf("home requires a dock context; use \"<dock>:home\" or run from a known dock")
 	}
 
 	// Bare ID: search all docks.
@@ -893,6 +934,74 @@ func (m *Manifest) ResolveBay(query string) (*Bay, *Dock, error) {
 		}
 		return nil, nil, fmt.Errorf("bay ID %q is ambiguous; found in docks: %s", query, strings.Join(docks, ", "))
 	}
+}
+
+func resolveReservedBay(d *Dock, id string) (*Bay, error) {
+	switch id {
+	case HomeBayID:
+		return resolveHomeBay(d)
+	default:
+		return nil, fmt.Errorf("bay ID %q is reserved but has no resolver", id)
+	}
+}
+
+// SynthesizeHomeBay returns a fresh, non-persisted home Bay value for dock.
+// Later phases can persist this same shape once home has surfaces.
+func SynthesizeHomeBay(d *Dock) Bay {
+	path := ""
+	if d != nil {
+		path = d.Path
+	}
+	return Bay{
+		ID:       HomeBayID,
+		Name:     HomeBayID,
+		Type:     BayTypeHome,
+		Path:     path,
+		Surfaces: []Surface{},
+	}
+}
+
+// validateHomeBayShape returns an error describing the first home pseudo-bay
+// invariant violated by b for dock d, or nil if b is well-formed. Both AddBay
+// (insert) and resolveHomeBay (read) call this so the rules live in one place.
+// Read paths add dock context to the returned error.
+func validateHomeBayShape(d *Dock, b *Bay) error {
+	if b.Type != BayTypeHome {
+		return fmt.Errorf("non-home bay with reserved ID %q", HomeBayID)
+	}
+	if b.ID != HomeBayID || b.Name != HomeBayID {
+		return fmt.Errorf("home bay must use reserved ID/name %q (got id=%q name=%q)", HomeBayID, b.ID, b.Name)
+	}
+	if b.Path != d.Path {
+		return fmt.Errorf("home bay path %q does not match expected dock path %q", b.Path, d.Path)
+	}
+	if b.Worktree != nil {
+		return fmt.Errorf("home bay %q must not have worktree metadata", HomeBayID)
+	}
+	return nil
+}
+
+func resolveHomeBay(d *Dock) (*Bay, error) {
+	var byID, byName *Bay
+	for i := range d.Bays {
+		switch {
+		case d.Bays[i].ID == HomeBayID:
+			byID = &d.Bays[i]
+		case d.Bays[i].Name == HomeBayID:
+			byName = &d.Bays[i]
+		}
+	}
+	if byID != nil {
+		if err := validateHomeBayShape(d, byID); err != nil {
+			return nil, fmt.Errorf("dock %q has a %w", d.Name, err)
+		}
+		return byID, nil
+	}
+	if byName != nil {
+		return nil, fmt.Errorf("dock %q has a non-home bay named %q; rename or close it before using home", d.Name, HomeBayID)
+	}
+	home := SynthesizeHomeBay(d)
+	return &home, nil
 }
 
 // nameHint pairs an ID with its parent dock for "did you mean" output.

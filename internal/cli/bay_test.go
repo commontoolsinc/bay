@@ -2,6 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -22,6 +24,42 @@ func TestFormatBayShort_AllFields(t *testing.T) {
 	want := "w4.auth-fix — Login flow fixes — fix/login — PR#123"
 	if got != want {
 		t.Errorf("formatBayShort = %q, want %q", got, want)
+	}
+}
+
+func TestRunDescribeRejectsHomeReadOnly(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "config"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(dir, "data"))
+	oldCfgPath := cfgPath
+	cfgPath = ""
+	t.Cleanup(func() { cfgPath = oldCfgPath })
+
+	repoDir := filepath.Join(dir, "repos", "labs")
+	if err := os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755); err != nil {
+		t.Fatalf("mkdir repo: %v", err)
+	}
+	manifestPath := filepath.Join(dir, "data", "bay", "manifest.json")
+	if err := manifest.Save(manifestPath, &manifest.Manifest{
+		Version: manifest.CurrentVersion,
+		Docks: []manifest.Dock{
+			{Name: "labs", Path: repoDir, Bays: []manifest.Bay{}},
+		},
+	}); err != nil {
+		t.Fatalf("save manifest: %v", err)
+	}
+
+	orig, _ := os.Getwd()
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatalf("chdir repo: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	for _, arg := range []string{manifest.HomeBayID, "labs:" + manifest.HomeBayID} {
+		err := runDescribe([]string{arg}, "", false, false)
+		if err == nil || !strings.Contains(err.Error(), "describe is not supported") {
+			t.Fatalf("runDescribe(%q) error = %v, want home describe rejection", arg, err)
+		}
 	}
 }
 

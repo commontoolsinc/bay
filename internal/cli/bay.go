@@ -44,6 +44,9 @@ func newBayNewCmd() *cobra.Command {
 			if len(args) > 0 {
 				opts.Name = args[0]
 			}
+			if manifest.IsReservedBayID(opts.Name) {
+				return fmt.Errorf("home is reserved for the dock checkout; use `bay home`")
+			}
 
 			// Resolve dock: explicit --dock > current tmux session > known checkout > auto-bootstrap.
 			// Check $TMUX (not $TMUX_PANE) because tmux run-shell doesn't
@@ -644,9 +647,14 @@ func runDescribe(args []string, dockFlag string, clear, edit bool) error {
 	case 0:
 		target = "self"
 	case 1:
-		target = "self"
-		desc = args[0]
-		haveDesc = true
+		_, bay, parseErr := parseBayArg(args[0])
+		if parseErr == nil && manifest.IsReservedBayID(bay) {
+			target = args[0]
+		} else {
+			target = "self"
+			desc = args[0]
+			haveDesc = true
+		}
 	case 2:
 		target = args[0]
 		desc = args[1]
@@ -656,6 +664,10 @@ func runDescribe(args []string, dockFlag string, clear, edit bool) error {
 	dockName, bayID, err := resolveBayArg(eng, target, dockFlag)
 	if err != nil {
 		return err
+	}
+
+	if manifest.IsReservedBayID(bayID) {
+		return fmt.Errorf("home is reserved; describe is not supported on the home pseudo-bay")
 	}
 
 	// No-op read path: no args, no flags → print current description.
