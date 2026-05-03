@@ -394,7 +394,7 @@ func (e *Engine) buildBayInfo(bay *manifest.Bay, agent string, waitingWindows ma
 	}
 
 	// Compute dirty state from git.
-	if bay.Path != "" && statErr == nil {
+	if bay.Type != manifest.BayTypeHome && bay.Path != "" && statErr == nil {
 		if dirty, err := e.Git.IsDirty(bayPath); err == nil {
 			bayInfo.Dirty = dirty
 		}

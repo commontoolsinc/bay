@@ -78,6 +78,36 @@ func removeHomeBayIfEmpty(dock *manifest.Dock) bool {
 	return true
 }
 
+func lastHomeCloseError(dockName string) error {
+	return fmt.Errorf("closing the last home surface in dock %q is not implemented until the home-bay close confirmation phase; use `bay dock close %s` to close the dock", dockName, dockName)
+}
+
+func (e *Engine) rejectIfLastHomeWindowClose(dockName string, closingWindowIDs []string) error {
+	if len(closingWindowIDs) == 0 {
+		return nil
+	}
+	closing := map[string]bool{}
+	for _, id := range closingWindowIDs {
+		if id != "" {
+			closing[id] = true
+		}
+	}
+	windows, err := e.Tmux.ListWindows(dockName)
+	if err != nil {
+		return fmt.Errorf("checking remaining dock windows: %w", err)
+	}
+	for _, win := range windows {
+		if closing[win.ID] {
+			continue
+		}
+		val, _ := e.Tmux.GetWindowOption(win.ID, "@bay-placeholder")
+		if val != "1" {
+			return nil
+		}
+	}
+	return lastHomeCloseError(dockName)
+}
+
 // Home focuses the most recent home surface in a dock, creating a home shell
 // at the dock checkout when no focusable home surface exists.
 func (e *Engine) Home(dockName string) error {

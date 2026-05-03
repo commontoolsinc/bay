@@ -84,20 +84,7 @@ func newDockNewCmd() *cobra.Command {
 			if len(args) > 0 {
 				name = args[0]
 			}
-			if name == "" {
-				name = defaultDockName(path)
-			}
-			if err := eng.DockNew(name, path, worktreeDir, agent, terminal); err != nil {
-				return err
-			}
-			if initErr := eng.DockInit(name); initErr != nil {
-				fmt.Fprintf(os.Stderr, "Warning: dock checkout setup failed: %v\n", initErr)
-			}
-			if err := eng.Home(name); err != nil {
-				return fmt.Errorf("dock created, but home shell failed: %w", err)
-			}
-			fmt.Printf("Dock %q created.\n", name)
-			return nil
+			return runDockNew(eng, name, path, worktreeDir, agent, terminal)
 		},
 	}
 
@@ -107,6 +94,23 @@ func newDockNewCmd() *cobra.Command {
 	cmd.Flags().StringVar(&terminal, "terminal", "", "host terminal app (e.g. ghostty, iterm2)")
 
 	return cmd
+}
+
+func runDockNew(eng *engine.Engine, name, path, worktreeDir, agent, terminal string) error {
+	if name == "" {
+		name = defaultDockName(path)
+	}
+	if err := eng.DockNew(name, path, worktreeDir, agent, terminal); err != nil {
+		return err
+	}
+	if initErr := eng.DockInit(name); initErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: dock checkout setup failed: %v\n", initErr)
+	}
+	if err := eng.Home(name); err != nil {
+		return fmt.Errorf("dock created, but home shell failed: %w", err)
+	}
+	fmt.Printf("Dock %q created.\n", name)
+	return nil
 }
 
 func defaultDockName(path string) string {

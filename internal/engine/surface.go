@@ -399,6 +399,11 @@ func (e *Engine) SurfaceClose(dockName, bayID, surfaceName string, force bool) e
 		if s == nil {
 			return fmt.Errorf("surface %q not found in bay %q", surfaceName, bayID)
 		}
+		if homeSurface && len(bay.Surfaces) == 1 && s.Tmux != nil && s.Tmux.WindowID != "" {
+			if err := e.rejectIfLastHomeWindowClose(dockName, []string{s.Tmux.WindowID}); err != nil {
+				return err
+			}
+		}
 
 		// Capture what we'll kill before the surface is removed from
 		// the in-memory manifest (RemoveSurface invalidates s).
@@ -433,9 +438,7 @@ func (e *Engine) SurfaceClose(dockName, bayID, surfaceName string, force bool) e
 	// mid-call if it's running in the pane being killed, but the
 	// user-visible state is already correct.
 	if windowIDToKill != "" {
-		if homeSurface {
-			e.ensurePlaceholderIfLastWindow(dockName, windowIDToKill)
-		} else {
+		if !homeSurface {
 			e.ensureHomeIfLastWindow(dockName, windowIDToKill)
 		}
 		_ = e.Tmux.KillWindow(windowIDToKill)

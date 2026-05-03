@@ -419,6 +419,9 @@ func (e *Engine) closeBayState(dockName, bayID string, force bool) ([]string, er
 	}
 
 	if bay.Type == manifest.BayTypeHome {
+		if err := e.rejectIfLastHomeWindowClose(dockName, windowIDs); err != nil {
+			return nil, err
+		}
 		if err := e.withManifest(func(m *manifest.Manifest) error {
 			dock := m.FindDock(dockName)
 			if dock == nil {
@@ -601,9 +604,7 @@ func (e *Engine) BayClose(dockName, bayID string, force bool) error {
 	// it's running in one of these panes, but the user-visible state is
 	// already correct.
 	for _, id := range windowIDs {
-		if manifest.IsReservedBayID(bayID) {
-			e.ensurePlaceholderIfLastWindow(dockName, id)
-		} else {
+		if !manifest.IsReservedBayID(bayID) {
 			e.ensureHomeIfLastWindow(dockName, id)
 		}
 		_ = e.Tmux.KillWindow(id)

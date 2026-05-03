@@ -545,7 +545,7 @@ bay new [name] --dir <path>              # external bay
 bay new [name] --description "<text>"    # set description at creation time
 bay new [name] -q                        # suppress output (scripting)
 bay close <id>                           # close + delete pushed branch ('self' for current)
-bay close home                           # close home surfaces; keeps dock checkout
+bay close home                           # close home surfaces if other surfaces remain; keeps checkout
 bay close <id> --force                   # skip safety checks (keeps unlanded branches)
 bay close --done                         # close bays not dirty or pending
 bay close --clean                        # close all non-dirty bays

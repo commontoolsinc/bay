@@ -68,6 +68,31 @@ func TestRunSurfaceNew_HomeCreatesSurface(t *testing.T) {
 	}
 }
 
+func TestRunSurfaceNew_HomeAgentUsesDockDefault(t *testing.T) {
+	eng, _, _, _ := testNavEngine(t)
+
+	err := runSurfaceNew(eng, "labs", manifest.HomeBayID, surfaceNewOpts{
+		Type: manifest.SurfaceTypeAgent,
+	})
+	if err != nil {
+		t.Fatalf("runSurfaceNew(home agent): %v", err)
+	}
+	bay, err := eng.BayShow("labs", manifest.HomeBayID)
+	if err != nil {
+		t.Fatalf("BayShow(home): %v", err)
+	}
+	if len(bay.Surfaces) != 1 {
+		t.Fatalf("home surfaces = %+v, want one agent", bay.Surfaces)
+	}
+	added := bay.Surfaces[0]
+	if added.Type != manifest.SurfaceTypeAgent {
+		t.Fatalf("home surface type = %s, want agent", added.Type)
+	}
+	if added.Agent == nil || *added.Agent != "claude" {
+		t.Fatalf("home agent = %v, want dock default claude", added.Agent)
+	}
+}
+
 func TestRunSurfaceNew_Agent(t *testing.T) {
 	eng, _, _, _ := testNavEngine(t)
 	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
@@ -199,6 +224,38 @@ func TestRunSurfaceNew_NameWithColonIsRejected(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "cannot contain ':'") {
 		t.Errorf("expected colon-rejection error, got %v", err)
+	}
+}
+
+func TestRunEditCreate_HomeCreatesEditorAtDockPath(t *testing.T) {
+	eng, mockTmux, _, _ := testNavEngine(t)
+	m, _ := eng.LoadManifest()
+	dockPath := m.FindDock("labs").Path
+	mockTmux.Calls = nil
+
+	if err := runEditCreate(eng, "labs:"+manifest.HomeBayID, "vim", ""); err != nil {
+		t.Fatalf("runEditCreate(home): %v", err)
+	}
+
+	home, err := eng.BayShow("labs", manifest.HomeBayID)
+	if err != nil {
+		t.Fatalf("BayShow(home): %v", err)
+	}
+	if len(home.Surfaces) != 1 || home.Surfaces[0].Type != manifest.SurfaceTypeEditor {
+		t.Fatalf("home surfaces = %+v, want one editor", home.Surfaces)
+	}
+	if home.Surfaces[0].Command == nil || *home.Surfaces[0].Command != "vim "+dockPath {
+		t.Fatalf("editor command = %v, want vim %s", home.Surfaces[0].Command, dockPath)
+	}
+
+	sawRespawn := false
+	for _, call := range mockTmux.Calls {
+		if call.Method == "RespawnPane" && len(call.Args) >= 3 && call.Args[1] == dockPath && call.Args[2] == "vim "+dockPath {
+			sawRespawn = true
+		}
+	}
+	if !sawRespawn {
+		t.Fatalf("home editor should run at dock path %q; calls: %+v", dockPath, mockTmux.Calls)
 	}
 }
 

@@ -414,7 +414,9 @@ branch has been pushed, its HEAD is included in a merged PR, or its
 patches are already on the default branch after a squash merge or
 cherry-pick, bay deletes the local branch on close — no stale branches
 left behind. Pass `self` to close the current bay. `bay close home`
-closes home surfaces and leaves the dock checkout untouched.
+closes home surfaces and leaves the dock checkout untouched when other
+dock surfaces remain; closing the last home surface is deferred to the
+home close-confirmation phase.
 
 Batch flags (without an ID):
 - `--done`: close bays that are not dirty and not pending (have

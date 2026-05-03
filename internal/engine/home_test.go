@@ -6,6 +6,7 @@ import (
 
 	"github.com/commontoolsinc/bay/internal/git"
 	"github.com/commontoolsinc/bay/internal/manifest"
+	"github.com/commontoolsinc/bay/internal/nav"
 	"github.com/commontoolsinc/bay/internal/tmux"
 )
 
@@ -263,13 +264,20 @@ func TestSurfaceAdd_HomeMaterializesBay(t *testing.T) {
 
 	mockTmux := eng.Tmux.(*tmux.Mock)
 	sawMoveZero := false
+	sawNewWindowCWD := false
 	for _, call := range mockTmux.Calls {
 		if call.Method == "MoveWindow" && len(call.Args) == 2 && call.Args[1] == "0" {
 			sawMoveZero = true
 		}
+		if call.Method == "NewWindow" && len(call.Args) >= 3 && call.Args[2] == dock.Path {
+			sawNewWindowCWD = true
+		}
 	}
 	if !sawMoveZero {
 		t.Fatalf("first home window should move to index 0; calls: %+v", mockTmux.Calls)
+	}
+	if !sawNewWindowCWD {
+		t.Fatalf("home shell should start at dock path %q; calls: %+v", dock.Path, mockTmux.Calls)
 	}
 }
 
@@ -313,6 +321,9 @@ func TestHome_FocusesExistingSurface(t *testing.T) {
 func TestBayClose_HomeClosesMaterializedSurfaces(t *testing.T) {
 	eng, _ := testEngine(t)
 
+	if _, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true}); err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
 	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: manifest.HomeBayID, Type: manifest.SurfaceTypeShell, Name: "shell"}); err != nil {
 		t.Fatalf("SurfaceAdd(home): %v", err)
 	}
@@ -343,6 +354,118 @@ func TestBayClose_HomeClosesMaterializedSurfaces(t *testing.T) {
 	if exists, _ := mockTmux.WindowExists(winID); exists {
 		t.Fatalf("home window %s still exists after close", winID)
 	}
+	if _, err := eng.BayShow("labs", "w1"); err != nil {
+		t.Fatalf("non-home bay disappeared after BayClose(home): %v", err)
+	}
+}
+
+func TestBayClose_HomeLastSurfaceRejectsUntilCloseConfirmationPhase(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+	m, _ := eng.LoadManifest()
+	home := m.FindDock("labs").FindBayByID(manifest.HomeBayID)
+	winID := home.Surfaces[0].Tmux.WindowID
+
+	err := eng.BayClose("labs", manifest.HomeBayID, false)
+	if err == nil || !strings.Contains(err.Error(), "not implemented until the home-bay close confirmation phase") {
+		t.Fatalf("BayClose(last home) error = %v", err)
+	}
+
+	m2, _ := eng.LoadManifest()
+	if home := m2.FindDock("labs").FindBayByID(manifest.HomeBayID); home == nil || len(home.Surfaces) != 1 {
+		t.Fatalf("home after rejected close = %+v, want unchanged", home)
+	}
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if exists, _ := mockTmux.WindowExists(winID); !exists {
+		t.Fatalf("home window %s was killed after rejected close", winID)
+	}
+	windows, _ := mockTmux.ListWindows("labs")
+	for _, w := range windows {
+		val, _ := mockTmux.GetWindowOption(w.ID, "@bay-placeholder")
+		if val == "1" {
+			t.Fatalf("rejected last-home close should not create placeholder %s", w.ID)
+		}
+	}
+}
+
+func TestSurfaceClose_HomeLastSurfaceRejectsUntilCloseConfirmationPhase(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+	m, _ := eng.LoadManifest()
+	home := m.FindDock("labs").FindBayByID(manifest.HomeBayID)
+	winID := home.Surfaces[0].Tmux.WindowID
+
+	err := eng.SurfaceClose("labs", manifest.HomeBayID, "shell", false)
+	if err == nil || !strings.Contains(err.Error(), "not implemented until the home-bay close confirmation phase") {
+		t.Fatalf("SurfaceClose(last home) error = %v", err)
+	}
+
+	m2, _ := eng.LoadManifest()
+	if home := m2.FindDock("labs").FindBayByID(manifest.HomeBayID); home == nil || len(home.Surfaces) != 1 {
+		t.Fatalf("home after rejected surface close = %+v, want unchanged", home)
+	}
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	if exists, _ := mockTmux.WindowExists(winID); !exists {
+		t.Fatalf("home window %s was killed after rejected surface close", winID)
+	}
+}
+
+func TestHomeVisibility_EmptyHiddenVisibleListed(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if _, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true}); err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+	infos, err := eng.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	for _, bay := range infos[0].Bays {
+		if bay.ID == manifest.HomeBayID {
+			t.Fatalf("empty home should not appear in list: %+v", infos[0].Bays)
+		}
+	}
+	m, _ := eng.LoadManifest()
+	entries := nav.CollectEntries(m, eng.Tmux)
+	for _, entry := range entries {
+		if entry.BayName == manifest.HomeBayID {
+			t.Fatalf("empty home should not appear in navigation entries: %+v", entries)
+		}
+	}
+
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: manifest.HomeBayID, Type: manifest.SurfaceTypeShell, Name: "shell"}); err != nil {
+		t.Fatalf("SurfaceAdd(home): %v", err)
+	}
+	infos, err = eng.List()
+	if err != nil {
+		t.Fatalf("List after home materialized: %v", err)
+	}
+	foundList := false
+	for _, bay := range infos[0].Bays {
+		if bay.ID == manifest.HomeBayID && bay.SurfaceCount == 1 {
+			foundList = true
+		}
+	}
+	if !foundList {
+		t.Fatalf("visible home missing from list: %+v", infos[0].Bays)
+	}
+	m, _ = eng.LoadManifest()
+	entries = nav.CollectEntries(m, eng.Tmux)
+	foundNav := false
+	for _, entry := range entries {
+		if entry.BayName == manifest.HomeBayID && entry.SurfaceCount == 1 {
+			foundNav = true
+		}
+	}
+	if !foundNav {
+		t.Fatalf("visible home missing from navigation entries: %+v", entries)
+	}
 }
 
 func TestEdit_HomeReturnsDockPathWithoutMaterializing(t *testing.T) {
@@ -360,5 +483,24 @@ func TestEdit_HomeReturnsDockPathWithoutMaterializing(t *testing.T) {
 	m2, _ := eng.LoadManifest()
 	if home := m2.FindDock("labs").FindBayByID(manifest.HomeBayID); home != nil {
 		t.Fatalf("Edit(home) should not materialize empty home, got %+v", home)
+	}
+}
+
+func TestEditAllParentDir_HomeDoesNotChangeDockEditorTarget(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+	m, _ := eng.LoadManifest()
+	dock := m.FindDock("labs")
+	want := dock.EffectiveWorktreeDir()
+
+	got, err := eng.EditAllParentDir("labs")
+	if err != nil {
+		t.Fatalf("EditAllParentDir: %v", err)
+	}
+	if got != want {
+		t.Fatalf("EditAllParentDir = %q, want %q", got, want)
 	}
 }
