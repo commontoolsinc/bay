@@ -13,7 +13,7 @@ import (
 	"github.com/commontoolsinc/bay/internal/picker"
 )
 
-// paletteEnv collects the long-lived state the palette's 24 commands all
+// paletteEnv collects the long-lived state the palette commands all
 // need. buildPaletteEntries threads it through every Action closure.
 type paletteEnv struct {
 	Engine  *engine.Engine
@@ -42,7 +42,7 @@ func modeHotkey(h *palette.Hotkeys, window, pane string, m palette.Mode) string 
 	return h.Lookup(window)
 }
 
-// buildPaletteEntries returns all 24 palette entries with Actions bound to
+// buildPaletteEntries returns all palette entries with Actions bound to
 // the current env and mode. Called at startup and again on every Tab press.
 func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 	h := env.Hotkeys
@@ -71,6 +71,16 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 			Hotkey:  h.Lookup("bay go --pick"),
 			Action: func() (string, error) {
 				return "", bayGo(env.Engine, nil, false, false)
+			},
+		},
+		{
+			ID:      "go-home",
+			Title:   "Go to home",
+			Section: palette.SectionNavigation,
+			Needs:   palette.ScopeInDock,
+			Hotkey:  h.Lookup("bay home"),
+			Action: func() (string, error) {
+				return "", env.Engine.Home(env.Ctx.Dock)
 			},
 		},
 		{
@@ -185,6 +195,65 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 			Hotkey:  h.Lookup("bay edit --dock"),
 			Action: func() (string, error) {
 				return "", runEditDock(env.Engine, "", "")
+			},
+		},
+		{
+			ID:      "home-shell",
+			Title:   "Home shell",
+			Section: palette.SectionCreateSurface,
+			Needs:   palette.ScopeInDock,
+			Hotkey:  h.Lookup("bay shell --bay home"),
+			Action: func() (string, error) {
+				return "", env.Engine.SurfaceAdd(engine.SurfaceAddOptions{
+					DockName: env.Ctx.Dock,
+					BayName:  manifest.HomeBayID,
+					Type:     manifest.SurfaceTypeShell,
+					Name:     "shell",
+					SplitDir: split,
+				})
+			},
+		},
+		{
+			ID:      "home-editor",
+			Title:   "Home editor",
+			Section: palette.SectionCreateSurface,
+			Needs:   palette.ScopeInDock,
+			Hotkey:  h.Lookup("bay edit --bay home"),
+			Action: func() (string, error) {
+				return "", runEditCreate(env.Engine, env.Ctx.Dock+":"+manifest.HomeBayID, "", split)
+			},
+		},
+		{
+			ID:      "home-agent",
+			Title:   "Home agent",
+			Section: palette.SectionCreateSurface,
+			Needs:   palette.ScopeInDock,
+			Hotkey:  h.Lookup("bay agent --bay home"),
+			Action: func() (string, error) {
+				return "", runSurfaceNew(env.Engine, env.Ctx.Dock, manifest.HomeBayID, surfaceNewOpts{
+					Type:     manifest.SurfaceTypeAgent,
+					SplitDir: split,
+				})
+			},
+		},
+		{
+			ID:         "home-agent-pick",
+			Title:      "Home agent...",
+			Section:    palette.SectionCreateSurface,
+			Needs:      palette.ScopeInDock,
+			ParamValid: agentParamValid,
+			TitleWithParam: func(p string) string {
+				return fmt.Sprintf("Home agent (%s)", p)
+			},
+			Action: func() (string, error) {
+				agent, ok := paletteAgentPick(env)
+				if !ok {
+					return "", nil
+				}
+				return runPaletteHomeAgent(env, split, agent)
+			},
+			ActionWithParam: func(agent string) (string, error) {
+				return runPaletteHomeAgent(env, split, agent)
 			},
 		},
 
@@ -445,6 +514,21 @@ func runPaletteNewBayAgent(env *paletteEnv, agent string) (string, error) {
 		Dock:         env.Ctx.Dock,
 		Agent:        agent,
 		RequireAgent: true,
+	}); err != nil {
+		return "", err
+	}
+	recordPaletteAgentType(env, agent)
+	return agent, nil
+}
+
+func runPaletteHomeAgent(env *paletteEnv, split, agent string) (string, error) {
+	if !agentAvailable(env.Engine.Config, agent) {
+		return "", fmt.Errorf("unknown agent %q", agent)
+	}
+	if err := runSurfaceNew(env.Engine, env.Ctx.Dock, manifest.HomeBayID, surfaceNewOpts{
+		Type:     manifest.SurfaceTypeAgent,
+		Agent:    agent,
+		SplitDir: split,
 	}); err != nil {
 		return "", err
 	}

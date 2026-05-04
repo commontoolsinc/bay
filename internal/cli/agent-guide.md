@@ -77,6 +77,10 @@ surfaces and is hidden from normal `bay ls`, `bay tree`, `bay go`, and
 cycling while empty. Use `bay home`, `bay shell --bay home`,
 `bay agent --bay home`, `bay edit --bay home`, or
 `bay surface new cmd ... --bay home` to work in the dock checkout.
+The human command palette exposes dock-scoped home entries ("Go to
+home", "Home shell", "Home editor", "Home agent", and "Home agent..."),
+and `Option+o h` opens a home keybinding submenu. Agents should invoke
+the underlying commands directly.
 Normal bays cannot use `home` as an ID or display name. Bay never
 deletes the canonical checkout.
 
@@ -416,8 +420,10 @@ patches are already on the default branch after a squash merge or
 cherry-pick, bay deletes the local branch on close — no stale branches
 left behind. Pass `self` to close the current bay. `bay close home`
 closes home surfaces and leaves the dock checkout untouched when other
-dock surfaces remain; closing the last home surface is deferred to the
-home close-confirmation phase.
+dock surfaces remain. Closing the last home surface in an otherwise
+empty dock uses close confirmation; confirming dismisses the dock tmux
+UI/session while keeping the dock registered and leaving `dock.path`
+untouched.
 
 Batch flags (without an ID):
 - `--done`: close bays that are not dirty and not pending (have
@@ -601,6 +607,20 @@ Backs the `Option+p` command palette popup. Not an agent-facing
 command — it opens an interactive picker inside a tmux popup and is
 intended for human use. Agents should invoke the underlying commands
 (`bay go`, `bay shell`, `bay describe`, etc.) directly.
+
+Human home palette entries map to:
+
+```
+bay home
+bay shell --bay home
+bay edit --bay home
+bay agent --bay home
+bay agent <type> --bay home
+```
+
+The human `Option+o h` submenu maps to `Enter` for `bay home`, `s` for
+`bay shell --bay home`, `e` for `bay edit --bay home`, and `c`/`x`/`g`
+for Claude/Codex/Gemini agents in home.
 
 #### `bay next` / `bay prev`
 

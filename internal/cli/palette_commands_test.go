@@ -93,14 +93,13 @@ func TestDetectScope(t *testing.T) {
 	}
 }
 
-func TestBuildPaletteEntries_HasExpected24Entries(t *testing.T) {
-	// Pin the entry count + unique-ID invariant. The design locks in 24
-	// v1 entries; anything that adds or removes a command should touch
-	// this test intentionally.
+func TestBuildPaletteEntries_HasExpected29Entries(t *testing.T) {
+	// Pin the entry count + unique-ID invariant. Anything that adds or
+	// removes a command should touch this test intentionally.
 	env := testPaletteEnv()
 	entries := buildPaletteEntries(env, palette.ModeWindow)
 
-	const want = 24
+	const want = 29
 	if len(entries) != want {
 		t.Errorf("buildPaletteEntries returned %d entries; want %d", len(entries), want)
 	}
@@ -113,6 +112,40 @@ func TestBuildPaletteEntries_HasExpected24Entries(t *testing.T) {
 			t.Errorf("duplicate ID %q", e.ID)
 		}
 		seen[e.ID] = true
+	}
+}
+
+func TestBuildPaletteEntries_HomeEntriesAreDockScoped(t *testing.T) {
+	env := testPaletteEnv()
+	env.Hotkeys = fakeHotkeys(map[string]string{
+		"bay home":             "Enter",
+		"bay shell --bay home": "s",
+		"bay edit --bay home":  "e",
+		"bay agent --bay home": "a",
+	})
+	entries := buildPaletteEntries(env, palette.ModePane)
+
+	want := map[string]struct {
+		title  string
+		hotkey string
+	}{
+		"go-home":         {"Go to home", "Enter"},
+		"home-shell":      {"Home shell", "s"},
+		"home-editor":     {"Home editor", "e"},
+		"home-agent":      {"Home agent", "a"},
+		"home-agent-pick": {"Home agent...", ""},
+	}
+	for id, w := range want {
+		entry := findEntry(t, entries, id)
+		if entry.Title != w.title {
+			t.Errorf("%s title = %q; want %q", id, entry.Title, w.title)
+		}
+		if entry.Needs != palette.ScopeInDock {
+			t.Errorf("%s Needs = %v; want ScopeInDock", id, entry.Needs)
+		}
+		if entry.Hotkey != w.hotkey {
+			t.Errorf("%s Hotkey = %q; want %q", id, entry.Hotkey, w.hotkey)
+		}
 	}
 }
 
@@ -145,7 +178,7 @@ func TestBuildPaletteEntries_AgentPickEntriesSupportBoundRecents(t *testing.T) {
 	}
 	entries := buildPaletteEntries(env, palette.ModeWindow)
 
-	for _, id := range []string{"new-agent-pick", "new-bay-agent-pick"} {
+	for _, id := range []string{"new-agent-pick", "new-bay-agent-pick", "home-agent-pick"} {
 		entry := findEntry(t, entries, id)
 		if entry.ActionWithParam == nil {
 			t.Fatalf("%s ActionWithParam is nil; bound recents would reopen the picker", id)
@@ -162,6 +195,123 @@ func TestBuildPaletteEntries_AgentPickEntriesSupportBoundRecents(t *testing.T) {
 		if entry.ParamValid("retired") {
 			t.Fatalf("%s ParamValid(retired)=true; unknown agent should be filtered", id)
 		}
+	}
+}
+
+func TestPaletteGoHomeMaterializesHomeFromDockScope(t *testing.T) {
+	eng, _, _, _ := testNavEngine(t)
+	env := testPaletteEnv()
+	env.Engine = eng
+	env.Scope = palette.ScopeInDock
+	env.Ctx = &engine.Context{Dock: "labs"}
+
+	entry := findEntry(t, buildPaletteEntries(env, palette.ModePane), "go-home")
+	if _, err := entry.Action(); err != nil {
+		t.Fatalf("go-home action: %v", err)
+	}
+
+	home, err := eng.BayShow("labs", manifest.HomeBayID)
+	if err != nil {
+		t.Fatalf("BayShow(home): %v", err)
+	}
+	if home.Type != manifest.BayTypeHome || len(home.Surfaces) != 1 {
+		t.Fatalf("home = %+v, want one materialized home surface", home)
+	}
+}
+
+func TestPaletteHomeSurfaceActionsTargetHomeNotCurrentBay(t *testing.T) {
+	eng, _, _, _ := testNavEngine(t)
+	eng.Config.DefaultEditor = "vim"
+	current, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true})
+	if err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+	env := testPaletteEnv()
+	env.Engine = eng
+	env.Ctx = &engine.Context{
+		Dock:    "labs",
+		BayID:   current.ID,
+		Bay:     current.Name,
+		Surface: "shell",
+	}
+
+	entries := buildPaletteEntries(env, palette.ModePane)
+	for _, id := range []string{"home-shell", "home-editor", "home-agent"} {
+		entry := findEntry(t, entries, id)
+		if _, err := entry.Action(); err != nil {
+			t.Fatalf("%s action: %v", id, err)
+		}
+	}
+
+	gotCurrent, err := eng.BayShow("labs", current.ID)
+	if err != nil {
+		t.Fatalf("BayShow(current): %v", err)
+	}
+	if len(gotCurrent.Surfaces) != 1 {
+		t.Fatalf("current bay surfaces = %+v, want unchanged single surface", gotCurrent.Surfaces)
+	}
+
+	home, err := eng.BayShow("labs", manifest.HomeBayID)
+	if err != nil {
+		t.Fatalf("BayShow(home): %v", err)
+	}
+	if len(home.Surfaces) != 3 {
+		t.Fatalf("home surfaces = %+v, want shell/editor/agent", home.Surfaces)
+	}
+	types := map[manifest.SurfaceType]bool{}
+	agents := map[string]bool{}
+	for _, s := range home.Surfaces {
+		types[s.Type] = true
+		if s.Agent != nil {
+			agents[*s.Agent] = true
+		}
+	}
+	for _, typ := range []manifest.SurfaceType{
+		manifest.SurfaceTypeShell,
+		manifest.SurfaceTypeEditor,
+		manifest.SurfaceTypeAgent,
+	} {
+		if !types[typ] {
+			t.Fatalf("home surfaces missing type %s: %+v", typ, home.Surfaces)
+		}
+	}
+	if !agents["claude"] {
+		t.Fatalf("home agent surface = %v, want dock default claude", agents)
+	}
+}
+
+func TestPaletteHomeAgentPickCreatesConfiguredAgentInHome(t *testing.T) {
+	eng, _, _, _ := testNavEngine(t)
+	eng.Config.Agents["local"] = config.AgentConfig{Command: "local-agent"}
+	env := testPaletteEnv()
+	env.Engine = eng
+	env.Scope = palette.ScopeInDock
+	env.Ctx = &engine.Context{Dock: "labs"}
+
+	entry := findEntry(t, buildPaletteEntries(env, palette.ModePane), "home-agent-pick")
+	if entry.ParamValid == nil || !entry.ParamValid("local") {
+		t.Fatal("home-agent-pick should validate configured agent local")
+	}
+	if entry.ParamValid("retired") {
+		t.Fatal("home-agent-pick accepted unknown agent retired")
+	}
+	param, err := entry.ActionWithParam("local")
+	if err != nil {
+		t.Fatalf("home-agent-pick ActionWithParam(local): %v", err)
+	}
+	if param != "local" {
+		t.Fatalf("ActionWithParam returned param %q; want local", param)
+	}
+	if _, err := entry.ActionWithParam("retired"); err == nil || !strings.Contains(err.Error(), `unknown agent "retired"`) {
+		t.Fatalf("ActionWithParam(retired) err = %v; want unknown-agent error", err)
+	}
+
+	home, err := eng.BayShow("labs", manifest.HomeBayID)
+	if err != nil {
+		t.Fatalf("BayShow(home): %v", err)
+	}
+	if len(home.Surfaces) != 1 || home.Surfaces[0].Agent == nil || *home.Surfaces[0].Agent != "local" {
+		t.Fatalf("home surfaces = %+v, want one local agent", home.Surfaces)
 	}
 }
 
