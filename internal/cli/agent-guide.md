@@ -415,8 +415,10 @@ patches are already on the default branch after a squash merge or
 cherry-pick, bay deletes the local branch on close — no stale branches
 left behind. Pass `self` to close the current bay. `bay close home`
 closes home surfaces and leaves the dock checkout untouched when other
-dock surfaces remain; closing the last home surface is deferred to the
-home close-confirmation phase.
+dock surfaces remain. Closing the last home surface in an otherwise
+empty dock requires a quick second confirmation (a tmux toast) and
+then dismisses the dock's tmux UI without unregistering the dock or
+touching `dock.path`.
 
 Batch flags (without an ID):
 - `--done`: close bays that are not dirty and not pending (have
@@ -596,6 +598,15 @@ Backs the `Option+p` command palette popup. Not an agent-facing
 command — it opens an interactive picker inside a tmux popup and is
 intended for human use. Agents should invoke the underlying commands
 (`bay go`, `bay shell`, `bay describe`, etc.) directly.
+
+The palette includes dedicated home actions — *Go to home*, *Home
+shell*, *Home editor*, *Home agent*, and *Home agent...* — that target
+the dock's canonical checkout (`home`) regardless of the current bay.
+The agent-facing equivalents are `bay home`, `bay shell --bay home`,
+`bay edit --bay home`, and `bay agent [type] --bay home`. The palette
+also exposes the `Option+o h` chord (Enter / s / e / c / x / g) for
+the same actions; agents should use the explicit commands rather than
+chord output.
 
 #### `bay next` / `bay prev`
 

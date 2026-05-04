@@ -54,6 +54,69 @@ func TestKeybindingsIncludeSurfaceNavigation(t *testing.T) {
 	}
 }
 
+func TestKeybindingsIncludeHomeChord(t *testing.T) {
+	// The M-o h home submenu must ship every documented chord.
+	// Pin the canonical lines so tmux's `Enter` token (and the table
+	// name) cannot silently drift — the chord is hand-typed by users
+	// who learned it from the docs, not auto-completed.
+	lines := tmuxKeybindingLines()
+	joined := strings.Join(lines, "\n")
+
+	wantLines := []string{
+		"bind-key -T bay-home Enter run-shell 'bay home || true'",
+		"bind-key -T bay-home s run-shell 'bay shell --bay home || true'",
+		"bind-key -T bay-home e run-shell 'bay edit --bay home || true'",
+		"bind-key -T bay-home c run-shell 'bay agent claude --bay home || true'",
+		"bind-key -T bay-home x run-shell 'bay agent codex --bay home || true'",
+		"bind-key -T bay-home g run-shell 'bay agent gemini --bay home || true'",
+	}
+	for _, want := range wantLines {
+		if !strings.Contains(joined, want) {
+			t.Errorf("home submenu missing canonical line:\n  %s", want)
+		}
+	}
+
+	// The M-o launcher toast must advertise the home chord so users
+	// know to press `h` after `M-o`.
+	if !strings.Contains(joined, "h=home") {
+		t.Errorf("M-o launcher toast does not mention home; full lines:\n%s", joined)
+	}
+
+	// The home submenu binds in the bay-home key-table — drift on the
+	// table name would silently disable every chord.
+	if !strings.Contains(joined, "switch-client -T bay-home") {
+		t.Errorf("M-o h chord does not switch to bay-home table; full lines:\n%s", joined)
+	}
+}
+
+func TestMissingKeybindings_DetectsCommentedHomeBinding(t *testing.T) {
+	// A user who removed (or never installed) the M-o h Enter binding
+	// and left no commented stub should be flagged by doctor. This
+	// mirrors the existing missing-binding contract for new chords.
+	content := `# Bay keybindings
+bind-key -n M-h previous-window
+`
+	missing := missingKeybindings(content)
+	joined := strings.Join(missing, "\n")
+	if !strings.Contains(joined, "bind-key -T bay-home Enter run-shell 'bay home || true'") {
+		t.Errorf("missingKeybindings did not flag the home Enter binding; got:\n%s", joined)
+	}
+}
+
+func TestMissingKeybindings_CommentedHomeBindingIsOptOut(t *testing.T) {
+	// Commented stubs are an opt-out signal — bay should stop nagging
+	// about a chord the user explicitly removed. This protects users
+	// who already pruned the home submenu after Phase 6.
+	content := `# Bay keybindings
+# bind-key -T bay-home Enter run-shell 'bay home || true'
+`
+	for _, line := range missingKeybindings(content) {
+		if strings.Contains(line, "bay-home Enter") {
+			t.Errorf("commented home binding should be opt-out, but flagged: %q", line)
+		}
+	}
+}
+
 func TestCheckManifestConsistency(t *testing.T) {
 	cfg := &config.Config{
 		Agents: map[string]config.AgentConfig{

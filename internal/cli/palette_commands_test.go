@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -93,14 +94,15 @@ func TestDetectScope(t *testing.T) {
 	}
 }
 
-func TestBuildPaletteEntries_HasExpected24Entries(t *testing.T) {
-	// Pin the entry count + unique-ID invariant. The design locks in 24
-	// v1 entries; anything that adds or removes a command should touch
-	// this test intentionally.
+func TestBuildPaletteEntries_HasExpectedEntries(t *testing.T) {
+	// Pin the entry count + unique-ID invariant. The current set is 24
+	// in-bay/dock entries plus 5 home-targeted entries (Phase 6 of the
+	// home-bay design); anything that adds or removes a command should
+	// touch this test intentionally.
 	env := testPaletteEnv()
 	entries := buildPaletteEntries(env, palette.ModeWindow)
 
-	const want = 24
+	const want = 29
 	if len(entries) != want {
 		t.Errorf("buildPaletteEntries returned %d entries; want %d", len(entries), want)
 	}
@@ -162,6 +164,198 @@ func TestBuildPaletteEntries_AgentPickEntriesSupportBoundRecents(t *testing.T) {
 		if entry.ParamValid("retired") {
 			t.Fatalf("%s ParamValid(retired)=true; unknown agent should be filtered", id)
 		}
+	}
+}
+
+func TestBuildPaletteEntries_HomeEntriesAreDockScoped(t *testing.T) {
+	// Home palette actions must be reachable from any dock surface,
+	// even when there is no current bay. ScopeInDock satisfies that
+	// (and is also satisfied when ScopeInBay applies).
+	env := testPaletteEnv()
+	entries := buildPaletteEntries(env, palette.ModeWindow)
+
+	wantIDs := []string{"go-home", "new-home-shell", "edit-home", "new-home-agent", "new-home-agent-pick"}
+	for _, id := range wantIDs {
+		entry := findEntry(t, entries, id)
+		if entry.Needs != palette.ScopeInDock {
+			t.Errorf("entry %q Needs=%v; want ScopeInDock so it shows from any dock surface", id, entry.Needs)
+		}
+	}
+}
+
+func TestPaletteGoHome_MaterializesEmptyHome(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	eng, mockTmux, _, _ := testNavEngine(t)
+	mockTmux.Calls = nil
+
+	env := testPaletteEnv()
+	env.Engine = eng
+	env.Ctx = &engine.Context{Dock: "labs"}
+
+	entry := findEntry(t, buildPaletteEntries(env, palette.ModeWindow), "go-home")
+	if _, err := entry.Action(); err != nil {
+		t.Fatalf("go-home action: %v", err)
+	}
+
+	m, _ := eng.LoadManifest()
+	home := m.FindDock("labs").FindBayByID(manifest.HomeBayID)
+	if home == nil || home.Type != manifest.BayTypeHome || len(home.Surfaces) != 1 {
+		t.Fatalf("home = %+v, want one materialized home surface", home)
+	}
+	sawNewWindow := false
+	for _, call := range mockTmux.Calls {
+		if call.Method == "NewWindow" && len(call.Args) >= 2 && call.Args[1] == manifest.HomeBayID {
+			sawNewWindow = true
+		}
+	}
+	if !sawNewWindow {
+		t.Fatalf("go-home did not create a home window; calls: %+v", mockTmux.Calls)
+	}
+}
+
+func TestPaletteHomeShell_TargetsHomeNotCurrentBay(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	eng, _, _, _ := testNavEngine(t)
+	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+
+	env := testPaletteEnv()
+	env.Engine = eng
+	// Pretend the user is currently inside w1 — Home shell must still
+	// target home, not w1.
+	env.Ctx = &engine.Context{Dock: "labs", BayID: "w1", Bay: "w1", Surface: "shell"}
+
+	entry := findEntry(t, buildPaletteEntries(env, palette.ModeWindow), "new-home-shell")
+	if _, err := entry.Action(); err != nil {
+		t.Fatalf("new-home-shell action: %v", err)
+	}
+
+	bay, err := eng.BayShow("labs", manifest.HomeBayID)
+	if err != nil {
+		t.Fatalf("BayShow(home): %v", err)
+	}
+	if bay.Type != manifest.BayTypeHome || len(bay.Surfaces) != 1 {
+		t.Fatalf("home bay = %+v, want one home shell", bay)
+	}
+	if bay.Surfaces[0].Type != manifest.SurfaceTypeShell {
+		t.Errorf("home surface type = %s, want shell", bay.Surfaces[0].Type)
+	}
+	// w1 must be untouched aside from its initial shell.
+	w1, err := eng.BayShow("labs", "w1")
+	if err != nil {
+		t.Fatalf("BayShow(w1): %v", err)
+	}
+	if len(w1.Surfaces) != 1 {
+		t.Errorf("w1 surfaces=%d, want 1 (home shell must not have added one to w1)", len(w1.Surfaces))
+	}
+}
+
+func TestPaletteHomeAgent_UsesDockDefaultTargetingHome(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	eng, _, _, _ := testNavEngine(t)
+	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+
+	env := testPaletteEnv()
+	env.Engine = eng
+	env.Ctx = &engine.Context{Dock: "labs", BayID: "w1", Bay: "w1"}
+
+	entry := findEntry(t, buildPaletteEntries(env, palette.ModeWindow), "new-home-agent")
+	if _, err := entry.Action(); err != nil {
+		t.Fatalf("new-home-agent action: %v", err)
+	}
+
+	bay, err := eng.BayShow("labs", manifest.HomeBayID)
+	if err != nil {
+		t.Fatalf("BayShow(home): %v", err)
+	}
+	if len(bay.Surfaces) != 1 {
+		t.Fatalf("home bay surfaces = %+v, want one agent", bay.Surfaces)
+	}
+	added := bay.Surfaces[0]
+	if added.Type != manifest.SurfaceTypeAgent {
+		t.Fatalf("home surface type = %s, want agent", added.Type)
+	}
+	if added.Agent == nil || *added.Agent != "claude" {
+		t.Fatalf("home agent = %v, want dock default claude", added.Agent)
+	}
+}
+
+func TestPaletteHomeAgentPick_ValidatesAndCreatesInHome(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	eng, _, _, _ := testNavEngine(t)
+	env := testPaletteEnv()
+	env.Engine = eng
+	env.Ctx = &engine.Context{Dock: "labs"}
+
+	entry := findEntry(t, buildPaletteEntries(env, palette.ModeWindow), "new-home-agent-pick")
+
+	if entry.ParamValid == nil || entry.ActionWithParam == nil {
+		t.Fatalf("entry missing ParamValid/ActionWithParam: %+v", entry)
+	}
+	if !entry.ParamValid("codex") {
+		t.Fatalf("ParamValid(codex)=false; built-in agent should be valid")
+	}
+	if entry.ParamValid("retired") {
+		t.Fatalf("ParamValid(retired)=true; unknown agent should be filtered")
+	}
+
+	if _, err := entry.ActionWithParam("codex"); err != nil {
+		t.Fatalf("ActionWithParam(codex): %v", err)
+	}
+	bay, err := eng.BayShow("labs", manifest.HomeBayID)
+	if err != nil {
+		t.Fatalf("BayShow(home): %v", err)
+	}
+	if len(bay.Surfaces) != 1 {
+		t.Fatalf("home surfaces = %+v, want one", bay.Surfaces)
+	}
+	added := bay.Surfaces[0]
+	if added.Type != manifest.SurfaceTypeAgent {
+		t.Fatalf("home surface type = %s, want agent", added.Type)
+	}
+	if added.Agent == nil || *added.Agent != "codex" {
+		t.Fatalf("home agent = %v, want codex (chosen by picker)", added.Agent)
+	}
+}
+
+func TestPaletteHomeEditor_TargetsHomePath(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	eng, _, _, dir := testNavEngine(t)
+	// Force a known terminal editor so runEditCreate creates a tracked
+	// surface (GUI editors fire-and-forget and don't persist a surface).
+	eng.Config.DefaultEditor = "vim"
+
+	env := testPaletteEnv()
+	env.Engine = eng
+	env.Ctx = &engine.Context{Dock: "labs"}
+
+	entry := findEntry(t, buildPaletteEntries(env, palette.ModeWindow), "edit-home")
+	if _, err := entry.Action(); err != nil {
+		t.Fatalf("edit-home action: %v", err)
+	}
+
+	bay, err := eng.BayShow("labs", manifest.HomeBayID)
+	if err != nil {
+		t.Fatalf("BayShow(home): %v", err)
+	}
+	if len(bay.Surfaces) != 1 {
+		t.Fatalf("home surfaces = %+v, want one editor", bay.Surfaces)
+	}
+	added := bay.Surfaces[0]
+	if added.Type != manifest.SurfaceTypeEditor {
+		t.Fatalf("home surface type = %s, want editor", added.Type)
+	}
+	expectedPath := filepath.Join(dir, "repos", "labs")
+	if added.Command == nil || !strings.Contains(*added.Command, expectedPath) {
+		t.Fatalf("editor command = %v, want one targeting dock path %q", added.Command, expectedPath)
 	}
 }
 

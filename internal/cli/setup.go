@@ -268,11 +268,12 @@ var bayKeybindings = []bayKeybinding{
 	{key: "M-p", cmd: "bay palette --split pane", desc: "Option+p: command palette (Tab inside to flip mode)", tmuxVerb: "display-popup -w 80% -h 80% -E"},
 
 	// Agent chord (M-o ...): pick an agent for the current bay, or
-	// chord through `b` to create a new bay seeded with one. The
-	// display-message entries act as a one-tap reminder of the
-	// available letters; lowercase=pane, Shift=window matches the
-	// rest of bay's creation keys.
-	{key: "M-o", cmd: `display-message -d 2000 "agent: c Claude, x Codex, g Gemini | Shift=window | b=bay" \; switch-client -T ` + tableAgent, desc: "Option+o: agent chord launcher", isTmuxCommand: true},
+	// chord through `b` to create a new bay seeded with one, or `h`
+	// to act on the dock's home pseudo-bay. The display-message entries
+	// act as a one-tap reminder of the available letters;
+	// lowercase=pane, Shift=window matches the rest of bay's creation
+	// keys.
+	{key: "M-o", cmd: `display-message -d 2000 "agent: c Claude, x Codex, g Gemini | Shift=window | b=bay | h=home" \; switch-client -T ` + tableAgent, desc: "Option+o: agent chord launcher", isTmuxCommand: true},
 
 	agentInBay("c", "claude", "pane"),
 	agentInBay("C", "claude", "window"),
@@ -286,6 +287,19 @@ var bayKeybindings = []bayKeybinding{
 	newBayWithAgent("c", "claude"),
 	newBayWithAgent("x", "codex"),
 	newBayWithAgent("g", "gemini"),
+
+	// Home submenu (M-o h ...): act on the dock's home pseudo-bay
+	// without first leaving the current bay. Enter is the no-modifier
+	// default ("focus or create the home shell"); the lettered chords
+	// mirror the surface-creation verbs scoped to home.
+	{table: tableAgent, key: "h", cmd: `display-message -d 2000 "home: Enter shell, s shell, e editor, c Claude, x Codex, g Gemini" \; switch-client -T ` + tableHome, desc: "M-o h: home submenu", isTmuxCommand: true},
+
+	{table: tableHome, key: "Enter", cmd: "bay home", desc: "M-o h Enter: focus/create home shell", tmuxVerb: "run-shell"},
+	{table: tableHome, key: "s", cmd: "bay shell --bay home", desc: "M-o h s: shell in home", tmuxVerb: "run-shell"},
+	{table: tableHome, key: "e", cmd: "bay edit --bay home", desc: "M-o h e: editor in home", tmuxVerb: "run-shell"},
+	{table: tableHome, key: "c", cmd: "bay agent claude --bay home", desc: "M-o h c: Claude in home", tmuxVerb: "run-shell"},
+	{table: tableHome, key: "x", cmd: "bay agent codex --bay home", desc: "M-o h x: Codex in home", tmuxVerb: "run-shell"},
+	{table: tableHome, key: "g", cmd: "bay agent gemini --bay home", desc: "M-o h g: Gemini in home", tmuxVerb: "run-shell"},
 }
 
 // Tmux key-table names for the M-o agent chord. Used both for the
@@ -295,6 +309,7 @@ var bayKeybindings = []bayKeybinding{
 const (
 	tableAgent    = "bay-agent"
 	tableAgentBay = "bay-agent-bay"
+	tableHome     = "bay-home"
 )
 
 func agentInBay(key, agent, mode string) bayKeybinding {

@@ -74,6 +74,15 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 			},
 		},
 		{
+			ID:      "go-home",
+			Title:   "Go to home",
+			Section: palette.SectionNavigation,
+			Needs:   palette.ScopeInDock,
+			Action: func() (string, error) {
+				return "", env.Engine.Home(env.Ctx.Dock)
+			},
+		},
+		{
 			ID:      "show-context",
 			Title:   "Show current context",
 			Section: palette.SectionNavigation,
@@ -185,6 +194,59 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 			Hotkey:  h.Lookup("bay edit --dock"),
 			Action: func() (string, error) {
 				return "", runEditDock(env.Engine, "", "")
+			},
+		},
+		{
+			ID:      "new-home-shell",
+			Title:   "Home shell",
+			Section: palette.SectionCreateSurface,
+			Needs:   palette.ScopeInDock,
+			Action: func() (string, error) {
+				return "", runSurfaceNew(env.Engine, env.Ctx.Dock, manifest.HomeBayID, surfaceNewOpts{
+					Type:     manifest.SurfaceTypeShell,
+					SplitDir: split,
+				})
+			},
+		},
+		{
+			ID:      "edit-home",
+			Title:   "Home editor",
+			Section: palette.SectionCreateSurface,
+			Needs:   palette.ScopeInDock,
+			Action: func() (string, error) {
+				return "", runEditCreate(env.Engine, env.Ctx.Dock+":"+manifest.HomeBayID, "", split)
+			},
+		},
+		{
+			ID:      "new-home-agent",
+			Title:   "Home agent",
+			Section: palette.SectionCreateSurface,
+			Needs:   palette.ScopeInDock,
+			Action: func() (string, error) {
+				return "", runSurfaceNew(env.Engine, env.Ctx.Dock, manifest.HomeBayID, surfaceNewOpts{
+					Type:     manifest.SurfaceTypeAgent,
+					SplitDir: split,
+				})
+			},
+		},
+		{
+			ID:         "new-home-agent-pick",
+			Title:      "Home agent...",
+			Section:    palette.SectionCreateSurface,
+			Needs:      palette.ScopeInDock,
+			ParamValid: agentParamValid,
+			TitleWithParam: func(p string) string {
+				return fmt.Sprintf("Home agent (%s)", p)
+			},
+			Action: func() (string, error) {
+				agent, ok := paletteAgentPick(env)
+				if !ok {
+					return "", nil
+				}
+				return runPaletteNewHomeAgent(env, split, agent)
+			},
+			ActionWithParam: func(agent string) (string, error) {
+				return runPaletteNewHomeAgent(env, split, agent)
 			},
 		},
 
@@ -427,6 +489,21 @@ func runPaletteNewAgent(env *paletteEnv, split, agent string) (string, error) {
 		return "", err
 	}
 	if err := runSurfaceNew(env.Engine, dock, bay, surfaceNewOpts{
+		Type:     manifest.SurfaceTypeAgent,
+		Agent:    agent,
+		SplitDir: split,
+	}); err != nil {
+		return "", err
+	}
+	recordPaletteAgentType(env, agent)
+	return agent, nil
+}
+
+func runPaletteNewHomeAgent(env *paletteEnv, split, agent string) (string, error) {
+	if !agentAvailable(env.Engine.Config, agent) {
+		return "", fmt.Errorf("unknown agent %q", agent)
+	}
+	if err := runSurfaceNew(env.Engine, env.Ctx.Dock, manifest.HomeBayID, surfaceNewOpts{
 		Type:     manifest.SurfaceTypeAgent,
 		Agent:    agent,
 		SplitDir: split,

@@ -749,6 +749,26 @@ reminding you of the letters.
 | `Option+o b x` | New bay in current dock with Codex |
 | `Option+o b g` | New bay in current dock with Gemini |
 
+### Home submenu (`Option+o h`)
+
+`Option+o h` opens a second key-table for the dock's `home` pseudo-bay
+— the canonical checkout. The bare chord is a prefix only: tmux waits
+for one more key. `Enter` is the no-modifier default ("focus or create
+the home shell"); the lettered chords mirror the surface-creation verbs
+scoped to home.
+
+| Chord | Action |
+|-------|--------|
+| `Option+o h Enter` | Focus the most recent home surface, or create a home shell |
+| `Option+o h s` | Shell in home |
+| `Option+o h e` | Editor in home |
+| `Option+o h c` | Claude in home |
+| `Option+o h x` | Codex in home |
+| `Option+o h g` | Gemini in home |
+
+These chords work even when home is empty — they materialize home at
+the dock checkout path the first time they fire.
+
 ### Pattern
 
 Navigation is vim-flavored hjkl. `Option+h/l` cycle windows left/right
@@ -796,6 +816,11 @@ right-hand column, so the palette doubles as a cheat-sheet.
   (e.g., "Rename bay..." prefilled with the current name).
 - **Scope**: entries that require a bay are hidden when you
   open the palette outside one; same for dock-scoped entries.
+- **Home actions**: dedicated palette entries — *Go to home*, *Home
+  shell*, *Home editor*, *Home agent*, and *Home agent...* — target
+  the dock's canonical checkout and stay available from any dock
+  surface, including when no bay is selected and home has not yet been
+  materialized.
 
 Every command in the palette can also be run directly from the
 shell — the palette is not a new surface, just a discovery and
