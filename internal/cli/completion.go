@@ -241,7 +241,7 @@ func bayCandidates(m *manifest.Manifest) []string {
 
 		// Branch/PR fragment for the description.
 		extras := ""
-		if bay.Worktree != nil {
+		if !isCLIHomeBay(bay) && bay.Worktree != nil {
 			if bay.Worktree.Branch != "" {
 				extras += " " + bay.Worktree.Branch
 			}
@@ -435,7 +435,7 @@ func goCompletions() func(cmd *cobra.Command, args []string, toComplete string) 
 			bay := ref.Bay
 			add(bay.Name, ref.Dock)
 			add(ref.Dock, "dock")
-			if bay.Worktree != nil {
+			if !isCLIHomeBay(bay) && bay.Worktree != nil {
 				if bay.Worktree.Branch != "" {
 					add(bay.Worktree.Branch, ref.Dock+" "+bay.Name)
 				}
@@ -526,7 +526,7 @@ func branchCompletions(cmd *cobra.Command, args []string, toComplete string) ([]
 	inUse := map[string]bool{}
 	if m != nil {
 		for _, ref := range manifest.AllBays(m) {
-			if ref.Bay.Worktree != nil && ref.Bay.Worktree.Branch != "" {
+			if !isCLIHomeBay(ref.Bay) && ref.Bay.Worktree != nil && ref.Bay.Worktree.Branch != "" {
 				inUse[ref.Bay.Worktree.Branch] = true
 			}
 		}

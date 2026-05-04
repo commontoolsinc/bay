@@ -52,6 +52,22 @@ func (e *Engine) CurrentContext() (*Context, error) {
 	currentWindowID, _ := e.Tmux.CurrentWindowID()
 	currentPaneID, _ := e.Tmux.CurrentPaneID()
 
+	// A tracked home tmux surface is the current bay context regardless of
+	// where the shell in that pane has cd'd.
+	if match, ok, err := currentTmuxHomeMatch(m, currentSession, currentWindowID, currentPaneID); err != nil {
+		return nil, err
+	} else if ok {
+		ctx.Dock = match.Dock.Name
+		ctx.BayID = match.Bay.ID
+		ctx.Bay = match.Bay.Name
+		ctx.Path = config.CanonicalPath(match.Dock.Path)
+		if match.Surface != nil {
+			ctx.Surface = match.Surface.Name
+			ctx.SurfaceID = match.Surface.ID
+		}
+		return ctx, nil
+	}
+
 	// Try matching CWD against bay paths.
 	for i := range m.Docks {
 		dock := &m.Docks[i]

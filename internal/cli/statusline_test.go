@@ -3,6 +3,7 @@ package cli
 import (
 	"testing"
 
+	"github.com/commontoolsinc/bay/internal/git"
 	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
@@ -132,5 +133,54 @@ func TestAbbreviateStatus(t *testing.T) {
 	}
 	if got := abbreviateStatus(""); got != "" {
 		t.Errorf("empty = %q, want empty", got)
+	}
+}
+
+func TestStatusLineOutput_HomeSkipsWorktreeMetadataAndGitChecks(t *testing.T) {
+	m := &manifest.Manifest{Docks: []manifest.Dock{{
+		Name: "labs",
+		Bays: []manifest.Bay{
+			{
+				ID:       manifest.HomeBayID,
+				Name:     manifest.HomeBayID,
+				Type:     manifest.BayTypeHome,
+				Path:     "/repo/labs",
+				Worktree: &manifest.WorktreeAttrs{Branch: "feature/not-home", PR: "99", Merged: true},
+			},
+			{
+				ID:       "w1",
+				Name:     "done",
+				Path:     "/repo/worktrees/w1",
+				Worktree: &manifest.WorktreeAttrs{Merged: true},
+			},
+		},
+	}}}
+	home := &m.Docks[0].Bays[0]
+	g := git.NewMock()
+	g.SetDirty(home.Path, true)
+
+	tests := []struct {
+		field string
+		want  string
+	}{
+		{"branch", ""},
+		{"pr", ""},
+		{"status", ""},
+		{"full", "home"},
+		{"merged", "1 merged"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.field, func(t *testing.T) {
+			got, err := statusLineOutput(tt.field, "labs", home, m, g, "")
+			if err != nil {
+				t.Fatalf("statusLineOutput: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("statusLineOutput(%q) = %q, want %q", tt.field, got, tt.want)
+			}
+		})
+	}
+	if calls := g.Calls("IsDirty"); len(calls) != 0 {
+		t.Fatalf("home status line checked git dirty state: %+v", calls)
 	}
 }
