@@ -18,12 +18,8 @@ func homePath(dock *manifest.Dock) (string, error) {
 	return dock.Path, nil
 }
 
-func isHomeBayRecord(bay *manifest.Bay) bool {
-	return bay != nil && (bay.Type == manifest.BayTypeHome || manifest.IsReservedBayID(bay.ID))
-}
-
 func validateHomeBayLifecycleShape(dock *manifest.Dock, bay *manifest.Bay) error {
-	if !isHomeBayRecord(bay) {
+	if !manifest.IsHomeBay(bay) {
 		return nil
 	}
 	if dock == nil {
@@ -45,7 +41,7 @@ func validateHomeBayLifecycleShape(dock *manifest.Dock, bay *manifest.Bay) error
 }
 
 func validatePersistedHomeBayShape(dock *manifest.Dock, bay *manifest.Bay) error {
-	if isHomeBayRecord(bay) {
+	if manifest.IsHomeBay(bay) {
 		return validateHomeBayLifecycleShape(dock, bay)
 	}
 	if bay != nil && bay.Name == manifest.HomeBayID {
@@ -74,7 +70,7 @@ func currentTmuxHomeMatch(m *manifest.Manifest, currentSession, currentWindowID,
 		}
 		for j := range dock.Bays {
 			bay := &dock.Bays[j]
-			if !isHomeBayRecord(bay) {
+			if !manifest.IsHomeBay(bay) {
 				continue
 			}
 			var matchedSurface *manifest.Surface
@@ -103,7 +99,7 @@ func currentTmuxHomeMatch(m *manifest.Manifest, currentSession, currentWindowID,
 }
 
 func homeSurfaceCWD(dock *manifest.Dock, bay *manifest.Bay) string {
-	if isHomeBayRecord(bay) {
+	if manifest.IsHomeBay(bay) {
 		if path, err := homePath(dock); err == nil {
 			return config.ExpandPath(path)
 		}
@@ -159,7 +155,7 @@ func removeHomeBayIfEmpty(dock *manifest.Dock) bool {
 	}
 	for i := range dock.Bays {
 		home := &dock.Bays[i]
-		if !isHomeBayRecord(home) {
+		if !manifest.IsHomeBay(home) {
 			continue
 		}
 		if len(home.Surfaces) > 0 {

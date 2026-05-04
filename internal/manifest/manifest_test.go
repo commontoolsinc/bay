@@ -795,6 +795,48 @@ func TestIsReservedBayID(t *testing.T) {
 	}
 }
 
+func TestIsHomeBay(t *testing.T) {
+	cases := []struct {
+		name string
+		bay  *Bay
+		want bool
+	}{
+		{name: "nil", bay: nil, want: false},
+		{name: "home type", bay: &Bay{Type: BayTypeHome}, want: true},
+		{name: "reserved ID", bay: &Bay{ID: HomeBayID, Type: BayTypeWorktree}, want: true},
+		{name: "reserved name only", bay: &Bay{Name: HomeBayID, Type: BayTypeWorktree}, want: false},
+		{name: "normal bay", bay: &Bay{ID: "w1", Name: "work", Type: BayTypeWorktree}, want: false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := IsHomeBay(c.bay); got != c.want {
+				t.Fatalf("IsHomeBay(%+v) = %v, want %v", c.bay, got, c.want)
+			}
+		})
+	}
+}
+
+func TestIsHomeLikeBay(t *testing.T) {
+	cases := []struct {
+		name string
+		bay  *Bay
+		want bool
+	}{
+		{name: "nil", bay: nil, want: false},
+		{name: "home type", bay: &Bay{Type: BayTypeHome}, want: true},
+		{name: "reserved ID", bay: &Bay{ID: HomeBayID, Type: BayTypeWorktree}, want: true},
+		{name: "reserved name only", bay: &Bay{Name: HomeBayID, Type: BayTypeWorktree}, want: true},
+		{name: "normal bay", bay: &Bay{ID: "w1", Name: "work", Type: BayTypeWorktree}, want: false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := IsHomeLikeBay(c.bay); got != c.want {
+				t.Fatalf("IsHomeLikeBay(%+v) = %v, want %v", c.bay, got, c.want)
+			}
+		})
+	}
+}
+
 func TestResolveBay_HomeWithDockPrefixSynthesizesEmpty(t *testing.T) {
 	m := &Manifest{
 		Docks: []Dock{

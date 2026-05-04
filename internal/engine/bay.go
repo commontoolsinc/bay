@@ -368,7 +368,7 @@ func (e *Engine) closeBayStateWithAdditionalClosingWindows(dockName, bayID strin
 		}
 		return closeBayResult{}, fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
 	}
-	if isHomeBayRecord(bay) {
+	if manifest.IsHomeBay(bay) {
 		if err := validateHomeBayLifecycleShape(dock, bay); err != nil {
 			return closeBayResult{}, err
 		}
@@ -515,7 +515,7 @@ func (e *Engine) closeBayStateWithAdditionalClosingWindows(dockName, bayID strin
 // merged PR. The PR check handles multi-commit squash merges where per-commit
 // patch comparison cannot prove that the old local stack landed.
 func (e *Engine) HasUnlandedCommits(bay *manifest.Bay) (bool, error) {
-	if bay == nil || isHomeBayRecord(bay) || bay.Worktree == nil || bay.Path == "" {
+	if bay == nil || manifest.IsHomeBay(bay) || bay.Worktree == nil || bay.Path == "" {
 		return false, nil
 	}
 	unpushed, err := e.Git.HasUnpushedCommits(bay.Path)
@@ -535,7 +535,7 @@ func (e *Engine) HasUnlandedCommits(bay *manifest.Bay) (bool, error) {
 }
 
 func (e *Engine) localHeadInMergedPR(bay *manifest.Bay) bool {
-	if bay == nil || isHomeBayRecord(bay) || bay.Worktree == nil || bay.Worktree.PR == "" || bay.Path == "" {
+	if bay == nil || manifest.IsHomeBay(bay) || bay.Worktree == nil || bay.Worktree.PR == "" || bay.Path == "" {
 		return false
 	}
 	landed, err := e.Git.LocalHeadInMergedPR(bay.Path, bay.Worktree.PR)
@@ -553,7 +553,7 @@ func (e *Engine) HasBlockingDirtyChanges(bay *manifest.Bay) (bool, error) {
 // CheckDirtyChanges reports whether a worktree is dirty, and whether those
 // dirty changes should block normal close.
 func (e *Engine) CheckDirtyChanges(bay *manifest.Bay) (dirty bool, blocking bool, err error) {
-	if bay == nil || isHomeBayRecord(bay) || bay.Type != manifest.BayTypeWorktree || bay.Path == "" {
+	if bay == nil || manifest.IsHomeBay(bay) || bay.Type != manifest.BayTypeWorktree || bay.Path == "" {
 		return false, false, nil
 	}
 	dirty, err = e.Git.IsDirty(bay.Path)
@@ -686,7 +686,7 @@ func (e *Engine) BayCloseAllWouldDismissDock(dockName string) (bool, error) {
 	var closingWindowIDs []string
 	for i := range dock.Bays {
 		bay := &dock.Bays[i]
-		if isHomeBayRecord(bay) {
+		if manifest.IsHomeBay(bay) {
 			if err := validateHomeBayLifecycleShape(dock, bay); err != nil {
 				return false, err
 			}
@@ -732,7 +732,7 @@ func (e *Engine) bayCloseBatch(dockName string, force, dryRun bool, skip baySkip
 		}
 		for j := range d.Bays {
 			bay := &d.Bays[j]
-			if isHomeBayRecord(bay) {
+			if manifest.IsHomeBay(bay) {
 				continue
 			}
 			if excludeSet[bay.ID] {
@@ -826,8 +826,8 @@ func (e *Engine) bayCloseAll(dockName string, force, forceHomeDismiss, dryRun bo
 		}
 		for j := range d.Bays {
 			bay := &d.Bays[j]
-			t := target{dock: d.Name, id: bay.ID, home: isHomeBayRecord(bay)}
-			if isHomeBayRecord(bay) {
+			t := target{dock: d.Name, id: bay.ID, home: manifest.IsHomeBay(bay)}
+			if manifest.IsHomeBay(bay) {
 				if len(bay.Surfaces) > 0 {
 					homeTargets = append(homeTargets, t)
 				}
@@ -851,7 +851,7 @@ func (e *Engine) bayCloseAll(dockName string, force, forceHomeDismiss, dryRun bo
 				continue
 			}
 			bay := m.FindDock(t.dock).FindBayByID(t.id)
-			if bay != nil && !isHomeBayRecord(bay) && bay.Path != "" && !force {
+			if bay != nil && !manifest.IsHomeBay(bay) && bay.Path != "" && !force {
 				if dirty, err := e.HasBlockingDirtyChanges(bay); err == nil && dirty {
 					skipped = append(skipped, label+" (dirty)")
 					nonHomeSkipped[t.dock] = true
@@ -1100,7 +1100,7 @@ func (e *Engine) MarkAllPRChecksStale() error {
 }
 
 func clearPRCheckedAt(bay *manifest.Bay) bool {
-	if isHomeBayRecord(bay) || bay.Worktree == nil {
+	if manifest.IsHomeBay(bay) || bay.Worktree == nil {
 		return false
 	}
 	if bay.Worktree.Branch == "" || bay.Worktree.PR != "" {
@@ -1153,7 +1153,7 @@ func (e *Engine) ResolveSelf() (string, string, error) {
 			dock := &m.Docks[i]
 			for j := range dock.Bays {
 				bay := &dock.Bays[j]
-				if isHomeBayRecord(bay) {
+				if manifest.IsHomeBay(bay) {
 					continue
 				}
 				if config.IsPathUnder(cwd, bay.Path) {
@@ -1223,7 +1223,7 @@ func BayCompactLabel(bay *manifest.Bay) string {
 	if bay == nil {
 		return ""
 	}
-	if bay.Type == manifest.BayTypeHome || bay.ID == manifest.HomeBayID {
+	if manifest.IsHomeBay(bay) {
 		return manifest.HomeBayID
 	}
 	dirTag := BayDirTag(bay)
@@ -1673,7 +1673,7 @@ func (e *Engine) positionNewWindow(dockName, windowID, bayID string, m *manifest
 	if bayID == "" {
 		// New bay: goes after the last window of the last existing bay.
 		for i := len(dock.Bays) - 1; i >= 0; i-- {
-			if isHomeBayRecord(&dock.Bays[i]) {
+			if manifest.IsHomeBay(&dock.Bays[i]) {
 				continue
 			}
 			if id := lastWindowIDInBay(dock, dock.Bays[i].ID); id != "" {

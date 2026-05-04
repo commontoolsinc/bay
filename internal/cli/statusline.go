@@ -116,7 +116,7 @@ window until the next status-interval tick.`,
 }
 
 func statusLineOutput(field, dockName string, bay *manifest.Bay, m *manifest.Manifest, g gitpkg.Interface, widthStr string) (string, error) {
-	home := isCLIHomeBay(bay)
+	home := manifest.IsHomeBay(bay)
 
 	switch field {
 	case "id":
@@ -150,7 +150,7 @@ func statusLineOutput(field, dockName string, bay *manifest.Bay, m *manifest.Man
 			count := 0
 			for i := range dock.Bays {
 				w := &dock.Bays[i]
-				if !isCLIHomeBay(w) && w.IsMerged() {
+				if !manifest.IsHomeBay(w) && w.IsMerged() {
 					count++
 				}
 			}
