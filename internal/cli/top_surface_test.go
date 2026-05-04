@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -526,6 +527,59 @@ func TestResolveSurfaceBay_NoFlagsUsesSelf(t *testing.T) {
 	}
 	if dock != "labs" || bayName != "w1" {
 		t.Errorf("got (%q,%q), want (labs,w1)", dock, bayName)
+	}
+}
+
+func TestResolveSurfaceBay_FromHomeTmuxTargetsHome(t *testing.T) {
+	eng, mockTmux, _, _ := testNavEngine(t)
+	worktreeBay, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true})
+	if err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+	if err := os.MkdirAll(worktreeBay.Path, 0o755); err != nil {
+		t.Fatalf("mkdir worktree: %v", err)
+	}
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+	home, err := eng.BayShow("labs", manifest.HomeBayID)
+	if err != nil {
+		t.Fatalf("BayShow(home): %v", err)
+	}
+	if len(home.Surfaces) != 1 || home.Surfaces[0].Tmux == nil {
+		t.Fatalf("home = %+v, want one tmux surface", home)
+	}
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(worktreeBay.Path); err != nil {
+		t.Fatalf("chdir worktree: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+
+	mockTmux.SetCurrentSession("labs")
+	mockTmux.SetCurrentWindowID(home.Surfaces[0].Tmux.WindowID)
+	mockTmux.SetCurrentPaneID(home.Surfaces[0].Tmux.PaneID)
+
+	dock, bayName, err := resolveSurfaceBay(eng, "", "")
+	if err != nil {
+		t.Fatalf("resolveSurfaceBay: %v", err)
+	}
+	if dock != "labs" || bayName != manifest.HomeBayID {
+		t.Fatalf("resolveSurfaceBay = (%q, %q), want (labs, home)", dock, bayName)
+	}
+
+	if err := runSurfaceNew(eng, dock, bayName, surfaceNewOpts{Type: manifest.SurfaceTypeShell, SplitDir: "v"}); err != nil {
+		t.Fatalf("runSurfaceNew from home target: %v", err)
+	}
+	home, err = eng.BayShow("labs", manifest.HomeBayID)
+	if err != nil {
+		t.Fatalf("BayShow(home) after add: %v", err)
+	}
+	if len(home.Surfaces) != 2 {
+		t.Fatalf("home surfaces = %+v, want 2", home.Surfaces)
 	}
 }
 

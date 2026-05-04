@@ -119,6 +119,47 @@ func TestCollectEntries(t *testing.T) {
 	}
 }
 
+func TestCollectEntries_SkipsMalformedHomeLikeBays(t *testing.T) {
+	m := manifest.New()
+	m.Docks = []manifest.Dock{
+		{
+			Name: "labs",
+			Path: "/repo/labs",
+			Bays: []manifest.Bay{
+				{
+					ID:       manifest.HomeBayID,
+					Name:     "not-home",
+					Type:     manifest.BayTypeHome,
+					Path:     "/repo/labs-worktrees/not-home",
+					Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "feature/not-home", PR: "123"},
+					Surfaces: []manifest.Surface{
+						{ID: 1, Name: "shell", Type: manifest.SurfaceTypeShell, Backend: manifest.SurfaceBackendTmux, Tmux: &manifest.TmuxAttrs{WindowID: "@1", PaneID: "%1", LayoutGroup: 1}},
+					},
+				},
+				{
+					ID:   "w1",
+					Name: "work",
+					Type: manifest.BayTypeWorktree,
+					Path: "/repo/labs-worktrees/work",
+					Worktree: &manifest.WorktreeAttrs{
+						Repo:   "labs",
+						Branch: "feature/work",
+						PR:     "456",
+					},
+				},
+			},
+		},
+	}
+
+	entries := CollectEntries(m, tmux.NewMock())
+	if len(entries) != 1 {
+		t.Fatalf("entries = %+v, want only valid worktree bay", entries)
+	}
+	if entries[0].BayName != "work" || entries[0].Branch != "feature/work" || entries[0].PR != "456" {
+		t.Fatalf("entry = %+v, want worktree metadata preserved", entries[0])
+	}
+}
+
 func TestCollectEntries_EmptyManifest(t *testing.T) {
 	m := manifest.New()
 	tc := tmux.NewMock()

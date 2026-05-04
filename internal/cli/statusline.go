@@ -97,69 +97,9 @@ window until the next status-interval tick.`,
 				return nil // not a bay window
 			}
 
-			var out string
-			switch field {
-			case "id":
-				out = bay.ID
-			case "name":
-				out = bay.Name
-			case "dir":
-				out = engine.BayDirTag(bay)
-			case "branch":
-				if bay.Worktree != nil {
-					out = bay.Worktree.Branch
-				}
-			case "pr":
-				if bay.Worktree != nil && bay.Worktree.PR != "" {
-					out = "#" + bay.Worktree.PR
-				}
-			case "status":
-				if bay.Path != "" {
-					if dirty, err := g.IsDirty(bay.Path); err == nil && dirty {
-						out = "dirty"
-					}
-				}
-				if out == "" && bay.IsMerged() {
-					out = "merged"
-				}
-			case "dock":
-				out = dockName
-			case "merged":
-				dock := m.FindDock(dockName)
-				if dock != nil {
-					count := 0
-					for _, w := range dock.Bays {
-						if w.IsMerged() {
-							count++
-						}
-					}
-					if count > 0 {
-						out = fmt.Sprintf("%d merged", count)
-					}
-				}
-			case "full":
-				branch := ""
-				pr := ""
-				if bay.Worktree != nil {
-					branch = bay.Worktree.Branch
-					pr = bay.Worktree.PR
-				}
-
-				status := ""
-				if bay.Path != "" {
-					if dirty, err := g.IsDirty(bay.Path); err == nil && dirty {
-						status = "dirty"
-					} else if bay.IsMerged() {
-						status = "merged"
-					}
-				} else if bay.Worktree != nil && bay.Worktree.Merged {
-					status = "merged"
-				}
-
-				width, _ := strconv.Atoi(widthStr)
-				out = formatStatusLine(bay, branch, pr, status, width)
-			default:
-				return fmt.Errorf("unknown field %q; valid fields: id, name, dir, branch, pr, status, dock, merged, full", field)
+			out, err := statusLineOutput(field, dockName, bay, m, g, widthStr)
+			if err != nil {
+				return err
 			}
 
 			if out != "" {
@@ -173,6 +113,76 @@ window until the next status-interval tick.`,
 	cmd.Flags().StringVar(&windowID, "window", "", "tmux window ID (pass #{window_id} so each window gets its own #() cache entry)")
 
 	return cmd
+}
+
+func statusLineOutput(field, dockName string, bay *manifest.Bay, m *manifest.Manifest, g gitpkg.Interface, widthStr string) (string, error) {
+	home := isCLIHomeBay(bay)
+
+	switch field {
+	case "id":
+		return bay.ID, nil
+	case "name":
+		return bay.Name, nil
+	case "dir":
+		return engine.BayDirTag(bay), nil
+	case "branch":
+		if !home && bay.Worktree != nil {
+			return bay.Worktree.Branch, nil
+		}
+	case "pr":
+		if !home && bay.Worktree != nil && bay.Worktree.PR != "" {
+			return "#" + bay.Worktree.PR, nil
+		}
+	case "status":
+		if !home && bay.Path != "" {
+			if dirty, err := g.IsDirty(bay.Path); err == nil && dirty {
+				return "dirty", nil
+			}
+		}
+		if !home && bay.IsMerged() {
+			return "merged", nil
+		}
+	case "dock":
+		return dockName, nil
+	case "merged":
+		dock := m.FindDock(dockName)
+		if dock != nil {
+			count := 0
+			for i := range dock.Bays {
+				w := &dock.Bays[i]
+				if !isCLIHomeBay(w) && w.IsMerged() {
+					count++
+				}
+			}
+			if count > 0 {
+				return fmt.Sprintf("%d merged", count), nil
+			}
+		}
+	case "full":
+		branch := ""
+		pr := ""
+		if !home && bay.Worktree != nil {
+			branch = bay.Worktree.Branch
+			pr = bay.Worktree.PR
+		}
+
+		status := ""
+		if !home && bay.Path != "" {
+			if dirty, err := g.IsDirty(bay.Path); err == nil && dirty {
+				status = "dirty"
+			} else if bay.IsMerged() {
+				status = "merged"
+			}
+		} else if !home && bay.Worktree != nil && bay.Worktree.Merged {
+			status = "merged"
+		}
+
+		width, _ := strconv.Atoi(widthStr)
+		return formatStatusLine(bay, branch, pr, status, width), nil
+	default:
+		return "", fmt.Errorf("unknown field %q; valid fields: id, name, dir, branch, pr, status, dock, merged, full", field)
+	}
+	return "", nil
 }
 
 // formatStatusLine builds the status-line output with optional width-adaptive

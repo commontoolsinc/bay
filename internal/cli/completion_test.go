@@ -545,6 +545,32 @@ func TestBayCandidates_DedupesWhenIDMatchesName(t *testing.T) {
 	}
 }
 
+func TestBayCandidates_HomeDoesNotExposeWorktreeMetadata(t *testing.T) {
+	m := manifest.New()
+	m.Docks = []manifest.Dock{{
+		Name: "labs",
+		Bays: []manifest.Bay{{
+			ID:       manifest.HomeBayID,
+			Name:     manifest.HomeBayID,
+			Type:     manifest.BayTypeHome,
+			Worktree: &manifest.WorktreeAttrs{Branch: "feature/not-home", PR: "99"},
+		}},
+	}}
+
+	got := bayCandidates(m)
+	gotMap := map[string]string{}
+	for _, c := range got {
+		val, desc, _ := strings.Cut(c, "\t")
+		gotMap[val] = desc
+	}
+	if gotMap[manifest.HomeBayID] != "labs home" {
+		t.Fatalf("home candidate desc = %q, want dock/name only; all=%v", gotMap[manifest.HomeBayID], got)
+	}
+	if strings.Contains(strings.Join(got, "\n"), "feature/not-home") || strings.Contains(strings.Join(got, "\n"), "#99") {
+		t.Fatalf("home completion exposed worktree metadata: %v", got)
+	}
+}
+
 // TestBayCandidates_HandlesEmptyName covers bays without a Name
 // (sticky-once-set hasn't fired yet): only ID candidates are emitted, no
 // empty-string Name candidates.

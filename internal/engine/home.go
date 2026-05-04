@@ -44,6 +44,64 @@ func validateHomeBayLifecycleShape(dock *manifest.Dock, bay *manifest.Bay) error
 	return nil
 }
 
+func validatePersistedHomeBayShape(dock *manifest.Dock, bay *manifest.Bay) error {
+	if isHomeBayRecord(bay) {
+		return validateHomeBayLifecycleShape(dock, bay)
+	}
+	if bay != nil && bay.Name == manifest.HomeBayID {
+		if dock == nil {
+			return fmt.Errorf("unknown dock")
+		}
+		return fmt.Errorf("dock %q has a non-home bay named %q; rename or close it before using home", dock.Name, manifest.HomeBayID)
+	}
+	return nil
+}
+
+type currentHomeMatch struct {
+	Dock    *manifest.Dock
+	Bay     *manifest.Bay
+	Surface *manifest.Surface
+}
+
+func currentTmuxHomeMatch(m *manifest.Manifest, currentSession, currentWindowID, currentPaneID string) (currentHomeMatch, bool, error) {
+	if m == nil || currentWindowID == "" {
+		return currentHomeMatch{}, false, nil
+	}
+	for i := range m.Docks {
+		dock := &m.Docks[i]
+		if currentSession != "" && dock.Name != currentSession {
+			continue
+		}
+		for j := range dock.Bays {
+			bay := &dock.Bays[j]
+			if !isHomeBayRecord(bay) {
+				continue
+			}
+			var matchedSurface *manifest.Surface
+			windowMatched := false
+			for k := range bay.Surfaces {
+				s := &bay.Surfaces[k]
+				if s.Tmux == nil || s.Tmux.WindowID != currentWindowID {
+					continue
+				}
+				windowMatched = true
+				if currentPaneID != "" && s.Tmux.PaneID == currentPaneID {
+					matchedSurface = s
+					break
+				}
+			}
+			if !windowMatched {
+				continue
+			}
+			if err := validateHomeBayLifecycleShape(dock, bay); err != nil {
+				return currentHomeMatch{}, false, err
+			}
+			return currentHomeMatch{Dock: dock, Bay: bay, Surface: matchedSurface}, true, nil
+		}
+	}
+	return currentHomeMatch{}, false, nil
+}
+
 func homeSurfaceCWD(dock *manifest.Dock, bay *manifest.Bay) string {
 	if isHomeBayRecord(bay) {
 		if path, err := homePath(dock); err == nil {

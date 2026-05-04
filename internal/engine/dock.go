@@ -357,6 +357,9 @@ func (e *Engine) List() ([]DockInfo, error) {
 		}
 		for j := range dock.Bays {
 			bay := &dock.Bays[j]
+			if err := validatePersistedHomeBayShape(dock, bay); err != nil {
+				return nil, err
+			}
 			info.Bays = append(info.Bays, e.buildBayInfo(bay, agent, waitingWindows))
 		}
 		docks = append(docks, info)
@@ -386,7 +389,7 @@ func (e *Engine) buildBayInfo(bay *manifest.Bay, agent string, waitingWindows ma
 		Branch:       branch,
 		PR:           pr,
 		Pending:      !isHomeBayRecord(bay) && bay.Worktree != nil && bay.Worktree.Branch != "" && !bay.IsMerged(),
-		Missing:      bay.Path != "" && statErr != nil,
+		Missing:      !isHomeBayRecord(bay) && bay.Path != "" && statErr != nil,
 		DefaultAgent: agent,
 		SyncStatus:   manifest.SyncStatusOK,
 		SurfaceCount: len(bay.Surfaces),
@@ -456,6 +459,9 @@ func (e *Engine) BayInfoByName(dockName, bayID string) (*BayInfo, error) {
 	bay := dock.FindBayByID(bayID)
 	if bay == nil {
 		return nil, fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
+	}
+	if err := validatePersistedHomeBayShape(dock, bay); err != nil {
+		return nil, err
 	}
 	agent := e.resolvedDockAgent(dockName, m)
 	waitingWindows, _ := e.Tmux.WaitingOrBellWindowIDs(dockName)

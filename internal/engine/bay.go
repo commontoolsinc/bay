@@ -515,7 +515,7 @@ func (e *Engine) closeBayStateWithAdditionalClosingWindows(dockName, bayID strin
 // merged PR. The PR check handles multi-commit squash merges where per-commit
 // patch comparison cannot prove that the old local stack landed.
 func (e *Engine) HasUnlandedCommits(bay *manifest.Bay) (bool, error) {
-	if bay == nil || bay.Worktree == nil || bay.Path == "" {
+	if bay == nil || isHomeBayRecord(bay) || bay.Worktree == nil || bay.Path == "" {
 		return false, nil
 	}
 	unpushed, err := e.Git.HasUnpushedCommits(bay.Path)
@@ -535,7 +535,7 @@ func (e *Engine) HasUnlandedCommits(bay *manifest.Bay) (bool, error) {
 }
 
 func (e *Engine) localHeadInMergedPR(bay *manifest.Bay) bool {
-	if bay == nil || bay.Worktree == nil || bay.Worktree.PR == "" || bay.Path == "" {
+	if bay == nil || isHomeBayRecord(bay) || bay.Worktree == nil || bay.Worktree.PR == "" || bay.Path == "" {
 		return false
 	}
 	landed, err := e.Git.LocalHeadInMergedPR(bay.Path, bay.Worktree.PR)
@@ -553,7 +553,7 @@ func (e *Engine) HasBlockingDirtyChanges(bay *manifest.Bay) (bool, error) {
 // CheckDirtyChanges reports whether a worktree is dirty, and whether those
 // dirty changes should block normal close.
 func (e *Engine) CheckDirtyChanges(bay *manifest.Bay) (dirty bool, blocking bool, err error) {
-	if bay == nil || bay.Type != manifest.BayTypeWorktree || bay.Path == "" {
+	if bay == nil || isHomeBayRecord(bay) || bay.Type != manifest.BayTypeWorktree || bay.Path == "" {
 		return false, false, nil
 	}
 	dirty, err = e.Git.IsDirty(bay.Path)
@@ -1053,6 +1053,9 @@ func (e *Engine) BayShow(dockName, bayID string) (*manifest.Bay, error) {
 	if bay == nil {
 		return nil, fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
 	}
+	if err := validatePersistedHomeBayShape(dock, bay); err != nil {
+		return nil, err
+	}
 	return bay, nil
 }
 
@@ -1097,7 +1100,7 @@ func (e *Engine) MarkAllPRChecksStale() error {
 }
 
 func clearPRCheckedAt(bay *manifest.Bay) bool {
-	if bay.Worktree == nil {
+	if isHomeBayRecord(bay) || bay.Worktree == nil {
 		return false
 	}
 	if bay.Worktree.Branch == "" || bay.Worktree.PR != "" {
@@ -1133,6 +1136,15 @@ func (e *Engine) ResolveSelf() (string, string, error) {
 		return "", "", err
 	}
 
+	currentSession, _ := e.Tmux.CurrentSession()
+	winID, tmuxErr := e.Tmux.CurrentWindowID()
+	paneID, _ := e.Tmux.CurrentPaneID()
+	if match, ok, err := currentTmuxHomeMatch(m, currentSession, winID, paneID); err != nil {
+		return "", "", err
+	} else if ok {
+		return match.Dock.Name, match.Bay.ID, nil
+	}
+
 	// First try: match CWD against bay paths. IsPathUnder is
 	// symlink-safe — needed on macOS where /tmp → /private/tmp etc.
 	cwd, cwdErr := os.Getwd()
@@ -1152,7 +1164,6 @@ func (e *Engine) ResolveSelf() (string, string, error) {
 	}
 
 	// Fallback: match current tmux window ID against surfaces.
-	winID, tmuxErr := e.Tmux.CurrentWindowID()
 	if tmuxErr == nil {
 		for i := range m.Docks {
 			dock := &m.Docks[i]

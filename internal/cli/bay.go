@@ -451,6 +451,10 @@ func newBayShowCmd() *cobra.Command {
 // Used by `bay show --short` (and the M-/ flash binding); the
 // description is truncated to its first line, since this output
 // must fit on a single tmux status row.
+func isCLIHomeBay(bay *manifest.Bay) bool {
+	return bay != nil && (bay.Type == manifest.BayTypeHome || bay.ID == manifest.HomeBayID)
+}
+
 func formatBayShort(bay *manifest.Bay) string {
 	if bay == nil {
 		return ""
@@ -463,7 +467,7 @@ func formatBayShort(bay *manifest.Bay) string {
 	if desc := engine.DescriptionFirstLine(bay.Description); desc != "" {
 		parts = append(parts, desc)
 	}
-	if bay.Worktree != nil {
+	if !isCLIHomeBay(bay) && bay.Worktree != nil {
 		if bay.Worktree.Branch != "" && bay.Worktree.Branch != bay.Name && bay.Worktree.Branch != label {
 			parts = append(parts, bay.Worktree.Branch)
 		}
@@ -525,7 +529,7 @@ func buildPopupContent(bay *manifest.Bay, width, height int) string {
 	if bay.Path != "" {
 		fmt.Fprintln(&header, dim(bay.Path))
 	}
-	if bay.Worktree != nil {
+	if !isCLIHomeBay(bay) && bay.Worktree != nil {
 		var meta []string
 		if bay.Worktree.Branch != "" && bay.Worktree.Branch != bay.Name {
 			meta = append(meta, "branch "+bay.Worktree.Branch)

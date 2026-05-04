@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/git"
 	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/commontoolsinc/bay/internal/nav"
@@ -511,6 +512,46 @@ func TestRecover_RejectsMalformedHomeWithoutGitWorktreeChecks(t *testing.T) {
 	}
 	if calls := mockGit.Calls("IsDirty"); len(calls) != 0 {
 		t.Fatalf("recovery checked home dirty state; IsDirty calls: %+v", calls)
+	}
+}
+
+func TestDisplayQueries_RejectMalformedPersistedHome(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if err := eng.withManifest(func(m *manifest.Manifest) error {
+		dock := m.FindDock("labs")
+		dock.Bays = append(dock.Bays, manifest.Bay{
+			ID:       manifest.HomeBayID,
+			Name:     manifest.HomeBayID,
+			Type:     manifest.BayTypeHome,
+			Path:     dock.Path,
+			Worktree: &manifest.WorktreeAttrs{Branch: "feature/not-home"},
+			Surfaces: []manifest.Surface{
+				{
+					ID:      1,
+					Name:    "shell",
+					Type:    manifest.SurfaceTypeShell,
+					Backend: manifest.SurfaceBackendTmux,
+				},
+			},
+		})
+		return nil
+	}); err != nil {
+		t.Fatalf("seed malformed home: %v", err)
+	}
+
+	if _, err := eng.List(); err == nil || !strings.Contains(err.Error(), "malformed home bay") {
+		t.Fatalf("List malformed home error = %v, want clear home invariant error", err)
+	}
+	if _, err := eng.BayInfoByName("labs", manifest.HomeBayID); err == nil || !strings.Contains(err.Error(), "malformed home bay") {
+		t.Fatalf("BayInfoByName malformed home error = %v, want clear home invariant error", err)
+	}
+	if _, err := eng.BayShow("labs", manifest.HomeBayID); err == nil || !strings.Contains(err.Error(), "malformed home bay") {
+		t.Fatalf("BayShow malformed home error = %v, want clear home invariant error", err)
+	}
+	mockGit := eng.Git.(*git.Mock)
+	if calls := mockGit.Calls("IsDirty"); len(calls) != 0 {
+		t.Fatalf("display queries checked home dirty state before validation; IsDirty calls: %+v", calls)
 	}
 }
 
@@ -1163,6 +1204,8 @@ func TestHomeVisibility_EmptyHiddenVisibleListed(t *testing.T) {
 	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: manifest.HomeBayID, Type: manifest.SurfaceTypeShell, Name: "shell"}); err != nil {
 		t.Fatalf("SurfaceAdd(home): %v", err)
 	}
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetDirty(m.FindDock("labs").Path, true)
 	infos, err = eng.List()
 	if err != nil {
 		t.Fatalf("List after home materialized: %v", err)
@@ -1170,6 +1213,9 @@ func TestHomeVisibility_EmptyHiddenVisibleListed(t *testing.T) {
 	foundList := false
 	for _, bay := range infos[0].Bays {
 		if bay.ID == manifest.HomeBayID && bay.SurfaceCount == 1 {
+			if bay.Dirty || bay.Pending || bay.Branch != "" || bay.PR != "" {
+				t.Fatalf("visible home has worktree metadata: %+v", bay)
+			}
 			foundList = true
 		}
 	}
@@ -1299,6 +1345,116 @@ func TestResolveSelf_DockPathDoesNotInferHomeFromCWD(t *testing.T) {
 	}
 	if dockName != "labs" || bayID != manifest.HomeBayID {
 		t.Fatalf("ResolveSelf in home tmux surface = (%q, %q), want (labs, home)", dockName, bayID)
+	}
+}
+
+func TestCurrentContext_HomeTmuxIdentityWinsOverWorktreeCWD(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	worktreeBay, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true})
+	if err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+	if err := os.MkdirAll(worktreeBay.Path, 0o755); err != nil {
+		t.Fatalf("mkdir worktree path: %v", err)
+	}
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+
+	m, err := eng.LoadManifest()
+	if err != nil {
+		t.Fatalf("LoadManifest: %v", err)
+	}
+	dock := m.FindDock("labs")
+	home := dock.FindBayByID(manifest.HomeBayID)
+	if home == nil || len(home.Surfaces) != 1 || home.Surfaces[0].Tmux == nil {
+		t.Fatalf("home = %+v, want one tmux surface", home)
+	}
+	homeSurface := home.Surfaces[0]
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(worktreeBay.Path); err != nil {
+		t.Fatalf("chdir worktree: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.SetCurrentSession("labs")
+	mockTmux.SetCurrentWindowID(homeSurface.Tmux.WindowID)
+	mockTmux.SetCurrentPaneID(homeSurface.Tmux.PaneID)
+
+	dockName, bayID, err := eng.ResolveSelf()
+	if err != nil {
+		t.Fatalf("ResolveSelf: %v", err)
+	}
+	if dockName != "labs" || bayID != manifest.HomeBayID {
+		t.Fatalf("ResolveSelf = (%q, %q), want (labs, home)", dockName, bayID)
+	}
+
+	ctx, err := eng.CurrentContext()
+	if err != nil {
+		t.Fatalf("CurrentContext: %v", err)
+	}
+	if ctx.Dock != "labs" || ctx.BayID != manifest.HomeBayID || ctx.Bay != manifest.HomeBayID {
+		t.Fatalf("CurrentContext bay = %#v, want labs/home", ctx)
+	}
+	if ctx.Surface != homeSurface.Name || ctx.SurfaceID != homeSurface.ID {
+		t.Fatalf("CurrentContext surface = (%q, %d), want (%q, %d)", ctx.Surface, ctx.SurfaceID, homeSurface.Name, homeSurface.ID)
+	}
+	if ctx.Path != config.CanonicalPath(dock.Path) {
+		t.Fatalf("CurrentContext path = %q, want %q", ctx.Path, config.CanonicalPath(dock.Path))
+	}
+
+	mockTmux.SetCurrentPaneID("%not-recorded")
+	ctx, err = eng.CurrentContext()
+	if err != nil {
+		t.Fatalf("CurrentContext unknown pane: %v", err)
+	}
+	if ctx.Dock != "labs" || ctx.BayID != manifest.HomeBayID || ctx.Bay != manifest.HomeBayID || ctx.Surface != "" {
+		t.Fatalf("CurrentContext unknown pane = %#v, want bay-level home context", ctx)
+	}
+}
+
+func TestResolveSelf_HomeTmuxIdentityRejectsMalformedHome(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+	m, err := eng.LoadManifest()
+	if err != nil {
+		t.Fatalf("LoadManifest: %v", err)
+	}
+	home := m.FindDock("labs").FindBayByID(manifest.HomeBayID)
+	if home == nil || len(home.Surfaces) != 1 || home.Surfaces[0].Tmux == nil {
+		t.Fatalf("home = %+v, want one tmux surface", home)
+	}
+	winID := home.Surfaces[0].Tmux.WindowID
+	paneID := home.Surfaces[0].Tmux.PaneID
+
+	if err := eng.withManifest(func(m *manifest.Manifest) error {
+		home := m.FindDock("labs").FindBayByID(manifest.HomeBayID)
+		home.Worktree = &manifest.WorktreeAttrs{Branch: "feature/not-home"}
+		return nil
+	}); err != nil {
+		t.Fatalf("mutate manifest: %v", err)
+	}
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	mockTmux.SetCurrentSession("labs")
+	mockTmux.SetCurrentWindowID(winID)
+	mockTmux.SetCurrentPaneID(paneID)
+
+	_, _, err = eng.ResolveSelf()
+	if err == nil || !strings.Contains(err.Error(), "malformed home bay") {
+		t.Fatalf("ResolveSelf malformed home error = %v, want malformed home bay", err)
+	}
+	if _, err := eng.CurrentContext(); err == nil || !strings.Contains(err.Error(), "malformed home bay") {
+		t.Fatalf("CurrentContext malformed home error = %v, want malformed home bay", err)
 	}
 }
 

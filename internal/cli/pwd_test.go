@@ -35,3 +35,19 @@ func TestFormatPWD_IncludesSurface(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatPWD_HomeShowsBayAndSurface(t *testing.T) {
+	out := stripANSI(formatPWD(&engine.Context{
+		Dock:    "labs",
+		BayID:   "home",
+		Bay:     "home",
+		Surface: "shell",
+		Path:    "/repo/labs",
+	}))
+
+	for _, want := range []string{"dock labs", "bay home", "surface shell"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("pwd output missing %q: %q", want, out)
+		}
+	}
+}
