@@ -451,10 +451,6 @@ func newBayShowCmd() *cobra.Command {
 // Used by `bay show --short` (and the M-/ flash binding); the
 // description is truncated to its first line, since this output
 // must fit on a single tmux status row.
-func isCLIHomeBay(bay *manifest.Bay) bool {
-	return bay != nil && (bay.Type == manifest.BayTypeHome || bay.ID == manifest.HomeBayID)
-}
-
 func formatBayShort(bay *manifest.Bay) string {
 	if bay == nil {
 		return ""
@@ -467,7 +463,7 @@ func formatBayShort(bay *manifest.Bay) string {
 	if desc := engine.DescriptionFirstLine(bay.Description); desc != "" {
 		parts = append(parts, desc)
 	}
-	if !isCLIHomeBay(bay) && bay.Worktree != nil {
+	if !manifest.IsHomeBay(bay) && bay.Worktree != nil {
 		if bay.Worktree.Branch != "" && bay.Worktree.Branch != bay.Name && bay.Worktree.Branch != label {
 			parts = append(parts, bay.Worktree.Branch)
 		}
@@ -529,7 +525,7 @@ func buildPopupContent(bay *manifest.Bay, width, height int) string {
 	if bay.Path != "" {
 		fmt.Fprintln(&header, dim(bay.Path))
 	}
-	if !isCLIHomeBay(bay) && bay.Worktree != nil {
+	if !manifest.IsHomeBay(bay) && bay.Worktree != nil {
 		var meta []string
 		if bay.Worktree.Branch != "" && bay.Worktree.Branch != bay.Name {
 			meta = append(meta, "branch "+bay.Worktree.Branch)
@@ -1111,10 +1107,23 @@ func bayGo(eng *engine.Engine, args []string, waiting, nextWaiting bool) error {
 	if len(args) > 0 {
 		query = args[0]
 	}
-	if query == manifest.HomeBayID && !waiting {
-		return eng.Home(currentSession)
-	}
-	if query != "" {
+	if query == manifest.HomeBayID {
+		if !waiting {
+			return eng.Home(currentSession)
+		}
+		var homeEntry *nav.Entry
+		for i := range entries {
+			if entries[i].BayName == manifest.HomeBayID {
+				homeEntry = &entries[i]
+				break
+			}
+		}
+		if homeEntry == nil {
+			fmt.Fprintln(os.Stderr, "home is not waiting")
+			return nil
+		}
+		entries = []nav.Entry{*homeEntry}
+	} else if query != "" {
 		entries = nav.FuzzyMatch(entries, query)
 	}
 

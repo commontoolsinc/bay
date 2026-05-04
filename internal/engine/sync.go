@@ -215,7 +215,7 @@ func (e *Engine) syncAll(enforceClosedQueueCap bool) []manifest.ClosedEntry {
 			dock := &m.Docks[di]
 			for wi := 0; wi < len(dock.Bays); {
 				bay := &dock.Bays[wi]
-				if isHomeBayRecord(bay) {
+				if manifest.IsHomeBay(bay) {
 					if bay.PendingCloseAt != 0 {
 						bay.PendingCloseAt = 0
 						changed = true
@@ -285,7 +285,7 @@ func (e *Engine) probeBaySync(dock *manifest.Dock, bay *manifest.Bay, sessionOwn
 		path:       bay.Path,
 	}
 
-	if !isHomeBayRecord(bay) && bay.Path != "" && bay.Worktree != nil {
+	if !manifest.IsHomeBay(bay) && bay.Path != "" && bay.Worktree != nil {
 		bayPath := config.ExpandPath(bay.Path)
 		if _, err := os.Stat(bayPath); err == nil {
 			branch, err := e.Git.CurrentBranch(bayPath)
@@ -467,7 +467,7 @@ func (e *Engine) applyBaySyncUpdate(m *manifest.Manifest, update baySyncUpdate, 
 			// If the strip emptied the bay, schedule auto-close
 			// after a grace window. The user has that long to re-open
 			// a surface (bay sf new --bay <id>) to cancel.
-			if len(bay.Surfaces) == 0 && isHomeBayRecord(bay) {
+			if len(bay.Surfaces) == 0 && manifest.IsHomeBay(bay) {
 				removeHomeBayIfEmpty(dock)
 			} else if len(bay.Surfaces) == 0 && bay.PendingCloseAt == 0 {
 				bay.PendingCloseAt = time.Now().Unix() + orphanGraceSeconds

@@ -144,6 +144,20 @@ func IsReservedBayID(s string) bool {
 	return s == HomeBayID
 }
 
+// IsHomeBay reports whether bay should be treated as the dock home pseudo-bay.
+// Use it for normal behavior checks where BayTypeHome or the reserved home ID
+// is enough to keep home out of worktree-only lifecycle paths.
+func IsHomeBay(bay *Bay) bool {
+	return bay != nil && (bay.Type == BayTypeHome || IsReservedBayID(bay.ID))
+}
+
+// IsHomeLikeBay reports whether bay is trying to occupy the home namespace,
+// including the reserved display name. Use it only for shape validation and
+// malformed manifest filtering before normal home handling.
+func IsHomeLikeBay(bay *Bay) bool {
+	return IsHomeBay(bay) || (bay != nil && bay.Name == HomeBayID)
+}
+
 // parseBayIDNum extracts the integer suffix from a bay ID.
 // Returns (n, true) for valid IDs (n >= 1), (0, false) otherwise.
 func parseBayIDNum(s string) (int, bool) {

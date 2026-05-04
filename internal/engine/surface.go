@@ -395,7 +395,7 @@ func (e *Engine) SurfaceClose(dockName, bayID, surfaceName string, force bool) e
 		if bay == nil {
 			return fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
 		}
-		homeSurface = isHomeBayRecord(bay)
+		homeSurface = manifest.IsHomeBay(bay)
 		if homeSurface {
 			if err := validateHomeBayLifecycleShape(dock, bay); err != nil {
 				return err

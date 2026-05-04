@@ -23,14 +23,6 @@ type Entry struct {
 	SurfaceCount int
 }
 
-func isHomeBay(bay *manifest.Bay) bool {
-	return bay != nil && (bay.Type == manifest.BayTypeHome || bay.ID == manifest.HomeBayID)
-}
-
-func isHomeLikeBay(bay *manifest.Bay) bool {
-	return bay != nil && (bay.Type == manifest.BayTypeHome || bay.ID == manifest.HomeBayID || bay.Name == manifest.HomeBayID)
-}
-
 func validHomeBay(dock *manifest.Dock, bay *manifest.Bay) bool {
 	return dock != nil &&
 		bay != nil &&
@@ -63,13 +55,13 @@ func CollectEntries(m *manifest.Manifest, tc tmux.Interface) []Entry {
 
 		for i := range dock.Bays {
 			bay := &dock.Bays[i]
-			if isHomeLikeBay(bay) && !validHomeBay(dock, bay) {
+			if manifest.IsHomeLikeBay(bay) && !validHomeBay(dock, bay) {
 				continue
 			}
 
 			branch := ""
 			pr := ""
-			if !isHomeBay(bay) && bay.Worktree != nil {
+			if !manifest.IsHomeBay(bay) && bay.Worktree != nil {
 				branch = bay.Worktree.Branch
 				pr = bay.Worktree.PR
 			}
@@ -96,7 +88,7 @@ func CollectEntries(m *manifest.Manifest, tc tmux.Interface) []Entry {
 				Description:  bay.Description,
 				Branch:       branch,
 				PR:           pr,
-				Pending:      !isHomeBay(bay) && bay.Worktree != nil && bay.Worktree.Branch != "" && !bay.IsMerged(),
+				Pending:      !manifest.IsHomeBay(bay) && bay.Worktree != nil && bay.Worktree.Branch != "" && !bay.IsMerged(),
 				TmuxWindowID: tmuxWindowID,
 				Waiting:      waiting,
 				SurfaceCount: len(bay.Surfaces),

@@ -214,7 +214,7 @@ func (e *Engine) recoverDockBays(dock *manifest.Dock, m *manifest.Manifest) reco
 	for i := range dock.Bays {
 		bay := &dock.Bays[i]
 
-		if isHomeBayRecord(bay) {
+		if manifest.IsHomeBay(bay) {
 			if err := validateHomeBayLifecycleShape(dock, bay); err != nil {
 				outcome.errs = append(outcome.errs, err.Error())
 				continue
@@ -376,7 +376,7 @@ func (e *Engine) reconcileSurfaces(dockName, tmuxWindowID, cwd string, bay *mani
 }
 
 func recoverBayCWD(dock *manifest.Dock, bay *manifest.Bay) (string, bool) {
-	if isHomeBayRecord(bay) {
+	if manifest.IsHomeBay(bay) {
 		if dock == nil || dock.Path == "" {
 			return "", false
 		}
@@ -542,7 +542,7 @@ func mergeRecoveredDockRuntimeState(dst, src *manifest.Dock) bool {
 }
 
 func findBayForRecoveryMerge(dock *manifest.Dock, src *manifest.Bay) *manifest.Bay {
-	if isHomeBayRecord(src) {
+	if manifest.IsHomeBay(src) {
 		return dock.FindBayByID(manifest.HomeBayID)
 	}
 	for i := range dock.Bays {

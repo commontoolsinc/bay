@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/commontoolsinc/bay/internal/config"
@@ -49,6 +51,30 @@ func testNavEngine(t *testing.T) (*engine.Engine, *tmux.Mock, *git.Mock, string)
 		mockGit,
 	)
 	return eng, mockTmux, mockGit, dir
+}
+
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe stderr: %v", err)
+	}
+
+	out := make(chan string, 1)
+	go func() {
+		b, _ := io.ReadAll(r)
+		out <- string(b)
+	}()
+
+	os.Stderr = w
+	fn()
+	os.Stderr = old
+	_ = w.Close()
+	stderr := <-out
+	_ = r.Close()
+	return stderr
 }
 
 // --- filterSurfaceEntries ---
@@ -349,6 +375,62 @@ func TestBayGoHomeMaterializesHome(t *testing.T) {
 	}
 	if bay.Type != manifest.BayTypeHome || len(bay.Surfaces) != 1 {
 		t.Fatalf("home = %+v, want one materialized surface", bay)
+	}
+}
+
+func TestBayGoHomeWaitingReportsWhenHomeNotWaiting(t *testing.T) {
+	eng, mockTmux, _, _ := testNavEngine(t)
+	mockTmux.SetCurrentSession("labs")
+
+	var err error
+	stderr := captureStderr(t, func() {
+		err = bayGo(eng, []string{manifest.HomeBayID}, true, false)
+	})
+	if err != nil {
+		t.Fatalf("bayGo(home --waiting): %v", err)
+	}
+	if !strings.Contains(stderr, "home is not waiting") {
+		t.Fatalf("stderr = %q, want home not waiting message", stderr)
+	}
+
+	m, loadErr := eng.LoadManifest()
+	if loadErr != nil {
+		t.Fatalf("LoadManifest: %v", loadErr)
+	}
+	if home := m.FindDock("labs").FindBayByID(manifest.HomeBayID); home != nil {
+		t.Fatalf("home materialized despite --waiting: %+v", home)
+	}
+}
+
+func TestBayGoHomeWaitingSelectsWaitingHome(t *testing.T) {
+	eng, mockTmux, _, _ := testNavEngine(t)
+	mockTmux.SetCurrentSession("labs")
+
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: manifest.HomeBayID, Type: manifest.SurfaceTypeShell, Name: "shell"}); err != nil {
+		t.Fatalf("SurfaceAdd(home): %v", err)
+	}
+	home, err := eng.BayShow("labs", manifest.HomeBayID)
+	if err != nil {
+		t.Fatalf("BayShow(home): %v", err)
+	}
+	winID := home.Surfaces[0].Tmux.WindowID
+	if err := mockTmux.SetWindowOption(winID, "@bay-waiting", "1"); err != nil {
+		t.Fatalf("SetWindowOption: %v", err)
+	}
+
+	mockTmux.Calls = nil
+	if err := bayGo(eng, []string{manifest.HomeBayID}, true, false); err != nil {
+		t.Fatalf("bayGo(home --waiting): %v", err)
+	}
+
+	foundSelect := false
+	for _, call := range mockTmux.Calls {
+		if call.Method == "SelectWindow" && call.Args[0] == winID {
+			foundSelect = true
+		}
+	}
+	if !foundSelect {
+		t.Fatalf("expected SelectWindow for waiting home, calls: %+v", mockTmux.Calls)
 	}
 }
 
