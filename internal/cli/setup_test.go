@@ -615,6 +615,28 @@ bind-key -n M-p display-popup -w 80% -h 80% -E 'bay palette --split window || tr
 			t.Fatalf("mismatchedBindings() = %+v; want empty for custom palette binding", got)
 		}
 	})
+
+	t.Run("previousCmds entry catches isTmuxCommand drift", func(t *testing.T) {
+		// Regression: when a tmux-command binding's display-message hint
+		// changes (e.g. M-o gaining `| h=home` in home-bay phase 6), the
+		// user's old line doesn't match any other canonical, so the
+		// fallback path can't catch it. previousCmds is the only signal.
+		// parseBindLine extracts the quoted hint region, so the entry
+		// must be the old hint text, not the full bind line.
+		newCmd := `display-message -d 2000 "new hint" \; switch-client -T bay-agent`
+		kbs := []bayKeybinding{{
+			key:           "M-o",
+			cmd:           newCmd,
+			previousCmds:  []string{"old hint"},
+			isTmuxCommand: true,
+		}}
+		block := "# Bay keybindings\n" +
+			`bind-key -n M-o display-message -d 2000 "old hint" \; switch-client -T bay-agent` + "\n"
+		got := mismatchedBindings(block, kbs)
+		if len(got) != 1 || got[0].canonical.key != "M-o" {
+			t.Fatalf("mismatchedBindings() = %+v; want single M-o mismatch", got)
+		}
+	})
 }
 
 func TestReplaceBindingInBlock(t *testing.T) {

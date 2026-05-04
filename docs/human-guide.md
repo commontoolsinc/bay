@@ -780,6 +780,11 @@ about that key, and `bay doctor` will stop reporting it as missing.
 Chord sub-table bindings use a `table:key` form, e.g.
 `# bay-keep: bay-agent:c bay-agent-bay:x bay-home:Enter`.
 
+After writing changes, `bay setup` offers to reload `~/.tmux.conf` in
+the running tmux server (`tmux source-file ~/.tmux.conf`) so updated
+bindings take effect immediately. The prompt only appears when a tmux
+server is running and the run actually changed active bindings.
+
 ## Command palette
 
 `Option+p` opens the command palette in a tmux popup: a
