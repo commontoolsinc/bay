@@ -105,8 +105,7 @@ bind-key -n M-h previous-window
 
 func TestMissingKeybindings_CommentedHomeBindingIsOptOut(t *testing.T) {
 	// Commented stubs are an opt-out signal — bay should stop nagging
-	// about a chord the user explicitly removed. This protects users
-	// who already pruned the home submenu after Phase 6.
+	// about a chord the user explicitly removed.
 	content := `# Bay keybindings
 # bind-key -T bay-home Enter run-shell 'bay home || true'
 `

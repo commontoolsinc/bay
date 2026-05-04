@@ -13,8 +13,8 @@ import (
 	"github.com/commontoolsinc/bay/internal/picker"
 )
 
-// paletteEnv collects the long-lived state the palette's 24 commands all
-// need. buildPaletteEntries threads it through every Action closure.
+// paletteEnv collects the long-lived state every palette command needs.
+// buildPaletteEntries threads it through every Action closure.
 type paletteEnv struct {
 	Engine  *engine.Engine
 	Scope   palette.Scope
@@ -42,7 +42,7 @@ func modeHotkey(h *palette.Hotkeys, window, pane string, m palette.Mode) string 
 	return h.Lookup(window)
 }
 
-// buildPaletteEntries returns all 24 palette entries with Actions bound to
+// buildPaletteEntries returns the palette entries with Actions bound to
 // the current env and mode. Called at startup and again on every Tab press.
 func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 	h := env.Hotkeys
@@ -214,7 +214,7 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 			Section: palette.SectionCreateSurface,
 			Needs:   palette.ScopeInDock,
 			Action: func() (string, error) {
-				return "", runEditCreate(env.Engine, env.Ctx.Dock+":"+manifest.HomeBayID, "", split)
+				return "", runEditCreateAt(env.Engine, env.Ctx.Dock, manifest.HomeBayID, "", split)
 			},
 		},
 		{
@@ -481,29 +481,22 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 }
 
 func runPaletteNewAgent(env *paletteEnv, split, agent string) (string, error) {
-	if !agentAvailable(env.Engine.Config, agent) {
-		return "", fmt.Errorf("unknown agent %q", agent)
-	}
 	dock, bay, err := env.Engine.ResolveSelf()
 	if err != nil {
 		return "", err
 	}
-	if err := runSurfaceNew(env.Engine, dock, bay, surfaceNewOpts{
-		Type:     manifest.SurfaceTypeAgent,
-		Agent:    agent,
-		SplitDir: split,
-	}); err != nil {
-		return "", err
-	}
-	recordPaletteAgentType(env, agent)
-	return agent, nil
+	return runPaletteNewAgentIn(env, dock, bay, split, agent)
 }
 
 func runPaletteNewHomeAgent(env *paletteEnv, split, agent string) (string, error) {
+	return runPaletteNewAgentIn(env, env.Ctx.Dock, manifest.HomeBayID, split, agent)
+}
+
+func runPaletteNewAgentIn(env *paletteEnv, dock, bayID, split, agent string) (string, error) {
 	if !agentAvailable(env.Engine.Config, agent) {
 		return "", fmt.Errorf("unknown agent %q", agent)
 	}
-	if err := runSurfaceNew(env.Engine, env.Ctx.Dock, manifest.HomeBayID, surfaceNewOpts{
+	if err := runSurfaceNew(env.Engine, dock, bayID, surfaceNewOpts{
 		Type:     manifest.SurfaceTypeAgent,
 		Agent:    agent,
 		SplitDir: split,

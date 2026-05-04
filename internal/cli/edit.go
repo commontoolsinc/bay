@@ -191,6 +191,13 @@ func runEditCreate(eng *engine.Engine, target, editorOverride, splitDir string) 
 	if err != nil {
 		return err
 	}
+	return runEditCreateAt(eng, dockName, bayID, editorOverride, splitDir)
+}
+
+// runEditCreateAt is runEditCreate for callers that already hold a
+// resolved (dock, bay) — e.g. palette actions targeting a known bay
+// like home. Skips re-parsing a "dock:bay" string.
+func runEditCreateAt(eng *engine.Engine, dockName, bayID, editorOverride, splitDir string) error {
 	path, err := eng.Edit(dockName, bayID)
 	if err != nil {
 		return err

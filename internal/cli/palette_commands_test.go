@@ -95,10 +95,8 @@ func TestDetectScope(t *testing.T) {
 }
 
 func TestBuildPaletteEntries_HasExpectedEntries(t *testing.T) {
-	// Pin the entry count + unique-ID invariant. The current set is 24
-	// in-bay/dock entries plus 5 home-targeted entries (Phase 6 of the
-	// home-bay design); anything that adds or removes a command should
-	// touch this test intentionally.
+	// Pin the entry count + unique-ID invariant: anything that adds or
+	// removes a command should touch this test intentionally.
 	env := testPaletteEnv()
 	entries := buildPaletteEntries(env, palette.ModeWindow)
 

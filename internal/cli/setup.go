@@ -297,9 +297,10 @@ var bayKeybindings = []bayKeybinding{
 	{table: tableHome, key: "Enter", cmd: "bay home", desc: "M-o h Enter: focus/create home shell", tmuxVerb: "run-shell"},
 	{table: tableHome, key: "s", cmd: "bay shell --bay home", desc: "M-o h s: shell in home", tmuxVerb: "run-shell"},
 	{table: tableHome, key: "e", cmd: "bay edit --bay home", desc: "M-o h e: editor in home", tmuxVerb: "run-shell"},
-	{table: tableHome, key: "c", cmd: "bay agent claude --bay home", desc: "M-o h c: Claude in home", tmuxVerb: "run-shell"},
-	{table: tableHome, key: "x", cmd: "bay agent codex --bay home", desc: "M-o h x: Codex in home", tmuxVerb: "run-shell"},
-	{table: tableHome, key: "g", cmd: "bay agent gemini --bay home", desc: "M-o h g: Gemini in home", tmuxVerb: "run-shell"},
+
+	agentInHome("c", "claude"),
+	agentInHome("x", "codex"),
+	agentInHome("g", "gemini"),
 }
 
 // Tmux key-table names for the M-o agent chord. Used both for the
@@ -318,6 +319,16 @@ func agentInBay(key, agent, mode string) bayKeybinding {
 		key:      key,
 		cmd:      fmt.Sprintf("bay agent %s --%s", agent, mode),
 		desc:     fmt.Sprintf("M-o %s: %s in current bay (%s)", key, titleAgent(agent), mode),
+		tmuxVerb: "run-shell",
+	}
+}
+
+func agentInHome(key, agent string) bayKeybinding {
+	return bayKeybinding{
+		table:    tableHome,
+		key:      key,
+		cmd:      "bay agent " + agent + " --bay home",
+		desc:     fmt.Sprintf("M-o h %s: %s in home", key, titleAgent(agent)),
 		tmuxVerb: "run-shell",
 	}
 }
