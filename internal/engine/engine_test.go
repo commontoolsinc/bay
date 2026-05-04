@@ -2118,6 +2118,138 @@ func TestDockInit_IdempotentIfAlreadyPresent(t *testing.T) {
 	}
 }
 
+func TestDockInit_UpgradesOldAwarenessLine(t *testing.T) {
+	eng, dir := testEngine(t)
+
+	repoDir := filepath.Join(dir, "repos", "labs")
+	eng.Config.Agents["claude"] = config.AgentConfig{
+		Command:     "claude",
+		ProjectFile: "CLAUDE.md",
+	}
+
+	projectFile := filepath.Join(repoDir, "CLAUDE.md")
+	const oldLine = "This project uses bay for bay and surface management. Run `bay agent-guide` for commands."
+	os.WriteFile(projectFile, []byte("# My Project\n\n"+oldLine+"\n"), 0o644)
+
+	if err := eng.DockInit("labs"); err != nil {
+		t.Fatalf("DockInit: %v", err)
+	}
+
+	got, _ := os.ReadFile(projectFile)
+	if strings.Contains(string(got), "for bay and surface management") {
+		t.Errorf("old awareness line should be replaced, got:\n%s", got)
+	}
+	if !strings.Contains(string(got), "**At session start:** check the workspace description") {
+		t.Errorf("new block should be present, got:\n%s", got)
+	}
+	if !strings.Contains(string(got), "# My Project") {
+		t.Errorf("user content should be preserved, got:\n%s", got)
+	}
+	if strings.Count(string(got), "bay agent-guide") != 1 {
+		t.Errorf("bay agent-guide should appear exactly once, got:\n%s", got)
+	}
+}
+
+func TestDockInit_GitignoresFilesItCreates(t *testing.T) {
+	eng, dir := testEngine(t)
+
+	repoDir := filepath.Join(dir, "repos", "labs")
+	eng.Config.Agents["claude"] = config.AgentConfig{
+		Command:     "claude",
+		ProjectFile: "CLAUDE.local.md",
+	}
+
+	if err := eng.DockInit("labs"); err != nil {
+		t.Fatalf("DockInit: %v", err)
+	}
+
+	gitignore, _ := os.ReadFile(filepath.Join(repoDir, ".gitignore"))
+	if !strings.Contains(string(gitignore), "CLAUDE.local.md") {
+		t.Errorf("file we created should be added to .gitignore, got:\n%s", gitignore)
+	}
+}
+
+func TestDockInit_LeavesGitignoreAloneForExistingFiles(t *testing.T) {
+	eng, dir := testEngine(t)
+
+	repoDir := filepath.Join(dir, "repos", "labs")
+	eng.Config.Agents["claude"] = config.AgentConfig{
+		Command:     "claude",
+		ProjectFile: "CLAUDE.local.md",
+	}
+
+	// User already has the project file — bay should append awareness
+	// but not touch .gitignore.
+	projectFile := filepath.Join(repoDir, "CLAUDE.local.md")
+	os.WriteFile(projectFile, []byte("# My Project\n"), 0o644)
+
+	if err := eng.DockInit("labs"); err != nil {
+		t.Fatalf("DockInit: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(repoDir, ".gitignore")); !os.IsNotExist(err) {
+		gitignore, _ := os.ReadFile(filepath.Join(repoDir, ".gitignore"))
+		t.Errorf(".gitignore should be untouched for pre-existing project files, got:\n%s", gitignore)
+	}
+}
+
+func TestDockInit_SkipsWorktreeincludeForUnignoredExistingFile(t *testing.T) {
+	eng, dir := testEngine(t)
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetGlobalIgnored(false) // pre-existing file is NOT gitignored
+
+	repoDir := filepath.Join(dir, "repos", "labs")
+	eng.Config.Agents["claude"] = config.AgentConfig{
+		Command:     "claude",
+		ProjectFile: "CLAUDE.local.md",
+	}
+
+	projectFile := filepath.Join(repoDir, "CLAUDE.local.md")
+	os.WriteFile(projectFile, []byte("# My Project\n"), 0o644)
+
+	if err := eng.DockInit("labs"); err != nil {
+		t.Fatalf("DockInit: %v", err)
+	}
+
+	// .worktreeinclude must not list the file — dock sync would refuse it.
+	wt, _ := os.ReadFile(filepath.Join(repoDir, ".worktreeinclude"))
+	if strings.Contains(string(wt), "CLAUDE.local.md") {
+		t.Errorf("non-gitignored pre-existing file should not be in .worktreeinclude, got:\n%s", wt)
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, ".gitignore")); !os.IsNotExist(err) {
+		t.Errorf(".gitignore should be untouched for pre-existing project files")
+	}
+}
+
+func TestDockInit_UpgradesDocParaphrasePointer(t *testing.T) {
+	eng, dir := testEngine(t)
+
+	repoDir := filepath.Join(dir, "repos", "labs")
+	eng.Config.Agents["claude"] = config.AgentConfig{
+		Command:     "claude",
+		ProjectFile: "CLAUDE.md",
+	}
+
+	// Shorter paraphrase that lived in human-guide.md and may have been
+	// hand-pasted into project files. Not an exact match for any prior
+	// auto-installed phrasing.
+	projectFile := filepath.Join(repoDir, "CLAUDE.md")
+	os.WriteFile(projectFile, []byte("# My Project\n\nThis project uses bay. Run `bay agent-guide` for commands.\n"), 0o644)
+
+	if err := eng.DockInit("labs"); err != nil {
+		t.Fatalf("DockInit: %v", err)
+	}
+
+	got, _ := os.ReadFile(projectFile)
+	if !strings.Contains(string(got), "**At session start:** check the workspace description") {
+		t.Errorf("paraphrased pointer should be upgraded to the new block, got:\n%s", got)
+	}
+	if strings.Count(string(got), "bay agent-guide") != 1 {
+		t.Errorf("bay agent-guide should appear exactly once after upgrade, got:\n%s", got)
+	}
+}
+
 func TestDockInit_CreatesWorktreeinclude(t *testing.T) {
 	eng, dir := testEngine(t)
 
