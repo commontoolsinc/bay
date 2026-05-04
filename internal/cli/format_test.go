@@ -359,27 +359,36 @@ func TestFormatBayShow_IncludesDefaultAgentAndSurfaces(t *testing.T) {
 }
 
 // TestBayMetaCols_ShobayIDOnlyWhenDifferent confirms the conditional
-// surfacing of the new id meta column: present when ID and Name diverge
-// (e.g., a renamed bay), suppressed when they match (auto-named
-// bays would otherwise carry redundant id=w1 alongside name w1).
+// surfacing of the id meta column: present when ID adds info beyond name and
+// dir (e.g., an external bay with a non-wN dir), suppressed when name or
+// dir already carry it.
 func TestBayMetaCols_ShobayIDOnlyWhenDifferent(t *testing.T) {
+	// Auto-named bay with no rename: ID matches Name, suppress id.
 	same := engine.BayInfo{ID: "w1", Name: "w1", SyncStatus: "ok"}
-	if got := bayMetaCols(same, false, true); got[6].text != "" {
-		t.Errorf("expected no id col when ID==Name; got %q", got[6].text)
+	if got := bayMetaCols(same, false, true); got[3].text != "" {
+		t.Errorf("expected no id col when ID==Name; got %q", got[3].text)
 	}
 
-	diff := engine.BayInfo{ID: "w1", Name: "auth-fix", SyncStatus: "ok"}
-	cols := bayMetaCols(diff, false, false)
-	if !strings.Contains(cols[6].text, "w1") {
-		t.Errorf("expected id col to contain w1 when Name differs; got %q", cols[6].text)
+	// Renamed worktree bay: dir basename == ID, so dir column carries the
+	// handle and id is redundant.
+	renamedWorktree := engine.BayInfo{ID: "w1", Name: "auth-fix", Path: "/wt/w1", SyncStatus: "ok"}
+	if got := bayMetaCols(renamedWorktree, false, false); got[3].text != "" {
+		t.Errorf("expected no id col when ID==dir basename; got %q", got[3].text)
 	}
 
-	// Empty Name (a state the design enables for unnamed bays) also
-	// surfaces the ID — the alternative would be a row with no identifier.
+	// Renamed external bay: dir basename diverges from ID, so id is the
+	// only column carrying the stable handle.
+	renamedExternal := engine.BayInfo{ID: "w3", Name: "frontend", Path: "/proj/myapp", SyncStatus: "ok"}
+	cols := bayMetaCols(renamedExternal, false, false)
+	if !strings.Contains(cols[3].text, "w3") {
+		t.Errorf("expected id col to contain w3 for external bay; got %q", cols[3].text)
+	}
+
+	// No Path, no Name: dir is empty so id is the only identifier.
 	empty := engine.BayInfo{ID: "w1", Name: "", SyncStatus: "ok"}
 	cols = bayMetaCols(empty, false, false)
-	if !strings.Contains(cols[6].text, "w1") {
-		t.Errorf("expected id col to contain w1 when Name is empty; got %q", cols[6].text)
+	if !strings.Contains(cols[3].text, "w1") {
+		t.Errorf("expected id col to contain w1 when Name and Path are empty; got %q", cols[3].text)
 	}
 }
 

@@ -259,8 +259,8 @@ func truncateCommand(cmd string) string {
 
 // bayMetaCols returns fixed-position columns for bay metadata.
 // Column positions: 0=description, 1=branch, 2=dir (only when different from
-// name), 3=status, 4=count, 5=sync/waiting, 6=id (only when different from
-// name).
+// name), 3=id (only when it adds info beyond name and dir), 4=status,
+// 5=count, 6=sync/waiting.
 //
 // Descriptions come through at full stored length; FormatListView shrinks
 // them in place (index 0) if the computed terminal budget is tighter. Only
@@ -273,19 +273,26 @@ func bayMetaCols(bay engine.BayInfo, showCounts, short bool) []metaCol {
 	}
 	cols[1] = metaField("br", bay.Branch, short)
 	// Show directory basename only when it differs from the bay name.
+	dir := ""
 	if bay.Path != "" {
-		dir := filepath.Base(bay.Path)
+		dir = filepath.Base(bay.Path)
 		if dir != bay.Name {
 			cols[2] = metaField("dir", dir, short)
 		}
 	}
+	// Show ID only when it adds info beyond name and dir. Worktree bays have
+	// ID == basename(Path) by construction, so the dir column already carries
+	// it; surface id only for external bays where the dir basename diverges.
+	if bay.ID != "" && bay.ID != bay.Name && bay.ID != dir {
+		cols[3] = metaField("id", bay.ID, short)
+	}
 	if bay.Dirty {
-		cols[3] = metaField("st", "dirty", short)
+		cols[4] = metaField("st", "dirty", short)
 	} else if bay.Pending {
-		cols[3] = metaField("st", "pending", short)
+		cols[4] = metaField("st", "pending", short)
 	}
 	if showCounts {
-		cols[4] = metaField("n", fmt.Sprintf("%d", bay.SurfaceCount), short)
+		cols[5] = metaField("n", fmt.Sprintf("%d", bay.SurfaceCount), short)
 	}
 	// Sync and waiting indicators share the trailing column.
 	var parts []string
@@ -308,13 +315,7 @@ func bayMetaCols(bay engine.BayInfo, showCounts, short bool) []metaCol {
 		}
 	}
 	if len(parts) > 0 {
-		cols[5] = metaCol{text: strings.Join(parts, " "), width: tailWidth}
-	}
-	// Show ID only when it differs from Name (or when Name is empty). Auto-
-	// named bays have ID == Name and don't need the redundancy; users
-	// who renamed see their ID alongside the friendly label.
-	if bay.ID != "" && bay.ID != bay.Name {
-		cols[6] = metaField("id", bay.ID, short)
+		cols[6] = metaCol{text: strings.Join(parts, " "), width: tailWidth}
 	}
 	return cols
 }
