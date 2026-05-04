@@ -736,9 +736,9 @@ prefix required — just press the key combo directly.
 
 ### Agent chord (`Option+o`)
 
-`Option+o` opens a tmux key-table that picks a specific agent without
-going through the dock's default. Each chord shows a 2-second toast
-reminding you of the letters.
+`Option+o` opens a tmux key-table for agent shortcuts and home
+checkout actions. Each chord shows a 2-second toast reminding you of
+the letters.
 
 | Chord | Action |
 |-------|--------|
@@ -748,6 +748,12 @@ reminding you of the letters.
 | `Option+o b c` | New bay in current dock with Claude |
 | `Option+o b x` | New bay in current dock with Codex |
 | `Option+o b g` | New bay in current dock with Gemini |
+| `Option+o h Enter` | Focus/create home shell (`bay home`) |
+| `Option+o h s` | Home shell (`bay shell --bay home`) |
+| `Option+o h e` | Home editor (`bay edit --bay home`) |
+| `Option+o h c` | Claude in home |
+| `Option+o h x` | Codex in home |
+| `Option+o h g` | Gemini in home |
 
 ### Pattern
 
@@ -772,7 +778,7 @@ non-canonical bay command and prompts to update them. Opt out per-key
 by adding `# bay-keep: M-s` to the bay block — bay will stop asking
 about that key, and `bay doctor` will stop reporting it as missing.
 Chord sub-table bindings use a `table:key` form, e.g.
-`# bay-keep: bay-agent:c bay-agent-bay:x`.
+`# bay-keep: bay-agent:c bay-agent-bay:x bay-home:Enter`.
 
 ## Command palette
 
@@ -796,6 +802,10 @@ right-hand column, so the palette doubles as a cheat-sheet.
   (e.g., "Rename bay..." prefilled with the current name).
 - **Scope**: entries that require a bay are hidden when you
   open the palette outside one; same for dock-scoped entries.
+- **Home actions**: "Go to home", "Home shell", "Home editor",
+  "Home agent", and "Home agent..." are dock-scoped. They work from
+  dock surfaces even when there is no current bay and home has not
+  been materialized yet.
 
 Every command in the palette can also be run directly from the
 shell — the palette is not a new surface, just a discovery and

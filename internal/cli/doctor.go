@@ -202,13 +202,21 @@ func missingKeybindings(content string) []string {
 	if block, found := extractBayBlock(content); found {
 		kept = keptKeys(block)
 	}
+	activeLines := map[string]bool{}
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		activeLines[trimmed] = true
+	}
 	var missing []string
 	for _, kb := range bayKeybindings {
 		if kept[kb.id()] {
 			continue
 		}
 		line := kb.canonicalLine()
-		if !strings.Contains(content, line) {
+		if !activeLines[line] {
 			missing = append(missing, line)
 		}
 	}

@@ -32,6 +32,27 @@ bind-key -n M-s run-shell 'bay shell --window || true'
 	}
 }
 
+func TestMissingKeybindings_DetectsCommentedHomeBinding(t *testing.T) {
+	var lines []string
+	var homeEnter string
+	for _, line := range tmuxKeybindingLines() {
+		if strings.Contains(line, "bind-key -T bay-home Enter ") {
+			homeEnter = line
+			lines = append(lines, "# "+line)
+			continue
+		}
+		lines = append(lines, line)
+	}
+	if homeEnter == "" {
+		t.Fatal("bay-home Enter binding not found in canonical keybindings")
+	}
+
+	missing := missingKeybindings(strings.Join(lines, "\n"))
+	if len(missing) != 1 || missing[0] != homeEnter {
+		t.Fatalf("missingKeybindings = %v; want only commented home Enter binding %q", missing, homeEnter)
+	}
+}
+
 func TestKeybindingsIncludeSurfaceNavigation(t *testing.T) {
 	lines := tmuxKeybindingLines()
 	joined := strings.Join(lines, "\n")
@@ -51,6 +72,9 @@ func TestKeybindingsIncludeSurfaceNavigation(t *testing.T) {
 	}
 	if !strings.Contains(joined, "bind-key -n M-p display-popup -w 80% -h 80% -E 'bay palette --split pane || true'") {
 		t.Errorf("keybindings should default Option+p palette to pane mode; got:\n%s", joined)
+	}
+	if !strings.Contains(joined, "bind-key -T bay-home Enter run-shell 'bay home || true'") {
+		t.Errorf("keybindings should include bay-home Enter binding; got:\n%s", joined)
 	}
 }
 

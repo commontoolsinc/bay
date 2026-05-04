@@ -662,6 +662,50 @@ bind-key -n M-s run-shell 'bay shell --window || true'
 	}
 }
 
+func TestHomeChordKeybindings(t *testing.T) {
+	lines := tmuxKeybindingLines()
+	joined := strings.Join(lines, "\n")
+
+	for _, want := range []string{
+		`bind-key -n M-o display-message -d 2000 "agent: c Claude, x Codex, g Gemini | Shift=window | b=bay | h=home" \; switch-client -T bay-agent`,
+		`bind-key -T bay-agent h display-message -d 2000 "home: Enter home, s shell, e editor, c Claude, x Codex, g Gemini" \; switch-client -T bay-home`,
+		`bind-key -T bay-home Enter run-shell 'bay home || true'`,
+		`bind-key -T bay-home s run-shell 'bay shell --bay home || true'`,
+		`bind-key -T bay-home e run-shell 'bay edit --bay home || true'`,
+		`bind-key -T bay-home c run-shell 'bay agent claude --bay home || true'`,
+		`bind-key -T bay-home x run-shell 'bay agent codex --bay home || true'`,
+		`bind-key -T bay-home g run-shell 'bay agent gemini --bay home || true'`,
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("home chord binding missing %q\nall bindings:\n%s", want, joined)
+		}
+	}
+
+	prefix := findKeybinding(t, tableAgent, "h")
+	if !prefix.isTmuxCommand || strings.Contains(prefix.cmd, "bay home") {
+		t.Fatalf("M-o h must be prefix-only, got %+v", prefix)
+	}
+	if !strings.Contains(prefix.cmd, "switch-client -T "+tableHome) {
+		t.Fatalf("M-o h prefix cmd = %q; want switch-client into %s", prefix.cmd, tableHome)
+	}
+}
+
+func TestMissingBindings_DetectsMissingHomeEnterBinding(t *testing.T) {
+	var blockLines []string
+	for _, kb := range bayKeybindings {
+		if kb.table == tableHome && kb.key == "Enter" {
+			continue
+		}
+		blockLines = append(blockLines, kb.canonicalLine())
+	}
+	block := bayKeybindingsMarker + "\n" + strings.Join(blockLines, "\n")
+
+	missing := missingBindings(block, bayKeybindings)
+	if len(missing) != 1 || missing[0].table != tableHome || missing[0].key != "Enter" {
+		t.Fatalf("missingBindings = %+v; want only %s:Enter", missing, tableHome)
+	}
+}
+
 // parseBindLine has to recognize key-table bindings (`-T <table>`) so
 // chord sub-tables (M-o c → bay-agent c) participate in drift
 // detection alongside root bindings.
@@ -685,10 +729,22 @@ func TestParseBindLine_KeyTable(t *testing.T) {
 			cmd:   "bay new -q --agent=gemini || true",
 		},
 		{
+			line:  `bind-key -T bay-home Enter run-shell 'bay home || true'`,
+			table: "bay-home",
+			key:   "Enter",
+			cmd:   "bay home || true",
+		},
+		{
 			line:  `bind-key -T bay-agent b display-message -d 2000 "bay: c Claude, x Codex, g Gemini" \; switch-client -T bay-agent-bay`,
 			table: "bay-agent",
 			key:   "b",
 			cmd:   "bay: c Claude, x Codex, g Gemini", // quoted region only — matches existing tmux-cmd extraction behavior
+		},
+		{
+			line:  `bind-key -T bay-agent h display-message -d 2000 "home: Enter home, s shell, e editor, c Claude, x Codex, g Gemini" \; switch-client -T bay-home`,
+			table: "bay-agent",
+			key:   "h",
+			cmd:   "home: Enter home, s shell, e editor, c Claude, x Codex, g Gemini", // quoted region only — matches existing tmux-cmd extraction behavior
 		},
 	}
 	for _, tc := range cases {
@@ -734,6 +790,7 @@ func TestActiveBindings_TableKeyDistinctFromRootKey(t *testing.T) {
 bind-key -n M-c run-shell 'bay new -q || true'
 bind-key -T bay-agent c run-shell 'bay agent claude --pane || true'
 bind-key -T bay-agent-bay c run-shell 'bay new -q --agent=claude || true'
+bind-key -T bay-home c run-shell 'bay agent claude --bay home || true'
 `
 	got := activeBindings(block)
 	if got["M-c"] != "bay new -q || true" {
@@ -745,4 +802,18 @@ bind-key -T bay-agent-bay c run-shell 'bay new -q --agent=claude || true'
 	if got["bay-agent-bay:c"] != "bay new -q --agent=claude || true" {
 		t.Errorf("bay-agent-bay:c missing or wrong: %q", got["bay-agent-bay:c"])
 	}
+	if got["bay-home:c"] != "bay agent claude --bay home || true" {
+		t.Errorf("bay-home:c missing or wrong: %q", got["bay-home:c"])
+	}
+}
+
+func findKeybinding(t *testing.T, table, key string) bayKeybinding {
+	t.Helper()
+	for _, kb := range bayKeybindings {
+		if kb.table == table && kb.key == key {
+			return kb
+		}
+	}
+	t.Fatalf("keybinding %s not found", bindID(table, key))
+	return bayKeybinding{}
 }
