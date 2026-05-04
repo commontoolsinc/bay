@@ -294,13 +294,12 @@ var bayKeybindings = []bayKeybinding{
 	// mirror the surface-creation verbs scoped to home.
 	{table: tableAgent, key: "h", cmd: `display-message -d 2000 "home: Enter shell, s shell, e editor, c Claude, x Codex, g Gemini" \; switch-client -T ` + tableHome, desc: "M-o h: home submenu", isTmuxCommand: true},
 
-	{table: tableHome, key: "Enter", cmd: "bay home", desc: "M-o h Enter: focus/create home shell", tmuxVerb: "run-shell"},
-	{table: tableHome, key: "s", cmd: "bay shell --bay home", desc: "M-o h s: shell in home", tmuxVerb: "run-shell"},
-	{table: tableHome, key: "e", cmd: "bay edit --bay home", desc: "M-o h e: editor in home", tmuxVerb: "run-shell"},
-
-	agentInHome("c", "claude"),
-	agentInHome("x", "codex"),
-	agentInHome("g", "gemini"),
+	homeBinding("Enter", "bay home", "focus/create home shell"),
+	homeBinding("s", "bay shell --bay home", "shell in home"),
+	homeBinding("e", "bay edit --bay home", "editor in home"),
+	homeAgent("c", "claude"),
+	homeAgent("x", "codex"),
+	homeAgent("g", "gemini"),
 }
 
 // Tmux key-table names for the M-o agent chord. Used both for the
@@ -323,14 +322,22 @@ func agentInBay(key, agent, mode string) bayKeybinding {
 	}
 }
 
-func agentInHome(key, agent string) bayKeybinding {
+func homeBinding(key, cmd, action string) bayKeybinding {
 	return bayKeybinding{
 		table:    tableHome,
 		key:      key,
-		cmd:      "bay agent " + agent + " --bay home",
-		desc:     fmt.Sprintf("M-o h %s: %s in home", key, titleAgent(agent)),
+		cmd:      cmd,
+		desc:     fmt.Sprintf("M-o h %s: %s", key, action),
 		tmuxVerb: "run-shell",
 	}
+}
+
+func homeAgent(key, agent string) bayKeybinding {
+	return homeBinding(
+		key,
+		fmt.Sprintf("bay agent %s --bay home", agent),
+		fmt.Sprintf("%s in home", titleAgent(agent)),
+	)
 }
 
 func newBayWithAgent(key, agent string) bayKeybinding {
