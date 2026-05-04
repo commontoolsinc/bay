@@ -161,15 +161,18 @@ bay tree
 
 ```
 dk bay-tutorial *
-  bay login-bug *  br=fix/login-bug  id=w1
+  bay login-bug *  br=fix/login-bug  dir=w1
     sf shell *    ty=shell
     sf shell-2    ty=shell
     sf monitor    ty=cmd
 ```
 
-The `id=w1` column shows the bay's stable handle. It only
-appears when ID and Name differ; auto-numbered bays (no Name
-yet) display the ID directly in the `bay` column.
+The `dir=w1` column shows the on-disk worktree directory basename,
+which doubles as the bay's stable handle for worktree bays. It only
+appears when the dir basename and Name differ; auto-numbered bays
+(no Name yet) display the handle directly in the `bay` column. For
+external bays (`bay new --dir`), an `id=...` column appears alongside
+when the directory basename doesn't match the bay's stable handle.
 
 Three surfaces, all navigable. `bay ls` lists bays in the current dock;
 `bay tree` shows bays and their surfaces.
