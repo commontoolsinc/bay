@@ -272,7 +272,17 @@ var bayKeybindings = []bayKeybinding{
 	// `h` for home actions. The display-message entries act as a
 	// one-tap reminder of the available letters; lowercase=pane,
 	// Shift=window matches the rest of bay's creation keys.
-	{key: "M-o", cmd: `display-message -d 2000 "agent: c Claude, x Codex, g Gemini | Shift=window | b=bay | h=home" \; switch-client -T ` + tableAgent, desc: "Option+o: agent chord launcher", isTmuxCommand: true},
+	{
+		key: "M-o",
+		cmd: `display-message -d 2000 "agent: c Claude, x Codex, g Gemini | Shift=window | b=bay | h=home" \; switch-client -T ` + tableAgent,
+		// previousCmds for display-message bindings hold the old
+		// quoted hint text, not the full bind line: parseBindLine
+		// extracts only the quoted region for tmux-command bindings,
+		// and that's what mismatched-binding detection compares.
+		previousCmds:  []string{"agent: c Claude, x Codex, g Gemini | Shift=window | b=bay"},
+		desc:          "Option+o: agent chord launcher",
+		isTmuxCommand: true,
+	},
 
 	agentInBay("c", "claude", "pane"),
 	agentInBay("C", "claude", "window"),
@@ -789,7 +799,11 @@ func appendToBayBlock(content string, newLines []string) string {
 	return strings.Replace(content, block, updated, 1)
 }
 
-func promptMissingBindings(reader *bufio.Reader, tmuxConf, content string, missing []bayKeybinding) {
+// promptMissingBindings returns true when active bindings were added,
+// signaling installKeybindings to offer a tmux reload. Comment-stub
+// writes return false: tmux ignores them, so reloading would be a
+// surprising prompt with nothing to apply.
+func promptMissingBindings(reader *bufio.Reader, tmuxConf, content string, missing []bayKeybinding) bool {
 	fmt.Printf("%d canonical binding(s) not bound in your block:\n", len(missing))
 	for _, kb := range missing {
 		fmt.Printf("  %s\n", kb.canonicalLine())
@@ -800,6 +814,7 @@ func promptMissingBindings(reader *bufio.Reader, tmuxConf, content string, missi
 	switch answer {
 	case "n":
 		fmt.Println("Leaving block as-is. Bay will ask again on next setup run.")
+		return false
 	case "c":
 		var stubs []string
 		for _, kb := range missing {
@@ -807,9 +822,10 @@ func promptMissingBindings(reader *bufio.Reader, tmuxConf, content string, missi
 		}
 		if err := os.WriteFile(tmuxConf, []byte(appendToBayBlock(content, stubs)), 0o644); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not write %s: %v\n", tmuxConf, err)
-			return
+			return false
 		}
 		fmt.Printf("Added %d commented stub(s) to %s — bay won't re-ask about these.\n", len(stubs), tmuxConf)
+		return false
 	default: // "" (default) or "y"
 		var lines []string
 		for _, kb := range missing {
@@ -817,13 +833,18 @@ func promptMissingBindings(reader *bufio.Reader, tmuxConf, content string, missi
 		}
 		if err := os.WriteFile(tmuxConf, []byte(appendToBayBlock(content, lines)), 0o644); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not write %s: %v\n", tmuxConf, err)
-			return
+			return false
 		}
 		fmt.Printf("Added %d binding(s) to %s\n", len(lines), tmuxConf)
+		return true
 	}
 }
 
-func promptMismatchedBindings(reader *bufio.Reader, tmuxConf, content string, mismatches []bayKeybindingMismatch) {
+// promptMismatchedBindings returns true when active bindings were
+// rewritten to canonical, signaling installKeybindings to offer a tmux
+// reload. The bay-keep marker write returns false because no active
+// binding actually changed.
+func promptMismatchedBindings(reader *bufio.Reader, tmuxConf, content string, mismatches []bayKeybindingMismatch) bool {
 	fmt.Printf("%d binding(s) in your block don't match the current canonical:\n", len(mismatches))
 	for _, m := range mismatches {
 		fmt.Printf("  %s is bound to `%s`; canonical: `%s`\n",
@@ -835,6 +856,7 @@ func promptMismatchedBindings(reader *bufio.Reader, tmuxConf, content string, mi
 	switch answer {
 	case "n":
 		fmt.Println("Leaving block as-is. Bay will ask again on next setup run.")
+		return false
 	case "k":
 		keys := make([]string, 0, len(mismatches))
 		for _, m := range mismatches {
@@ -843,9 +865,10 @@ func promptMismatchedBindings(reader *bufio.Reader, tmuxConf, content string, mi
 		marker := "# bay-keep: " + strings.Join(keys, " ")
 		if err := os.WriteFile(tmuxConf, []byte(appendToBayBlock(content, []string{marker})), 0o644); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not write %s: %v\n", tmuxConf, err)
-			return
+			return false
 		}
 		fmt.Printf("Pinned %d binding(s) with bay-keep marker — bay won't re-ask.\n", len(keys))
+		return false
 	default: // "" (default) or "y"
 		updated := content
 		for _, m := range mismatches {
@@ -853,9 +876,10 @@ func promptMismatchedBindings(reader *bufio.Reader, tmuxConf, content string, mi
 		}
 		if err := os.WriteFile(tmuxConf, []byte(updated), 0o644); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not write %s: %v\n", tmuxConf, err)
-			return
+			return false
 		}
 		fmt.Printf("Updated %d binding(s) in %s\n", len(mismatches), tmuxConf)
+		return true
 	}
 }
 
@@ -896,14 +920,22 @@ func installKeybindings(reader *bufio.Reader) {
 	if block, found := extractBayBlock(content); found {
 		fmt.Printf("Bay keybindings block found in %s.\n", tmuxConf)
 
+		changed := false
 		if missing := missingBindings(block, bayKeybindings); len(missing) > 0 {
-			promptMissingBindings(reader, tmuxConf, content, missing)
+			if promptMissingBindings(reader, tmuxConf, content, missing) {
+				changed = true
+			}
 			_, content = loadTmuxConf()
 			block, _ = extractBayBlock(content)
 		}
 
 		if mismatches := mismatchedBindings(block, bayKeybindings); len(mismatches) > 0 {
-			promptMismatchedBindings(reader, tmuxConf, content, mismatches)
+			if promptMismatchedBindings(reader, tmuxConf, content, mismatches) {
+				changed = true
+			}
+		}
+		if changed {
+			promptTmuxReload(reader, tmuxConf)
 		}
 		return
 	}
@@ -949,6 +981,35 @@ func installKeybindings(reader *bufio.Reader) {
 	}
 
 	fmt.Println("Added.")
+	promptTmuxReload(reader, tmuxConf)
+}
+
+// tmuxServerRunning reports whether a tmux server is reachable. We use
+// this to gate the reload prompt — there's nothing to reload if no
+// server is up, and asking the user would just be noise.
+func tmuxServerRunning() bool {
+	return exec.Command("tmux", "list-sessions").Run() == nil
+}
+
+// promptTmuxReload offers to source ~/.tmux.conf so newly written
+// bindings take effect in the running tmux server. No-op when no
+// server is running: nothing to reload, and prompting would be
+// confusing.
+func promptTmuxReload(reader *bufio.Reader, tmuxConf string) {
+	if !tmuxServerRunning() {
+		return
+	}
+	fmt.Printf("Reload %s now? [Y/n] ", tmuxConf)
+	answer, _ := reader.ReadString('\n')
+	if strings.TrimSpace(strings.ToLower(answer)) == "n" {
+		fmt.Printf("Skipped. Run `tmux source-file %s` when you're ready.\n", tmuxConf)
+		return
+	}
+	if err := exec.Command("tmux", "source-file", tmuxConf).Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: tmux source-file failed: %v\n", err)
+		return
+	}
+	fmt.Println("Reloaded.")
 }
 
 // hasUserStatusRight reports whether content contains an active
