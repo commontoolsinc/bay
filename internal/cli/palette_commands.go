@@ -220,7 +220,7 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 			Needs:   palette.ScopeInDock,
 			Hotkey:  h.Lookup("bay edit --bay home"),
 			Action: func() (string, error) {
-				return "", runEditCreate(env.Engine, env.Ctx.Dock+":"+manifest.HomeBayID, "", split)
+				return "", runEditCreateAt(env.Engine, env.Ctx.Dock, manifest.HomeBayID, "", split)
 			},
 		},
 		{
@@ -488,22 +488,11 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 }
 
 func runPaletteNewAgent(env *paletteEnv, split, agent string) (string, error) {
-	if !agentAvailable(env.Engine.Config, agent) {
-		return "", fmt.Errorf("unknown agent %q", agent)
-	}
 	dock, bay, err := env.Engine.ResolveSelf()
 	if err != nil {
 		return "", err
 	}
-	if err := runSurfaceNew(env.Engine, dock, bay, surfaceNewOpts{
-		Type:     manifest.SurfaceTypeAgent,
-		Agent:    agent,
-		SplitDir: split,
-	}); err != nil {
-		return "", err
-	}
-	recordPaletteAgentType(env, agent)
-	return agent, nil
+	return runPaletteNewAgentIn(env, dock, bay, split, agent)
 }
 
 func runPaletteNewBayAgent(env *paletteEnv, agent string) (string, error) {
@@ -522,10 +511,14 @@ func runPaletteNewBayAgent(env *paletteEnv, agent string) (string, error) {
 }
 
 func runPaletteHomeAgent(env *paletteEnv, split, agent string) (string, error) {
+	return runPaletteNewAgentIn(env, env.Ctx.Dock, manifest.HomeBayID, split, agent)
+}
+
+func runPaletteNewAgentIn(env *paletteEnv, dock, bayID, split, agent string) (string, error) {
 	if !agentAvailable(env.Engine.Config, agent) {
 		return "", fmt.Errorf("unknown agent %q", agent)
 	}
-	if err := runSurfaceNew(env.Engine, env.Ctx.Dock, manifest.HomeBayID, surfaceNewOpts{
+	if err := runSurfaceNew(env.Engine, dock, bayID, surfaceNewOpts{
 		Type:     manifest.SurfaceTypeAgent,
 		Agent:    agent,
 		SplitDir: split,
