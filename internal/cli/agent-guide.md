@@ -851,10 +851,13 @@ bay dock sync [name]
 `bay dock new` runs `bay dock init` after creating the dock, then opens
 a `home` shell at the dock checkout path. Auto-bootstrap through
 `bay new` creates only the requested worktree bay. `bay dock init` sets
-up bay awareness: appends a one-liner to each agent's project file
-(e.g., `CLAUDE.local.md`) pointing to `bay agent-guide`, and creates
-`.worktreeinclude` if missing. `bay dock sync` copies `.worktreeinclude`
-matches from the checkout into existing worktrees.
+up bay awareness: appends a short block to each agent's project file
+(e.g., `CLAUDE.local.md`) — pointer to `bay agent-guide` plus an explicit
+"at session start, check the workspace description with `bay describe`"
+trigger — and creates `.worktreeinclude` if missing. Older single-line
+pointers from prior bay versions are rewritten in place. `bay dock sync`
+copies `.worktreeinclude` matches from the checkout into existing
+worktrees.
 
 `.worktreeinclude` uses gitignore syntax. Each pattern is resolved by
 git; matching files are copied from the dock checkout into new worktrees.

@@ -392,9 +392,19 @@ checkout.
 
 This does two things:
 1. For each built-in agent with a project file (e.g., `CLAUDE.local.md`
-   for Claude Code), appends a one-line pointer: *"This project uses
-   bay. Run `bay agent-guide` for commands."* Uses the local file so
-   bay awareness doesn't pollute the shared project config.
+   for Claude Code), writes a short awareness block: a pointer to
+   `bay agent-guide` plus an explicit *"at session start, check the
+   workspace description with `bay describe`"* trigger. Uses the local
+   file so bay awareness doesn't pollute the shared project config.
+   Any pre-existing single-line pointer (starts with *"This project
+   uses bay"* and references `bay agent-guide`) is rewritten in place
+   on the next `bay dock init`, regardless of which historical phrasing
+   it used. Files bay creates are added to both `.gitignore` and
+   `.worktreeinclude`. Pre-existing project files are left out of both
+   unless they're already gitignored (in which case they go in
+   `.worktreeinclude` so worktrees stay in sync) — bay never adds an
+   unignored file to `.worktreeinclude`, since `bay dock sync` would
+   refuse to copy it.
 2. Creates `.worktreeinclude` if missing, so gitignored files (`.env`,
    etc.) get copied to new worktrees.
 
@@ -428,76 +438,10 @@ aid, not just a label. Expect them to:
   diff. They should update when the *situation* changes, not on
   every pause.
 
-The dock setup installs the pointer to `bay agent-guide` which tells
-agents how. For a stronger nudge, install the block below into your
-user-global agent instructions. Three options, depending on how many
-agents you use:
-
-**Option A — single agent: paste directly.** If you only use one
-agent, paste the block straight into its global config (Claude Code:
-`~/.claude/CLAUDE.md`; Codex: `~/.codex/AGENTS.md`).
-
-**Option B — multiple agents: shared file + reference.** Keep the
-block in one file (e.g. `~/.config/agent-instructions/bay.md`) and
-have each agent's config pull it in. This avoids drift when you tweak
-the wording.
-
-- Claude Code supports transitive imports — add a line to
-  `~/.claude/CLAUDE.md`:
-
-  ```markdown
-  @/Users/you/.config/agent-instructions/bay.md
-  ```
-
-  The harness inlines the file's contents into context at session
-  start (recursive, up to 5 hops). A prose pointer like "read this
-  file at session start" is *not* equivalent — Claude Code does not
-  reliably follow prose pointers, only `@path` imports.
-
-- For Codex, add a prose pointer in `~/.codex/AGENTS.md`:
-
-  ```markdown
-  At session start, read `/Users/you/.config/agent-instructions/bay.md`
-  and follow it as shared agent instructions.
-  ```
-
-**Option C — shared base + agent-specific overrides.** Combine the
-two: the shared file holds the canonical block, and each agent's
-config references it *and* adds agent-specific notes after. State
-which file wins on conflict (typically the agent-specific one, since
-it's the more local override).
-
-The block to install:
-
-```markdown
-## Bay descriptions
-
-If this project uses bay, keep the current bay's description
-current. It's the user's primary context-recall aid when they return
-to a bay after working elsewhere — surfaced in the picker,
-`bay ls`/`bay tree`, and the `M-?` popup.
-
-Treat the description as a **standing brief about the bay**, not
-a log of what you just did. Git history already records activity; the
-description should let the user swap the bay's overall context
-back into their head in five seconds.
-
-- **First line (≤40 chars):** the bay's goal or scope. Stable —
-  rarely changes once set. Set it on start with `bay describe "..."`.
-- **Body (2–5 lines):** the *situation*, written for someone opening
-  this bay cold. What problem is being solved, what shape the
-  approach is taking, what's the current state, and what's the
-  immediate next move. Update via `bay describe --edit` when the
-  situation meaningfully changes — not on every pause.
-- **Avoid recency bias.** Don't narrate the last few tool calls. If
-  the body would read the same after another hour of similar work,
-  it's at the right altitude.
-- **Keep it brief.** A reader should grasp it in one glance. If you're
-  writing a fourth line, ask whether it belongs in code comments or a
-  PR description instead.
-
-Run `bay agent-guide` for the full reference.
-```
+The dock setup writes an explicit "At session start" trigger into each
+project's local agent file (e.g. `CLAUDE.local.md`), which agents pick
+up automatically — no user-global config needed. The full guidance for
+agents lives in `bay agent-guide`.
 
 `bay describe` only writes bay metadata, so it's safe to allowlist
 and skip the permission prompt. For Claude Code, add to
