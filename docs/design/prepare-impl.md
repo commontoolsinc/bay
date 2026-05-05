@@ -1,17 +1,15 @@
-# Bay prepare — Step 1 implementation plan
+# Bay prepare — implementation plan
 
-Captured 2026-05-04. Companion to `bay-lifecycle-config.md`. Sequences
-the v1 (Step 1) build into landable phases, points at the files each
-phase touches, and flags decisions that need to settle before coding
-starts.
+Captured 2026-05-04. Companion to `prepare.md`. Sequences the v1
+build into landable phases, points at the files each phase touches,
+and flags decisions that need to settle before coding starts.
 
 The design doc is the source of truth for *what* and *why*. This doc
 covers *how* and *in what order*.
 
 ## Locked decisions
 
-These were settled in design-review and reflected in
-`bay-lifecycle-config.md`:
+These were settled in design-review and reflected in `prepare.md`:
 
 1. **Trust hierarchy: 2 levels (bay-level default, dock-level
    override).** dock-checkout-merge (#281) made `Repo` 1:1 with
