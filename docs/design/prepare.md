@@ -308,10 +308,10 @@ should have to remember. `bay setup` is the discoverable home:
 - Manual edit via `bay config edit` opens the file in the user's
   editor and works at any level. Always available as a fallback.
 
-V1 does not ship dedicated `bay dock trust` / `bay repo trust`
-commands. The combination of setup + creation-time flag + config edit
-covers the discoverable path for the common case; if managing-by-edit
-becomes painful in practice, we can add typed setters then.
+V1 does not ship a dedicated `bay dock trust` command. The
+combination of setup + creation-time flag + config edit covers the
+discoverable path for the common case; if managing-by-edit becomes
+painful in practice, we can add a typed setter then.
 
 A future additive UX feature can surface "the repo's `.bay.toml` has
 changed since you last looked" for visibility, but it is not a v1
@@ -369,10 +369,10 @@ BAY_STORE=...
 
 Those variables should not be required for v1.
 
-Close checks receive the same environment. V1 should use environment
-variables rather than template expansion in command strings. That keeps
-prepare and close-check commands consistent and avoids path-quoting
-rules becoming part of the public API.
+V1 uses environment variables rather than template expansion in
+command strings. That avoids path-quoting rules becoming part of the
+public API and lets future lifecycle commands (close checks, etc.)
+inherit the same contract.
 
 ### Bay lifecycle
 
@@ -500,7 +500,8 @@ fetched vendor labs at sha abc...
 ```
 
 The directory layout generalizes to other bay-spawned background
-processes (`logs/<dock>/<date>/close-check.log` for Step 3, etc.).
+processes (`logs/<dock>/<date>/close-check.log` if `close-checks.md`
+ever ships, etc.).
 
 Bay names alone are insufficient to separate uses because IDs are
 reused — closing `w7` and creating a new bay can reassign the same
@@ -711,9 +712,9 @@ unrelated dock edit does not invalidate prepare state.
 
 ## Security and trust
 
-Prepare and close-check commands execute repo-defined code. This is
-not a new trust category for bay users who already run tests, hooks,
-and agent commands in the repo, but bay should still avoid surprising
+Prepare commands execute repo-defined code. This is not a new trust
+category for bay users who already run tests, hooks, and agent
+commands in the repo, but bay should still avoid surprising
 execution.
 
 Trust posture summary for v1:

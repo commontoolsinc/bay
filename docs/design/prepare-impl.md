@@ -28,7 +28,7 @@ These were settled in design-review and reflected in `prepare.md`:
    separators inside the file include bay ID and step name.
    Bay IDs are reused, so the file is the unit, not bay-named
    sub-paths. Layout generalizes to `close-check.log` etc. for
-   Step 3.
+   future lifecycle features.
 5. **Log retention: 14-day directory-level prune by monitor**,
    throttled to once per 23h. `bay dock close` rm -rf's
    `logs/<dock>/`. `bay close <bay>` does not touch logs.
@@ -37,9 +37,9 @@ These were settled in design-review and reflected in `prepare.md`:
 
 Each phase is one or two PRs. Each leaves the tree shippable
 (`presubmit.sh` green, no half-wired user-visible behavior). The
-full Step 1 surface is too large for a single PR; phasing splits
-review burden without violating the design's "ship together" rule —
-no phase exposes a partial feature to users.
+full bay-prepare surface is too large for a single PR; phasing
+splits review burden without violating the design's "ship together"
+rule — no phase exposes a partial feature to users.
 
 ### Phase A — Schema + config plumbing
 
