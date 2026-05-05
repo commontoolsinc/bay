@@ -365,7 +365,6 @@ Bay runs prepare commands from the bay path and sets simple env
 vars:
 
 ```sh
-BAY_REPO_NAME=loom
 BAY_DOCK_NAME=loom
 BAY_NAME=vendor-fix
 BAY_PATH=/Users/mike/projects/loom-worktrees/w7
@@ -375,7 +374,6 @@ BAY_TYPE=worktree
 If scoped storage later ships, bay can add:
 
 ```sh
-BAY_REPO_STORE=...
 BAY_DOCK_STORE=...
 BAY_STORE=...
 ```
@@ -752,17 +750,17 @@ by a repo or dock integration.
 If bay later needs this, call the umbrella concept scoped storage:
 
 ```sh
-BAY_REPO_STORE=...
 BAY_DOCK_STORE=...
 BAY_STORE=...
 ```
 
-Suggested semantics:
+Two scopes, matching the post-dock-checkout-merge entity model
+(every dock owns one checkout 1:1, so there is no separate "repo"
+tier above dock):
 
 | Scope | Lifetime |
 |---|---|
-| Repo store | Survives bay and dock close; removed/pruned when repo is removed. |
-| Dock store | Shared by all bays in a dock; cleaned with the dock if configured. |
+| Dock store | Shared by all bays in a dock; cleaned when the dock is closed. Same semantics earlier drafts gave to a "repo store" — the merge made them the same scope. |
 | Bay store | Tied to one bay; cleaned on bay close. |
 | `cache/` subdir | Safe to delete; deletion may make future prepare slower. |
 | `state/` subdir | Durable for the scope; not deleted except by lifecycle operation. |
@@ -770,7 +768,7 @@ Suggested semantics:
 For Loom, a future cache-aware `fetch-vendor.ts` could use:
 
 ```text
-$BAY_REPO_STORE/cache/vendors/labs.git
+$BAY_DOCK_STORE/cache/vendors/labs.git
 ```
 
 as a shared bare git mirror. On a cache miss, Loom's script would
@@ -784,7 +782,6 @@ stable storage root if repo scripts need one.
 
 Today's manifest uses names:
 
-- Repo names are globally unique.
 - Dock names are globally unique.
 - Bay names are unique within a dock.
 - A bay is effectively identified by `dock:bay`.
@@ -795,7 +792,6 @@ manifest IDs:
 
 ```json
 {
-  "repos": [{ "id": "r_...", "name": "loom" }],
   "docks": [{ "id": "d_...", "name": "loom" }],
   "bays": [{ "id": "w_...", "name": "vendor-fix" }]
 }
