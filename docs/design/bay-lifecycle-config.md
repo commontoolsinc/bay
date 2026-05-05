@@ -95,6 +95,22 @@ Bay should not own repo-specific setup semantics:
 
 ## Bay prepare
 
+### Terminology
+
+- **Step** — one named entry in a bay's prepare config; one
+  `[[bay_prepare]]` block. Has a `name`, a `command`, and optional
+  `ready_command`, `blocks`, `timeout`. A bay's prepare config is a
+  list of steps that run serially in declared order. The realistic
+  case is one step (loom has `vendors`); N is supported for future
+  repos.
+- **Prepare run** — one execution of a step's command by the
+  worker. A step may run more than once over its lifetime (initial
+  run, retry, post-stale rerun); each is a separate run with its
+  own line in the log file's run separators.
+- **Worker** — a detached `bay prepare-worker` process spawned per
+  bay that iterates the bay's steps serially. One worker process
+  per bay's in-flight prepare, regardless of step count.
+
 ### Configuration
 
 Prepare config can live in two places, layered:
@@ -213,53 +229,51 @@ the fact, not negotiated at the moment of use.
 
 #### Hierarchical trust
 
-`trust_repo_bay_toml` can be set at three levels, with explicit values
-overriding inherited ones:
+`trust_repo_bay_toml` can be set at two levels, with the dock-level
+value overriding the bay-level default:
 
 ```toml
 # 1. Bay-level (top of the user's bay config)
-trust_repo_bay_toml = false    # default; affects all repos and docks
+trust_repo_bay_toml = false    # default; affects every dock
 
-# 2. Repo-level
-[repos.loom]
-trust_repo_bay_toml = true     # any dock for loom inherits true
-
-# 3. Dock-level
-[docks.loom-main]
-repo = "loom"
-# inherits true from [repos.loom]
+# 2. Dock-level
+[docks.loom]
+trust_repo_bay_toml = true     # this dock trusts its checkout's .bay.toml
 
 [docks.loom-untrusted]
-repo = "loom"
-trust_repo_bay_toml = false    # explicit override wins over repo level
+trust_repo_bay_toml = false    # this dock does not
 ```
 
 Resolution order:
 
 1. Dock-level explicit value wins if present.
-2. Otherwise, repo-level explicit value.
-3. Otherwise, bay-level explicit value.
-4. Otherwise, built-in default (`false`).
+2. Otherwise, bay-level explicit value.
+3. Otherwise, built-in default (`false`).
 
-The built-in default is `false` because trusting an arbitrary repo's
-`.bay.toml` runs repo-defined commands on bay creation. A user
-who has not configured trust at any level sees only the hint, never
-silent execution.
+The built-in default is `false` because trusting an arbitrary
+checkout's `.bay.toml` runs repo-defined commands on bay creation. A
+user who has not configured trust at any level sees only the hint,
+never silent execution.
 
 Setting bay-level `trust_repo_bay_toml = true` means every new dock
-trusts its repo's `.bay.toml` automatically. This is convenient for a
-single developer who knows all the repos they work with, but it is a
-real footgun: cloning a strange repo and pointing a dock at it
-immediately grants trust. Repo-level trust is the recommended sweet
-spot — it lets a user say "this specific repo is safe, regardless of
-how many docks I make for it" without granting blanket trust to
-unfamiliar code.
+trusts its checkout's `.bay.toml` automatically. This is convenient
+for a single developer who knows all the repos they work with, but it
+is a real footgun: creating a dock against a strange checkout
+immediately grants trust. Dock-level trust is the recommended path —
+it lets a user say "this specific checkout is safe" without granting
+blanket trust to unfamiliar code.
+
+(Earlier drafts proposed a separate repo-level tier. After
+dock-checkout-merge (#281) collapsed `Repo` and `Dock` into a single
+1:1 entity, the repo tier no longer has a coherent home — every
+checkout already has a unique dock, so dock-level trust covers the
+case the repo tier would have addressed.)
 
 Once trust is granted, future updates to `.bay.toml` propagate
 automatically. This matches the existing trust posture: bay already
-runs repo-defined commands (tests, agents, fetch-vendor) once a repo
-is set up, so subsequent changes to `.bay.toml` are no broader than
-the existing grant.
+runs repo-defined commands (tests, agents, fetch-vendor) once a
+checkout is set up, so subsequent changes to `.bay.toml` are no
+broader than the existing grant.
 
 #### Setting the field
 
@@ -267,30 +281,31 @@ The field name and the layered semantics are not something users
 should have to remember. `bay setup` is the discoverable home:
 
 - `bay setup` already walks first-time configuration (config, docks,
-  keybindings, completions). It gains a step that iterates the repos
-  bay tracks; for each one that **(a)** has a `.bay.toml`, **(b)**
-  has no `trust_repo_bay_toml` set at the repo level, and **(c)** has
-  not been dismissed before, setup summarizes the prepare entries and
-  prompts: `Trust this repo's .bay.toml? [y/N/skip]`.
-  - **Yes** writes `[repos.<name>] trust_repo_bay_toml = true`.
-  - **No** writes `[repos.<name>] trust_repo_bay_toml = false`.
+  keybindings, completions). It gains a step that iterates the docks
+  bay tracks; for each one that **(a)** has a `.bay.toml` in its
+  checkout, **(b)** has no `trust_repo_bay_toml` set on the dock,
+  and **(c)** has not been dismissed before, setup summarizes the
+  prepare entries and prompts: `Trust this checkout's .bay.toml?
+  [y/N/skip]`.
+  - **Yes** writes `[docks.<name>] trust_repo_bay_toml = true`.
+  - **No** writes `[docks.<name>] trust_repo_bay_toml = false`.
   - **Skip** writes nothing to user config but records a
-    `trust_prompt_dismissed: true` flag against the repo in the
+    `trust_prompt_dismissed: true` flag against the dock in the
     manifest. Subsequent setup runs honor that flag and skip the
-    prompt; the trust state remains absent (so the dock/repo
-    inherits from bay-level or default `false`).
+    prompt; the trust state remains absent (so the dock inherits
+    from bay-level or default `false`).
 - `bay setup --reset-trust-prompts` clears the manifest dismissal
-  flags, surfacing the prompt again on the next setup run for repos
+  flags, surfacing the prompt again on the next setup run for docks
   that still have no trust value in config. A user who has already
   written `true` or `false` is unaffected — config wins, the prompt
   doesn't reappear.
 - Bay-level trust (the global footgun) is **not** prompted by setup.
-  A user who wants to trust every future repo by default has to edit
+  A user who wants to trust every future dock by default has to edit
   the config directly. This is intentional friction.
 - Creation-time on a dock: `bay dock new --trust-repo-bay-toml /
   --no-trust-repo-bay-toml` writes the field into the dock block.
   Default if neither flag is given is to omit the field, so the dock
-  inherits from the repo or bay level.
+  inherits from the bay-level value or default `false`.
 - Creation-time via auto-create: `bay new` auto-creates a dock
   when one does not already exist for the repo. It accepts the same
   `--trust-repo-bay-toml` / `--no-trust-repo-bay-toml` flags, which
@@ -334,8 +349,8 @@ V1 writes:
   preserved by default. The block includes `trust_repo_bay_toml`
   only when `--trust-repo-bay-toml` or `--no-trust-repo-bay-toml`
   was given; otherwise the field is omitted and the dock inherits.
-- `bay setup` writes `[repos.<name>]` blocks with
-  `trust_repo_bay_toml = true|false` based on user answers. If the
+- `bay setup` writes `trust_repo_bay_toml = true|false` into the
+  matching `[docks.<name>]` block based on user answers. If the
   block already exists, surgical edit: locate the header, find the
   field line, replace or insert just that line. Everything else in
   the block stays byte-for-byte identical. If the block doesn't
@@ -402,31 +417,39 @@ For a new bay:
 ### Prepare job ownership
 
 "Background" still needs a real owner. V1 reuses the `bay` binary
-itself: the parent CLI re-execs `bay internal prepare-worker --dock
-<name> --bay <name> --step <name>` as a detached child, then
-returns. The worker reads dock config and the bay manifest to
-look up the step it was asked to run; identity is fully recoverable
-from the three argv values and bay's data directory.
+itself: the parent CLI re-execs `bay prepare-worker --dock <name>
+--bay <id>` as a detached child, then returns. `prepare-worker` is
+a hidden top-level cobra subcommand (`Hidden: true`) — invisible to
+`bay --help` and tab completion, reachable only by name. Re-execing
+the same binary structurally rules out version skew between parent
+and worker (no separate binary to forget to update).
 
-Prepare steps within a single bay run **serially in declared
-order** for v1. This keeps lock granularity simple, avoids inter-step
-dependency declarations, and matches loom (one step, `vendors`).
-Parallel execution can be added later by relaxing the ordering
-constraint; per-step locks below are already compatible with that.
+A single **controller** worker handles all of a bay's steps,
+iterating them serially in declared order. One pid per bay, one
+heartbeat to track. This keeps lock granularity simple, avoids
+inter-step dependency declarations, and matches loom (one step,
+`vendors`). Parallel execution can be added later by relaxing the
+ordering constraint; per-step locks are already compatible with
+that.
 
 The worker:
 
-1. Acquires a per-step file lock at `<bay-data>/locks/prepare/<dock>/<bay>/<step>.lock`
-   using `flock(LOCK_EX | LOCK_NB)`. The OS releases the lock when the
+1. For each step in declared order, acquires a per-step file lock
+   at `<bay-data>/locks/prepare/<dock>/<bay>/<step>.lock` using
+   `flock(LOCK_EX | LOCK_NB)`. The OS releases the lock when the
    process exits, clean or crashed.
 2. Writes `pid`, `started_at`, and an initial `heartbeat_at` to the
-   manifest, then refreshes `heartbeat_at` every 5 seconds while the
-   step runs.
-3. Streams stdout/stderr to the step log.
+   manifest entry for the current step, then refreshes
+   `heartbeat_at` every 5 seconds while the step runs.
+3. Streams stdout/stderr to the day's prepare log (see Logging).
 4. On command exit, atomically writes the final status (`ready` or
-   `failed`) and `finished_at` to the manifest (write-tmp + rename).
-5. If the step succeeded, dispatches any queued blocked surfaces for
-   this bay before exiting.
+   `failed`) and `finished_at` to the manifest (write-tmp +
+   rename).
+5. If the step succeeded, releases the lock and proceeds to the
+   next step. If it failed, stops the worker (later steps are not
+   run).
+6. After the final step succeeds, dispatches any queued blocked
+   surfaces for this bay before exiting.
 
 Lock and heartbeat together cover four observable states for any
 other bay invocation:
@@ -471,6 +494,49 @@ stronger guarantees should either keep their own post-pull hooks or
 provide a cheap `ready_command`. Blocking prepare steps avoid this
 entirely because their ready_command is mandatory.
 
+### Logging
+
+Prepare logs live under bay's data directory:
+
+```
+<bay-data>/logs/<dock>/YYYY-MM-DD/prepare.log
+```
+
+One file per dock per day. All bays' prepare runs for that dock
+on that day go in the same file, distinguished by run separators
+written by the worker:
+
+```
+==== run bay=w7 step=vendors 2026-05-04T10:23:14 ====
+fetched vendor labs at sha abc...
+==== finished bay=w7 step=vendors 2026-05-04T10:23:18 status=ready ====
+```
+
+The directory layout generalizes to other bay-spawned background
+processes (`logs/<dock>/<date>/close-check.log` for Step 3, etc.).
+
+Bay names alone are insufficient to separate uses because IDs are
+reused — closing `w7` and creating a new bay can reassign the same
+ID. The run separator is the unit of record, not the filename.
+
+`bay prepare --log [bay]` reads today's `prepare.log`, filtering by
+bay if specified (grep by `bay=<id>`). `--log -f` for an in-flight
+worker tails from a `run_log_offset` recorded in the manifest entry
+when the worker writes its run-start separator.
+
+#### Retention
+
+Logs age out by directory:
+
+- Monitor runs a daily prune that walks `logs/*/`, parses
+  `YYYY-MM-DD` from each subdirectory name, and `rm -rf`'s any
+  directory more than 14 days old. Throttled to once per 23h via a
+  `last-prune-at` sentinel so concurrent monitor invocations don't
+  re-walk.
+- `bay dock close <name>` removes `logs/<name>/` entirely.
+- `bay close <bay>` does not touch logs. The bay's history persists
+  in the dock's day files until age-pruning catches up.
+
 ### User-visible commands
 
 Proposed commands:
@@ -506,7 +572,7 @@ CLI output should include:
 
 ```text
 bay vendor-fix setup failed: vendors
-log: ~/.local/share/bay/logs/prepare/...
+log: ~/.local/share/bay/logs/<dock>/2026-05-04/prepare.log
 retry: bay prepare --retry
 ```
 
@@ -742,32 +808,32 @@ record current human names for inspection.
 
 Bay prepare state should be persisted so status survives CLI
 invocations and recovery. The manifest gains a top-level
-`schema_version` (or extends an existing one), each bay gains a
-`prepare` array, and each repo gains a `trust_prompt_dismissed`
-flag used by `bay setup`:
+`schema_version` bump, each bay gains a `prepare` array, and each
+dock gains a `trust_prompt_dismissed` flag used by `bay setup`:
 
 ```json
 {
-  "schema_version": 2,
-  "repos": [
+  "schema_version": 7,
+  "docks": [
     {
       "name": "loom",
-      "trust_prompt_dismissed": true
-    }
-  ],
-  "bays": [
-    {
-      "name": "vendor-fix",
-      "prepare": [
+      "trust_prompt_dismissed": true,
+      "bays": [
         {
-          "name": "vendors",
-          "status": "ready",
-          "started_at": 1777248000,
-          "finished_at": 1777248030,
-          "heartbeat_at": 0,
-          "pid": 0,
-          "definition_hash": "sha256:...",
-          "log": "logs/prepare/<dock-name>/<bay-name>/vendors.log"
+          "id": "w7",
+          "name": "vendor-fix",
+          "prepare": [
+            {
+              "name": "vendors",
+              "status": "ready",
+              "started_at": 1777248000,
+              "finished_at": 1777248030,
+              "heartbeat_at": 0,
+              "pid": 0,
+              "definition_hash": "sha256:...",
+              "run_log_offset": 0
+            }
+          ]
         }
       ]
     }
@@ -776,23 +842,28 @@ flag used by `bay setup`:
 ```
 
 `trust_prompt_dismissed` is set when the user answers "Skip" in
-`bay setup`'s trust prompt. It is cleared by
+`bay setup`'s trust prompt for this dock. It is cleared by
 `bay setup --reset-trust-prompts`. It has no effect on bay's runtime
-behavior — only on whether `bay setup` re-asks. Trust itself lives in
-user config (`[repos.<name>] trust_repo_bay_toml`); this flag is
+behavior — only on whether `bay setup` re-asks. Trust itself lives
+in user config (`[docks.<name>] trust_repo_bay_toml`); this flag is
 purely UI state about whether the user wants to be re-prompted.
 
-`log` is relative to bay's data directory. CLI output should print the
-expanded absolute path for usability, but persisted manifest state
-should not depend on a home directory string. Until stable opaque IDs
-ship (deferred to scoped-storage work), log paths use display names;
-renaming a bay invalidates the path, which is acceptable for v1
-because rename is rare and the old log can be left in place.
+The `run_log_offset` records the byte offset of the current run's
+start separator in today's `prepare.log` when the worker writes it.
+`bay prepare --log -f` seeks to this offset to follow only the
+in-flight run rather than the whole day's file. Cleared (set to 0)
+on terminal status. Log filenames are not stored in the manifest;
+they are computed from the current date, which avoids cross-midnight
+ambiguity and removes the need to invalidate paths on rename.
 
-Schema-version handling for v1:
+Schema-version handling:
 
-- New bay reading a manifest without `schema_version`: treat as
-  pre-prepare, default `prepare: []` for each bay.
+- Bay's manifest is at `CurrentVersion = 6` today (post
+  dock-checkout-merge). This change bumps to **v7** with a
+  sequential `migrateV6ToV7` that adds `prepare: []` to every
+  existing bay and leaves `trust_prompt_dismissed` unset on every
+  existing dock. Migration is purely additive — no existing fields
+  are removed or reshaped.
 - Old bay reading a new manifest: bay does not aggressively rewrite
   manifests it does not understand. Single-user version skew is
   expected to be brief in practice; a stronger compatibility story
@@ -893,8 +964,8 @@ Mitigations available to the user:
   `trust_repo_bay_toml = false` on the dock used for review, or use
   a separate dock with trust off.
 - For ongoing work in repos with active untrusted contributors,
-  prefer dock-level trust over repo-level so each dock can opt
-  individually.
+  prefer per-dock trust over a global bay-level grant so each
+  checkout opts in individually.
 - When invoked from a TTY (not a tmux keybinding), the dispatch
   summary names the prepare commands about to run. This is
   best-effort visibility, not a security gate, but it can catch a
