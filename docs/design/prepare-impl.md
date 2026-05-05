@@ -1,17 +1,15 @@
-# Bay prepare — Step 1 implementation plan
+# Bay prepare — implementation plan
 
-Captured 2026-05-04. Companion to `bay-lifecycle-config.md`. Sequences
-the v1 (Step 1) build into landable phases, points at the files each
-phase touches, and flags decisions that need to settle before coding
-starts.
+Captured 2026-05-04. Companion to `prepare.md`. Sequences the v1
+build into landable phases, points at the files each phase touches,
+and flags decisions that need to settle before coding starts.
 
 The design doc is the source of truth for *what* and *why*. This doc
 covers *how* and *in what order*.
 
 ## Locked decisions
 
-These were settled in design-review and reflected in
-`bay-lifecycle-config.md`:
+These were settled in design-review and reflected in `prepare.md`:
 
 1. **Trust hierarchy: 2 levels (bay-level default, dock-level
    override).** dock-checkout-merge (#281) made `Repo` 1:1 with
@@ -30,7 +28,7 @@ These were settled in design-review and reflected in
    separators inside the file include bay ID and step name.
    Bay IDs are reused, so the file is the unit, not bay-named
    sub-paths. Layout generalizes to `close-check.log` etc. for
-   Step 3.
+   future lifecycle features.
 5. **Log retention: 14-day directory-level prune by monitor**,
    throttled to once per 23h. `bay dock close` rm -rf's
    `logs/<dock>/`. `bay close <bay>` does not touch logs.
@@ -39,9 +37,9 @@ These were settled in design-review and reflected in
 
 Each phase is one or two PRs. Each leaves the tree shippable
 (`presubmit.sh` green, no half-wired user-visible behavior). The
-full Step 1 surface is too large for a single PR; phasing splits
-review burden without violating the design's "ship together" rule —
-no phase exposes a partial feature to users.
+full bay-prepare surface is too large for a single PR; phasing
+splits review burden without violating the design's "ship together"
+rule — no phase exposes a partial feature to users.
 
 ### Phase A — Schema + config plumbing
 

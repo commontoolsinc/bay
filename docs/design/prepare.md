@@ -1,10 +1,9 @@
-# Bay lifecycle configuration - design plan
+# Bay prepare - design plan
 
-Captured 2026-04-26. No code has been written. This doc gathers
-the related configuration ideas from earlier setup discussions:
-repo-defined prepare commands, close checks, and optional scoped
-storage. It is meant as a review artifact before deciding whether any
-of these belong in bay.
+Captured 2026-04-26. Implementation plan in `prepare-impl.md`. This
+doc describes how bay runs repo-defined readiness work after `git
+worktree add` so that bays appear instantly in navigation while
+expensive setup runs in the background.
 
 This doc intentionally does **not** propose that bay become a package
 manager, vendoring tool, or general setup framework. The narrow thesis
@@ -15,37 +14,27 @@ is:
 > run it, show its status, and avoid launching surfaces that would fail
 > before the bay is ready.
 
-## Relationship to existing designs
+## Relationship to other designs
 
-This proposal overlaps with two existing docs:
+- `progress-feedback.md` (separate UX fix): handles slow operations
+  that make bay feel unresponsive when `git worktree add` itself is
+  slow because of synchronous repo hooks. Window-first progress and
+  bay prepare solve different problems and ship independently.
+- `app-model.md` (broader, deferred): sketches per-app lifecycle
+  hooks. If bay prepare ships, it supersedes the `app-model.md` Step
+  2 `setup_command` / `teardown_command` sketch: `bay_prepare` is the
+  v1 bay-level mechanism. Later app-model work can add per-app
+  prepare as an additive layer.
+- `close-checks.md` (deferred sibling): repo-defined gates for
+  `bay close`. Reuses the same trust model and worker/log
+  infrastructure described here. Only ships when a real repo needs a
+  domain-specific close gate.
+- `scoped-storage.md` (deferred sibling): bay-owned per-dock /
+  per-bay storage roots so repo scripts have a stable place for
+  caches and durable state. Only ships when repo scripts ask for it.
 
-- `progress-feedback.md`: handles slow operations that make bay feel
-  unresponsive, especially `git worktree add` running slow repo hooks.
-- `app-model.md`: sketches broader app lifecycle hooks and per-app
-  setup/teardown.
-
-The proposal here is smaller than the app model and more general than
-window-first progress. If this ships, it should supersede the
-`app-model.md` Step 2 `setup_command` / `teardown_command` sketch:
-`bay_prepare` is the v1 bay-level setup mechanism, and
-teardown remains deferred until there is a concrete need.
-
-Later app-model work can still add per-app setup as an additive layer:
-bay prepare runs once for the bay, then per-app prepare
-can run for app-specific requirements. Existing dock-level
-`bay_prepare` config should not need to migrate unless bay
-eventually replaces dock config with a repo/app config model.
-
-The pieces do belong together at the level of "repo-defined lifecycle
-extension points," but not all should ship together:
-
-1. **Bay prepare** is the core feature.
-2. **Close checks** are adjacent and should only ship when a real repo
-   needs a domain-specific close gate.
-3. **Scoped storage/cache** is supporting infrastructure and should be
-   deferred until repo-owned scripts need a bay-provided storage root.
-4. **Window-first progress** remains a separate UX fix for synchronous
-   slow operations.
+These siblings are listed so readers see the lifecycle landscape, but
+this doc only covers prepare.
 
 ## Problem
 
@@ -319,10 +308,10 @@ should have to remember. `bay setup` is the discoverable home:
 - Manual edit via `bay config edit` opens the file in the user's
   editor and works at any level. Always available as a fallback.
 
-V1 does not ship dedicated `bay dock trust` / `bay repo trust`
-commands. The combination of setup + creation-time flag + config edit
-covers the discoverable path for the common case; if managing-by-edit
-becomes painful in practice, we can add typed setters then.
+V1 does not ship a dedicated `bay dock trust` command. The
+combination of setup + creation-time flag + config edit covers the
+discoverable path for the common case; if managing-by-edit becomes
+painful in practice, we can add a typed setter then.
 
 A future additive UX feature can surface "the repo's `.bay.toml` has
 changed since you last looked" for visibility, but it is not a v1
@@ -365,7 +354,6 @@ Bay runs prepare commands from the bay path and sets simple env
 vars:
 
 ```sh
-BAY_REPO_NAME=loom
 BAY_DOCK_NAME=loom
 BAY_NAME=vendor-fix
 BAY_PATH=/Users/mike/projects/loom-worktrees/w7
@@ -375,17 +363,16 @@ BAY_TYPE=worktree
 If scoped storage later ships, bay can add:
 
 ```sh
-BAY_REPO_STORE=...
 BAY_DOCK_STORE=...
 BAY_STORE=...
 ```
 
 Those variables should not be required for v1.
 
-Close checks receive the same environment. V1 should use environment
-variables rather than template expansion in command strings. That keeps
-prepare and close-check commands consistent and avoids path-quoting
-rules becoming part of the public API.
+V1 uses environment variables rather than template expansion in
+command strings. That avoids path-quoting rules becoming part of the
+public API and lets future lifecycle commands (close checks, etc.)
+inherit the same contract.
 
 ### Bay lifecycle
 
@@ -513,7 +500,8 @@ fetched vendor labs at sha abc...
 ```
 
 The directory layout generalizes to other bay-spawned background
-processes (`logs/<dock>/<date>/close-check.log` for Step 3, etc.).
+processes (`logs/<dock>/<date>/close-check.log` if `close-checks.md`
+ever ships, etc.).
 
 Bay names alone are insufficient to separate uses because IDs are
 reused — closing `w7` and creating a new bay can reassign the same
@@ -612,197 +600,9 @@ a placeholder tmux window and tails setup output while the synchronous
 operation runs.
 
 Bay prepare is better for expensive work that can run after the
-worktree exists. Repos that want snappy bay bay creation should
-move expensive setup out of `post-checkout` and into bay-visible
-prepare commands.
-
-## Close checks
-
-Close checks are a separate but related feature. They answer: "Is it
-safe for bay to close this bay?"
-
-They are useful when a repo has external state bay cannot infer. For
-example, a Loom instance might be bound to a worktree. Removing that
-worktree could leave the instance pointing at a missing path.
-
-### Configuration
-
-```toml
-[[docks.loom.bay_close_check]]
-name = "loom-instance-binding"
-command = [".ops/bin/loom", "close-check"]
-force = "allowed"
-```
-
-Fields:
-
-| Field | Purpose |
-|---|---|
-| `name` | Stable display/log key, unique within the dock. |
-| `command` | Repo-owned argv command run from the bay path. |
-| `force` | Whether `bay close --force` may bypass a blocked result. Values: `allowed`, `denied`. |
-
-### Contract
-
-V1 should use exit codes plus human-readable stdout/stderr. JSON
-actions can come later if an action-rich case appears.
-
-Statuses:
-
-| Exit | Status | Meaning |
-|---|---|---|
-| `0` | `clear` | Close may proceed. |
-| `10` | `blocked` | Close should be refused unless `--force` is set and the check config has `force = "allowed"`. |
-| `20` | `warning` | Close may proceed, but bay should print the message. |
-| other | `error` | The check failed; close is refused unless `--force` is set. |
-
-The check should print a concise summary and any remediation commands.
-For example:
-
-```text
-Loom instance 'personal' is bound to this worktree.
-Rebind it first:
-  loom use main --instance personal
-Or stop it:
-  loom stop personal
-```
-
-If the command fails unexpectedly, bay should treat the check as
-blocked by default:
-
-```text
-close check failed: loom-instance-binding
-log: ~/.local/share/bay/logs/close-check/...
-use --force to bypass
-```
-
-This is a different case from a successful check that returns blocked.
-A failed check process means bay did not get domain guidance and can be
-bypassed with `--force`; a successful blocked result follows the
-check's configured `force` policy.
-
-Decision table:
-
-| Check result | `--force` | Check `force` | Close? |
-|---|---:|---|---|
-| clear | no | any | yes |
-| warning | no | any | yes, after printing warning |
-| blocked | no | any | no |
-| blocked | yes | `allowed` | yes |
-| blocked | yes | `denied` | no |
-| error | no | any | no |
-| error | yes | any | yes, after printing check failure |
-
-Bypass of an errored check should be noisy. Bay should print the
-failure every time and keep the log path visible so a flaky check does
-not silently weaken close safety.
-
-### Bay behavior
-
-For `bay close`:
-
-1. Stop any active prepare worker for the bay.
-2. Run today's cheap built-in dirty/unpushed safety gates.
-3. Run bay close checks only if the bay is otherwise
-   closeable.
-4. If any check blocks, refuse close and print its output.
-5. `--force` bypasses checks only when the check config says force is
-   allowed. Failed check processes are also bypassable with `--force`
-   because bay received no valid domain-specific rule.
-
-For `bay dock close`:
-
-- v1 should probably not add dock-level close checks.
-- If needed later, dock close can run each bay close check and
-  then an optional dock close check.
-
-Bay should not run remediation actions automatically. The commands in
-the check output are instructions for the user, not implicit fixes. V1
-prints them only; interactive selection is future work.
-
-## Teardown hooks
-
-Do not add teardown hooks in v1.
-
-Most cleanup should be handled by removing the worktree. Teardown
-hooks are more complex because they can make close slow, fail after
-the user asked to close, or require the worktree to remain on disk
-until cleanup finishes.
-
-If a real need appears, use a two-phase model:
-
-1. Hide/remove the bay from normal navigation immediately.
-2. Run teardown in a background cleanup job.
-3. Remove the worktree only after teardown if the hook needs files
-   present.
-4. If teardown fails, keep a cleanup record visible in `bay doctor`
-   or `bay cleanup ls`.
-
-This should not be implemented until there is a concrete repo that
-cannot rely on worktree deletion.
-
-## Scoped storage and cache
-
-This is deliberately deferred.
-
-The term "cache" is too narrow as the main abstraction. Some data is
-safe to delete and regenerate; other data may be durable state owned
-by a repo or dock integration.
-
-If bay later needs this, call the umbrella concept scoped storage:
-
-```sh
-BAY_REPO_STORE=...
-BAY_DOCK_STORE=...
-BAY_STORE=...
-```
-
-Suggested semantics:
-
-| Scope | Lifetime |
-|---|---|
-| Repo store | Survives bay and dock close; removed/pruned when repo is removed. |
-| Dock store | Shared by all bays in a dock; cleaned with the dock if configured. |
-| Bay store | Tied to one bay; cleaned on bay close. |
-| `cache/` subdir | Safe to delete; deletion may make future prepare slower. |
-| `state/` subdir | Durable for the scope; not deleted except by lifecycle operation. |
-
-For Loom, a future cache-aware `fetch-vendor.ts` could use:
-
-```text
-$BAY_REPO_STORE/cache/vendors/labs.git
-```
-
-as a shared bare git mirror. On a cache miss, Loom's script would
-fetch the missing tag/ref into the mirror, then materialize the
-current worktree's `vendor/labs` at the required sha.
-
-Bay should not fetch or update that mirror itself. It only provides a
-stable storage root if repo scripts need one.
-
-### Stable IDs
-
-Today's manifest uses names:
-
-- Repo names are globally unique.
-- Dock names are globally unique.
-- Bay names are unique within a dock.
-- A bay is effectively identified by `dock:bay`.
-
-Scoped storage should not use renameable display names as durable
-directory names. If scoped storage ships, bay should first add opaque
-manifest IDs:
-
-```json
-{
-  "repos": [{ "id": "r_...", "name": "loom" }],
-  "docks": [{ "id": "d_...", "name": "loom" }],
-  "bays": [{ "id": "w_...", "name": "vendor-fix" }]
-}
-```
-
-Storage paths would use IDs, while metadata files inside the store can
-record current human names for inspection.
+worktree exists. Repos that want snappy bay creation should move
+expensive setup out of `post-checkout` and into bay-visible prepare
+commands.
 
 ## Manifest shape
 
@@ -912,9 +712,9 @@ unrelated dock edit does not invalidate prepare state.
 
 ## Security and trust
 
-Prepare and close-check commands execute repo-defined code. This is
-not a new trust category for bay users who already run tests, hooks,
-and agent commands in the repo, but bay should still avoid surprising
+Prepare commands execute repo-defined code. This is not a new trust
+category for bay users who already run tests, hooks, and agent
+commands in the repo, but bay should still avoid surprising
 execution.
 
 Trust posture summary for v1:
@@ -985,35 +785,24 @@ surprising. It does not need a code-level mitigation in v1.
    The pragmatic answer is support both, but only prepare hooks can
    keep `bay new` truly snappy.
 
-3. **Close-check config home.** Bay prepare config now lives in
-   both repo-local `.bay.toml` and dock-level overrides. Should close
-   checks follow the same model when they ship in Step 3? Likely yes,
-   but defer the decision until close checks are actually built.
+## V1 scope
 
-## Incremental path
+V1 ships the prepare feature as one unit:
 
-### Step 1: Bay prepare status [MEDIUM-LARGE]
+- Layered repo-local and dock-level config.
+- Hierarchical `trust_repo_bay_toml` gating for repo-local config
+  (including `bay setup`'s trust-prompt iteration with
+  manifest-tracked dismissal flag and `--reset-trust-prompts`).
+- Trust flags on `bay dock new` and `bay new` for first-run flows.
+- Persisted per-step status, logs, retry/wait/log/kill commands.
+- Blocked agent/cmd launch with placeholder pane.
+- Close-time prepare-worker termination.
 
-Add bay prepare commands sourced from layered repo-local and
-dock-level config, hierarchical `trust_repo_bay_toml` gating for
-repo-local config (including `bay setup`'s trust-prompt iteration with
-manifest-tracked dismissal flag and `--reset-trust-prompts`), trust
-flags on `bay dock new` and `bay new` for first-run flows,
-persisted per-step status, logs, retry/wait/log/kill commands, blocked
-agent/cmd launch with placeholder pane, and close-time prepare-worker
-termination.
-
-This is the smallest feature that directly supports Loom's vendored
-setup without bay understanding Loom, but it is not a small patch: it
-touches config parsing, manifest schema, process ownership, logs,
-surface launch, recovery, close flow, `bay setup` interactive flow,
-and formatting.
-
-These pieces should ship together rather than as separate slices:
+These pieces are mutually load-bearing for the feature's value:
 
 - Shipping the runner without blocked-surface launch leaves agents
-  free to spawn into a half-prepared bay, which is the exact
-  bug prepare is meant to prevent.
+  free to spawn into a half-prepared bay, which is the exact bug
+  prepare is meant to prevent.
 - Shipping without close-time worker termination leaves a race where
   bay can begin removing a worktree while a prepare worker is still
   writing to it.
@@ -1022,28 +811,8 @@ These pieces should ship together rather than as separate slices:
   command paths and ready checks for every repo, and they will get
   it wrong.
 
-The runner, blocked surfaces, close handling, and layered config with
-trust are mutually load-bearing for the feature's value, so the unit
-of work for v1 is all four.
+The TTY dispatch summary and `bay prepare --log` / `--kill` commands
+are operability features that ship alongside but are not load-bearing
+for the trust posture.
 
-The TTY dispatch summary and `bay prepare --log` / `--kill`
-commands are operability features that ship alongside but are not
-load-bearing for the trust posture.
-
-### Step 2: Window-first progress [MEDIUM]
-
-Implement the existing progress-feedback design for slow synchronous
-`bay new` operations. This can happen before or after Step 1, but it
-solves a different part of the UX.
-
-### Step 3: Close checks [SMALL-MEDIUM]
-
-Add bay close checks only when a real repo has an external state
-blocker that bay cannot see. Require checks to provide a useful
-message and remediation.
-
-### Step 4: Scoped storage [DEFER]
-
-Do not build this until repo scripts need a bay-owned storage root.
-If it ships, add stable opaque IDs first and expose store paths through
-environment variables and `bay store path`.
+See `prepare-impl.md` for the phased implementation plan.
