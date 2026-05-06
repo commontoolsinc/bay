@@ -259,7 +259,7 @@ func truncateCommand(cmd string) string {
 
 const (
 	listBayNameStrMax = 32
-	listBranchStrMax  = 40
+	listBranchStrMax  = 24
 )
 
 func truncateListField(s string, maxLen int) string {
