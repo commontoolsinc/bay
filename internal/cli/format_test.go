@@ -208,6 +208,9 @@ func TestFormatListView_TruncatesLongBayNameAndBranch(t *testing.T) {
 	out := stripANSI(FormatListView(view, false, false))
 	truncatedName := truncateListField(longName, listBayNameStrMax)
 	truncatedBranch := truncateListField(longBranch, listBranchStrMax)
+	if listBranchStrMax != 24 {
+		t.Fatalf("branch display cap = %d, want 24", listBranchStrMax)
+	}
 	if !strings.Contains(out, "bay "+truncatedName) {
 		t.Fatalf("output missing truncated bay name %q:\n%s", truncatedName, out)
 	}
