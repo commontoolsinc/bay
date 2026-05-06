@@ -13,7 +13,7 @@ shell's display name; --bay/--dock select the target bay.
   bay shell logs               new shell named "logs"
   bay shell --window           shell in a new tmux window
   bay shell --split h          horizontal split
-  bay shell --bay w1           target a different bay`,
+  bay shell --bay b1           target a different bay`,
 		args:      cobra.MaximumNArgs(1),
 		buildOpts: shellSurfaceOpts,
 	})

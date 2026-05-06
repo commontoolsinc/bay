@@ -191,11 +191,11 @@ func statusLineOutput(field, dockName string, bay *manifest.Bay, m *manifest.Man
 // Tiers (tried in order until output fits within width):
 //
 //	full:             label branch #PR status
-//	label-cropped:    w4.auth branch #PR status
-//	branch-cropped:   w4.auth bran.. #PR status
-//	compact-status:   w4.auth bran.. #PR *
-//	minimal:          w4.auth bran.. *
-//	label-only:       w4.auth
+//	label-cropped:    b4.auth branch #PR status
+//	branch-cropped:   b4.auth bran.. #PR status
+//	compact-status:   b4.auth bran.. #PR *
+//	minimal:          b4.auth bran.. *
+//	label-only:       b4.auth
 func formatStatusLine(bay *manifest.Bay, branch, pr, status string, width int) string {
 	label := engine.BayCompactLabel(bay)
 	full := buildStatusLine(label, branch, pr, status)

@@ -43,14 +43,14 @@ func TestSurfaceAdd_BumpsLastActive(t *testing.T) {
 	if _, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("BayNew: %v", err)
 	}
-	staleBay(t, eng, "labs", "w1")
+	staleBay(t, eng, "labs", "b1")
 	before := time.Now().Unix()
 
-	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"}); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 
-	if got := lastActive(t, eng, "labs", "w1"); got < before {
+	if got := lastActive(t, eng, "labs", "b1"); got < before {
 		t.Errorf("LastActive = %d, want >= %d (SurfaceAdd should bump)", got, before)
 	}
 }
@@ -60,17 +60,17 @@ func TestSurfaceClose_BumpsLastActive(t *testing.T) {
 	if _, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("BayNew: %v", err)
 	}
-	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"}); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
-	staleBay(t, eng, "labs", "w1")
+	staleBay(t, eng, "labs", "b1")
 	before := time.Now().Unix()
 
-	if err := eng.SurfaceClose("labs", "w1", "shell-2", false); err != nil {
+	if err := eng.SurfaceClose("labs", "b1", "shell-2", false); err != nil {
 		t.Fatalf("SurfaceClose: %v", err)
 	}
 
-	if got := lastActive(t, eng, "labs", "w1"); got < before {
+	if got := lastActive(t, eng, "labs", "b1"); got < before {
 		t.Errorf("LastActive = %d, want >= %d (SurfaceClose should bump)", got, before)
 	}
 }
@@ -80,14 +80,14 @@ func TestSurfaceRename_BumpsLastActive(t *testing.T) {
 	if _, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("BayNew: %v", err)
 	}
-	staleBay(t, eng, "labs", "w1")
+	staleBay(t, eng, "labs", "b1")
 	before := time.Now().Unix()
 
-	if err := eng.SurfaceRename("labs", "w1", "shell", "main-shell"); err != nil {
+	if err := eng.SurfaceRename("labs", "b1", "shell", "main-shell"); err != nil {
 		t.Fatalf("SurfaceRename: %v", err)
 	}
 
-	if got := lastActive(t, eng, "labs", "w1"); got < before {
+	if got := lastActive(t, eng, "labs", "b1"); got < before {
 		t.Errorf("LastActive = %d, want >= %d (SurfaceRename should bump)", got, before)
 	}
 }
@@ -97,14 +97,14 @@ func TestEdit_BumpsLastActive(t *testing.T) {
 	if _, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("BayNew: %v", err)
 	}
-	staleBay(t, eng, "labs", "w1")
+	staleBay(t, eng, "labs", "b1")
 	before := time.Now().Unix()
 
-	if _, err := eng.Edit("labs", "w1"); err != nil {
+	if _, err := eng.Edit("labs", "b1"); err != nil {
 		t.Fatalf("Edit: %v", err)
 	}
 
-	if got := lastActive(t, eng, "labs", "w1"); got < before {
+	if got := lastActive(t, eng, "labs", "b1"); got < before {
 		t.Errorf("LastActive = %d, want >= %d (Edit should bump)", got, before)
 	}
 }
@@ -114,15 +114,15 @@ func TestBayRename_BumpsLastActive(t *testing.T) {
 	if _, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("BayNew: %v", err)
 	}
-	staleBay(t, eng, "labs", "w1")
+	staleBay(t, eng, "labs", "b1")
 	before := time.Now().Unix()
 
-	if err := eng.BayRename("labs", "w1", "renamed"); err != nil {
+	if err := eng.BayRename("labs", "b1", "renamed"); err != nil {
 		t.Fatalf("BayRename: %v", err)
 	}
 
 	// Rename changes Name, not ID; lookup by ID continues to work.
-	if got := lastActive(t, eng, "labs", "w1"); got < before {
+	if got := lastActive(t, eng, "labs", "b1"); got < before {
 		t.Errorf("LastActive = %d, want >= %d (BayRename should bump)", got, before)
 	}
 }
@@ -134,15 +134,15 @@ func TestSetLastFocused_BumpsLastActive(t *testing.T) {
 	if _, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("BayNew: %v", err)
 	}
-	bay, _ := eng.BayShow("labs", "w1")
-	staleBay(t, eng, "labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
+	staleBay(t, eng, "labs", "b1")
 	before := time.Now().Unix()
 
-	if err := eng.SetLastFocused("labs", "w1", bay.Surfaces[0].ID); err != nil {
+	if err := eng.SetLastFocused("labs", "b1", bay.Surfaces[0].ID); err != nil {
 		t.Fatalf("SetLastFocused: %v", err)
 	}
 
-	if got := lastActive(t, eng, "labs", "w1"); got < before {
+	if got := lastActive(t, eng, "labs", "b1"); got < before {
 		t.Errorf("LastActive = %d, want >= %d (SetLastFocused should bump)", got, before)
 	}
 }

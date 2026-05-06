@@ -108,7 +108,7 @@ uses the dock's default agent.
   bay surface new agent                        dock's default agent as a split pane
   bay surface new agent claude                 specific agent
   bay surface new agent codex codex-debug      specific agent with custom name
-  bay surface new agent --bay w1               in another bay
+  bay surface new agent --bay b1               in another bay
   bay surface new agent --window               as a new tmux window`,
 		args:      cobra.MaximumNArgs(2),
 		buildOpts: agentSurfaceOpts,
@@ -154,8 +154,8 @@ editor surface). For a dock-scoped editor covering all bays,
 use 'bay edit' instead.
 
   bay surface new edit                       current bay
-  bay surface new edit w1                    specific bay
-  bay surface new edit --bay w1              same thing with a flag
+  bay surface new edit b1                    specific bay
+  bay surface new edit --bay b1              same thing with a flag
   bay surface new edit --editor vim          use a specific editor this time
   bay surface new edit --window              open as a new tmux window`,
 		Args: cobra.MaximumNArgs(1),
@@ -267,7 +267,7 @@ M-? popup — useful for returning to a bay after working elsewhere.
 
   bay describe                          print current bay's description
   bay describe "Login flow fixes"       set current bay's description
-  bay describe w1 "Login fixes"         set by bay ID
+  bay describe b1 "Login fixes"         set by bay ID
   bay describe --edit                   open $EDITOR to edit the description
   bay describe --clear                  clear current bay's description`,
 		Args: cobra.RangeArgs(0, 2),

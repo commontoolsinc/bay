@@ -39,7 +39,7 @@ func addShell(t *testing.T, eng *Engine, bay, name, splitDir string) string {
 }
 
 // threePaneFixture is the shared prologue for the layout tests: creates
-// bay "w1" with three vertical panes (root + middle + bottom),
+// bay "b1" with three vertical panes (root + middle + bottom),
 // returning the engine's mock view, the window ID, and each pane's ID.
 type threePaneFixture struct {
 	eng                          *Engine
@@ -57,10 +57,10 @@ func setupThreePaneWindow(t *testing.T) threePaneFixture {
 	if _, err := eng.BayNew(BayNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("BayNew: %v", err)
 	}
-	bayView, _ := eng.BayShow("labs", "w1")
+	bayView, _ := eng.BayShow("labs", "b1")
 	root := bayView.Surfaces[0]
-	middle := addShell(t, eng, "w1", "middle", "v")
-	bottom := addShell(t, eng, "w1", "bottom", "v")
+	middle := addShell(t, eng, "b1", "middle", "v")
+	bottom := addShell(t, eng, "b1", "bottom", "v")
 	return threePaneFixture{
 		eng:        eng,
 		mock:       mock,
@@ -82,7 +82,7 @@ func TestSurfaceRestore_LayoutCloseLastRestoresAtEnd(t *testing.T) {
 	// new splits replace the target leaf with a {target, new} split.
 	assertLayout(t, f.mock, f.winID, f.rootPane+"/("+f.middlePane+"/"+f.bottom+")")
 
-	if err := f.eng.SurfaceClose("labs", "w1", "bottom", false); err != nil {
+	if err := f.eng.SurfaceClose("labs", "b1", "bottom", false); err != nil {
 		t.Fatalf("SurfaceClose bottom: %v", err)
 	}
 	assertLayout(t, f.mock, f.winID, f.rootPane+"/"+f.middlePane)
@@ -92,7 +92,7 @@ func TestSurfaceRestore_LayoutCloseLastRestoresAtEnd(t *testing.T) {
 	}
 	// The restored pane lands as a sibling of the last surface (middle),
 	// nested in middle's region — visually appended to the bottom.
-	bayView, _ := f.eng.BayShow("labs", "w1")
+	bayView, _ := f.eng.BayShow("labs", "b1")
 	restored := bayView.FindSurface("bottom").Tmux.PaneID
 	assertLayout(t, f.mock, f.winID, f.rootPane+"/("+f.middlePane+"/"+restored+")")
 }
@@ -104,7 +104,7 @@ func TestSurfaceRestore_LayoutCloseLastRestoresAtEnd(t *testing.T) {
 func TestSurfaceRestore_LayoutRootPaneLandsAtRoot(t *testing.T) {
 	f := setupThreePaneWindow(t)
 
-	if err := f.eng.SurfaceClose("labs", "w1", f.rootName, false); err != nil {
+	if err := f.eng.SurfaceClose("labs", "b1", f.rootName, false); err != nil {
 		t.Fatalf("SurfaceClose root: %v", err)
 	}
 	// After root is gone, the surviving inner split collapses out of the
@@ -116,7 +116,7 @@ func TestSurfaceRestore_LayoutRootPaneLandsAtRoot(t *testing.T) {
 	}
 	// The restored root must wrap the surviving panes, not nest inside
 	// one of them. With -fb the layout becomes {restored, prev_layout}.
-	bayView, _ := f.eng.BayShow("labs", "w1")
+	bayView, _ := f.eng.BayShow("labs", "b1")
 	restored := bayView.FindSurface(f.rootName).Tmux.PaneID
 	assertLayout(t, f.mock, f.winID, restored+"/("+f.middlePane+"/"+f.bottom+")")
 }
@@ -131,7 +131,7 @@ func TestSurfaceRestore_LayoutStackedRestoreReproducesOriginal(t *testing.T) {
 	// surface kills the tmux window, so the post-restore window is a
 	// freshly created one — looked up from the bay state below.
 	for _, name := range []string{"bottom", "middle", f.rootName} {
-		if err := f.eng.SurfaceClose("labs", "w1", name, false); err != nil {
+		if err := f.eng.SurfaceClose("labs", "b1", name, false); err != nil {
 			t.Fatalf("SurfaceClose %s: %v", name, err)
 		}
 	}
@@ -141,7 +141,7 @@ func TestSurfaceRestore_LayoutStackedRestoreReproducesOriginal(t *testing.T) {
 		}
 	}
 
-	bayView, _ := f.eng.BayShow("labs", "w1")
+	bayView, _ := f.eng.BayShow("labs", "b1")
 	rootPane := bayView.FindSurface(f.rootName).Tmux.PaneID
 	middlePane := bayView.FindSurface("middle").Tmux.PaneID
 	bottomPane := bayView.FindSurface("bottom").Tmux.PaneID
@@ -174,7 +174,7 @@ func TestSurfaceRestore_LayoutDiscoveredWholeWindowDeathRestoresOriginalOrder(t 
 		}
 	}
 
-	bayView, _ := f.eng.BayShow("labs", "w1")
+	bayView, _ := f.eng.BayShow("labs", "b1")
 	rootPane := bayView.FindSurface(f.rootName).Tmux.PaneID
 	middlePane := bayView.FindSurface("middle").Tmux.PaneID
 	bottomPane := bayView.FindSurface("bottom").Tmux.PaneID
@@ -202,12 +202,12 @@ func TestSurfaceRestore_LayoutMixedAxisStaysIntact(t *testing.T) {
 	if _, err := eng.BayNew(BayNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("BayNew: %v", err)
 	}
-	bayView, _ := eng.BayShow("labs", "w1")
+	bayView, _ := eng.BayShow("labs", "b1")
 	rootPane := bayView.Surfaces[0].Tmux.PaneID
 	winID := bayView.Surfaces[0].Tmux.WindowID
 
-	right := addShell(t, eng, "w1", "right", "h")
-	rightBottom := addShell(t, eng, "w1", "right-bottom", "v")
+	right := addShell(t, eng, "b1", "right", "h")
+	rightBottom := addShell(t, eng, "b1", "right-bottom", "v")
 
 	// Split shape: root | (right / right-bottom).
 	// Splits-against-last logic puts right-bottom under "right" since
@@ -216,7 +216,7 @@ func TestSurfaceRestore_LayoutMixedAxisStaysIntact(t *testing.T) {
 
 	// Close the bottom of the right column, restore. It should land
 	// back as a vertical split with "right" — no axis confusion.
-	if err := eng.SurfaceClose("labs", "w1", "right-bottom", false); err != nil {
+	if err := eng.SurfaceClose("labs", "b1", "right-bottom", false); err != nil {
 		t.Fatalf("SurfaceClose: %v", err)
 	}
 	assertLayout(t, mock, winID, rootPane+"|"+right)
@@ -224,7 +224,7 @@ func TestSurfaceRestore_LayoutMixedAxisStaysIntact(t *testing.T) {
 	if _, err := eng.SurfaceRestore("labs"); err != nil {
 		t.Fatalf("SurfaceRestore: %v", err)
 	}
-	bayView, _ = eng.BayShow("labs", "w1")
+	bayView, _ = eng.BayShow("labs", "b1")
 	restored := bayView.FindSurface("right-bottom").Tmux.PaneID
 	assertLayout(t, mock, winID, rootPane+"|("+right+"/"+restored+")")
 }

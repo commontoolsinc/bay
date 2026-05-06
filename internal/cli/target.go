@@ -7,7 +7,7 @@ import (
 	"github.com/commontoolsinc/bay/internal/engine"
 )
 
-// parseBayArg parses a bay positional argument like "w1" or "labs:w1".
+// parseBayArg parses a bay positional argument like "b1" or "labs:b1".
 // dock may be empty if no prefix was given.
 func parseBayArg(arg string) (dock, bay string, err error) {
 	parts := strings.Split(arg, ":")
@@ -49,8 +49,8 @@ func parseSurfaceArg(arg string) (dock, bay, surface string, err error) {
 //
 // For a bare ID, the current dock (resolved from cwd/tmux) wins if it
 // has a bay with that ID. This matches user intent: typing
-// `bay close w2` from inside loom means loom:w2, not "error because
-// crew also has w2". Falls through to a full-manifest search when the
+// `bay close b2` from inside loom means loom:b2, not "error because
+// crew also has b2". Falls through to a full-manifest search when the
 // current dock doesn't have a match, which may then error with
 // "ambiguous" as before.
 func resolveBayArg(eng *engine.Engine, posArg, dockFlag string) (string, string, error) {
@@ -97,7 +97,7 @@ func resolveBareBay(eng *engine.Engine, bay string) (string, string, error) {
 // positional (no flags, no colons) specially: it resolves to the current
 // pane's surface, unless a literal surface named "self" exists in the
 // resolved bay — in which case the literal wins. Qualified forms
-// like "w1:self" or "labs:w1:self" are always literal — no virtual fallback.
+// like "b1:self" or "labs:b1:self" are always literal — no virtual fallback.
 func resolveSurfaceArgOrSelf(eng *engine.Engine, posArg, bayFlag, dockFlag string) (string, string, string, error) {
 	if posArg != "self" || bayFlag != "" || dockFlag != "" {
 		return resolveSurfaceArg(eng, posArg, bayFlag, dockFlag)

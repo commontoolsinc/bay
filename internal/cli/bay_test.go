@@ -13,7 +13,7 @@ import (
 func TestFormatBayShort_AllFields(t *testing.T) {
 	bay := &manifest.Bay{
 		Name:        "auth-fix",
-		Path:        "/tmp/bay-worktrees/w4",
+		Path:        "/tmp/bay-worktrees/b4",
 		Description: "Login flow fixes",
 		Worktree: &manifest.WorktreeAttrs{
 			Branch: "fix/login",
@@ -21,7 +21,7 @@ func TestFormatBayShort_AllFields(t *testing.T) {
 		},
 	}
 	got := stripANSI(formatBayShort(bay))
-	want := "w4.auth-fix — Login flow fixes — fix/login — PR#123"
+	want := "b4.auth-fix — Login flow fixes — fix/login — PR#123"
 	if got != want {
 		t.Errorf("formatBayShort = %q, want %q", got, want)
 	}
@@ -173,14 +173,14 @@ func TestFormatBayShort_TruncatesMultiLineDescription(t *testing.T) {
 func TestBuildPopupContentIncludesCompactLabelAndPath(t *testing.T) {
 	bay := &manifest.Bay{
 		Name:        "auth-fix",
-		Path:        "/tmp/bay-worktrees/w4",
+		Path:        "/tmp/bay-worktrees/b4",
 		Description: "Login flow fixes",
 	}
 	got := stripANSI(buildPopupContent(bay, 80, 10))
-	if !strings.Contains(got, "w4.auth-fix") {
+	if !strings.Contains(got, "b4.auth-fix") {
 		t.Errorf("popup missing compact label:\n%s", got)
 	}
-	if !strings.Contains(got, "/tmp/bay-worktrees/w4") {
+	if !strings.Contains(got, "/tmp/bay-worktrees/b4") {
 		t.Errorf("popup missing path:\n%s", got)
 	}
 }

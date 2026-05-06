@@ -279,24 +279,30 @@ func TestRefreshDockWindowNames_StripsSharedPrefixInMixedDock(t *testing.T) {
 func TestNextBayDir(t *testing.T) {
 	wtDir := t.TempDir()
 
-	// Empty dir, empty dock → w1.
-	if got := nextBayDir(wtDir, &manifest.Dock{}); got != "w1" {
-		t.Errorf("empty: got %q, want w1", got)
+	// Empty dir, empty dock -> b1.
+	if got := nextBayDir(wtDir, &manifest.Dock{}); got != "b1" {
+		t.Errorf("empty: got %q, want b1", got)
 	}
 
-	// w1 exists on disk → w2.
+	// Legacy w1 exists on disk, but b1 is still free.
 	os.MkdirAll(filepath.Join(wtDir, "w1"), 0o755)
-	if got := nextBayDir(wtDir, &manifest.Dock{}); got != "w2" {
-		t.Errorf("w1 on disk: got %q, want w2", got)
+	if got := nextBayDir(wtDir, &manifest.Dock{}); got != "b1" {
+		t.Errorf("legacy w1 on disk: got %q, want b1", got)
 	}
 
-	// Manifest claims w2 but disk doesn't have it → w3 (avoids collision
+	// b1 exists on disk -> b2.
+	os.MkdirAll(filepath.Join(wtDir, "b1"), 0o755)
+	if got := nextBayDir(wtDir, &manifest.Dock{}); got != "b2" {
+		t.Errorf("b1 on disk: got %q, want b2", got)
+	}
+
+	// Manifest claims b2 but disk doesn't have it -> b3 (avoids collision
 	// with the path the manifest-claimed bay would recreate).
 	dock := &manifest.Dock{Bays: []manifest.Bay{
-		{Name: "feat-foo", Path: filepath.Join(wtDir, "w2")},
+		{Name: "feat-foo", Path: filepath.Join(wtDir, "b2")},
 	}}
-	if got := nextBayDir(wtDir, dock); got != "w3" {
-		t.Errorf("w1 on disk + w2 in manifest: got %q, want w3", got)
+	if got := nextBayDir(wtDir, dock); got != "b3" {
+		t.Errorf("b1 on disk + b2 in manifest: got %q, want b3", got)
 	}
 
 	// Bay name differs from path basename — verifying decoupling.

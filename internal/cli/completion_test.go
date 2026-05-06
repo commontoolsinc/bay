@@ -117,7 +117,7 @@ func TestSurfaceCommands_UseSurfaceCompletions(t *testing.T) {
 			Name: "labs",
 			Bays: []manifest.Bay{
 				{
-					Name: "w1",
+					Name: "b1",
 					Surfaces: []manifest.Surface{
 						{Name: "agent", Type: manifest.SurfaceTypeAgent},
 					},
@@ -143,10 +143,10 @@ func TestSurfaceCommands_UseSurfaceCompletions(t *testing.T) {
 		}
 		completions, _ := cmd.ValidArgsFunction(cmd, nil, "")
 		// Surface completer emits qualified forms only — verify the agent
-		// surface appears as w1:agent and labs:w1:agent.
+		// surface appears as b1:agent and labs:b1:agent.
 		hasAgent := false
 		for _, c := range completions {
-			if strings.HasPrefix(c, "w1:agent\t") || strings.HasPrefix(c, "labs:w1:agent\t") {
+			if strings.HasPrefix(c, "b1:agent\t") || strings.HasPrefix(c, "labs:b1:agent\t") {
 				hasAgent = true
 				break
 			}
@@ -166,7 +166,7 @@ func TestSurfaceCompletions(t *testing.T) {
 			Name: "labs",
 			Bays: []manifest.Bay{
 				{
-					Name: "w1",
+					Name: "b1",
 					Surfaces: []manifest.Surface{
 						{Name: "agent", Type: manifest.SurfaceTypeAgent},
 						{Name: "shell", Type: manifest.SurfaceTypeShell},
@@ -204,8 +204,8 @@ func TestSurfaceCompletions(t *testing.T) {
 	// across bays and would mislead users.
 	for _, expected := range []string{
 		"self",
-		"w1:agent", "w1:shell",
-		"labs:w1:agent", "labs:w1:shell",
+		"b1:agent", "b1:shell",
+		"labs:b1:agent", "labs:b1:shell",
 	} {
 		if !hasValue(expected) {
 			t.Errorf("surfaceCompletions missing %q, got: %v", expected, completions)
@@ -228,7 +228,7 @@ func TestSurfaceCompletions_NoSelfAfterColon(t *testing.T) {
 	// (qualified self is always literal, not a keyword).
 	dir := t.TempDir()
 	m := manifest.New()
-	m.Docks = []manifest.Dock{{Name: "labs", Bays: []manifest.Bay{{Name: "w1"}}}}
+	m.Docks = []manifest.Dock{{Name: "labs", Bays: []manifest.Bay{{Name: "b1"}}}}
 
 	origXDG := os.Getenv("XDG_DATA_HOME")
 	os.Setenv("XDG_DATA_HOME", dir)
@@ -238,7 +238,7 @@ func TestSurfaceCompletions_NoSelfAfterColon(t *testing.T) {
 	manifest.Save(filepath.Join(bayDir, "manifest.json"), m)
 
 	fn := surfaceCompletions()
-	completions, _ := fn(nil, nil, "w1:")
+	completions, _ := fn(nil, nil, "b1:")
 
 	for _, c := range completions {
 		if strings.HasPrefix(c, "self\t") || c == "self" {
@@ -259,7 +259,7 @@ func TestBayFlagCompletions(t *testing.T) {
 	dir := t.TempDir()
 	m := manifest.New()
 	m.Docks = []manifest.Dock{
-		{Name: "labs", Bays: []manifest.Bay{{Name: "w1"}, {Name: "w2"}}},
+		{Name: "labs", Bays: []manifest.Bay{{Name: "b1"}, {Name: "b2"}}},
 	}
 	origXDG := os.Getenv("XDG_DATA_HOME")
 	os.Setenv("XDG_DATA_HOME", dir)
@@ -277,7 +277,7 @@ func TestBayFlagCompletions(t *testing.T) {
 	if len(completions) == 0 {
 		t.Error("bayFlagCompletions returned no completions even with non-empty args")
 	}
-	// Should contain w1 and w2.
+	// Should contain b1 and b2.
 	hasValue := func(prefix string) bool {
 		for _, c := range completions {
 			if strings.HasPrefix(c, prefix) {
@@ -286,7 +286,7 @@ func TestBayFlagCompletions(t *testing.T) {
 		}
 		return false
 	}
-	for _, expected := range []string{"w1", "w2", "labs:w1", "labs:w2"} {
+	for _, expected := range []string{"b1", "b2", "labs:b1", "labs:b2"} {
 		if !hasValue(expected) {
 			t.Errorf("bay flag completions missing %q, got: %v", expected, completions)
 		}
@@ -374,7 +374,7 @@ func TestBayCompletions(t *testing.T) {
 					Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "feature/refactor-memory", PR: "234"},
 				},
 				{
-					Name: "w2",
+					Name: "b2",
 				},
 			},
 		},
@@ -411,7 +411,7 @@ func TestBayCompletions(t *testing.T) {
 
 	// Strict resolver: only IDs (and dock:ID) are completion values;
 	// Names appear only in descriptions.
-	for _, expected := range []string{"w1", "w2", "self", "labs:w1", "labs:w2"} {
+	for _, expected := range []string{"b1", "b2", "self", "labs:b1", "labs:b2"} {
 		if !hasValue(expected) {
 			t.Errorf("completions missing %q, got: %v", expected, completions)
 		}
@@ -488,7 +488,7 @@ func TestBayCandidates_EmitsIDAndName(t *testing.T) {
 	m.Docks = []manifest.Dock{{
 		Name: "labs",
 		Bays: []manifest.Bay{{
-			ID:       "w1",
+			ID:       "b1",
 			Name:     "auth-fix",
 			Worktree: &manifest.WorktreeAttrs{Repo: "labs", Branch: "fix/auth"},
 		}},
@@ -499,8 +499,8 @@ func TestBayCandidates_EmitsIDAndName(t *testing.T) {
 	// Under strict resolution, only IDs (and dock:IDs) are candidate
 	// values. The friendly Name is woven into descriptions.
 	want := map[string]string{
-		"w1":      "labs auth-fix fix/auth",
-		"labs:w1": "auth-fix fix/auth",
+		"b1":      "labs auth-fix fix/auth",
+		"labs:b1": "auth-fix fix/auth",
 	}
 	gotMap := map[string]string{}
 	for _, c := range got {
@@ -521,27 +521,27 @@ func TestBayCandidates_EmitsIDAndName(t *testing.T) {
 }
 
 // TestBayCandidates_DedupesWhenIDMatchesName covers the auto-named case
-// where the bay's ID and Name are identical (e.g. w1) — only one
+// where the bay's ID and Name are identical (e.g. b1) — only one
 // candidate per form should appear, not two duplicates.
 func TestBayCandidates_DedupesWhenIDMatchesName(t *testing.T) {
 	m := manifest.New()
 	m.Docks = []manifest.Dock{{
 		Name: "labs",
 		Bays: []manifest.Bay{{
-			ID:   "w1",
-			Name: "w1",
+			ID:   "b1",
+			Name: "b1",
 		}},
 	}}
 	got := bayCandidates(m)
 	count := 0
 	for _, c := range got {
 		val, _, _ := strings.Cut(c, "\t")
-		if val == "w1" {
+		if val == "b1" {
 			count++
 		}
 	}
 	if count != 1 {
-		t.Errorf("expected exactly one w1 candidate (deduped); got %d in %v", count, got)
+		t.Errorf("expected exactly one b1 candidate (deduped); got %d in %v", count, got)
 	}
 }
 
@@ -579,7 +579,7 @@ func TestBayCandidates_HandlesEmptyName(t *testing.T) {
 	m.Docks = []manifest.Dock{{
 		Name: "labs",
 		Bays: []manifest.Bay{{
-			ID:   "w7",
+			ID:   "b7",
 			Name: "",
 		}},
 	}}
@@ -587,7 +587,7 @@ func TestBayCandidates_HandlesEmptyName(t *testing.T) {
 	hasID := false
 	for _, c := range got {
 		val, _, _ := strings.Cut(c, "\t")
-		if val == "w7" {
+		if val == "b7" {
 			hasID = true
 		}
 		if val == "" {
@@ -595,13 +595,13 @@ func TestBayCandidates_HandlesEmptyName(t *testing.T) {
 		}
 	}
 	if !hasID {
-		t.Errorf("expected w7 candidate from empty-Name bay; got %v", got)
+		t.Errorf("expected b7 candidate from empty-Name bay; got %v", got)
 	}
 }
 
 func TestBayCompletions_SecondArgReturnsNone(t *testing.T) {
 	fn := bayCompletions()
-	completions, _ := fn(nil, []string{"w1"}, "")
+	completions, _ := fn(nil, []string{"b1"}, "")
 	if len(completions) != 0 {
 		t.Errorf("expected no completions for second arg, got %d", len(completions))
 	}

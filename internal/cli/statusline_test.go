@@ -8,7 +8,7 @@ import (
 )
 
 func statusLineTestBay() *manifest.Bay {
-	return &manifest.Bay{Name: "auth-fix", Path: "/tmp/bay-worktrees/w4"}
+	return &manifest.Bay{Name: "auth-fix", Path: "/tmp/bay-worktrees/b4"}
 }
 
 func TestFormatStatusLine_NoWidth(t *testing.T) {
@@ -20,12 +20,12 @@ func TestFormatStatusLine_NoWidth(t *testing.T) {
 		status string
 		want   string
 	}{
-		{"full", statusLineTestBay(), "feature/auth-fix", "42", "dirty", "w4.auth-fix feature/auth-fix #42 dirty"},
-		{"no pr", statusLineTestBay(), "feature/auth-fix", "", "dirty", "w4.auth-fix feature/auth-fix dirty"},
-		{"clean", statusLineTestBay(), "feature/auth-fix", "42", "", "w4.auth-fix feature/auth-fix #42"},
-		{"merged", statusLineTestBay(), "main", "", "merged", "w4.auth-fix main merged"},
-		{"no branch", statusLineTestBay(), "", "", "", "w4.auth-fix"},
-		{"dir tag only", &manifest.Bay{Name: "", Path: "/tmp/bay-worktrees/w4"}, "", "", "", "w4"},
+		{"full", statusLineTestBay(), "feature/auth-fix", "42", "dirty", "b4.auth-fix feature/auth-fix #42 dirty"},
+		{"no pr", statusLineTestBay(), "feature/auth-fix", "", "dirty", "b4.auth-fix feature/auth-fix dirty"},
+		{"clean", statusLineTestBay(), "feature/auth-fix", "42", "", "b4.auth-fix feature/auth-fix #42"},
+		{"merged", statusLineTestBay(), "main", "", "merged", "b4.auth-fix main merged"},
+		{"no branch", statusLineTestBay(), "", "", "", "b4.auth-fix"},
+		{"dir tag only", &manifest.Bay{Name: "", Path: "/tmp/bay-worktrees/b4"}, "", "", "", "b4"},
 		{"empty", &manifest.Bay{}, "", "", "", ""},
 		{"status only", &manifest.Bay{}, "", "", "dirty", "dirty"},
 	}
@@ -54,31 +54,31 @@ func TestFormatStatusLine_WithWidth(t *testing.T) {
 			"fits in width",
 			statusLineTestBay(), "main", "42", "dirty",
 			40,
-			"w4.auth-fix main #42 dirty",
+			"b4.auth-fix main #42 dirty",
 		},
 		{
 			"crops label before branch",
 			statusLineTestBay(), "feature/auth-fix", "42", "dirty",
 			34,
-			"w4.auth feature/auth-fix #42 dirty",
+			"b4.auth feature/auth-fix #42 dirty",
 		},
 		{
 			"truncates branch after label",
 			statusLineTestBay(), "feature/auth-fix", "42", "dirty",
 			24,
-			"w4.auth-f fe.. #42 dirty",
+			"b4.auth-f fe.. #42 dirty",
 		},
 		{
 			"abbreviates status after branch",
 			statusLineTestBay(), "feature/auth-fix", "42", "dirty",
 			16,
-			"w4.au fe.. #42 *",
+			"b4.au fe.. #42 *",
 		},
 		{
 			"very tight keeps dir tag",
 			statusLineTestBay(), "fix/x", "", "dirty",
 			2,
-			"w4",
+			"b4",
 		},
 	}
 
@@ -103,10 +103,10 @@ func TestFormatStatusLine_EmptyBranch(t *testing.T) {
 		width  int
 		want   string
 	}{
-		{"label + dirty fits", statusLineTestBay(), "dirty", 20, "w4.auth-fix dirty"},
-		{"label cropped with status", statusLineTestBay(), "dirty", 11, "w4.au dirty"},
-		{"label cropped tight", statusLineTestBay(), "dirty", 7, "w4.au *"},
-		{"dir tag only", statusLineTestBay(), "dirty", 2, "w4"},
+		{"label + dirty fits", statusLineTestBay(), "dirty", 20, "b4.auth-fix dirty"},
+		{"label cropped with status", statusLineTestBay(), "dirty", 11, "b4.au dirty"},
+		{"label cropped tight", statusLineTestBay(), "dirty", 7, "b4.au *"},
+		{"dir tag only", statusLineTestBay(), "dirty", 2, "b4"},
 		{"no status, no label", &manifest.Bay{}, "", 5, ""},
 	}
 
@@ -148,9 +148,9 @@ func TestStatusLineOutput_HomeSkipsWorktreeMetadataAndGitChecks(t *testing.T) {
 				Worktree: &manifest.WorktreeAttrs{Branch: "feature/not-home", PR: "99", Merged: true},
 			},
 			{
-				ID:       "w1",
+				ID:       "b1",
 				Name:     "done",
-				Path:     "/repo/worktrees/w1",
+				Path:     "/repo/worktrees/b1",
 				Worktree: &manifest.WorktreeAttrs{Merged: true},
 			},
 		},

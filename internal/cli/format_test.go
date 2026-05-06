@@ -14,7 +14,7 @@ func testDocks() []engine.DockInfo {
 			Name: "api",
 			Bays: []engine.BayInfo{
 				{
-					ID:           "w1",
+					ID:           "b1",
 					Name:         "auth-fix",
 					Type:         "worktree",
 					Path:         "~/projects/bay-wt/auth-fix",
@@ -122,7 +122,7 @@ func TestFormatListView_AlignsMetaColumnsAcrossRows(t *testing.T) {
 		{
 			Name: "api",
 			Bays: []engine.BayInfo{
-				{Name: "w1", SurfaceCount: 1, SyncStatus: "ok"},
+				{Name: "b1", SurfaceCount: 1, SyncStatus: "ok"},
 				{Name: "login-bug", Branch: "fix/login-bug", Dirty: true, SurfaceCount: 1, SyncStatus: "ok"},
 				{Name: "auth-refactor", Branch: "fix/auth-refactor", Dirty: true, SurfaceCount: 2, SyncStatus: "ok"},
 			},
@@ -263,7 +263,7 @@ func TestBuildListView_DockFocusStopsAtBaysByDefault(t *testing.T) {
 
 func TestBuildListView_BayFocusShowsFullTree(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
-		Focus: ListFocus{Kind: FocusBay, Dock: "api", BayID: "w1"},
+		Focus: ListFocus{Kind: FocusBay, Dock: "api", BayID: "b1"},
 	})
 	out := stripANSI(FormatListView(view, false, false))
 
@@ -283,7 +283,7 @@ func TestBuildListView_BayFocusShowsFullTree(t *testing.T) {
 
 func TestBuildListView_BayFocusRestrictsToDock(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
-		Focus: ListFocus{Kind: FocusBay, Dock: "api", BayID: "w1"},
+		Focus: ListFocus{Kind: FocusBay, Dock: "api", BayID: "b1"},
 	})
 	out := stripANSI(FormatListView(view, false, false))
 
@@ -364,44 +364,44 @@ func TestFormatBayShow_IncludesDefaultAgentAndSurfaces(t *testing.T) {
 // dir already carry it.
 func TestBayMetaCols_ShobayIDOnlyWhenDifferent(t *testing.T) {
 	// Auto-named bay with no rename: ID matches Name, suppress id.
-	same := engine.BayInfo{ID: "w1", Name: "w1", SyncStatus: "ok"}
+	same := engine.BayInfo{ID: "b1", Name: "b1", SyncStatus: "ok"}
 	if got := bayMetaCols(same, false, true); got[3].text != "" {
 		t.Errorf("expected no id col when ID==Name; got %q", got[3].text)
 	}
 
 	// Renamed worktree bay: dir basename == ID, so dir column carries the
 	// handle and id is redundant.
-	renamedWorktree := engine.BayInfo{ID: "w1", Name: "auth-fix", Path: "/wt/w1", SyncStatus: "ok"}
+	renamedWorktree := engine.BayInfo{ID: "b1", Name: "auth-fix", Path: "/wt/b1", SyncStatus: "ok"}
 	if got := bayMetaCols(renamedWorktree, false, false); got[3].text != "" {
 		t.Errorf("expected no id col when ID==dir basename; got %q", got[3].text)
 	}
 
 	// Renamed external bay: dir basename diverges from ID, so id is the
 	// only column carrying the stable handle.
-	renamedExternal := engine.BayInfo{ID: "w3", Name: "frontend", Path: "/proj/myapp", SyncStatus: "ok"}
+	renamedExternal := engine.BayInfo{ID: "b3", Name: "frontend", Path: "/proj/myapp", SyncStatus: "ok"}
 	cols := bayMetaCols(renamedExternal, false, false)
-	if !strings.Contains(cols[3].text, "w3") {
-		t.Errorf("expected id col to contain w3 for external bay; got %q", cols[3].text)
+	if !strings.Contains(cols[3].text, "b3") {
+		t.Errorf("expected id col to contain b3 for external bay; got %q", cols[3].text)
 	}
 
 	// No Path, no Name: dir is empty so id is the only identifier.
-	empty := engine.BayInfo{ID: "w1", Name: "", SyncStatus: "ok"}
+	empty := engine.BayInfo{ID: "b1", Name: "", SyncStatus: "ok"}
 	cols = bayMetaCols(empty, false, false)
-	if !strings.Contains(cols[3].text, "w1") {
-		t.Errorf("expected id col to contain w1 when Name and Path are empty; got %q", cols[3].text)
+	if !strings.Contains(cols[3].text, "b1") {
+		t.Errorf("expected id col to contain b1 when Name and Path are empty; got %q", cols[3].text)
 	}
 }
 
 // TestFormatBayShow_IncludesIDWhenDifferent confirms bay show
 // surfaces the ID row only when it adds information.
 func TestFormatBayShow_IncludesIDWhenDifferent(t *testing.T) {
-	baySame := &engine.BayInfo{ID: "w1", Name: "w1", Type: "worktree", SyncStatus: "ok"}
-	if strings.Contains(stripANSI(FormatBayShow("api", baySame, false)), "id w1") {
+	baySame := &engine.BayInfo{ID: "b1", Name: "b1", Type: "worktree", SyncStatus: "ok"}
+	if strings.Contains(stripANSI(FormatBayShow("api", baySame, false)), "id b1") {
 		t.Error("ID row should be omitted when ID matches Name")
 	}
 
-	bayDiff := &engine.BayInfo{ID: "w1", Name: "auth-fix", Type: "worktree", SyncStatus: "ok"}
-	if !strings.Contains(stripANSI(FormatBayShow("api", bayDiff, false)), "id w1") {
+	bayDiff := &engine.BayInfo{ID: "b1", Name: "auth-fix", Type: "worktree", SyncStatus: "ok"}
+	if !strings.Contains(stripANSI(FormatBayShow("api", bayDiff, false)), "id b1") {
 		t.Error("ID row should appear when ID differs from Name")
 	}
 }
@@ -414,7 +414,7 @@ func TestLabelValueFormatsHumanReadableLabels(t *testing.T) {
 
 func TestFormatListRows_DenormalizesSurfaceRows(t *testing.T) {
 	view := BuildListView(testDocks(), ListViewOptions{
-		Focus:     ListFocus{Kind: FocusBay, Dock: "api", BayID: "w1"},
+		Focus:     ListFocus{Kind: FocusBay, Dock: "api", BayID: "b1"},
 		Recursive: true,
 	})
 	rows := ListRows(view)
@@ -466,7 +466,7 @@ func TestFormatListView_HighlightsCurrentContext(t *testing.T) {
 		Focus: ListFocus{Kind: FocusDock, Dock: "api"},
 	})
 	view.CurrentDock = "api"
-	view.CurrentBayID = "w1"
+	view.CurrentBayID = "b1"
 
 	out := stripANSI(FormatListView(view, false, false))
 

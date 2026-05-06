@@ -44,12 +44,12 @@ func TestRunSurfaceRestore_SuccessEmitsNoToast(t *testing.T) {
 		t.Fatalf("BayNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{
-		DockName: "labs", BayName: "w1",
+		DockName: "labs", BayName: "b1",
 		Type: manifest.SurfaceTypeShell, Name: "logs", SplitDir: "v",
 	}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
-	if err := eng.SurfaceClose("labs", "w1", "logs", false); err != nil {
+	if err := eng.SurfaceClose("labs", "b1", "logs", false); err != nil {
 		t.Fatalf("SurfaceClose: %v", err)
 	}
 
@@ -73,13 +73,13 @@ func TestRunSurfaceRestore_DiscoversDeadSurfaceBeforeRestore(t *testing.T) {
 		t.Fatalf("BayNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{
-		DockName: "labs", BayName: "w1",
+		DockName: "labs", BayName: "b1",
 		Type: manifest.SurfaceTypeShell, Name: "logs", SplitDir: "v",
 	}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	logs := bay.FindSurface("logs")
 	if logs == nil || logs.Tmux == nil {
 		t.Fatalf("logs surface missing tmux attrs: %+v", bay.Surfaces)
@@ -92,7 +92,7 @@ func TestRunSurfaceRestore_DiscoversDeadSurfaceBeforeRestore(t *testing.T) {
 		t.Fatalf("runSurfaceRestore: %v", err)
 	}
 
-	bay, _ = eng.BayShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", "b1")
 	if bay.FindSurface("logs") == nil {
 		t.Fatal("expected runSurfaceRestore to discover and restore dead surface")
 	}
@@ -115,20 +115,20 @@ func TestRunSurfaceRestore_KeepsQueuedCloseBlockAheadOfDiscoveredDeadSurface(t *
 	}
 	for _, name := range []string{"logs", "notes", "scratch"} {
 		if err := eng.SurfaceAdd(engine.SurfaceAddOptions{
-			DockName: "labs", BayName: "w1",
+			DockName: "labs", BayName: "b1",
 			Type: manifest.SurfaceTypeShell, Name: name, SplitDir: "v",
 		}); err != nil {
 			t.Fatalf("SurfaceAdd %s: %v", name, err)
 		}
 	}
-	if err := eng.SurfaceClose("labs", "w1", "logs", false); err != nil {
+	if err := eng.SurfaceClose("labs", "b1", "logs", false); err != nil {
 		t.Fatalf("SurfaceClose logs: %v", err)
 	}
-	if err := eng.SurfaceClose("labs", "w1", "notes", false); err != nil {
+	if err := eng.SurfaceClose("labs", "b1", "notes", false); err != nil {
 		t.Fatalf("SurfaceClose notes: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	scratch := bay.FindSurface("scratch")
 	if scratch == nil || scratch.Tmux == nil {
 		t.Fatalf("scratch surface missing tmux attrs: %+v", bay.Surfaces)
@@ -141,7 +141,7 @@ func TestRunSurfaceRestore_KeepsQueuedCloseBlockAheadOfDiscoveredDeadSurface(t *
 		if err := runSurfaceRestore(eng, false); err != nil {
 			t.Fatalf("runSurfaceRestore %d: %v", i+1, err)
 		}
-		bay, _ = eng.BayShow("labs", "w1")
+		bay, _ = eng.BayShow("labs", "b1")
 		if bay.FindSurface(want) == nil {
 			t.Fatalf("restore %d restored wrong surface; expected %q in %+v", i+1, want, bay.Surfaces)
 		}

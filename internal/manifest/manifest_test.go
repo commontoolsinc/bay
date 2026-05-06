@@ -125,9 +125,9 @@ func TestParse_FullManifest(t *testing.T) {
 		t.Errorf("bay name = %q, want %q", bay.Name, "auth-fix")
 	}
 	// Path basename "bay1" is non-canonical, so pass 1 skips it and pass 2
-	// assigns the first sequential ID.
-	if bay.ID != "w1" {
-		t.Errorf("bay ID = %q, want %q", bay.ID, "w1")
+	// assigns the first current-prefix sequential ID.
+	if bay.ID != "b1" {
+		t.Errorf("bay ID = %q, want %q", bay.ID, "b1")
 	}
 	if bay.Type != BayTypeWorktree {
 		t.Errorf("bay type = %q, want %q", bay.Type, BayTypeWorktree)
@@ -1338,10 +1338,18 @@ func TestIsBayID(t *testing.T) {
 		s    string
 		want bool
 	}{
+		{"b1", true},
+		{"b42", true},
+		{"b999", true},
 		{"w1", true},
 		{"w42", true},
 		{"w999", true},
 		{"", false},
+		{"b", false},
+		{"b0", false},  // n must be >= 1
+		{"b01", false}, // leading zero rejected
+		{"B1", false},  // case-sensitive
+		{"b1a", false}, // trailing non-digit
 		{"w", false},
 		{"w0", false},  // n must be >= 1
 		{"w01", false}, // leading zero rejected
@@ -1395,9 +1403,9 @@ func TestParse_FillsMissingIDsFromPathBasename(t *testing.T) {
 }
 
 // TestParse_AssignsSequentialIDsForUnusablePaths covers external
-// bays (or any with non-w<N> path basenames): they fall through
-// to pass 2 and get the next available sequential ID, picking up after
-// the highest-claimed worktree ID.
+// bays (or any with non-generated path basenames): they fall through
+// to pass 2 and get the next available b<N> ID. Legacy w<N> claims do
+// not advance the b<N> sequence.
 func TestParse_AssignsSequentialIDsForUnusablePaths(t *testing.T) {
 	data := []byte(`{
 		"version": 3,
@@ -1418,12 +1426,40 @@ func TestParse_AssignsSequentialIDsForUnusablePaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// wt claims w3 from its path; externals get w4, w5 (continuing from max).
+	// wt claims legacy w3 from its path; externals get current b1, b2.
 	got := []string{}
 	for _, bay := range m.Docks[0].Bays {
 		got = append(got, bay.ID)
 	}
-	want := []string{"w3", "w4", "w5"}
+	want := []string{"w3", "b1", "b2"}
+	if !slices.Equal(got, want) {
+		t.Errorf("IDs = %v, want %v", got, want)
+	}
+}
+
+func TestParse_FillsMissingIDsFromCurrentPathBasename(t *testing.T) {
+	data := []byte(`{
+		"version": 6,
+		"docks": [
+			{
+				"name": "labs",
+				"path": "/repo",
+				"bays": [
+					{"name": "auth-fix", "type": "worktree", "path": "/repo-worktrees/b1", "surfaces": []},
+					{"name": "cache-ttl", "type": "worktree", "path": "/repo-worktrees/b3", "surfaces": []}
+				]
+			}
+		]
+	}`)
+	m, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := []string{}
+	for _, bay := range m.Docks[0].Bays {
+		got = append(got, bay.ID)
+	}
+	want := []string{"b1", "b3"}
 	if !slices.Equal(got, want) {
 		t.Errorf("IDs = %v, want %v", got, want)
 	}
@@ -1455,8 +1491,8 @@ func TestParse_HandlesIDCollisions(t *testing.T) {
 	if m.Docks[0].Bays[0].ID != "w1" {
 		t.Errorf("bay[0].ID = %q, want w1", m.Docks[0].Bays[0].ID)
 	}
-	if m.Docks[0].Bays[1].ID != "w2" {
-		t.Errorf("bay[1].ID = %q, want w2 (collision fallback)", m.Docks[0].Bays[1].ID)
+	if m.Docks[0].Bays[1].ID != "b1" {
+		t.Errorf("bay[1].ID = %q, want b1 (collision fallback)", m.Docks[0].Bays[1].ID)
 	}
 }
 

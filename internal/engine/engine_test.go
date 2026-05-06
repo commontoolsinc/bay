@@ -81,7 +81,7 @@ func TestValidateName(t *testing.T) {
 }
 
 // TestValidateBayName verifies the additional reservation: names
-// matching the canonical bay ID pattern (^w[1-9]\d*$) are rejected
+// matching current or legacy generated bay ID patterns are rejected
 // so user-set Names can't shadow IDs at the CLI.
 func TestValidateBayName(t *testing.T) {
 	tests := []struct {
@@ -89,6 +89,8 @@ func TestValidateBayName(t *testing.T) {
 		wantErr bool
 	}{
 		// Reserved — rejected.
+		{"b1", true},
+		{"b42", true},
 		{"w1", true},
 		{"w42", true},
 		{"w999", true},
@@ -96,6 +98,8 @@ func TestValidateBayName(t *testing.T) {
 
 		// Looks ID-shaped but isn't canonical — accepted (also accepted
 		// by ValidateName).
+		{"b0", false},     // n must be >= 1 to be a valid ID
+		{"b01", false},    // leading zeros aren't canonical IDs
 		{"w0", false},     // n must be >= 1 to be a valid ID
 		{"w01", false},    // leading zeros aren't canonical IDs
 		{"W1", false},     // case-sensitive: capital W is not a bay ID
@@ -120,7 +124,7 @@ func TestValidateBayName(t *testing.T) {
 }
 
 // TestAbbreviateBranch_AvoidsReservedPattern guards the case where a
-// branch like fix/w1 would otherwise produce a Name matching the
+// branch like fix/b1 would otherwise produce a Name matching the
 // reserved ID pattern; abbreviateBranch must prefix it so the result
 // stays a legal Name.
 func TestAbbreviateBranch_AvoidsReservedPattern(t *testing.T) {
@@ -128,6 +132,9 @@ func TestAbbreviateBranch_AvoidsReservedPattern(t *testing.T) {
 		branch string
 		want   string
 	}{
+		{"fix/b1", branchAbbrevReservedPrefix + "b1"},
+		{"feature/b42", branchAbbrevReservedPrefix + "b42"},
+		{"b3", branchAbbrevReservedPrefix + "b3"},
 		{"fix/w1", branchAbbrevReservedPrefix + "w1"},
 		{"feature/w42", branchAbbrevReservedPrefix + "w42"},
 		{"w3", branchAbbrevReservedPrefix + "w3"},
@@ -467,8 +474,8 @@ func TestBayNew_Worktree(t *testing.T) {
 	if bay.Type != manifest.BayTypeWorktree {
 		t.Errorf("type = %q, want worktree", bay.Type)
 	}
-	if bay.ID != "w1" {
-		t.Errorf("name = %q, want w1", bay.Name)
+	if bay.ID != "b1" {
+		t.Errorf("id = %q, want b1", bay.ID)
 	}
 	if len(bay.Surfaces) != 1 {
 		t.Fatalf("surfaces = %d, want 1", len(bay.Surfaces))
@@ -489,17 +496,17 @@ func TestBayNew_Worktree(t *testing.T) {
 	// Verify manifest persisted
 	m, _ := eng.LoadManifest()
 	dock := m.FindDock("labs")
-	if dock == nil || dock.FindBayByID("w1") == nil {
+	if dock == nil || dock.FindBayByID("b1") == nil {
 		t.Error("bay not in manifest")
 	}
 
-	// Second bay gets w2
+	// Second bay gets b2.
 	bay2, err := eng.BayNew(BayNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("second BayNew failed: %v", err)
 	}
-	if bay2.ID != "w2" {
-		t.Errorf("second bay name = %q, want w2", bay2.Name)
+	if bay2.ID != "b2" {
+		t.Errorf("second bay id = %q, want b2", bay2.ID)
 	}
 }
 
@@ -564,8 +571,8 @@ func TestBayNew_ShellIgnoresInvalidDefaultAgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BayNew failed: %v", err)
 	}
-	if bay.ID != "w1" {
-		t.Fatalf("name = %q, want w1", bay.Name)
+	if bay.ID != "b1" {
+		t.Fatalf("id = %q, want b1", bay.ID)
 	}
 	if len(bay.Surfaces) != 1 || bay.Surfaces[0].Type != manifest.SurfaceTypeShell {
 		t.Fatalf("surfaces = %#v, want single shell surface", bay.Surfaces)
@@ -661,26 +668,26 @@ func TestBayNew_SequentialDefaultNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first BayNew: %v", err)
 	}
-	if bay1.ID != "w1" {
-		t.Errorf("first bay name = %q, want w1", bay1.Name)
+	if bay1.ID != "b1" {
+		t.Errorf("first bay id = %q, want b1", bay1.ID)
 	}
 
 	bay2, err := eng.BayNew(BayNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("second BayNew: %v", err)
 	}
-	if bay2.ID != "w2" {
-		t.Errorf("second bay name = %q, want w2", bay2.Name)
+	if bay2.ID != "b2" {
+		t.Errorf("second bay id = %q, want b2", bay2.ID)
 	}
 
-	// Close w1, create another — should get w3, not reuse w1.
-	eng.BayClose("labs", "w1", true)
+	// Close b1, create another — the free trailing slot can be reused.
+	eng.BayClose("labs", "b1", true)
 	bay3, err := eng.BayNew(BayNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("third BayNew: %v", err)
 	}
-	if bay3.ID != "w1" {
-		t.Errorf("third bay name = %q, want w1 (reuse after close)", bay3.Name)
+	if bay3.ID != "b1" {
+		t.Errorf("third bay id = %q, want b1 (reuse after close)", bay3.ID)
 	}
 }
 
@@ -692,11 +699,11 @@ func TestSurfaceAdd_PersistsTmuxPaneID(t *testing.T) {
 		t.Fatalf("BayNew failed: %v", err)
 	}
 
-	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "codex", SplitDir: "v"}); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "codex", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd failed: %v", err)
 	}
 
-	bay, err := eng.BayShow("labs", "w1")
+	bay, err := eng.BayShow("labs", "b1")
 	if err != nil {
 		t.Fatalf("BayShow failed: %v", err)
 	}
@@ -715,12 +722,12 @@ func TestSurfaceAdd_UnknownAgentFailsWithoutPersistingSurface(t *testing.T) {
 		t.Fatalf("BayNew failed: %v", err)
 	}
 
-	err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "ghostwriter", SplitDir: "v"})
+	err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "ghostwriter", SplitDir: "v"})
 	if err == nil || !strings.Contains(err.Error(), `unknown agent "ghostwriter"`) {
 		t.Fatalf("SurfaceAdd error = %v, want unknown agent", err)
 	}
 
-	bay, err := eng.BayShow("labs", "w1")
+	bay, err := eng.BayShow("labs", "b1")
 	if err != nil {
 		t.Fatalf("BayShow failed: %v", err)
 	}
@@ -735,22 +742,22 @@ func TestSurfaceAdd_PrefersCurrentPaneAsSplitParent(t *testing.T) {
 	if _, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("BayNew failed: %v", err)
 	}
-	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"}); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd shell-2 failed: %v", err)
 	}
 
-	bay, err := eng.BayShow("labs", "w1")
+	bay, err := eng.BayShow("labs", "b1")
 	if err != nil {
 		t.Fatalf("BayShow failed: %v", err)
 	}
 	mockTmux := eng.Tmux.(*tmux.Mock)
 	mockTmux.SetCurrentPaneID(bay.Surfaces[0].Tmux.PaneID)
 
-	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-3", SplitDir: "v"}); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeShell, Name: "shell-3", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd shell-3 failed: %v", err)
 	}
 
-	bay, err = eng.BayShow("labs", "w1")
+	bay, err = eng.BayShow("labs", "b1")
 	if err != nil {
 		t.Fatalf("BayShow failed: %v", err)
 	}
@@ -769,23 +776,23 @@ func TestSurfaceAdd_FallsBackToLastFocusedSurface(t *testing.T) {
 	if _, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("BayNew failed: %v", err)
 	}
-	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"}); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd shell-2 failed: %v", err)
 	}
 
-	bay, err := eng.BayShow("labs", "w1")
+	bay, err := eng.BayShow("labs", "b1")
 	if err != nil {
 		t.Fatalf("BayShow failed: %v", err)
 	}
-	if err := eng.SetLastFocused("labs", "w1", bay.Surfaces[1].ID); err != nil {
+	if err := eng.SetLastFocused("labs", "b1", bay.Surfaces[1].ID); err != nil {
 		t.Fatalf("SetLastFocused failed: %v", err)
 	}
 
-	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-3", SplitDir: "v"}); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeShell, Name: "shell-3", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd shell-3 failed: %v", err)
 	}
 
-	bay, err = eng.BayShow("labs", "w1")
+	bay, err = eng.BayShow("labs", "b1")
 	if err != nil {
 		t.Fatalf("BayShow failed: %v", err)
 	}
@@ -859,7 +866,7 @@ func TestBayClose_Worktree(t *testing.T) {
 	}
 
 	// Close it
-	err = eng.BayClose("labs", "w1", false)
+	err = eng.BayClose("labs", "b1", false)
 	if err != nil {
 		t.Fatalf("BayClose failed: %v", err)
 	}
@@ -867,7 +874,7 @@ func TestBayClose_Worktree(t *testing.T) {
 	// Verify removed from manifest
 	m, _ := eng.LoadManifest()
 	dock := m.FindDock("labs")
-	if dock != nil && dock.FindBayByID("w1") != nil {
+	if dock != nil && dock.FindBayByID("b1") != nil {
 		t.Error("bay should be removed from manifest")
 	}
 
@@ -883,7 +890,7 @@ func TestBayClose_Worktree(t *testing.T) {
 		t.Fatalf("loading archive: %v", err)
 	}
 	archiveDock := archive.FindDock("labs")
-	if archiveDock == nil || archiveDock.FindBayByID("w1") == nil {
+	if archiveDock == nil || archiveDock.FindBayByID("b1") == nil {
 		t.Error("bay should be in archive")
 	}
 }
@@ -1025,7 +1032,7 @@ func TestBayClose_NoBranchNoDelete(t *testing.T) {
 		t.Fatalf("BayNew: %v", err)
 	}
 
-	if err := eng.BayClose("labs", "w1", false); err != nil {
+	if err := eng.BayClose("labs", "b1", false); err != nil {
 		t.Fatalf("BayClose: %v", err)
 	}
 
@@ -1051,13 +1058,13 @@ func TestBayClose_Dirty(t *testing.T) {
 	mockGit.SetGlobalDirty(true)
 
 	// Should refuse
-	err = eng.BayClose("labs", "w1", false)
+	err = eng.BayClose("labs", "b1", false)
 	if err == nil {
 		t.Error("expected error for dirty bay")
 	}
 
 	// Force should work
-	err = eng.BayClose("labs", "w1", true)
+	err = eng.BayClose("labs", "b1", true)
 	if err != nil {
 		t.Errorf("force close failed: %v", err)
 	}
@@ -1076,7 +1083,7 @@ func TestBayClose_AllowsDirtyTreeMatchingRecoverableRef(t *testing.T) {
 	mockGit.SetDirty(bay.Path, true)
 	mockGit.SetWorktreeMatchesRecoverableRef(bay.Path, "refs/bay/review-heads/github/123")
 
-	if err := eng.BayClose("labs", "w1", false); err != nil {
+	if err := eng.BayClose("labs", "b1", false); err != nil {
 		t.Fatalf("BayClose should allow dirty tree matching recoverable ref: %v", err)
 	}
 	if removed := mockGit.RemovedWorktrees(); len(removed) != 1 {
@@ -1098,7 +1105,7 @@ func TestBayClose_RefusesDirtyTreeWithoutRecoverableRef(t *testing.T) {
 	mockGit := eng.Git.(*git.Mock)
 	mockGit.SetDirty(bay.Path, true)
 
-	err = eng.BayClose("labs", "w1", false)
+	err = eng.BayClose("labs", "b1", false)
 	if err == nil {
 		t.Fatal("expected dirty tree without recoverable ref to be refused")
 	}
@@ -1120,7 +1127,7 @@ func TestBayCleanReview_DiscardsDirtyTreeMatchingRecoverableRef(t *testing.T) {
 	mockGit.SetDirty(bay.Path, true)
 	mockGit.SetWorktreeMatchesRecoverableRef(bay.Path, "refs/bay/review-heads/github/123")
 
-	ref, err := eng.BayCleanReview("labs", "w1")
+	ref, err := eng.BayCleanReview("labs", "b1")
 	if err != nil {
 		t.Fatalf("BayCleanReview: %v", err)
 	}
@@ -1144,7 +1151,7 @@ func TestBayCleanReview_RefusesDirtyTreeWithoutRecoverableRef(t *testing.T) {
 	mockGit := eng.Git.(*git.Mock)
 	mockGit.SetDirty(bay.Path, true)
 
-	_, err = eng.BayCleanReview("labs", "w1")
+	_, err = eng.BayCleanReview("labs", "b1")
 	if err == nil {
 		t.Fatal("expected BayCleanReview to refuse unverified dirty changes")
 	}
@@ -1161,13 +1168,13 @@ func TestBayRename(t *testing.T) {
 		t.Fatalf("BayNew failed: %v", err)
 	}
 
-	err = eng.BayRename("labs", "w1", "my-bay")
+	err = eng.BayRename("labs", "b1", "my-bay")
 	if err != nil {
 		t.Fatalf("BayRename failed: %v", err)
 	}
 
 	// BayShow looks up by ID; the bay's ID is unchanged by rename.
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	if bay.Name != "my-bay" {
 		t.Errorf("name = %q, want my-bay", bay.Name)
 	}
@@ -1180,60 +1187,60 @@ func TestBayDescribe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BayNew failed: %v", err)
 	}
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	if bay.Description != "initial description" {
 		t.Errorf("initial description = %q, want %q", bay.Description, "initial description")
 	}
 
-	if err := eng.BayDescribe("labs", "w1", "  login flow fixes  "); err != nil {
+	if err := eng.BayDescribe("labs", "b1", "  login flow fixes  "); err != nil {
 		t.Fatalf("BayDescribe failed: %v", err)
 	}
-	bay, _ = eng.BayShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", "b1")
 	if bay.Description != "login flow fixes" {
 		t.Errorf("description = %q, want trimmed %q", bay.Description, "login flow fixes")
 	}
 
-	if err := eng.BayDescribe("labs", "w1", ""); err != nil {
+	if err := eng.BayDescribe("labs", "b1", ""); err != nil {
 		t.Fatalf("BayDescribe clear failed: %v", err)
 	}
-	bay, _ = eng.BayShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", "b1")
 	if bay.Description != "" {
 		t.Errorf("cleared description = %q, want empty", bay.Description)
 	}
 
 	// Accept a multi-line description (label + body).
 	multi := "label line\n\nbody line one\nbody line two"
-	if err := eng.BayDescribe("labs", "w1", multi); err != nil {
+	if err := eng.BayDescribe("labs", "b1", multi); err != nil {
 		t.Fatalf("BayDescribe multi-line failed: %v", err)
 	}
-	bay, _ = eng.BayShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", "b1")
 	if bay.Description != multi {
 		t.Errorf("multi-line description = %q, want %q", bay.Description, multi)
 	}
 
 	// Reject tabs and carriage returns.
-	if err := eng.BayDescribe("labs", "w1", "has\ttab"); err == nil {
+	if err := eng.BayDescribe("labs", "b1", "has\ttab"); err == nil {
 		t.Errorf("expected error for tab in description")
 	}
-	if err := eng.BayDescribe("labs", "w1", "has\rcr"); err == nil {
+	if err := eng.BayDescribe("labs", "b1", "has\rcr"); err == nil {
 		t.Errorf("expected error for carriage return in description")
 	}
 
 	// Reject first line over the first-line cap.
 	longFirst := strings.Repeat("x", MaxDescriptionFirstLineLen+1)
-	if err := eng.BayDescribe("labs", "w1", longFirst); err == nil {
+	if err := eng.BayDescribe("labs", "b1", longFirst); err == nil {
 		t.Errorf("expected error for over-length first line")
 	}
 
 	// First line at cap is fine even if body pushes total size higher.
 	okFirst := strings.Repeat("x", MaxDescriptionFirstLineLen)
-	if err := eng.BayDescribe("labs", "w1", okFirst+"\nbody"); err != nil {
+	if err := eng.BayDescribe("labs", "b1", okFirst+"\nbody"); err != nil {
 		t.Errorf("first line at cap should be accepted: %v", err)
 	}
 
 	// Reject over-length total.
 	tooLong := strings.Repeat("x", MaxDescriptionLen+1)
-	if err := eng.BayDescribe("labs", "w1", tooLong); err == nil {
+	if err := eng.BayDescribe("labs", "b1", tooLong); err == nil {
 		t.Errorf("expected error for over-length description")
 	}
 }
@@ -1262,12 +1269,12 @@ func TestSurfaceAdd_NewLayoutGroup(t *testing.T) {
 	}
 
 	// Add a new surface with empty splitDir = new tmux window / layout group
-	err = eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell"})
+	err = eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeShell, Name: "shell"})
 	if err != nil {
 		t.Fatalf("SurfaceAdd failed: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	if len(bay.Surfaces) != 2 {
 		t.Fatalf("expected 2 surfaces, got %d", len(bay.Surfaces))
 	}
@@ -1289,15 +1296,15 @@ func TestSurfaceClose(t *testing.T) {
 	}
 
 	// Open second surface in new layout group
-	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell"})
+	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeShell, Name: "shell"})
 
 	// Close the second surface
-	err = eng.SurfaceClose("labs", "w1", "shell", false)
+	err = eng.SurfaceClose("labs", "b1", "shell", false)
 	if err != nil {
 		t.Fatalf("SurfaceClose failed: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	if len(bay.Surfaces) != 1 {
 		t.Errorf("expected 1 surface after close, got %d", len(bay.Surfaces))
 	}
@@ -1315,22 +1322,22 @@ func TestSurfaceClose_LastSurfaceClosesBay(t *testing.T) {
 		t.Fatalf("BayNew: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	if len(bay.Surfaces) != 1 {
 		t.Fatalf("expected 1 surface, got %d", len(bay.Surfaces))
 	}
 	surfaceName := bay.Surfaces[0].Name
 
-	if err := eng.SurfaceClose("labs", "w1", surfaceName, false); err != nil {
+	if err := eng.SurfaceClose("labs", "b1", surfaceName, false); err != nil {
 		t.Fatalf("SurfaceClose: %v", err)
 	}
 
 	// Grace is 0 → next sync finalizes the pending close.
 	eng.SyncAll()
 
-	_, err = eng.BayShow("labs", "w1")
+	_, err = eng.BayShow("labs", "b1")
 	if err == nil {
-		t.Error("bay w1 still exists after closing its last surface + sync")
+		t.Error("bay b1 still exists after closing its last surface + sync")
 	}
 }
 
@@ -1354,7 +1361,7 @@ func TestSurfaceClose_PersistsManifestBeforeKill(t *testing.T) {
 	if _, err := eng.BayNew(BayNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("BayNew: %v", err)
 	}
-	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"}); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 
@@ -1365,7 +1372,7 @@ func TestSurfaceClose_PersistsManifestBeforeKill(t *testing.T) {
 			t.Errorf("loading manifest in kill hook: %v", err)
 			return
 		}
-		bay := m.FindDock("labs").FindBayByID("w1")
+		bay := m.FindDock("labs").FindBayByID("b1")
 		if bay == nil {
 			t.Errorf("bay gone from manifest at kill time (unexpected)")
 			return
@@ -1375,7 +1382,7 @@ func TestSurfaceClose_PersistsManifestBeforeKill(t *testing.T) {
 		}
 	}
 
-	if err := eng.SurfaceClose("labs", "w1", "shell-2", false); err != nil {
+	if err := eng.SurfaceClose("labs", "b1", "shell-2", false); err != nil {
 		t.Fatalf("SurfaceClose: %v", err)
 	}
 }
@@ -1394,12 +1401,12 @@ func TestBayClose_PersistsManifestBeforeKill(t *testing.T) {
 			return
 		}
 		dock := m.FindDock("labs")
-		if dock != nil && dock.FindBayByID("w1") != nil {
-			t.Errorf("manifest still references bay 'w1' at the moment of %s(%s) — kill happened before manifest update", method, target)
+		if dock != nil && dock.FindBayByID("b1") != nil {
+			t.Errorf("manifest still references bay 'b1' at the moment of %s(%s) — kill happened before manifest update", method, target)
 		}
 	}
 
-	if err := eng.BayClose("labs", "w1", true); err != nil {
+	if err := eng.BayClose("labs", "b1", true); err != nil {
 		t.Fatalf("BayClose: %v", err)
 	}
 }
@@ -1439,67 +1446,67 @@ func TestDockClose_PersistsManifestBeforeKill(t *testing.T) {
 func TestDockClose_NonForceFailure_KillsAlreadyRemovedBayWindows(t *testing.T) {
 	eng, _ := testEngine(t)
 	if _, err := eng.BayNew(BayNewOptions{Dock: "labs"}); err != nil {
-		t.Fatalf("BayNew w1: %v", err)
+		t.Fatalf("BayNew b1: %v", err)
 	}
 	if _, err := eng.BayNew(BayNewOptions{Dock: "labs"}); err != nil {
-		t.Fatalf("BayNew w2: %v", err)
+		t.Fatalf("BayNew b2: %v", err)
 	}
 
-	// Capture w1's tmux window ID before close (so we can verify it
-	// gets killed even though the loop bails out on w2).
+	// Capture b1's tmux window ID before close (so we can verify it
+	// gets killed even though the loop bails out on b2).
 	pre, _ := eng.LoadManifest()
-	w1 := pre.FindDock("labs").FindBayByID("w1")
-	if w1 == nil || len(w1.Surfaces) == 0 || w1.Surfaces[0].Tmux == nil {
-		t.Fatalf("w1 missing tmux surface")
+	b1 := pre.FindDock("labs").FindBayByID("b1")
+	if b1 == nil || len(b1.Surfaces) == 0 || b1.Surfaces[0].Tmux == nil {
+		t.Fatalf("b1 missing tmux surface")
 	}
-	w1WindowID := w1.Surfaces[0].Tmux.WindowID
+	b1WindowID := b1.Surfaces[0].Tmux.WindowID
 
-	// Make w2 fail the safety check: the worktree dir must exist on
+	// Make b2 fail the safety check: the worktree dir must exist on
 	// disk (closeBayState skips dirty checks if !exists), and
 	// the git mock must report it dirty.
-	w2 := pre.FindDock("labs").FindBayByID("w2")
-	if w2 == nil {
-		t.Fatalf("w2 missing")
+	b2 := pre.FindDock("labs").FindBayByID("b2")
+	if b2 == nil {
+		t.Fatalf("b2 missing")
 	}
-	if err := os.MkdirAll(w2.Path, 0o755); err != nil {
-		t.Fatalf("mkdir w2.Path: %v", err)
+	if err := os.MkdirAll(b2.Path, 0o755); err != nil {
+		t.Fatalf("mkdir b2.Path: %v", err)
 	}
 	mockGit := eng.Git.(*git.Mock)
-	mockGit.SetDirty(w2.Path, true)
+	mockGit.SetDirty(b2.Path, true)
 
 	if err := eng.DockClose("labs", false); err == nil {
-		t.Fatalf("DockClose succeeded; expected dirty-w2 failure")
+		t.Fatalf("DockClose succeeded; expected dirty-b2 failure")
 	}
 
-	// w1 must be gone from the manifest (already-removed in the loop).
+	// b1 must be gone from the manifest (already-removed in the loop).
 	post, _ := eng.LoadManifest()
 	dock := post.FindDock("labs")
 	if dock == nil {
 		t.Fatalf("dock 'labs' unexpectedly removed on non-force failure")
 	}
-	if dock.FindBayByID("w1") != nil {
-		t.Errorf("w1 still in manifest; expected it to be removed before w2 failed")
+	if dock.FindBayByID("b1") != nil {
+		t.Errorf("b1 still in manifest; expected it to be removed before b2 failed")
 	}
-	if dock.FindBayByID("w2") == nil {
-		t.Errorf("w2 missing from manifest; expected it to remain after its failed close")
+	if dock.FindBayByID("b2") == nil {
+		t.Errorf("b2 missing from manifest; expected it to remain after its failed close")
 	}
 
-	// w1's window must have been killed — otherwise it's an orphan
+	// b1's window must have been killed — otherwise it's an orphan
 	// tmux window with no manifest entry.
 	mockTmux := eng.Tmux.(*tmux.Mock)
 	killed := false
 	for _, c := range mockTmux.Calls {
-		if c.Method == "KillWindow" && len(c.Args) == 1 && c.Args[0] == w1WindowID {
+		if c.Method == "KillWindow" && len(c.Args) == 1 && c.Args[0] == b1WindowID {
 			killed = true
 			break
 		}
 	}
 	if !killed {
-		t.Errorf("w1's window %s was not killed; expected sync after partial DockClose failure", w1WindowID)
+		t.Errorf("b1's window %s was not killed; expected sync after partial DockClose failure", b1WindowID)
 	}
 
 	// And we must NOT have killed the dock session — that would
-	// destroy w2's pane (which still has dirty work).
+	// destroy b2's pane (which still has dirty work).
 	for _, c := range mockTmux.Calls {
 		if c.Method == "KillSession" {
 			t.Errorf("KillSession called on non-force partial failure: %v", c)
@@ -1532,11 +1539,11 @@ func TestBayCloseClean_PersistsAllManifestsBeforeAnyKill(t *testing.T) {
 		if dock == nil {
 			return
 		}
-		if dock.FindBayByID("w1") != nil {
-			t.Errorf("manifest still references w1 at the moment of %s(%s)", method, target)
+		if dock.FindBayByID("b1") != nil {
+			t.Errorf("manifest still references b1 at the moment of %s(%s)", method, target)
 		}
-		if dock.FindBayByID("w2") != nil {
-			t.Errorf("manifest still references w2 at the moment of %s(%s)", method, target)
+		if dock.FindBayByID("b2") != nil {
+			t.Errorf("manifest still references b2 at the moment of %s(%s)", method, target)
 		}
 	}
 
@@ -1557,12 +1564,12 @@ func TestSurfaceAdd_Split(t *testing.T) {
 		t.Fatalf("BayNew failed: %v", err)
 	}
 
-	err = eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell", SplitDir: "h"})
+	err = eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeShell, Name: "shell", SplitDir: "h"})
 	if err != nil {
 		t.Fatalf("SurfaceAdd failed: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	if len(bay.Surfaces) != 2 {
 		t.Fatalf("expected 2 surfaces, got %d", len(bay.Surfaces))
 	}
@@ -1672,7 +1679,7 @@ func TestSyncBayGitState_RenamesTmuxWindow(t *testing.T) {
 	// Simulate a branch change on disk (the worktree's actual current branch).
 	mockGit := eng.Git.(*git.Mock)
 	m, _ := eng.LoadManifest()
-	bayPath := m.FindDock("labs").FindBayByID("w1").Path
+	bayPath := m.FindDock("labs").FindBayByID("b1").Path
 	os.MkdirAll(bayPath, 0o755)
 	mockGit.SetBranch(bayPath, "feature/new-thing")
 
@@ -1698,12 +1705,12 @@ func TestBayRename_TmuxWindowRenamed(t *testing.T) {
 
 	eng.BayNew(BayNewOptions{Dock: "labs"})
 
-	eng.BayRename("labs", "w1", "renamed")
+	eng.BayRename("labs", "b1", "renamed")
 
 	mockTmux := eng.Tmux.(*tmux.Mock)
 	found := false
 	for _, call := range mockTmux.Calls {
-		if call.Method == "RenameWindow" && len(call.Args) >= 2 && call.Args[1] == "w1.renamed" {
+		if call.Method == "RenameWindow" && len(call.Args) >= 2 && call.Args[1] == "b1.renamed" {
 			found = true
 			break
 		}
@@ -1739,7 +1746,7 @@ func TestBayClose_DeletedWorktree(t *testing.T) {
 	// Don't create the directory — simulates externally deleted worktree
 
 	// Should succeed without force since path doesn't exist
-	err := eng.BayClose("labs", "w1", false)
+	err := eng.BayClose("labs", "b1", false)
 	if err != nil {
 		t.Errorf("close of deleted worktree should succeed: %v", err)
 	}
@@ -1778,7 +1785,7 @@ func TestBayClose_UnpushedCheckError_Refuses(t *testing.T) {
 	mockGit := eng.Git.(*git.Mock)
 	mockGit.SetUnpushed(bay.Path, true)
 
-	err = eng.BayClose("labs", "w1", false)
+	err = eng.BayClose("labs", "b1", false)
 	if err == nil {
 		t.Error("expected error for unpushed commits")
 	}
@@ -1845,7 +1852,7 @@ func TestRecoverUsesPerSurfaceAgent(t *testing.T) {
 	// Verify the surface recorded "codex"
 	m, _ := eng.LoadManifest()
 	dock := m.FindDock("labs")
-	storedBay := dock.FindBayByID("w1")
+	storedBay := dock.FindBayByID("b1")
 	if storedBay.Surfaces[0].Agent == nil || *storedBay.Surfaces[0].Agent != "codex" {
 		t.Fatalf("surface agent = %v, want codex", storedBay.Surfaces[0].Agent)
 	}
@@ -1881,9 +1888,9 @@ func TestCmdSurfacePersistsCommand(t *testing.T) {
 	eng.BayNew(BayNewOptions{Dock: "labs"})
 
 	// Add a cmd surface in a new layout group
-	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeCmd, Name: "tail", Command: "tail -f /var/log/syslog"})
+	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeCmd, Name: "tail", Command: "tail -f /var/log/syslog"})
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	if len(bay.Surfaces) < 2 {
 		t.Fatal("expected 2 surfaces")
 	}
@@ -1900,9 +1907,9 @@ func TestSurfaceAddPersistsCommand(t *testing.T) {
 	eng, _ := testEngine(t)
 	eng.BayNew(BayNewOptions{Dock: "labs"})
 
-	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeCmd, Name: "watch", Command: "watch df -h", SplitDir: "h"})
+	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeCmd, Name: "watch", Command: "watch df -h", SplitDir: "h"})
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	s := bay.Surfaces[1]
 	if s.Command == nil || *s.Command != "watch df -h" {
 		t.Errorf("surface command = %v, want 'watch df -h'", s.Command)
@@ -1914,9 +1921,9 @@ func TestRecoverCmdSurface(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	eng.BayNew(BayNewOptions{Dock: "labs"})
-	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeCmd, Name: "htop", Command: "htop"})
+	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeCmd, Name: "htop", Command: "htop"})
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	os.MkdirAll(bay.Path, 0o755)
 
 	mockTmux := eng.Tmux.(*tmux.Mock)
@@ -1962,9 +1969,9 @@ func TestRecoverReconcilesSurfacesInExistingWindow(t *testing.T) {
 	eng, _ := testEngine(t)
 
 	eng.BayNew(BayNewOptions{Dock: "labs"})
-	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell", SplitDir: "h"})
+	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeShell, Name: "shell", SplitDir: "h"})
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	os.MkdirAll(bay.Path, 0o755)
 
 	// Manifest says 2 surfaces. Kill one pane in tmux so only 1 remains.
@@ -1998,24 +2005,24 @@ func TestRecover_UsesRecordedSplitParentAsSplitTarget(t *testing.T) {
 	if _, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("BayNew failed: %v", err)
 	}
-	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"}); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd shell-2 failed: %v", err)
 	}
 
-	bay, err := eng.BayShow("labs", "w1")
+	bay, err := eng.BayShow("labs", "b1")
 	if err != nil {
 		t.Fatalf("BayShow failed: %v", err)
 	}
 	mockTmux := eng.Tmux.(*tmux.Mock)
 	mockTmux.SetCurrentPaneID(bay.Surfaces[1].Tmux.PaneID)
-	if err := eng.SetLastFocused("labs", "w1", bay.Surfaces[1].ID); err != nil {
+	if err := eng.SetLastFocused("labs", "b1", bay.Surfaces[1].ID); err != nil {
 		t.Fatalf("SetLastFocused failed: %v", err)
 	}
-	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-3", SplitDir: "h"}); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeShell, Name: "shell-3", SplitDir: "h"}); err != nil {
 		t.Fatalf("SurfaceAdd shell-3 failed: %v", err)
 	}
 
-	bay, err = eng.BayShow("labs", "w1")
+	bay, err = eng.BayShow("labs", "b1")
 	if err != nil {
 		t.Fatalf("BayShow failed: %v", err)
 	}
@@ -2029,7 +2036,7 @@ func TestRecover_UsesRecordedSplitParentAsSplitTarget(t *testing.T) {
 		t.Fatalf("Recover failed: %v", err)
 	}
 
-	bay, err = eng.BayShow("labs", "w1")
+	bay, err = eng.BayShow("labs", "b1")
 	if err != nil {
 		t.Fatalf("BayShow after recover failed: %v", err)
 	}
@@ -2304,8 +2311,8 @@ func TestDockSync_CopiesToAllWorktrees(t *testing.T) {
 
 	// Two worktree-shaped dirs under the worktree parent — DockSync scans
 	// the parent and syncs every subdir reporting as a git repo.
-	os.MkdirAll(filepath.Join(wtDir, "w1"), 0o755)
-	os.MkdirAll(filepath.Join(wtDir, "w2"), 0o755)
+	os.MkdirAll(filepath.Join(wtDir, "b1"), 0o755)
+	os.MkdirAll(filepath.Join(wtDir, "b2"), 0o755)
 
 	// Source file + matching pattern.
 	os.WriteFile(filepath.Join(repoPath, ".worktreeinclude"), []byte("*.env\n"), 0o644)
@@ -2322,7 +2329,7 @@ func TestDockSync_CopiesToAllWorktrees(t *testing.T) {
 		t.Errorf("count = %d, want 2", count)
 	}
 
-	for _, bay := range []string{"w1", "w2"} {
+	for _, bay := range []string{"b1", "b2"} {
 		data, err := os.ReadFile(filepath.Join(wtDir, bay, "local.env"))
 		if err != nil {
 			t.Errorf("%s/local.env not copied: %v", bay, err)
@@ -2348,11 +2355,11 @@ func TestBayClose_CleansEmptyWorktreeDir(t *testing.T) {
 	m, _ := eng.LoadManifest()
 	dock := m.FindDock("labs")
 	wtDir := dock.EffectiveWorktreeDir()
-	bayDir := filepath.Join(wtDir, "w1")
+	bayDir := filepath.Join(wtDir, "b1")
 	os.MkdirAll(bayDir, 0o755)
 
 	eng.BayNew(BayNewOptions{Dock: "labs"})
-	eng.BayClose("labs", "w1", true)
+	eng.BayClose("labs", "b1", true)
 
 	// The worktree parent dir should be removed if empty
 	if _, err := os.Stat(wtDir); err == nil {
@@ -2451,17 +2458,17 @@ func TestBayClose_KeepsNonEmptyWorktreeDir(t *testing.T) {
 	eng.BayNew(BayNewOptions{Dock: "labs"})
 	eng.BayNew(BayNewOptions{Dock: "labs"})
 
-	// Create the worktree parent dir with a subdirectory to simulate w2 still there
+	// Create the worktree parent dir with a subdirectory to simulate b2 still there.
 	m, _ := eng.LoadManifest()
 	dock := m.FindDock("labs")
 	wtDir := dock.EffectiveWorktreeDir()
-	os.MkdirAll(filepath.Join(wtDir, "w2"), 0o755)
+	os.MkdirAll(filepath.Join(wtDir, "b2"), 0o755)
 
-	// Close w1 — parent dir should remain because w2 dir exists
-	eng.BayClose("labs", "w1", true)
+	// Close b1; parent dir should remain because b2 dir exists.
+	eng.BayClose("labs", "b1", true)
 
 	if _, err := os.Stat(wtDir); err != nil {
-		t.Error("worktree parent dir should still exist (w2 is there)")
+		t.Error("worktree parent dir should still exist (b2 is there)")
 	}
 }
 
@@ -2495,7 +2502,7 @@ func TestHome_CreatedOnLastBayClose(t *testing.T) {
 
 	eng.BayNew(BayNewOptions{Dock: "labs"})
 
-	err := eng.BayClose("labs", "w1", true)
+	err := eng.BayClose("labs", "b1", true)
 	if err != nil {
 		t.Fatalf("BayClose failed: %v", err)
 	}
@@ -2596,17 +2603,20 @@ func TestPlaceholder_CleanedOnRecovery(t *testing.T) {
 func TestSetLastFocused(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	eng.BayNew(BayNewOptions{Dock: "labs", Shell: true})
-	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"})
-	bay, _ := eng.BayShow("labs", "w1")
+	created, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true})
+	if err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: created.ID, Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"})
+	bay, _ := eng.BayShow("labs", created.ID)
 
 	// Set last focused to second surface.
-	err := eng.SetLastFocused("labs", "w1", bay.Surfaces[1].ID)
+	err = eng.SetLastFocused("labs", created.ID, bay.Surfaces[1].ID)
 	if err != nil {
 		t.Fatalf("SetLastFocused: %v", err)
 	}
 
-	bay, _ = eng.BayShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", created.ID)
 	if bay.LastFocused != bay.Surfaces[1].ID {
 		t.Errorf("LastFocused = %d, want %d", bay.LastFocused, bay.Surfaces[1].ID)
 	}
@@ -2615,7 +2625,8 @@ func TestSetLastFocused(t *testing.T) {
 func TestSyncBayGitState_UpdatesBranch(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	// No explicit Name → bay auto-names to w1, NameOverridden=false,
+	// No explicit Name -> Name starts empty, so SyncAll's branch-based
+	// rename can fire.
 	// so SyncAll's branch-based rename can fire.
 	bay, err := eng.BayNew(BayNewOptions{Dock: "labs"})
 	if err != nil {
@@ -2643,7 +2654,8 @@ func TestSyncBayGitState_UpdatesBranch(t *testing.T) {
 func TestSyncBayGitState_BranchChangeUpdatesNameAndStatus(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	// No explicit Name → bay auto-names to w1, NameOverridden=false,
+	// No explicit Name -> Name starts empty, so SyncAll's branch-based
+	// rename can fire.
 	// so SyncAll's branch-based rename can fire.
 	bay, err := eng.BayNew(BayNewOptions{Dock: "labs"})
 	if err != nil {
@@ -2668,19 +2680,19 @@ func TestBayUpdate_BranchCollisionGetsUniqueName(t *testing.T) {
 	if _, err := eng.BayNew(BayNewOptions{Dock: "labs", Name: "existing", Shell: true}); err != nil {
 		t.Fatalf("seed bay: %v", err)
 	}
-	// No explicit Name on the target → bay auto-names to dir basename
-	// (w2, since the seed claimed w1 on disk). NameOverridden=false, so
+	// No explicit Name on the target -> Name starts empty, so
 	// the branch update can rename it.
-	if _, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true}); err != nil {
+	target, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true})
+	if err != nil {
 		t.Fatalf("target bay: %v", err)
 	}
 
 	branch := "feature/existing"
-	if err := eng.BayUpdate("labs", "w2", &branch, nil); err != nil {
+	if err := eng.BayUpdate("labs", target.ID, &branch, nil); err != nil {
 		t.Fatalf("BayUpdate: %v", err)
 	}
 
-	bay, err := eng.BayShow("labs", "w2")
+	bay, err := eng.BayShow("labs", target.ID)
 	if err != nil {
 		t.Fatalf("BayShow: %v", err)
 	}
@@ -2695,8 +2707,8 @@ func TestSyncBayGitState_BranchCollisionGetsUniqueName(t *testing.T) {
 	if _, err := eng.BayNew(BayNewOptions{Dock: "labs", Name: "existing", Shell: true}); err != nil {
 		t.Fatalf("seed bay: %v", err)
 	}
-	// No explicit Name on the target → bay auto-names to w1,
-	// NameOverridden=false, so SyncAll's branch-rename can fire.
+	// No explicit Name on the target -> Name starts empty, so SyncAll's
+	// branch-rename can fire.
 	bay, err := eng.BayNew(BayNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("BayNew failed: %v", err)
@@ -2731,7 +2743,7 @@ func TestSyncBayGitState_DetachKeepsName(t *testing.T) {
 	}
 	os.MkdirAll(bay.Path, 0o755)
 
-	// First sync: branch picked up; placeholder name "w1" gets replaced.
+	// First sync: branch picked up; placeholder name gets replaced.
 	mockGit := eng.Git.(*git.Mock)
 	mockGit.SetBranch(bay.Path, "feature/existing")
 	eng.SyncAll()
@@ -2765,7 +2777,7 @@ func TestSyncBayGitState_NameOverriddenNotChanged(t *testing.T) {
 	os.MkdirAll(bay.Path, 0o755)
 
 	// Manually rename to set NameOverridden
-	eng.BayRename("labs", "w1", "custom-name")
+	eng.BayRename("labs", "b1", "custom-name")
 
 	// Now set a git branch
 	mockGit := eng.Git.(*git.Mock)
@@ -2791,10 +2803,10 @@ func TestCurrentContext(t *testing.T) {
 		t.Fatalf("BayNew failed: %v", err)
 	}
 	os.MkdirAll(bay.Path, 0o755)
-	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "codex", SplitDir: "v"}); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "codex", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd failed: %v", err)
 	}
-	bay, err = eng.BayShow("labs", "w1")
+	bay, err = eng.BayShow("labs", "b1")
 	if err != nil {
 		t.Fatalf("BayShow failed: %v", err)
 	}
@@ -2815,7 +2827,7 @@ func TestCurrentContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CurrentContext failed: %v", err)
 	}
-	if ctx.Dock != "labs" || ctx.BayID != "w1" {
+	if ctx.Dock != "labs" || ctx.BayID != bay.ID {
 		t.Fatalf("unexpected context: %#v", ctx)
 	}
 	if ctx.Surface != "agent" {
@@ -2847,7 +2859,7 @@ func TestCurrentContext_OutsideTmuxStillResolvesDockAndBay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CurrentContext failed: %v", err)
 	}
-	if ctx.Dock != "labs" || ctx.BayID != "w1" {
+	if ctx.Dock != "labs" || ctx.BayID != bay.ID {
 		t.Fatalf("unexpected context: %#v", ctx)
 	}
 	if ctx.Surface != "" || ctx.SurfaceID != 0 {
@@ -2868,8 +2880,8 @@ func TestSyncAll_RemovesStaleSurfaces(t *testing.T) {
 	}
 
 	// Add a second surface in a new layout group
-	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell"})
-	bay, _ := eng.BayShow("labs", "w1")
+	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeShell, Name: "shell"})
+	bay, _ := eng.BayShow("labs", "b1")
 	if len(bay.Surfaces) != 2 {
 		t.Fatalf("expected 2 surfaces, got %d", len(bay.Surfaces))
 	}
@@ -2881,7 +2893,7 @@ func TestSyncAll_RemovesStaleSurfaces(t *testing.T) {
 	// SyncAll should remove the stale surface
 	eng.SyncAll()
 
-	bay, _ = eng.BayShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", "b1")
 	if len(bay.Surfaces) != 1 {
 		t.Errorf("expected 1 surface after sync (stale removed), got %d", len(bay.Surfaces))
 	}
@@ -2928,8 +2940,8 @@ func TestSyncAll_RemovesDeadPaneSurface(t *testing.T) {
 	}
 
 	// Add a split pane in the same layout group
-	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell", SplitDir: "h"})
-	bay, _ := eng.BayShow("labs", "w1")
+	eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeShell, Name: "shell", SplitDir: "h"})
+	bay, _ := eng.BayShow("labs", "b1")
 	if len(bay.Surfaces) != 2 {
 		t.Fatalf("expected 2 surfaces, got %d", len(bay.Surfaces))
 	}
@@ -2945,7 +2957,7 @@ func TestSyncAll_RemovesDeadPaneSurface(t *testing.T) {
 
 	eng.SyncAll()
 
-	bay, _ = eng.BayShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", "b1")
 	if len(bay.Surfaces) != 1 {
 		t.Errorf("expected 1 surface after killing pane, got %d", len(bay.Surfaces))
 	}
@@ -2966,7 +2978,7 @@ func TestSyncAll_PreservesSurfacesWhenSessionDead(t *testing.T) {
 	}
 
 	// Verify the bay has a surface.
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	if len(bay.Surfaces) != 1 {
 		t.Fatalf("expected 1 surface, got %d", len(bay.Surfaces))
 	}
@@ -2979,7 +2991,7 @@ func TestSyncAll_PreservesSurfacesWhenSessionDead(t *testing.T) {
 	// and recovery needs the surface records to recreate them.
 	eng.SyncAll()
 
-	bay, _ = eng.BayShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", "b1")
 	if len(bay.Surfaces) != 1 {
 		t.Errorf("SyncAll stripped surfaces when session was dead; got %d surfaces, want 1 (preserved for recovery)", len(bay.Surfaces))
 	}
@@ -3099,10 +3111,10 @@ func TestSyncAll_DoesNotAutoCloseBayWithSurvivingSurfaces(t *testing.T) {
 	}
 	os.MkdirAll(bay.Path, 0o755)
 	// Add a second surface so killing one doesn't empty the bay.
-	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell", SplitDir: "h"}); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeShell, Name: "shell", SplitDir: "h"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
-	bay, _ = eng.BayShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", "b1")
 	if len(bay.Surfaces) != 2 {
 		t.Fatalf("expected 2 surfaces, got %d", len(bay.Surfaces))
 	}
@@ -3113,7 +3125,7 @@ func TestSyncAll_DoesNotAutoCloseBayWithSurvivingSurfaces(t *testing.T) {
 
 	eng.SyncAll()
 
-	bay, _ = eng.BayShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", "b1")
 	if bay == nil {
 		t.Fatal("bay disappeared; expected it to persist with 1 surface")
 	}
@@ -3206,14 +3218,14 @@ func TestSurfaceClose_ForceOnLastSurfaceClosesImmediately(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BayNew: %v", err)
 	}
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	surfaceName := bay.Surfaces[0].Name
 
-	if err := eng.SurfaceClose("labs", "w1", surfaceName, true); err != nil {
+	if err := eng.SurfaceClose("labs", "b1", surfaceName, true); err != nil {
 		t.Fatalf("SurfaceClose --force: %v", err)
 	}
 
-	if _, err := eng.BayShow("labs", "w1"); err == nil {
+	if _, err := eng.BayShow("labs", "b1"); err == nil {
 		t.Error("bay still exists after force-close; expected immediate teardown")
 	}
 }
@@ -3239,7 +3251,7 @@ func TestResolveSelf_SymlinkedPath(t *testing.T) {
 	// Inject a bay whose stored path is the symlink form.
 	m, _ := eng.LoadManifest()
 	m.Docks[0].Bays = []manifest.Bay{
-		{Name: "w1", Path: linkBay},
+		{Name: "linked", Path: linkBay},
 	}
 	if err := manifest.Save(eng.manifestPath, m); err != nil {
 		t.Fatalf("save manifest: %v", err)
@@ -3257,8 +3269,8 @@ func TestResolveSelf_SymlinkedPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveSelf: %v", err)
 	}
-	if dockName != "labs" || bayName != "w1" {
-		t.Errorf("ResolveSelf = (%q, %q), want (labs, w1)", dockName, bayName)
+	if dockName != "labs" || bayName != "b1" {
+		t.Errorf("ResolveSelf = (%q, %q), want (labs, b1)", dockName, bayName)
 	}
 }
 
@@ -3290,8 +3302,8 @@ func TestResolveSelf_TmuxWindowIDFallback(t *testing.T) {
 	if dockName != "labs" {
 		t.Errorf("dock = %q, want labs", dockName)
 	}
-	if bayName != "w1" {
-		t.Errorf("bayName = %q, want w1", bayName)
+	if bayName != bay.ID {
+		t.Errorf("bayName = %q, want %s", bayName, bay.ID)
 	}
 }
 
@@ -3313,8 +3325,8 @@ func TestResolveByWindowID_Found(t *testing.T) {
 	if dockName != "labs" {
 		t.Errorf("dock = %q, want labs", dockName)
 	}
-	if bayName != "w1" {
-		t.Errorf("bayName = %q, want w1", bayName)
+	if bayName != bay.ID {
+		t.Errorf("bayName = %q, want %s", bayName, bay.ID)
 	}
 	if foundBay == nil {
 		t.Error("returned bay is nil")
@@ -3356,11 +3368,11 @@ func TestBayCloseClean_ClosesCleanBays(t *testing.T) {
 
 	m, _ := eng.LoadManifest()
 	dock := m.FindDock("labs")
-	if dock.FindBayByID("w1") != nil {
-		t.Error("w1 should be closed")
+	if dock.FindBayByID("b1") != nil {
+		t.Error("b1 should be closed")
 	}
-	if dock.FindBayByID("w2") != nil {
-		t.Error("w2 should be closed")
+	if dock.FindBayByID("b2") != nil {
+		t.Error("b2 should be closed")
 	}
 }
 
@@ -3370,20 +3382,20 @@ func TestBayCloseClean_SkipsDirtyBays(t *testing.T) {
 	eng.BayNew(BayNewOptions{Dock: "labs"})
 	eng.BayNew(BayNewOptions{Dock: "labs"})
 
-	// Make w1 dirty via mock. The directory must exist on disk for
+	// Make b1 dirty via mock. The directory must exist on disk for
 	// closeBayState to run the dirty check at all.
 	m, _ := eng.LoadManifest()
-	w1Path := m.FindDock("labs").FindBayByID("w1").Path
-	os.MkdirAll(w1Path, 0o755)
+	b1Path := m.FindDock("labs").FindBayByID("b1").Path
+	os.MkdirAll(b1Path, 0o755)
 	mockGit := eng.Git.(*git.Mock)
-	mockGit.SetDirty(w1Path, true)
+	mockGit.SetDirty(b1Path, true)
 
 	closed, skipped, err := eng.BayCloseClean("labs", false, false)
 	if err != nil {
 		t.Fatalf("BayCloseClean failed: %v", err)
 	}
 
-	// w2 is clean → closed; w1 is dirty → skipped
+	// b2 is clean -> closed; b1 is dirty -> skipped.
 	if len(closed) != 1 {
 		t.Errorf("expected 1 closed, got %d: %v", len(closed), closed)
 	}
@@ -3393,11 +3405,11 @@ func TestBayCloseClean_SkipsDirtyBays(t *testing.T) {
 
 	m, _ = eng.LoadManifest()
 	dock := m.FindDock("labs")
-	if dock.FindBayByID("w1") == nil {
-		t.Error("w1 (dirty) should still exist")
+	if dock.FindBayByID("b1") == nil {
+		t.Error("b1 (dirty) should still exist")
 	}
-	if dock.FindBayByID("w2") != nil {
-		t.Error("w2 (clean) should be closed")
+	if dock.FindBayByID("b2") != nil {
+		t.Error("b2 (clean) should be closed")
 	}
 }
 
@@ -3446,8 +3458,8 @@ func TestBayCloseClean_SkipsExcludedBay(t *testing.T) {
 	eng.BayNew(BayNewOptions{Dock: "labs"})
 	eng.BayNew(BayNewOptions{Dock: "labs"})
 
-	// All clean, but exclude w2 (simulating "self").
-	closed, _, err := eng.BayCloseClean("labs", true, false, "w2")
+	// All clean, but exclude b2 (simulating "self").
+	closed, _, err := eng.BayCloseClean("labs", true, false, "b2")
 	if err != nil {
 		t.Fatalf("BayCloseClean failed: %v", err)
 	}
@@ -3458,14 +3470,14 @@ func TestBayCloseClean_SkipsExcludedBay(t *testing.T) {
 
 	m, _ := eng.LoadManifest()
 	dock := m.FindDock("labs")
-	if dock.FindBayByID("w1") != nil {
-		t.Error("w1 should be closed")
+	if dock.FindBayByID("b1") != nil {
+		t.Error("b1 should be closed")
 	}
-	if dock.FindBayByID("w2") == nil {
-		t.Error("w2 (excluded) should still exist")
+	if dock.FindBayByID("b2") == nil {
+		t.Error("b2 (excluded) should still exist")
 	}
-	if dock.FindBayByID("w3") != nil {
-		t.Error("w3 should be closed")
+	if dock.FindBayByID("b3") != nil {
+		t.Error("b3 should be closed")
 	}
 }
 
@@ -3579,7 +3591,7 @@ func TestBayClose_RemoveWorktreeFailurePreservesBayState(t *testing.T) {
 		t.Fatalf("preparing RemoveWorktree failure: %v", err)
 	}
 
-	err = eng.BayClose("labs", "w1", false)
+	err = eng.BayClose("labs", "b1", false)
 	if err == nil {
 		t.Fatal("expected BayClose to fail when RemoveWorktree fails")
 	}
@@ -3593,7 +3605,7 @@ func TestBayClose_RemoveWorktreeFailurePreservesBayState(t *testing.T) {
 		t.Fatalf("LoadManifest failed: %v", loadErr)
 	}
 	dock := m.FindDock("labs")
-	if dock == nil || dock.FindBayByID("w1") == nil {
+	if dock == nil || dock.FindBayByID("b1") == nil {
 		t.Fatal("bay should remain in manifest after failed close")
 	}
 }
@@ -3641,14 +3653,14 @@ func TestRecover_FindWindowByNameRefreshesSurfaceIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BayNew failed: %v", err)
 	}
-	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "codex", SplitDir: "v"}); err != nil {
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "codex", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd failed: %v", err)
 	}
 	if err := os.MkdirAll(bay.Path, 0o755); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
 
-	bay, err = eng.BayShow("labs", "w1")
+	bay, err = eng.BayShow("labs", "b1")
 	if err != nil {
 		t.Fatalf("BayShow failed: %v", err)
 	}
@@ -3674,7 +3686,7 @@ func TestRecover_FindWindowByNameRefreshesSurfaceIDs(t *testing.T) {
 		t.Fatalf("Recover failed: %v", err)
 	}
 
-	bay, err = eng.BayShow("labs", "w1")
+	bay, err = eng.BayShow("labs", "b1")
 	if err != nil {
 		t.Fatalf("BayShow failed: %v", err)
 	}
@@ -3894,16 +3906,16 @@ func TestBayNew_AssignsID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BayNew #1: %v", err)
 	}
-	if !manifest.IsBayID(bay1.ID) {
-		t.Errorf("bay1.ID = %q, want canonical w<N>", bay1.ID)
+	if bay1.ID != "b1" {
+		t.Errorf("bay1.ID = %q, want b1", bay1.ID)
 	}
 
 	bay2, err := eng.BayNew(BayNewOptions{Dock: "labs"})
 	if err != nil {
 		t.Fatalf("BayNew #2: %v", err)
 	}
-	if !manifest.IsBayID(bay2.ID) {
-		t.Errorf("bay2.ID = %q, want canonical w<N>", bay2.ID)
+	if bay2.ID != "b2" {
+		t.Errorf("bay2.ID = %q, want b2", bay2.ID)
 	}
 	if bay1.ID == bay2.ID {
 		t.Errorf("IDs collide: bay1=%s bay2=%s", bay1.ID, bay2.ID)
@@ -3967,7 +3979,7 @@ func TestUpdateWindowNames_FallsBackToID(t *testing.T) {
 }
 
 // TestSyncRename_ReplacesPlaceholder covers the placeholder fill: an
-// auto-assigned w<N> Name (or empty) is treated as fillable so the first
+// generated-ID Name (or empty) is treated as fillable so the first
 // branch detection still produces a meaningful tab label.
 func TestSyncRename_ReplacesPlaceholder(t *testing.T) {
 	eng, _ := testEngine(t)

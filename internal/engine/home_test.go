@@ -153,8 +153,8 @@ func TestBayClose_LastNonHomeCreatesHomeShell(t *testing.T) {
 	if _, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("BayNew: %v", err)
 	}
-	if err := eng.BayClose("labs", "w1", true); err != nil {
-		t.Fatalf("BayClose(w1): %v", err)
+	if err := eng.BayClose("labs", "b1", true); err != nil {
+		t.Fatalf("BayClose(b1): %v", err)
 	}
 
 	m, err := eng.LoadManifest()
@@ -193,8 +193,8 @@ func TestBayCloseBatch_LastNonHomeCreatesHomeShell(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BayCloseClean: %v", err)
 	}
-	if len(closed) != 1 || closed[0] != "labs:w1" || len(skipped) != 0 {
-		t.Fatalf("closed=%v skipped=%v, want labs:w1 only", closed, skipped)
+	if len(closed) != 1 || closed[0] != "labs:b1" || len(skipped) != 0 {
+		t.Fatalf("closed=%v skipped=%v, want labs:b1 only", closed, skipped)
 	}
 
 	m, err := eng.LoadManifest()
@@ -234,8 +234,8 @@ func TestBayCloseCleanAndDoneSkipExistingHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BayCloseClean: %v", err)
 	}
-	if len(closed) != 1 || closed[0] != "labs:w1" || len(skipped) != 0 {
-		t.Fatalf("BayCloseClean closed=%v skipped=%v, want labs:w1 only", closed, skipped)
+	if len(closed) != 1 || closed[0] != "labs:b1" || len(skipped) != 0 {
+		t.Fatalf("BayCloseClean closed=%v skipped=%v, want labs:b1 only", closed, skipped)
 	}
 	if home := mustEngineHome(t, eng); home == nil || len(home.Surfaces) != 1 {
 		t.Fatalf("home after BayCloseClean = %+v, want one preserved surface", home)
@@ -814,7 +814,7 @@ func TestBayClose_HomeClosesMaterializedSurfaces(t *testing.T) {
 			t.Fatalf("BayClose(home) should not kill session with non-home windows live; calls: %+v", mockTmux.Calls)
 		}
 	}
-	if _, err := eng.BayShow("labs", "w1"); err != nil {
+	if _, err := eng.BayShow("labs", "b1"); err != nil {
 		t.Fatalf("non-home bay disappeared after BayClose(home): %v", err)
 	}
 }
