@@ -128,7 +128,37 @@ command = ["go", "test", "./..."]
 	}
 }
 
-func TestValidatePrepare_RejectionCases(t *testing.T) {
+func TestParsedTimeout(t *testing.T) {
+	cases := []struct {
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{"", "0s", false},
+		{"10m", "10m0s", false},
+		{"1h30m", "1h30m0s", false},
+		{"soon", "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.input, func(t *testing.T) {
+			got, err := (BayPrepareConfig{Timeout: tc.input}).ParsedTimeout()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("ParsedTimeout returned nil error, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParsedTimeout: %v", err)
+			}
+			if got.String() != tc.want {
+				t.Fatalf("ParsedTimeout = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestValidateMergedPrepare_RejectionCases(t *testing.T) {
 	valid := BayPrepareConfig{
 		Name:         "vendors",
 		Command:      []string{"fetch"},
@@ -155,11 +185,38 @@ func TestValidatePrepare_RejectionCases(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			errs := ValidatePrepare(tc.steps)
+			errs := ValidateMergedPrepare(tc.steps)
 			if !containsErr(errs, tc.want) {
-				t.Fatalf("ValidatePrepare errors = %v, want containing %q", errs, tc.want)
+				t.Fatalf("ValidateMergedPrepare errors = %v, want containing %q", errs, tc.want)
 			}
 		})
+	}
+}
+
+func TestValidatePrepare_ValidatesSourcesAndMergedResult(t *testing.T) {
+	repoLocal := []BayPrepareConfig{
+		{Name: "vendors", Command: []string{"fetch"}, ReadyCommand: []string{"ready"}, Blocks: []string{"agent"}},
+	}
+	dockLevel := []BayPrepareConfig{
+		{Name: "vendors", Timeout: "20m"},
+	}
+	if errs := ValidatePrepare(repoLocal, dockLevel); len(errs) != 0 {
+		t.Fatalf("ValidatePrepare valid merged config errors = %v, want none", errs)
+	}
+
+	errs := ValidatePrepare(repoLocal, []BayPrepareConfig{
+		{Name: "vendors", Timeout: "20m"},
+		{Name: "vendors", Timeout: "30m"},
+	})
+	if !containsErr(errs, "duplicate name") {
+		t.Fatalf("ValidatePrepare duplicate dock source errors = %v, want duplicate-name error", errs)
+	}
+
+	errs = ValidatePrepare(nil, []BayPrepareConfig{
+		{Name: "vendors", Timeout: "20m"},
+	})
+	if !containsErr(errs, "command must be a non-empty argv array") {
+		t.Fatalf("ValidatePrepare dock-only partial errors = %v, want missing-command error", errs)
 	}
 }
 

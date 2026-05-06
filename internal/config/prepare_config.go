@@ -14,6 +14,14 @@ var validPrepareBlocks = map[string]bool{
 	"cmd":   true,
 }
 
+// ParsedTimeout parses Timeout. Returns 0 when unset.
+func (c BayPrepareConfig) ParsedTimeout() (time.Duration, error) {
+	if c.Timeout == "" {
+		return 0, nil
+	}
+	return time.ParseDuration(c.Timeout)
+}
+
 // UnmarshalTOML records field presence so per-field prepare overrides can
 // distinguish absent values from explicitly empty values.
 func (c *BayPrepareConfig) UnmarshalTOML(data interface{}) error {
@@ -128,8 +136,20 @@ func ValidatePrepareSource(source string, steps []BayPrepareConfig) []string {
 	return errs
 }
 
-// ValidatePrepare validates the effective, merged prepare config.
-func ValidatePrepare(steps []BayPrepareConfig) []string {
+// ValidatePrepare validates repo-local and dock-level prepare sources, then
+// validates their effective merged config.
+func ValidatePrepare(repoLocal, dockLevel []BayPrepareConfig) []string {
+	var errs []string
+	errs = append(errs, ValidatePrepareSource(".bay.toml", repoLocal)...)
+	errs = append(errs, ValidatePrepareSource("dock config", dockLevel)...)
+	if len(errs) > 0 {
+		return errs
+	}
+	return ValidateMergedPrepare(MergePrepare(repoLocal, dockLevel))
+}
+
+// ValidateMergedPrepare validates the effective, merged prepare config.
+func ValidateMergedPrepare(steps []BayPrepareConfig) []string {
 	var errs []string
 	seen := map[string]bool{}
 	for i, step := range steps {
