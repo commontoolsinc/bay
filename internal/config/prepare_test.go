@@ -113,7 +113,7 @@ command = ["go", "test", "./..."]
 		t.Fatalf("Parse: %v", err)
 	}
 
-	merged := Merge(repo.BayPrepare, user.Docks["loom"].BayPrepare)
+	merged := MergePrepare(repo.BayPrepare, user.Docks["loom"].BayPrepare)
 	if len(merged) != 3 {
 		t.Fatalf("merged len = %d, want 3: %#v", len(merged), merged)
 	}
@@ -220,19 +220,44 @@ func TestValidatePrepare_ValidatesSourcesAndMergedResult(t *testing.T) {
 	}
 }
 
-func TestValidatePrepareSource_AllowsPartialOverrides(t *testing.T) {
+func TestValidatePrepare_AllowsDockOverridesToRepairRepoLocalFields(t *testing.T) {
+	repo, err := ParseRepoLocal(`
+[[bay_prepare]]
+name = "vendors"
+command = []
+ready_command = []
+blocks = ["editor"]
+run = "manual"
+timeout = "soon"
+`)
+	if err != nil {
+		t.Fatalf("ParseRepoLocal: %v", err)
+	}
+	user, err := Parse(`
+[docks.loom]
+
+[[docks.loom.bay_prepare]]
+name = "vendors"
+command = ["fetch"]
+ready_command = ["ready"]
+blocks = ["agent"]
+run = "auto"
+timeout = "20m"
+`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if errs := ValidatePrepare(repo.BayPrepare, user.Docks["loom"].BayPrepare); len(errs) != 0 {
+		t.Fatalf("ValidatePrepare repaired config errors = %v, want none", errs)
+	}
+}
+
+func TestValidatePrepareSource_OnlyChecksSourceLocalNames(t *testing.T) {
 	errs := ValidatePrepareSource("docks.loom.bay_prepare", []BayPrepareConfig{
-		{Name: "vendors", Timeout: "20m"},
+		{Name: "vendors", Command: []string{}, Blocks: []string{"editor"}, Run: "manual", Timeout: "soon"},
 	})
 	if len(errs) != 0 {
-		t.Fatalf("ValidatePrepareSource partial override errors = %v, want none", errs)
-	}
-
-	errs = ValidatePrepareSource("docks.loom.bay_prepare", []BayPrepareConfig{
-		{Name: "vendors", Command: []string{}},
-	})
-	if !containsErr(errs, "command must be a non-empty argv array") {
-		t.Fatalf("ValidatePrepareSource errors = %v, want empty-command error", errs)
+		t.Fatalf("ValidatePrepareSource field-level errors = %v, want none before merge", errs)
 	}
 
 	errs = ValidatePrepareSource("docks.loom.bay_prepare", []BayPrepareConfig{

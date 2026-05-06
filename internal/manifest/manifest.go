@@ -120,8 +120,8 @@ type Bay struct {
 	LastActive      int64           `json:"last_active,omitempty"`      // unix timestamp; updated by bay commands
 	PendingCloseAt  int64           `json:"pending_close_at,omitempty"` // unix ts; non-zero = scheduled for auto-close at this time unless a surface is re-added first
 	Surfaces        []Surface       `json:"surfaces"`
-	Prepare         []PrepareStep   `json:"prepare,omitempty"`
-	PendingSurfaces []PendingLaunch `json:"pending_surfaces,omitempty"`
+	Prepare         []PrepareStep   `json:"prepare"`
+	PendingSurfaces []PendingLaunch `json:"pending_surfaces"`
 	Worktree        *WorktreeAttrs  `json:"worktree,omitempty"` // type=worktree only
 
 	// DeprecatedStatus exists only for v2→v3 manifest migration. Cleared after
@@ -517,9 +517,6 @@ func Parse(data []byte) (*Manifest, error) {
 			return nil, err
 		}
 	}
-	if m.Version < 7 {
-		migrateV6ToV7(&m)
-	}
 	ensureV7Defaults(&m)
 	m.Version = CurrentVersion
 
@@ -581,10 +578,6 @@ func migrateV5ToV6(m *Manifest) error {
 	return nil
 }
 
-func migrateV6ToV7(m *Manifest) {
-	ensureV7Defaults(m)
-}
-
 func ensureV7Defaults(m *Manifest) {
 	for i := range m.Docks {
 		if m.Docks[i].Bays == nil {
@@ -615,13 +608,10 @@ func Load(path string) (*Manifest, error) {
 // Save writes the manifest to disk. Before overwriting, backs up the
 // current version to the backups/ directory (at most once per minute).
 func Save(path string, m *Manifest) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("creating manifest dir: %w", err)
-	}
-
 	return WithLock(path, func() error {
 		// Rolling backup before overwriting.
 		BackupIfNeeded(path)
+		ensureV7Defaults(m)
 
 		data, err := json.MarshalIndent(m, "", "  ")
 		if err != nil {
@@ -652,10 +642,6 @@ func LockedUpdate(path string, fn func(m *Manifest) error) error {
 
 // LockedUpdateMaybe atomically loads the manifest, calls fn, and saves only if fn reports changes.
 func LockedUpdateMaybe(path string, fn func(m *Manifest) (bool, error)) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("creating manifest dir: %w", err)
-	}
-
 	return WithLock(path, func() error {
 		var m *Manifest
 		data, readErr := os.ReadFile(path)
@@ -685,6 +671,7 @@ func LockedUpdateMaybe(path string, fn func(m *Manifest) (bool, error)) error {
 		if readErr == nil {
 			BackupIfNeeded(path)
 		}
+		ensureV7Defaults(m)
 
 		encoded, err := json.MarshalIndent(m, "", "  ")
 		if err != nil {

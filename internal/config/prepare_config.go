@@ -96,8 +96,9 @@ func stringSliceField(field string, value interface{}) ([]string, error) {
 	return values, nil
 }
 
-// ValidatePrepareSource validates one unmerged prepare source, including
-// source-local uniqueness.
+// ValidatePrepareSource validates source-local naming rules. Field semantics
+// are validated after merge so dock-level overrides can repair repo-local
+// defaults per the design's effective-config validation rule.
 func ValidatePrepareSource(source string, steps []BayPrepareConfig) []string {
 	var errs []string
 	seen := map[string]bool{}
@@ -112,26 +113,6 @@ func ValidatePrepareSource(source string, steps []BayPrepareConfig) []string {
 			continue
 		}
 		seen[step.Name] = true
-		if prepareCommandPresent(step) && len(step.Command) == 0 {
-			errs = append(errs, fmt.Sprintf("%s: command must be a non-empty argv array when present", label))
-		}
-		if prepareReadyCommandPresent(step) && len(step.ReadyCommand) == 0 {
-			errs = append(errs, fmt.Sprintf("%s: ready_command must be a non-empty argv array when present", label))
-		}
-		for _, block := range step.Blocks {
-			if !validPrepareBlocks[block] {
-				errs = append(errs, fmt.Sprintf("%s: blocks contains unknown surface class %q", label, block))
-			}
-		}
-		if prepareRunPresent(step) && step.Run != PrepareRunAuto {
-			errs = append(errs, fmt.Sprintf("%s: run must be %q", label, PrepareRunAuto))
-		}
-		if prepareTimeoutPresent(step) {
-			d, err := time.ParseDuration(step.Timeout)
-			if err != nil || d <= 0 {
-				errs = append(errs, fmt.Sprintf("%s: timeout must be a positive duration", label))
-			}
-		}
 	}
 	return errs
 }

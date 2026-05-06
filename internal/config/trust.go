@@ -13,8 +13,3 @@ func ResolveTrust(cfg *Config, dockName string) bool {
 	}
 	return false
 }
-
-// ResolveTrust reports whether dockName trusts its checkout's .bay.toml.
-func (c *Config) ResolveTrust(dockName string) bool {
-	return ResolveTrust(c, dockName)
-}

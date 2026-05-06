@@ -2,6 +2,9 @@ package manifest
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -53,6 +56,35 @@ func TestParse_MigratesV6ToV7AddsPrepareState(t *testing.T) {
 	}
 	if roundTripped.Version != CurrentVersion {
 		t.Fatalf("round-trip version = %d, want %d", roundTripped.Version, CurrentVersion)
+	}
+}
+
+func TestSave_WritesV7EmptyPrepareArrays(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "manifest.json")
+	m := &Manifest{
+		Version: CurrentVersion,
+		Docks: []Dock{
+			{
+				Name: "loom",
+				Bays: []Bay{
+					{ID: "b1", Name: "vendor-fix", Type: BayTypeWorktree, Surfaces: []Surface{}},
+				},
+			},
+		},
+	}
+	if err := Save(path, m); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, `"prepare": []`) {
+		t.Fatalf("saved manifest missing empty prepare array:\n%s", text)
+	}
+	if !strings.Contains(text, `"pending_surfaces": []`) {
+		t.Fatalf("saved manifest missing empty pending_surfaces array:\n%s", text)
 	}
 }
 

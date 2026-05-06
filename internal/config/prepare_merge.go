@@ -1,10 +1,6 @@
 package config
 
-// Merge returns the effective prepare steps after applying dock-level
-// per-field overrides on top of repo-local defaults.
-func Merge(repoLocal, dockLevel []BayPrepareConfig) []BayPrepareConfig {
-	return MergePrepare(repoLocal, dockLevel)
-}
+import "slices"
 
 // MergePrepare returns the effective prepare steps after applying dock-level
 // per-field overrides on top of repo-local defaults.
@@ -38,15 +34,15 @@ func MergePrepare(repoLocal, dockLevel []BayPrepareConfig) []BayPrepareConfig {
 func mergePrepareStep(base, override BayPrepareConfig) BayPrepareConfig {
 	out := copyPrepareStep(base)
 	if prepareCommandPresent(override) {
-		out.Command = cloneStringSlice(override.Command)
+		out.Command = slices.Clone(override.Command)
 		out.fields.Command = true
 	}
 	if prepareReadyCommandPresent(override) {
-		out.ReadyCommand = cloneStringSlice(override.ReadyCommand)
+		out.ReadyCommand = slices.Clone(override.ReadyCommand)
 		out.fields.ReadyCommand = true
 	}
 	if prepareBlocksPresent(override) {
-		out.Blocks = cloneStringSlice(override.Blocks)
+		out.Blocks = slices.Clone(override.Blocks)
 		out.fields.Blocks = true
 	}
 	if prepareRunPresent(override) {
@@ -61,17 +57,8 @@ func mergePrepareStep(base, override BayPrepareConfig) BayPrepareConfig {
 }
 
 func copyPrepareStep(step BayPrepareConfig) BayPrepareConfig {
-	step.Command = cloneStringSlice(step.Command)
-	step.ReadyCommand = cloneStringSlice(step.ReadyCommand)
-	step.Blocks = cloneStringSlice(step.Blocks)
+	step.Command = slices.Clone(step.Command)
+	step.ReadyCommand = slices.Clone(step.ReadyCommand)
+	step.Blocks = slices.Clone(step.Blocks)
 	return step
-}
-
-func cloneStringSlice(in []string) []string {
-	if in == nil {
-		return nil
-	}
-	out := make([]string, len(in))
-	copy(out, in)
-	return out
 }
