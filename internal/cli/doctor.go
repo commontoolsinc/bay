@@ -12,6 +12,7 @@ import (
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/engine"
 	"github.com/commontoolsinc/bay/internal/manifest"
+	"github.com/commontoolsinc/bay/internal/monitor"
 	"github.com/spf13/cobra"
 )
 
@@ -168,25 +169,28 @@ func runDoctor(eng *engine.Engine, w io.Writer) {
 		fmt.Fprintf(w, "[WARN] monitor: %v\n", monCfgErr)
 		ok = false
 	} else {
-		running, pid, monErr := mon.Status()
-		if monErr != nil || !running {
+		assessment, monErr := mon.StatusAssessment(cliVersion)
+		if monitorAssessmentLooksUnstarted(assessment, monErr) {
 			// Lazy retry: the auto-start hook in
 			// PersistentPreRunE forks `bay monitor run` before
 			// doctor's RunE runs, but the forked child writes
 			// its PID file asynchronously. A first-call check
-			// that runs before the child has finished startup
-			// will incorrectly report "not running". The retry
-			// only fires on the negative path so the steady
-			// state (monitor already running, second doctor
-			// run, etc.) is still instant.
+			// that runs before the child has finished startup may
+			// report "not running" or live-without-metadata. The
+			// retry only fires on that negative path so the steady
+			// state is still instant.
 			time.Sleep(150 * time.Millisecond)
-			running, pid, monErr = mon.Status()
+			assessment, monErr = mon.StatusAssessment(cliVersion)
 		}
-		if monErr != nil || !running {
+		switch {
+		case monErr != nil || !assessment.Running:
 			fmt.Fprintln(w, "[WARN] monitor not running")
 			ok = false
-		} else {
-			fmt.Fprintf(w, "[OK] monitor running (pid %d)\n", pid)
+		case monitorAssessmentDegraded(assessment):
+			fmt.Fprintf(w, "[WARN] %s\n", lowerFirst(formatMonitorStatusOneLine(assessment)))
+			ok = false
+		default:
+			fmt.Fprintf(w, "[OK] %s\n", lowerFirst(formatMonitorStatusOneLine(assessment)))
 		}
 	}
 
@@ -195,6 +199,31 @@ func runDoctor(eng *engine.Engine, w io.Writer) {
 	} else {
 		fmt.Fprintln(w, "\nAll checks passed.")
 	}
+}
+
+func lowerFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToLower(s[:1]) + s[1:]
+}
+
+// monitorAssessmentLooksUnstarted returns true if the assessment looks like
+// the monitor was just forked but hasn't finished writing its files yet.
+func monitorAssessmentLooksUnstarted(a monitor.StatusAssessment, err error) bool {
+	if err != nil || !a.Running {
+		return true
+	}
+	return a.Freshness == monitor.StatusFreshnessUnknown && a.Reason == monitor.StatusReasonMetadataMissing
+}
+
+// monitorAssessmentDegraded reports whether a running monitor is in a state
+// that warrants a doctor warning rather than an OK.
+func monitorAssessmentDegraded(a monitor.StatusAssessment) bool {
+	if a.Freshness == monitor.StatusFreshnessStale || a.Freshness == monitor.StatusFreshnessUnknown {
+		return true
+	}
+	return a.Reason == monitor.StatusReasonHeartbeatStale
 }
 
 func missingKeybindings(content string) []string {

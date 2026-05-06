@@ -59,6 +59,10 @@ type Monitor struct {
 	pidPath      string
 	intervalSecs int
 
+	runtimeStatusPath string
+	runtimeVersion    string
+	runtimeStatus     RuntimeStatus
+
 	// engine, if set, has its SyncAll() called at the start of every
 	// CheckOnce cycle so that branch changes (and the resulting tmux
 	// window renames) propagate without waiting for a CLI command.
@@ -108,14 +112,26 @@ func (m *Monitor) SetEngine(e *engine.Engine) {
 	m.engine = e
 }
 
+// SetRuntimeStatus enables monitor-owned runtime metadata.
+func (m *Monitor) SetRuntimeStatus(path, version string) {
+	m.runtimeStatusPath = path
+	m.runtimeVersion = version
+}
+
 // Run is the main loop. It periodically checks all windows and exits when ctx is cancelled.
 func (m *Monitor) Run(ctx context.Context) error {
+	if m.runtimeStatusPath != "" {
+		defer func() {
+			_ = os.Remove(m.runtimeStatusPath)
+		}()
+	}
 	// Resolve and stash the executable path once. Record the mtime
 	// baseline before the loop so a replacement landing during the
 	// first interval isn't silently adopted as the new baseline.
 	exe, _ := os.Executable()
 	if exe != "" {
 		m.recordBinaryMTime(exe)
+		m.initializeRuntimeStatus(exe, time.Now())
 	}
 	interval := time.Duration(m.intervalSecs) * time.Second
 	ticker := time.NewTicker(interval)
@@ -135,6 +151,7 @@ func (m *Monitor) Run(ctx context.Context) error {
 			}
 			// Errors during a check cycle are non-fatal; we log and continue.
 			_ = m.CheckOnce()
+			m.refreshRuntimeStatusIfDue(exe, time.Now())
 		}
 	}
 }
@@ -163,6 +180,52 @@ func (m *Monitor) hasBinaryChanged(path string) bool {
 		return false
 	}
 	return !info.ModTime().Equal(m.binaryMTime)
+}
+
+func (m *Monitor) initializeRuntimeStatus(exe string, now time.Time) {
+	if m.runtimeStatusPath == "" || m.runtimeVersion == "" {
+		return
+	}
+	pid := os.Getpid()
+	startedAt := now
+	generation := 1
+	if previous, err := ReadRuntimeStatus(m.runtimeStatusPath); err == nil && previous.PID == pid {
+		if !previous.StartedAt.IsZero() {
+			startedAt = previous.StartedAt
+		}
+		if previous.Generation > 0 {
+			generation = previous.Generation + 1
+		}
+	}
+	m.runtimeStatus = RuntimeStatus{
+		Schema:     runtimeStatusSchema,
+		PID:        pid,
+		Version:    m.runtimeVersion,
+		StartedAt:  startedAt,
+		LastSeenAt: now,
+		Generation: generation,
+	}
+	_ = m.writeRuntimeStatus(exe, now)
+}
+
+func (m *Monitor) refreshRuntimeStatusIfDue(exe string, now time.Time) {
+	if m.runtimeStatusPath == "" || exe == "" || m.runtimeStatus.PID == 0 {
+		return
+	}
+	if now.Sub(m.runtimeStatus.LastSeenAt) < RuntimeStatusHeartbeat {
+		return
+	}
+	_ = m.writeRuntimeStatus(exe, now)
+}
+
+func (m *Monitor) writeRuntimeStatus(exe string, now time.Time) error {
+	identity, err := CurrentBinaryIdentity(exe)
+	if err != nil {
+		return err
+	}
+	m.runtimeStatus.LastSeenAt = now
+	m.runtimeStatus.BinaryIdentity = identity
+	return WriteRuntimeStatusAtomic(m.runtimeStatusPath, m.runtimeStatus)
 }
 
 // CheckOnce runs a single check cycle: reload patterns, read manifest, check all windows.
@@ -416,7 +479,10 @@ func (m *Monitor) Stop() error {
 		_ = RemovePIDFile(m.pidPath)
 		return fmt.Errorf("sending signal to process %d: %w", pid, err)
 	}
-	return RemovePIDFile(m.pidPath)
+	if err := RemovePIDFile(m.pidPath); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Status checks whether the monitor is running.

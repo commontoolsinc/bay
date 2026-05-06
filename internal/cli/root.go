@@ -18,6 +18,11 @@ import (
 // Package-level var is required by cobra's StringVar API.
 var cfgPath string
 
+// cliVersion is the version string passed by cmd/bay. It must be set by
+// NewRootCmd before monitor status assessment runs, so embedded callers
+// should construct the CLI root before invoking monitor-status helpers.
+var cliVersion = "dev"
+
 // defaultPicker is the picker implementation used by navigation commands.
 // Can be replaced for testing or to swap in an alternative (e.g. fzf).
 var defaultPicker picker.Interface = &picker.Builtin{}
@@ -75,6 +80,7 @@ Run 'bay help' for all commands, or 'bay help <command>' for details.
 
 // NewRootCmd creates the root bay command.
 func NewRootCmd(version string) *cobra.Command {
+	cliVersion = version
 	root := &cobra.Command{
 		Use:           "bay",
 		Short:         "Multi-session bay management for tmux and git worktrees",

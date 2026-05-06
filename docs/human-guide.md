@@ -874,13 +874,20 @@ per bay.
 ### Managing the monitor
 
 ```
-bay monitor status          # check if running
+bay monitor status          # check if running and current
+bay monitor status --verbose # show version, binary, heartbeat details
+bay monitor status --json    # machine-readable monitor health
 bay monitor start           # start background monitor
 bay monitor stop            # stop monitor
 ```
 
 The monitor is started automatically by `bay recover`. You rarely need
-to manage it directly.
+to manage it directly. When running, status reports whether the monitor
+is `current`, `stale`, `unknown`, or running from a different `bay`
+executable path. A stale or unknown monitor can be restarted with
+`bay monitor stop` followed by `bay monitor start`. If the monitor's
+heartbeat is old but the version and binary match, status still reports
+`current` and includes a heartbeat warning.
 
 ## Listing views
 

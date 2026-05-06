@@ -11,6 +11,7 @@ type Paths struct {
 	ArchiveFile    string
 	PatternsFile   string
 	PIDFile        string
+	MonitorStatus  string
 	PaletteRecents string
 	CloseConfirm   string
 }
@@ -27,6 +28,7 @@ func DefaultPaths() Paths {
 		ArchiveFile:    filepath.Join(dataDir, "archive.json"),
 		PatternsFile:   filepath.Join(configDir, "waiting-patterns.txt"),
 		PIDFile:        filepath.Join(dataDir, "monitor.pid"),
+		MonitorStatus:  filepath.Join(dataDir, "monitor-status.json"),
 		PaletteRecents: filepath.Join(dataDir, "palette-recents.json"),
 		CloseConfirm:   filepath.Join(dataDir, "close-confirm"),
 	}

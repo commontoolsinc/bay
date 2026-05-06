@@ -819,6 +819,13 @@ Manage the background pane monitor. Detects when agents are waiting
 for input and highlights those tmux windows. Also handles
 activity-gated merge detection.
 
+`bay monitor status` reports whether the running monitor is current
+with the installed `bay` binary. Use `--verbose` for version, executable,
+heartbeat, and reload-generation details. Use `--json` for structured
+output with `running`, `pid`, `freshness`, `reason`, `monitor`, and
+`current` fields. `freshness` is one of `not_running`, `current`,
+`stale`, `unknown`, or `different_executable`.
+
 Waiting detection uses three mechanisms, all feeding into
 `--next-waiting` navigation:
 
