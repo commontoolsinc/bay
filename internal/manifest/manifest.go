@@ -10,13 +10,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/commontoolsinc/bay/internal/config"
 )
 
 // CurrentVersion is the manifest schema version.
-const CurrentVersion = 6
+const CurrentVersion = 7
 
 // BayType constants.
 const (
@@ -58,6 +57,18 @@ type BayType string
 type SurfaceType string
 type SurfaceBackend string
 
+// PrepareStatus is the persisted lifecycle state for one prepare step.
+type PrepareStatus string
+
+// PrepareStatus constants.
+const (
+	PrepareStatusPending PrepareStatus = "pending"
+	PrepareStatusRunning PrepareStatus = "running"
+	PrepareStatusReady   PrepareStatus = "ready"
+	PrepareStatusFailed  PrepareStatus = "failed"
+	PrepareStatusStale   PrepareStatus = "stale"
+)
+
 // Repo is the legacy pre-v6 representation of a managed git checkout.
 // It is kept only so v5 manifests can be migrated into dock-owned paths.
 type Repo struct {
@@ -75,17 +86,18 @@ type Manifest struct {
 
 // Dock represents a tmux session and its associated terminal window.
 type Dock struct {
-	Name          string              `json:"name"`           // unique; matches config key and tmux session name
-	Path          string              `json:"path,omitempty"` // git checkout this dock owns
-	WorktreeDir   string              `json:"worktree_dir,omitempty"`
-	Repo          string              `json:"repo,omitempty"`       // legacy v5 default repo; migrated to Path/WorktreeDir
-	Agent         string              `json:"agent,omitempty"`      // default agent
-	AgentArgs     map[string][]string `json:"agent_args,omitempty"` // per-agent args
-	Host          *GUIAttrs           `json:"host,omitempty"`       // terminal window hosting this dock's tmux session; nil if unmanaged
-	SessionID     string              `json:"session_id,omitempty"` // identifies the tmux session bay set up; matched against the @bay-session-id session option to detect server restarts
-	Surfaces      []Surface           `json:"surfaces,omitempty"`   // dock-level surfaces (e.g., dock-scoped editor)
-	Bays          []Bay               `json:"bays"`
-	ClosedEntries []ClosedEntry       `json:"closed_entries,omitempty"` // undo-close queue (see docs/design/undo-close.md)
+	Name                 string              `json:"name"`           // unique; matches config key and tmux session name
+	Path                 string              `json:"path,omitempty"` // git checkout this dock owns
+	WorktreeDir          string              `json:"worktree_dir,omitempty"`
+	Repo                 string              `json:"repo,omitempty"`       // legacy v5 default repo; migrated to Path/WorktreeDir
+	Agent                string              `json:"agent,omitempty"`      // default agent
+	AgentArgs            map[string][]string `json:"agent_args,omitempty"` // per-agent args
+	Host                 *GUIAttrs           `json:"host,omitempty"`       // terminal window hosting this dock's tmux session; nil if unmanaged
+	SessionID            string              `json:"session_id,omitempty"` // identifies the tmux session bay set up; matched against the @bay-session-id session option to detect server restarts
+	TrustPromptDismissed bool                `json:"trust_prompt_dismissed,omitempty"`
+	Surfaces             []Surface           `json:"surfaces,omitempty"` // dock-level surfaces (e.g., dock-scoped editor)
+	Bays                 []Bay               `json:"bays"`
+	ClosedEntries        []ClosedEntry       `json:"closed_entries,omitempty"` // undo-close queue (see docs/design/undo-close.md)
 }
 
 // EffectiveWorktreeDir returns the dock's worktree directory, defaulting to
@@ -99,20 +111,46 @@ func (d Dock) EffectiveWorktreeDir() string {
 
 // Bay represents a unit of work — typically one branch/PR.
 type Bay struct {
-	ID             string         `json:"id"`                         // stable handle (current ^b[1-9]\d*$, legacy ^w[1-9]\d*$); set at creation, never changes; unique within dock
-	Name           string         `json:"name"`                       // user-facing display label, renameable; not a CLI key. Empty until set explicitly or filled from a branch.
-	Type           BayType        `json:"type"`                       // "worktree", "external", or "home"
-	Path           string         `json:"path,omitempty"`             // absolute path to the working directory
-	Description    string         `json:"description,omitempty"`      // short free-form label shown in picker/ls/tree
-	LastFocused    int            `json:"last_focused,omitempty"`     // surface ID; 0 = none yet
-	LastActive     int64          `json:"last_active,omitempty"`      // unix timestamp; updated by bay commands
-	PendingCloseAt int64          `json:"pending_close_at,omitempty"` // unix ts; non-zero = scheduled for auto-close at this time unless a surface is re-added first
-	Surfaces       []Surface      `json:"surfaces"`
-	Worktree       *WorktreeAttrs `json:"worktree,omitempty"` // type=worktree only
+	ID              string          `json:"id"`                         // stable handle (current ^b[1-9]\d*$, legacy ^w[1-9]\d*$); set at creation, never changes; unique within dock
+	Name            string          `json:"name"`                       // user-facing display label, renameable; not a CLI key. Empty until set explicitly or filled from a branch.
+	Type            BayType         `json:"type"`                       // "worktree", "external", or "home"
+	Path            string          `json:"path,omitempty"`             // absolute path to the working directory
+	Description     string          `json:"description,omitempty"`      // short free-form label shown in picker/ls/tree
+	LastFocused     int             `json:"last_focused,omitempty"`     // surface ID; 0 = none yet
+	LastActive      int64           `json:"last_active,omitempty"`      // unix timestamp; updated by bay commands
+	PendingCloseAt  int64           `json:"pending_close_at,omitempty"` // unix ts; non-zero = scheduled for auto-close at this time unless a surface is re-added first
+	Surfaces        []Surface       `json:"surfaces"`
+	Prepare         []PrepareStep   `json:"prepare,omitempty"`
+	PendingSurfaces []PendingLaunch `json:"pending_surfaces,omitempty"`
+	Worktree        *WorktreeAttrs  `json:"worktree,omitempty"` // type=worktree only
 
 	// DeprecatedStatus exists only for v2→v3 manifest migration. Cleared after
 	// migration. The "status" JSON tag is reserved by this field.
 	DeprecatedStatus string `json:"status,omitempty"`
+}
+
+// PrepareStep records the state of one configured prepare step for a bay.
+type PrepareStep struct {
+	Name           string        `json:"name"`
+	Status         PrepareStatus `json:"status"`
+	StartedAt      int64         `json:"started_at,omitempty"`
+	FinishedAt     int64         `json:"finished_at,omitempty"`
+	HeartbeatAt    int64         `json:"heartbeat_at,omitempty"`
+	PID            int           `json:"pid,omitempty"`
+	DefinitionHash string        `json:"definition_hash,omitempty"`
+	RunLogOffset   int64         `json:"run_log_offset,omitempty"`
+}
+
+// PendingLaunch reserves the manifest shape used by later prepare phases to
+// swap blocked placeholder panes into real bay surfaces.
+type PendingLaunch struct {
+	CreatedAt int64       `json:"created_at,omitempty"`
+	Kind      SurfaceType `json:"kind"`
+	Name      string      `json:"name,omitempty"`
+	Agent     string      `json:"agent,omitempty"`
+	Command   string      `json:"command,omitempty"`
+	SplitDir  string      `json:"split_dir,omitempty"`
+	Tmux      *TmuxAttrs  `json:"tmux,omitempty"`
 }
 
 // WorktreeAttrs holds git worktree metadata. Only present for worktree bays.
@@ -479,6 +517,10 @@ func Parse(data []byte) (*Manifest, error) {
 			return nil, err
 		}
 	}
+	if m.Version < 7 {
+		migrateV6ToV7(&m)
+	}
+	ensureV7Defaults(&m)
 	m.Version = CurrentVersion
 
 	return &m, nil
@@ -539,6 +581,27 @@ func migrateV5ToV6(m *Manifest) error {
 	return nil
 }
 
+func migrateV6ToV7(m *Manifest) {
+	ensureV7Defaults(m)
+}
+
+func ensureV7Defaults(m *Manifest) {
+	for i := range m.Docks {
+		if m.Docks[i].Bays == nil {
+			m.Docks[i].Bays = []Bay{}
+		}
+		for j := range m.Docks[i].Bays {
+			bay := &m.Docks[i].Bays[j]
+			if bay.Prepare == nil {
+				bay.Prepare = []PrepareStep{}
+			}
+			if bay.PendingSurfaces == nil {
+				bay.PendingSurfaces = []PendingLaunch{}
+			}
+		}
+	}
+}
+
 // Load reads and parses a manifest file.
 func Load(path string) (*Manifest, error) {
 	data, err := os.ReadFile(path)
@@ -556,30 +619,25 @@ func Save(path string, m *Manifest) error {
 		return fmt.Errorf("creating manifest dir: %w", err)
 	}
 
-	lockPath := path + ".lock"
-	unlock, err := lockFile(lockPath)
-	if err != nil {
-		return fmt.Errorf("acquiring manifest lock: %w", err)
-	}
-	defer unlock()
+	return WithLock(path, func() error {
+		// Rolling backup before overwriting.
+		BackupIfNeeded(path)
 
-	// Rolling backup before overwriting.
-	BackupIfNeeded(path)
+		data, err := json.MarshalIndent(m, "", "  ")
+		if err != nil {
+			return fmt.Errorf("encoding manifest: %w", err)
+		}
 
-	data, err := json.MarshalIndent(m, "", "  ")
-	if err != nil {
-		return fmt.Errorf("encoding manifest: %w", err)
-	}
-
-	// Atomic write: write to temp, then rename.
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
-		return fmt.Errorf("writing manifest: %w", err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return fmt.Errorf("renaming manifest: %w", err)
-	}
-	return nil
+		// Atomic write: write to temp, then rename.
+		tmpPath := path + ".tmp"
+		if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
+			return fmt.Errorf("writing manifest: %w", err)
+		}
+		if err := os.Rename(tmpPath, path); err != nil {
+			return fmt.Errorf("renaming manifest: %w", err)
+		}
+		return nil
+	})
 }
 
 // LockedUpdate atomically loads the manifest, calls fn for modifications, and saves.
@@ -598,55 +656,51 @@ func LockedUpdateMaybe(path string, fn func(m *Manifest) (bool, error)) error {
 		return fmt.Errorf("creating manifest dir: %w", err)
 	}
 
-	lockPath := path + ".lock"
-	unlock, err := lockFile(lockPath)
-	if err != nil {
-		return fmt.Errorf("acquiring manifest lock: %w", err)
-	}
-	defer unlock()
-
-	var m *Manifest
-	data, readErr := os.ReadFile(path)
-	if readErr != nil {
-		if os.IsNotExist(readErr) {
-			m = New()
+	return WithLock(path, func() error {
+		var m *Manifest
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			if os.IsNotExist(readErr) {
+				m = New()
+			} else {
+				return fmt.Errorf("reading manifest: %w", readErr)
+			}
 		} else {
-			return fmt.Errorf("reading manifest: %w", readErr)
+			parsed, err := Parse(data)
+			if err != nil {
+				return err
+			}
+			m = parsed
 		}
-	} else {
-		m, err = Parse(data)
+
+		changed, err := fn(m)
 		if err != nil {
 			return err
 		}
-	}
+		if !changed {
+			return nil
+		}
 
-	changed, err := fn(m)
-	if err != nil {
-		return err
-	}
-	if !changed {
+		// Rolling backup before overwriting.
+		if readErr == nil {
+			BackupIfNeeded(path)
+		}
+
+		encoded, err := json.MarshalIndent(m, "", "  ")
+		if err != nil {
+			return fmt.Errorf("encoding manifest: %w", err)
+		}
+
+		// Atomic write: write to temp, then rename.
+		tmpPath := path + ".tmp"
+		if err := os.WriteFile(tmpPath, encoded, 0o644); err != nil {
+			return fmt.Errorf("writing manifest: %w", err)
+		}
+		if err := os.Rename(tmpPath, path); err != nil {
+			return fmt.Errorf("renaming manifest: %w", err)
+		}
 		return nil
-	}
-
-	// Rolling backup before overwriting.
-	if readErr == nil {
-		BackupIfNeeded(path)
-	}
-
-	encoded, err := json.MarshalIndent(m, "", "  ")
-	if err != nil {
-		return fmt.Errorf("encoding manifest: %w", err)
-	}
-
-	// Atomic write: write to temp, then rename.
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, encoded, 0o644); err != nil {
-		return fmt.Errorf("writing manifest: %w", err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return fmt.Errorf("renaming manifest: %w", err)
-	}
-	return nil
+	})
 }
 
 // LoadArchive reads the archive file.
@@ -774,6 +828,12 @@ func (d *Dock) AddBay(bay Bay) error {
 	}
 	if bay.Surfaces == nil {
 		bay.Surfaces = []Surface{}
+	}
+	if bay.Prepare == nil {
+		bay.Prepare = []PrepareStep{}
+	}
+	if bay.PendingSurfaces == nil {
+		bay.PendingSurfaces = []PendingLaunch{}
 	}
 	d.Bays = append(d.Bays, bay)
 	return nil
@@ -987,11 +1047,13 @@ func SynthesizeHomeBay(d *Dock) Bay {
 		path = d.Path
 	}
 	return Bay{
-		ID:       HomeBayID,
-		Name:     HomeBayID,
-		Type:     BayTypeHome,
-		Path:     path,
-		Surfaces: []Surface{},
+		ID:              HomeBayID,
+		Name:            HomeBayID,
+		Type:            BayTypeHome,
+		Path:            path,
+		Surfaces:        []Surface{},
+		Prepare:         []PrepareStep{},
+		PendingSurfaces: []PendingLaunch{},
 	}
 }
 
@@ -1117,21 +1179,6 @@ func (s *Surface) Validate() []string {
 }
 
 // --- Private helpers ---
-
-func lockFile(path string) (func(), error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
-	if err != nil {
-		return nil, err
-	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		f.Close()
-		return nil, err
-	}
-	return func() {
-		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-		f.Close()
-	}, nil
-}
 
 func copyFile(src, dst string) error {
 	data, err := os.ReadFile(src)

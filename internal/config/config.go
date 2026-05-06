@@ -13,12 +13,13 @@ import (
 
 // Config represents the top-level bay configuration.
 type Config struct {
-	DefaultAgent  string                  `toml:"default_agent,omitempty"`
-	DefaultEditor string                  `toml:"default_editor,omitempty"`
-	Agents        map[string]AgentConfig  `toml:"agents,omitempty"`
-	Editors       map[string]EditorConfig `toml:"editors,omitempty"`
-	Docks         map[string]DockConfig   `toml:"docks,omitempty"`
-	Monitor       MonitorConfig           `toml:"monitor,omitempty"`
+	DefaultAgent     string                  `toml:"default_agent,omitempty"`
+	DefaultEditor    string                  `toml:"default_editor,omitempty"`
+	TrustRepoBayToml *bool                   `toml:"trust_repo_bay_toml,omitempty"`
+	Agents           map[string]AgentConfig  `toml:"agents,omitempty"`
+	Editors          map[string]EditorConfig `toml:"editors,omitempty"`
+	Docks            map[string]DockConfig   `toml:"docks,omitempty"`
+	Monitor          MonitorConfig           `toml:"monitor,omitempty"`
 }
 
 // EditorConfig allows marking a custom editor as GUI.
@@ -85,9 +86,32 @@ func (c *Config) ResolveAgent(name string) (AgentInfo, bool) {
 // DockConfig holds optional per-dock overrides.
 // Fields are only set when the user explicitly overrides manifest defaults.
 type DockConfig struct {
-	Agent     string              `toml:"agent"`
-	AgentArgs map[string][]string `toml:"agent_args"`
-	Terminal  string              `toml:"terminal,omitempty"`
+	Agent            string              `toml:"agent"`
+	AgentArgs        map[string][]string `toml:"agent_args"`
+	Terminal         string              `toml:"terminal,omitempty"`
+	TrustRepoBayToml *bool               `toml:"trust_repo_bay_toml,omitempty"`
+	BayPrepare       []BayPrepareConfig  `toml:"bay_prepare,omitempty"`
+}
+
+// BayPrepareConfig describes one configured prepare step.
+type BayPrepareConfig struct {
+	Name         string   `toml:"name"`
+	Command      []string `toml:"command,omitempty"`
+	ReadyCommand []string `toml:"ready_command,omitempty"`
+	Blocks       []string `toml:"blocks,omitempty"`
+	Run          string   `toml:"run,omitempty"`
+	Timeout      string   `toml:"timeout,omitempty"`
+
+	fields bayPrepareFields
+}
+
+type bayPrepareFields struct {
+	Name         bool
+	Command      bool
+	ReadyCommand bool
+	Blocks       bool
+	Run          bool
+	Timeout      bool
 }
 
 // MonitorConfig configures the pane monitor.
@@ -190,6 +214,8 @@ func (c *Config) Validate() []string {
 				errs = append(errs, fmt.Sprintf("dock %q references unknown agent %q", name, dock.Agent))
 			}
 		}
+		source := fmt.Sprintf("docks.%s.bay_prepare", name)
+		errs = append(errs, ValidatePrepareSource(source, dock.BayPrepare)...)
 	}
 	return errs
 }
