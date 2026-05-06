@@ -772,7 +772,9 @@ bay agent codex --bay home  # agent in dock checkout
 
 #### `bay ls [--json] [--rows] [-s]`
 
-List bays in the current dock. Use `--json` for automation.
+List bays in the current dock. Human output truncates long bay names and
+branches; use `bay show` or `--json` for full values. Use `--json` for
+automation.
 
 ```
 bay ls
@@ -783,7 +785,8 @@ bay ls -s
 
 #### `bay tree [--json] [--rows] [-l] [--dirty]`
 
-Show the full hierarchy: docks, bays, surfaces.
+Show the full hierarchy: docks, bays, surfaces. Human output truncates
+long bay names and branches; use `bay show` or `--json` for full values.
 
 ```
 bay tree

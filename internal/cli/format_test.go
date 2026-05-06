@@ -185,6 +185,67 @@ func TestFormatListView_AlignsBayMetaWithinDock(t *testing.T) {
 	}
 }
 
+func TestFormatListView_TruncatesLongBayNameAndBranch(t *testing.T) {
+	longName := "bay-" + strings.Repeat("long-name-", 6)
+	longBranch := "feature/" + strings.Repeat("long-branch-", 5)
+	docks := []engine.DockInfo{
+		{
+			Name: "api",
+			Bays: []engine.BayInfo{
+				{
+					Name:         longName,
+					Branch:       longBranch,
+					SurfaceCount: 1,
+					SyncStatus:   "ok",
+				},
+			},
+		},
+	}
+	view := BuildListView(docks, ListViewOptions{
+		Focus: ListFocus{Kind: FocusDock, Dock: "api"},
+	})
+
+	out := stripANSI(FormatListView(view, false, false))
+	truncatedName := truncateListField(longName, listBayNameStrMax)
+	truncatedBranch := truncateListField(longBranch, listBranchStrMax)
+	if !strings.Contains(out, "bay "+truncatedName) {
+		t.Fatalf("output missing truncated bay name %q:\n%s", truncatedName, out)
+	}
+	if strings.Contains(out, longName) {
+		t.Fatalf("output should not contain full bay name %q:\n%s", longName, out)
+	}
+	if !strings.Contains(out, "br="+truncatedBranch) {
+		t.Fatalf("output missing truncated branch %q:\n%s", truncatedBranch, out)
+	}
+	if strings.Contains(out, longBranch) {
+		t.Fatalf("output should not contain full branch %q:\n%s", longBranch, out)
+	}
+}
+
+func TestListRowsKeepsLongBayNameAndBranchFull(t *testing.T) {
+	longName := "bay-" + strings.Repeat("long-name-", 6)
+	longBranch := "feature/" + strings.Repeat("long-branch-", 5)
+	view := BuildListView([]engine.DockInfo{
+		{
+			Name: "api",
+			Bays: []engine.BayInfo{
+				{Name: longName, Branch: longBranch, SyncStatus: "ok"},
+			},
+		},
+	}, ListViewOptions{Focus: ListFocus{Kind: FocusDock, Dock: "api"}})
+
+	rows := ListRows(view)
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rows))
+	}
+	if rows[0].BayName != longName {
+		t.Fatalf("BayName = %q, want full %q", rows[0].BayName, longName)
+	}
+	if rows[0].BayBranch != longBranch {
+		t.Fatalf("BayBranch = %q, want full %q", rows[0].BayBranch, longBranch)
+	}
+}
+
 // TestFormatListView_AlignsSurfaceMetaAcrossDock verifies that in tree
 // mode, surface meta columns are aligned across ALL bays in a dock,
 // not just within each bay. A long surface name in one bay

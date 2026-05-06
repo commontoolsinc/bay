@@ -224,9 +224,12 @@ to fit, while descriptions give you a more human-readable hint when
 you're scanning for the right bay.
 
 In `bay ls` / `bay tree`, only the first line is shown and its length
-adapts to terminal width (floored at 15 characters, capped at 80). Pipe
-the output or set `COLUMNS=200 bay tree` to force a wider layout; piped
-output always uses the full 80-character cap.
+adapts to terminal width (floored at 15 characters, capped at 80). Bay
+names and branches are also capped in the human table so one long field
+doesn't push the whole view sideways. Pipe the output or set
+`COLUMNS=200 bay tree` to force a wider description layout; piped output
+always uses the full 80-character description cap. Use `bay show`,
+`bay ls --json`, or `bay tree --json` for full names and branches.
 
 ### Surfaces
 
@@ -916,7 +919,9 @@ dk staging
 ```
 
 Use `bay tree -l` for tmux IDs. Use `bay ls -s` for compact bay-list
-output without labels or key names.
+output without labels or key names. Human `ls`/`tree` output truncates
+long bay names and branches; `bay show` and JSON output keep the full
+values.
 
 ## Machine-readable output
 

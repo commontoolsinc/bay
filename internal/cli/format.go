@@ -257,6 +257,22 @@ func truncateCommand(cmd string) string {
 	return cmd[:29] + "..."
 }
 
+const (
+	listBayNameStrMax = 32
+	listBranchStrMax  = 40
+)
+
+func truncateListField(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	if maxLen <= 2 {
+		return string(runes[:maxLen])
+	}
+	return string(runes[:maxLen-2]) + ".."
+}
+
 // bayMetaCols returns fixed-position columns for bay metadata.
 // Column positions: 0=description, 1=branch, 2=dir (only when different from
 // name), 3=id (only when it adds info beyond name and dir), 4=status,
@@ -271,7 +287,7 @@ func bayMetaCols(bay engine.BayInfo, showCounts, short bool) []metaCol {
 	if first := engine.DescriptionFirstLine(bay.Description); first != "" {
 		cols[0] = descField(first, engine.MaxDescriptionFirstLineLen, short)
 	}
-	cols[1] = metaField("br", bay.Branch, short)
+	cols[1] = metaField("br", truncateListField(bay.Branch, listBranchStrMax), short)
 	// Show directory basename only when it differs from the bay name.
 	dir := ""
 	if bay.Path != "" {
@@ -583,7 +599,7 @@ func FormatListView(view ListView, long, short bool) string {
 		var allSfRows []alignedRow
 		for i, bay := range dock.Bays {
 			isCurrentBay := dock.Name == view.CurrentDock && bay.ID == view.CurrentBayID
-			bayName := bay.Name
+			bayName := truncateListField(bay.Name, listBayNameStrMax)
 			if isCurrentBay {
 				bayName += " *"
 			}
