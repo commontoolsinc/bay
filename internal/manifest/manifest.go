@@ -48,9 +48,9 @@ const (
 	SyncStatusMissing SyncStatus = "missing"
 )
 
-// PrepareStatus constants — per-step prepare lifecycle state. See
-// docs/design/prepare.md for the legal-transition table.
-type PrepareStatus = string
+// PrepareStatus is the runtime state of one prepare step. The
+// legal-transition table lives in docs/design/prepare.md.
+type PrepareStatus string
 
 const (
 	PrepareStatusPending PrepareStatus = "pending"
@@ -121,34 +121,32 @@ type Bay struct {
 	LastActive      int64           `json:"last_active,omitempty"`      // unix timestamp; updated by bay commands
 	PendingCloseAt  int64           `json:"pending_close_at,omitempty"` // unix ts; non-zero = scheduled for auto-close at this time unless a surface is re-added first
 	Surfaces        []Surface       `json:"surfaces"`
-	Worktree        *WorktreeAttrs  `json:"worktree,omitempty"`         // type=worktree only
-	Prepare         []PrepareStep   `json:"prepare,omitempty"`          // per-step prepare lifecycle state; see docs/design/prepare.md
-	PendingSurfaces []PendingLaunch `json:"pending_surfaces,omitempty"` // queued surface launches blocked on prepare; written by Phase E
+	Worktree        *WorktreeAttrs  `json:"worktree,omitempty"` // type=worktree only
+	Prepare         []PrepareStep   `json:"prepare,omitempty"`
+	PendingSurfaces []PendingLaunch `json:"pending_surfaces,omitempty"` // surface launches queued behind a blocked prepare step
 
 	// DeprecatedStatus exists only for v2→v3 manifest migration. Cleared after
 	// migration. The "status" JSON tag is reserved by this field.
 	DeprecatedStatus string `json:"status,omitempty"`
 }
 
-// PrepareStep is one step of a bay's prepare lifecycle. Mirrors the
-// effective merged config entry by name; status fields track runtime
-// state. See docs/design/prepare.md.
+// PrepareStep is the runtime state for one entry of the effective
+// merged bay_prepare config. See docs/design/prepare.md.
 type PrepareStep struct {
 	Name           string        `json:"name"`
 	Status         PrepareStatus `json:"status"`
 	StartedAt      int64         `json:"started_at,omitempty"`
 	FinishedAt     int64         `json:"finished_at,omitempty"`
-	HeartbeatAt    int64         `json:"heartbeat_at,omitempty"` // unix seconds; refreshed every 5s by the worker while running
+	HeartbeatAt    int64         `json:"heartbeat_at,omitempty"` // unix seconds; refreshed every 5s by the running worker
 	Pid            int           `json:"pid,omitempty"`
 	DefinitionHash string        `json:"definition_hash,omitempty"` // sha256 of canonical-encoded {command, ready_command, blocks, timeout}
 	RunLogOffset   int64         `json:"run_log_offset,omitempty"`  // byte offset of the current run's start separator in today's prepare.log; cleared on terminal status
 }
 
 // PendingLaunch is a surface launch queued behind a blocked prepare step.
-// Reserved in v7 schema for Phase E; not written by Phase A code.
 type PendingLaunch struct {
-	Kind  SurfaceType `json:"kind"`            // "agent" or "cmd"
-	Agent string      `json:"agent,omitempty"` // when Kind=="agent"
+	Kind  SurfaceType `json:"kind"`
+	Agent string      `json:"agent,omitempty"`
 	Args  []string    `json:"args,omitempty"`
 }
 
