@@ -131,9 +131,9 @@ func newBayCloseCmd() *cobra.Command {
 		Long: `Close a bay and all its windows. Pass "self" to close the current
 bay, or use --done/--clean/--all to batch-close bays.
 
-  bay close w1               close a specific bay
-  bay close labs:w1          dock-qualified
-  bay close w1 --dock labs   same, with flag
+  bay close b1               close a specific bay
+  bay close labs:b1          dock-qualified
+  bay close b1 --dock labs   same, with flag
   bay close self             close the current bay
   bay close home             close home surfaces; final home dismisses dock UI after confirmation
   bay close --done           close bays that are not dirty or pending
@@ -276,8 +276,8 @@ func newBayCleanReviewCmd() *cobra.Command {
 whole worktree exactly matches a recoverable git ref.
 
   bay clean-review self
-  bay clean-review w1
-  bay clean-review w1 --dock labs`,
+  bay clean-review b1
+  bay clean-review b1 --dock labs`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()

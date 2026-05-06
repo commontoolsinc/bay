@@ -10,18 +10,18 @@ orchestrating session or from within a bay.
 A **bay** is a managed working directory with metadata (branch,
 PR, dirty/merged flags). Each bay has three identity concepts:
 
-- An **ID** — the stable CLI handle. Matches `^w[1-9]\d*$` (lowercase
-  `w` + positive integer). Set at creation, never changes for the
-  bay's lifetime, unique within a dock. The slot is released on
-  close and may later be reused by a new bay, so don't treat
-  IDs as globally permanent across close + recreate. The ID is what
-  every command takes:
-  `bay close w1`, `bay sf show w1:agent`, `bay show w1`.
+- An **ID** — the stable CLI handle. New bays use `^b[1-9]\d*$`
+  (lowercase `b` + positive integer); older persisted bays may still
+  use legacy `w<N>` IDs. Set at creation, never changes for the bay's
+  lifetime, unique within a dock. The slot is released on close and may
+  later be reused by a new bay, so don't treat IDs as globally permanent
+  across close + recreate. The ID is what every command takes:
+  `bay close b1`, `bay sf show b1:agent`, `bay show b1`.
 - A **Name** — a mutable display label. Sticks once set. May be empty
   (display falls back to ID). Filled automatically when a branch is
   detected for the first time, or explicitly via `bay rename`. Names
   are not CLI keys — passing a Name where bay expects an ID errors
-  with `did you mean "w1"?`.
+  with `did you mean "b1"?`.
 - An optional **description** — commit-message-style text for context
   recall. The first line is a short label (cap 80) shown in the picker,
   `bay ls`/`bay tree`, and the `M-/` flash. Optional trailing lines
@@ -40,16 +40,15 @@ PR, dirty/merged flags). Each bay has three identity concepts:
   hour of similar work, it's at the right altitude. An unset body
   defeats the feature.
 
-A **full reference** is `dock:id` (e.g., `labs:w1`). A bare ID
-(`w1`) resolves to the current dock first; if absent there, falls
+A **full reference** is `dock:id` (e.g., `labs:b1`). A bare ID
+(`b1`) resolves to the current dock first; if absent there, falls
 through to a cross-dock search (which errors on ambiguity).
 
 A bay also has a **path** — the on-disk working directory. For
-worktree bays bay assigns sequential subdirs (`w1`, `w2`, `w3`,
-...) under the dock's worktree dir. The path is independent of the
-ID: closing and recreating a bay can leave gaps in the directory
-sequence even while IDs continue numerically. The path basename is
-not a stable identifier.
+worktree bays bay assigns sequential subdirs (`b1`, `b2`, `b3`,
+...) under the dock's worktree dir. For worktree bays the path
+basename matches the bay ID. Closing and recreating a bay can leave
+gaps, and a freed trailing slot may be reused by a future bay.
 
 A **dock** is a named tmux session grouping related bays. Each
 dock owns one local git checkout and can have a default agent type
@@ -152,17 +151,17 @@ Returns the current bay context:
 ```json
 {
   "dock": "labs",
-  "bay_id": "w1",
+  "bay_id": "b1",
   "bay": "auth-fix",
   "surface": "agent",
   "surface_id": 1,
-  "path": "/Users/dev/projects/labs-worktrees/w1"
+  "path": "/Users/dev/projects/labs-worktrees/b1"
 }
 ```
 
 Fields:
 - `dock` — dock name (tmux session).
-- `bay_id` — bay ID (`w<N>`, the stable handle).
+- `bay_id` — bay ID (`b<N>`, the stable handle).
 - `bay` — bay Name (display label, may be empty).
 - `surface` — current surface name (resolved from tmux pane).
 - `surface_id` — current surface ID.
@@ -177,10 +176,10 @@ Returns bays in the current dock:
 ```json
 [
   {
-    "id": "w1",
+    "id": "b1",
     "name": "auth-fix",
     "type": "worktree",
-    "path": "~/projects/labs-worktrees/w1",
+    "path": "~/projects/labs-worktrees/b1",
     "branch": "feature/auth-fix",
     "dirty": false,
     "pending": false,
@@ -197,7 +196,7 @@ Use `bay tree --json` for the global hierarchy:
   "focus": {
     "kind": "bay",
     "dock": "labs",
-    "bay_id": "w1"
+    "bay_id": "b1"
   },
   "recursive": true,
   "docks": [
@@ -207,10 +206,10 @@ Use `bay tree --json` for the global hierarchy:
       "agent": "claude",
       "bays": [
         {
-          "id": "w1",
+          "id": "b1",
           "name": "auth-fix",
           "type": "worktree",
-          "path": "~/projects/labs-worktrees/w1",
+          "path": "~/projects/labs-worktrees/b1",
           "branch": "feature/auth-fix",
           "dirty": false,
           "merged": false,
@@ -241,7 +240,7 @@ Use `bay tree --json` for the global hierarchy:
 ```
 
 Field semantics:
-- `id` — bay ID (`w<N>`, the stable handle for this bay's lifetime).
+- `id` — bay ID (`b<N>`, the stable handle for this bay's lifetime).
 - `name` — bay Name (display label; may be empty for unnamed
   bays, in which case display falls back to ID).
 - `focus` — the scope bay inferred from CWD and tmux.
@@ -281,12 +280,12 @@ current dock.
 
 ```json
 {
-  "id": "w1",
+  "id": "b1",
   "name": "auth-fix",
   "description": "Login flow fixes",
   "dock": "labs",
   "type": "worktree",
-  "path": "/Users/dev/projects/labs-worktrees/w1",
+  "path": "/Users/dev/projects/labs-worktrees/b1",
   "branch": "feature/auth-fix",
   "pr": "347",
   "dirty": false,
@@ -335,7 +334,7 @@ The container (dock, bay) is selected via `--dock` / `--bay`
 flags or, when omitted, inherited from the current tmux session.
 
 Commands that target a bay take the **ID** as the positional
-(e.g., `bay close w1`). The exception is `bay new [name]`, where
+(e.g., `bay close b1`). The exception is `bay new [name]`, where
 the positional names the new bay's display Name (or is left
 empty for the auto-fill-from-branch behavior). Surfaces use a
 qualified form: `id:surface-name` or `dock:id:surface-name`.
@@ -435,7 +434,7 @@ Batch flags (without an ID):
 - `--dry-run`: preview what would be closed without closing anything.
 
 ```
-bay close w1
+bay close b1
 bay close self
 bay close home
 bay close self --force
@@ -494,7 +493,7 @@ JSON output (`--json`) includes the full description, body and all.
 
 ```
 bay show
-bay show w1                     # by ID
+bay show b1                     # by ID
 bay show --short                # one-line bay summary
 bay show --short --plain        # same, no ANSI colors
 bay show --flash                # flash first line in tmux status bar (M-/)
@@ -505,15 +504,15 @@ bay show self --json
 #### `bay rename [id] <new-name>`
 
 Rename a bay's display label. The new Name must match
-`[a-zA-Z0-9_-]+`, cannot match the reserved ID pattern
-`^w[1-9]\d*$`, and cannot equal the reserved `home` handle. With
-one arg, renames the current bay. After rename, the ID is unchanged
-— it's still the CLI key. Renaming the home pseudo-bay itself is
-rejected.
+`[a-zA-Z0-9_-]+`, cannot match the reserved generated ID patterns
+`^b[1-9]\d*$` or legacy `^w[1-9]\d*$`, and cannot equal the
+reserved `home` handle. With one arg, renames the current bay. After
+rename, the ID is unchanged — it's still the CLI key. Renaming the
+home pseudo-bay itself is rejected.
 
 ```
 bay rename mem-refactor                 # rename current bay
-bay rename w1 mem-refactor              # rename by ID
+bay rename b1 mem-refactor              # rename by ID
 ```
 
 #### `bay describe [id] [<description>]` (also: `bay describe`)
@@ -554,7 +553,7 @@ paused mid-rebase on origin/main
 rename conflict on helper.ts
 tests green except auth_test.go"             # set with body (actual newlines)
 bay describe --edit                       # open $EDITOR
-bay describe w1 "Login fixes"             # set by ID
+bay describe b1 "Login fixes"             # set by ID
 bay describe --clear                      # clear current bay's description
 bay describe "Login flow fixes"              # top-level shortcut
 ```
@@ -575,7 +574,7 @@ intra-dock navigation.
 ```
 bay go                       # pick from bays
 bay go auth-fix              # fuzzy: matches Name "auth-fix"
-bay go w1                    # fuzzy: matches ID "w1"
+bay go b1                    # fuzzy: matches ID "b1"
 bay go 347                   # match by PR number
 bay go --waiting             # filter to waiting
 bay go --next-waiting        # cycle through waiting
@@ -643,7 +642,7 @@ bay surface new shell tests                 # surface named "tests"
 bay surface new agent codex                 # agent as split pane
 bay surface new cmd "npm test" tests        # named cmd surface
 bay surface new shell --window              # shell in new tmux window
-bay surface new shell --bay w1               # in a different bay
+bay surface new shell --bay b1               # in a different bay
 bay surface new cmd "git pull --ff-only" --bay home
 bay sf new edit                             # editor surface
 ```
@@ -730,7 +729,7 @@ Editor resolution: `--editor` flag > `default_editor` in config >
 
 ```
 bay edit                    # open current bay (default)
-bay edit w1                 # open specific bay by ID
+bay edit b1                 # open specific bay by ID
 bay edit --bay home         # open the dock checkout
 bay edit --editor vim       # use a specific editor this time
 bay edit --dock             # dock editor (all bays)
@@ -764,7 +763,7 @@ the current tmux window. Use `--window` for a new tmux window.
 bay shell                   # shell as split pane
 bay shell logs              # named "logs"
 bay shell --window          # shell in new window
-bay shell logs --bay w1       # in a different bay
+bay shell logs --bay b1       # in a different bay
 bay shell --bay home        # shell in dock checkout
 bay agent codex --bay home  # agent in dock checkout
 ```
@@ -943,7 +942,7 @@ untouched.
 Merged is set to true automatically when bay detects a merge. Then:
 
 ```
-bay close w1
+bay close b1
 ```
 
 Or batch-close finished bays (not dirty, not pending):

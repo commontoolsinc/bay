@@ -129,11 +129,11 @@ func TestFocusSurface_SelectsWindowAndPane(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 
 	mockTmux.NewSession("labs")
-	winID, _ := mockTmux.NewWindow("labs", "w1", "/tmp")
+	winID, _ := mockTmux.NewWindow("labs", "b1", "/tmp")
 	panes, _ := mockTmux.ListPanes(winID)
 
 	entry := &nav.SurfaceEntry{WindowID: winID, PaneID: panes[0].ID}
-	if err := focusSurface(eng, entry, "labs", "w1"); err != nil {
+	if err := focusSurface(eng, entry, "labs", "b1"); err != nil {
 		t.Fatalf("focusSurface: %v", err)
 	}
 
@@ -159,7 +159,7 @@ func TestFocusSurface_SkipsEmptyIDs(t *testing.T) {
 	eng, mockTmux, _, _ := testNavEngine(t)
 
 	entry := &nav.SurfaceEntry{} // no window or pane ID
-	if err := focusSurface(eng, entry, "labs", "w1"); err != nil {
+	if err := focusSurface(eng, entry, "labs", "b1"); err != nil {
 		t.Fatalf("focusSurface: %v", err)
 	}
 
@@ -181,9 +181,9 @@ func TestSurfaceCycle_Forward(t *testing.T) {
 	}
 	os.MkdirAll(bay.Path, 0o755)
 	// Add a second surface.
-	eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"})
+	eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"})
 
-	bay, _ = eng.BayShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", "b1")
 
 	// ResolveSelf uses tmux window ID fallback when CWD doesn't match.
 	mockTmux.SetCurrentWindowID(bay.Surfaces[0].Tmux.WindowID)
@@ -214,9 +214,9 @@ func TestSurfaceCycle_Backward(t *testing.T) {
 		t.Fatalf("BayNew: %v", err)
 	}
 	os.MkdirAll(bay.Path, 0o755)
-	eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"})
+	eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v"})
 
-	bay, _ = eng.BayShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", "b1")
 
 	// Current = second surface (index 1). Prev should go to first (index 0).
 	mockTmux.SetCurrentWindowID(bay.Surfaces[1].Tmux.WindowID)
@@ -246,7 +246,7 @@ func TestSurfaceCycle_NoFlashOnSingleSurface(t *testing.T) {
 		t.Fatalf("BayNew: %v", err)
 	}
 	os.MkdirAll(bay.Path, 0o755)
-	bay, _ = eng.BayShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", "b1")
 
 	mockTmux.SetCurrentWindowID(bay.Surfaces[0].Tmux.WindowID)
 	mockTmux.SetCurrentPaneID(bay.Surfaces[0].Tmux.PaneID)
@@ -268,8 +268,8 @@ func TestSurfaceGo_QueryFilter(t *testing.T) {
 
 	bay, _ := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true})
 	os.MkdirAll(bay.Path, 0o755)
-	eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"})
-	bay, _ = eng.BayShow("labs", "w1")
+	eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"})
+	bay, _ = eng.BayShow("labs", "b1")
 
 	mockTmux.SetCurrentWindowID(bay.Surfaces[0].Tmux.WindowID)
 	mockTmux.SetCurrentPaneID(bay.Surfaces[0].Tmux.PaneID)
@@ -296,10 +296,10 @@ func TestSurfaceGo_NextWaitingIncludesBellWindow(t *testing.T) {
 
 	bay, _ := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true})
 	os.MkdirAll(bay.Path, 0o755)
-	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "codex"}); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "codex"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
-	bay, _ = eng.BayShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", "b1")
 	shell := bay.Surfaces[0]
 	agent := bay.Surfaces[1]
 
@@ -441,7 +441,7 @@ func TestBayCycle_Forward(t *testing.T) {
 	eng.BayNew(engine.BayNewOptions{Dock: "labs"})
 
 	// Set tmux context to first bay's window.
-	bay1, _ := eng.BayShow("labs", "w1")
+	bay1, _ := eng.BayShow("labs", "b1")
 	mockTmux.SetCurrentSession("labs")
 	mockTmux.SetCurrentWindowID(bay1.Surfaces[0].Tmux.WindowID)
 
@@ -450,8 +450,8 @@ func TestBayCycle_Forward(t *testing.T) {
 		t.Fatalf("bayCycle: %v", err)
 	}
 
-	// Should switch to w2's window.
-	bay2, _ := eng.BayShow("labs", "w2")
+	// Should switch to b2's window.
+	bay2, _ := eng.BayShow("labs", "b2")
 	foundSelect := false
 	for _, call := range mockTmux.Calls {
 		if call.Method == "SelectWindow" && call.Args[0] == bay2.Surfaces[0].Tmux.WindowID {
@@ -471,7 +471,7 @@ func TestBayCycle_IncludesVisibleHome(t *testing.T) {
 		t.Fatalf("SurfaceAdd(home): %v", err)
 	}
 
-	bay1, _ := eng.BayShow("labs", "w1")
+	bay1, _ := eng.BayShow("labs", "b1")
 	home, _ := eng.BayShow("labs", manifest.HomeBayID)
 	mockTmux.SetCurrentSession("labs")
 	mockTmux.SetCurrentWindowID(bay1.Surfaces[0].Tmux.WindowID)
@@ -498,9 +498,9 @@ func TestBayCycle_Backward(t *testing.T) {
 	eng.BayNew(engine.BayNewOptions{Dock: "labs"})
 	eng.BayNew(engine.BayNewOptions{Dock: "labs"})
 
-	// Current = w2. Prev should go to w1.
-	bay1, _ := eng.BayShow("labs", "w1")
-	bay2, _ := eng.BayShow("labs", "w2")
+	// Current = b2. Prev should go to b1.
+	bay1, _ := eng.BayShow("labs", "b1")
+	bay2, _ := eng.BayShow("labs", "b2")
 	mockTmux.SetCurrentSession("labs")
 	mockTmux.SetCurrentWindowID(bay2.Surfaces[0].Tmux.WindowID)
 
@@ -525,7 +525,7 @@ func TestBayCycle_NoFlashOnSingleBay(t *testing.T) {
 
 	eng.BayNew(engine.BayNewOptions{Dock: "labs"})
 
-	bay1, _ := eng.BayShow("labs", "w1")
+	bay1, _ := eng.BayShow("labs", "b1")
 	mockTmux.SetCurrentSession("labs")
 	mockTmux.SetCurrentWindowID(bay1.Surfaces[0].Tmux.WindowID)
 
@@ -542,7 +542,7 @@ func TestBayCycle_NoFlashOnSingleBay(t *testing.T) {
 // --- bay rename self ---
 
 func TestBayRename_SelfResolution(t *testing.T) {
-	eng := selfFixture(t) // dock=labs, bay=w1, current surface=second
+	eng := selfFixture(t) // dock=labs, bay=b1, current surface=second
 
 	dockName, bayID, err := resolveBayArg(eng, "self", "")
 	if err != nil {
@@ -564,7 +564,7 @@ func TestBayRename_SelfResolution(t *testing.T) {
 // --- dock rename self ---
 
 func TestDockRename_SelfResolution(t *testing.T) {
-	eng := selfFixture(t) // dock=labs, bay=w1, current surface=second
+	eng := selfFixture(t) // dock=labs, bay=b1, current surface=second
 
 	dockName, _, err := eng.ResolveSelf()
 	if err != nil {

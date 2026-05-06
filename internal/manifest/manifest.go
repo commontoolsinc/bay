@@ -99,7 +99,7 @@ func (d Dock) EffectiveWorktreeDir() string {
 
 // Bay represents a unit of work — typically one branch/PR.
 type Bay struct {
-	ID             string         `json:"id"`                         // stable handle (^w[1-9]\d*$); set at creation, never changes; unique within dock
+	ID             string         `json:"id"`                         // stable handle (current ^b[1-9]\d*$, legacy ^w[1-9]\d*$); set at creation, never changes; unique within dock
 	Name           string         `json:"name"`                       // user-facing display label, renameable; not a CLI key. Empty until set explicitly or filled from a branch.
 	Type           BayType        `json:"type"`                       // "worktree", "external", or "home"
 	Path           string         `json:"path,omitempty"`             // absolute path to the working directory
@@ -129,12 +129,19 @@ func (b *Bay) IsMerged() bool {
 	return b.Worktree != nil && b.Worktree.Merged
 }
 
-// IsBayID reports whether s matches the canonical bay ID
-// pattern: lowercase 'w' followed by a positive integer with no leading
-// zeros. The pattern is reserved — bay Names cannot match it,
-// which keeps the ID and Name namespaces disjoint.
+// Generated bay ID prefixes. New bays use CurrentBayIDPrefix; LegacyBayIDPrefix
+// remains recognized so existing manifests keep their stable handles.
+const (
+	CurrentBayIDPrefix = "b"
+	LegacyBayIDPrefix  = "w"
+)
+
+// IsBayID reports whether s matches a generated bay ID pattern: lowercase
+// 'b' or legacy 'w' followed by a positive integer with no leading zeros.
+// The pattern is reserved — bay Names cannot match it, which keeps the ID
+// and Name namespaces disjoint.
 func IsBayID(s string) bool {
-	_, ok := parseBayIDNum(s)
+	_, _, ok := parseBayID(s)
 	return ok
 }
 
@@ -158,23 +165,38 @@ func IsHomeLikeBay(bay *Bay) bool {
 	return IsHomeBay(bay) || (bay != nil && bay.Name == HomeBayID)
 }
 
-// parseBayIDNum extracts the integer suffix from a bay ID.
-// Returns (n, true) for valid IDs (n >= 1), (0, false) otherwise.
-func parseBayIDNum(s string) (int, bool) {
-	if len(s) < 2 || s[0] != 'w' {
-		return 0, false
+// parseBayID extracts the prefix and integer suffix from a generated bay ID.
+// Returns (prefix, n, true) for valid IDs (n >= 1), ("", 0, false) otherwise.
+func parseBayID(s string) (string, int, bool) {
+	if len(s) < 2 {
+		return "", 0, false
+	}
+	prefix := s[:1]
+	if prefix != CurrentBayIDPrefix && prefix != LegacyBayIDPrefix {
+		return "", 0, false
 	}
 	rest := s[1:]
 	// Reject any non-digit lead — strconv.Atoi accepts +/- prefixes,
 	// but those aren't canonical bay IDs.
 	if rest[0] < '0' || rest[0] > '9' {
-		return 0, false
+		return "", 0, false
 	}
 	if len(rest) > 1 && rest[0] == '0' { // reject leading zeros (canonical)
-		return 0, false
+		return "", 0, false
 	}
 	n, err := strconv.Atoi(rest)
 	if err != nil || n < 1 {
+		return "", 0, false
+	}
+	return prefix, n, true
+}
+
+// currentBayIDNum returns n for IDs matching the current-prefix pattern
+// b<N>; legacy w<N> IDs return false. Used to advance the synthesized
+// sequence without letting legacy IDs influence it.
+func currentBayIDNum(s string) (int, bool) {
+	prefix, n, ok := parseBayID(s)
+	if !ok || prefix != CurrentBayIDPrefix {
 		return 0, false
 	}
 	return n, true
@@ -183,21 +205,20 @@ func parseBayIDNum(s string) (int, bool) {
 // AssignBayIDs fills in IDs for any bay in the dock whose ID
 // is currently empty. Two passes after an initial scan:
 //
-//  1. Claim the path basename as ID if it matches the canonical pattern
-//     and isn't already taken in this dock. This preserves continuity
-//     for legacy manifests where path basenames are already w1/w2/...
-//  2. Assign next-sequential w<N> for any bay still without an ID,
-//     where N is one above the highest used in the dock.
+//  1. Claim the path basename as ID if it matches a generated bay ID pattern
+//     and isn't already taken in this dock. This preserves continuity for
+//     legacy manifests where path basenames are already w1/w2/... while also
+//     accepting current b<N> basenames.
+//  2. Assign next-sequential b<N> for any bay still without an ID.
 //
-// Sequential IDs (pass 2) always fall above claimed-basename IDs (pass 1),
-// which keeps externals from stealing low IDs out from under worktrees
-// when dock ordering is mixed. The three-pass structure (scan → claim →
+// The synthesized sequence is prefix-local: legacy w<N> IDs do not make
+// the first new b<N> become b<N+1>. The three-pass structure (scan → claim →
 // sequential) is required to preserve that invariant: merging scan into
 // claim risks one bay claiming an ID a later bay already
 // holds explicitly, and merging claim into sequential lets a sequential
 // fill grab a low ID before another bay's basename can claim it.
 //
-// On collisions in pass 1 (two bays sharing the same w<N> path
+// On collisions in pass 1 (two bays sharing the same generated path
 // basename), the bay appearing first in dock.Bays wins; the
 // second falls through to pass 2. Iteration order is the manifest's
 // stored order, so the result is deterministic across runs.
@@ -217,15 +238,15 @@ func AssignBayIDs(dock *Dock) {
 	}
 
 	used := map[string]bool{}
-	maxN := 0
+	currentMaxN := 0
 	for i := range dock.Bays {
 		id := dock.Bays[i].ID
 		if id == "" {
 			continue
 		}
 		used[id] = true
-		if n, ok := parseBayIDNum(id); ok && n > maxN {
-			maxN = n
+		if n, ok := currentBayIDNum(id); ok && n > currentMaxN {
+			currentMaxN = n
 		}
 	}
 	for i := range dock.Bays {
@@ -234,14 +255,13 @@ func AssignBayIDs(dock *Dock) {
 			continue
 		}
 		base := filepath.Base(bay.Path)
-		n, ok := parseBayIDNum(base)
-		if !ok || used[base] {
+		if !IsBayID(base) || used[base] {
 			continue
 		}
 		bay.ID = base
 		used[base] = true
-		if n > maxN {
-			maxN = n
+		if n, ok := currentBayIDNum(base); ok && n > currentMaxN {
+			currentMaxN = n
 		}
 	}
 	for i := range dock.Bays {
@@ -249,8 +269,8 @@ func AssignBayIDs(dock *Dock) {
 		if bay.ID != "" {
 			continue
 		}
-		maxN++
-		bay.ID = fmt.Sprintf("w%d", maxN)
+		currentMaxN++
+		bay.ID = fmt.Sprintf("%s%d", CurrentBayIDPrefix, currentMaxN)
 		used[bay.ID] = true
 	}
 }

@@ -53,8 +53,8 @@ func (e *Engine) BayNew(opts BayNewOptions) (*manifest.Bay, error) {
 		displayName = uniqueBayName(dock, nil, abbreviateBranch(opts.Branch))
 	}
 	// Validate explicit/branch-derived name early. Names matching the
-	// reserved ID pattern (^w[1-9]\d*$) or reserved home handle are
-	// rejected here.
+	// reserved generated ID patterns (^b[1-9]\d*$ or legacy ^w[1-9]\d*$)
+	// or reserved home handle are rejected here.
 	if displayName != "" {
 		if err := ValidateBayName(displayName); err != nil {
 			return nil, err
@@ -95,7 +95,7 @@ func (e *Engine) BayNew(opts BayNewOptions) (*manifest.Bay, error) {
 		if err := os.MkdirAll(wtDir, 0o755); err != nil {
 			return nil, fmt.Errorf("creating worktree dir: %w", err)
 		}
-		// Worktree dirs are sequential (w1, w2, ...) and independent of
+		// Worktree dirs are sequential (b1, b2, ...) and independent of
 		// the bay name. The name can be renamed or auto-updated as
 		// work pivots, but the on-disk directory stays stable.
 		bayPath = filepath.Join(wtDir, nextBayDir(wtDir, dock))
@@ -1203,7 +1203,7 @@ func (e *Engine) ResolveByWindowID(tmuxWindowID string) (dockName, bayID string,
 
 // BayDirTag returns the path-derived display tag for a bay.
 // For worktree bays this is usually the stable worktree directory
-// basename (w1, w2, ...).
+// basename (b1, b2, ...; legacy bays may still be w<N>).
 func BayDirTag(bay *manifest.Bay) string {
 	if bay == nil || bay.Path == "" {
 		return ""
@@ -1624,7 +1624,7 @@ func copyWorktreeIncludeFiles(repoRoot, worktreePath string, files []string) err
 	return nil
 }
 
-// nextBayDir returns the next sequential directory basename (w1, w2,
+// nextBayDir returns the next sequential directory basename (b1, b2,
 // ...) that is unclaimed — neither present on disk under wtDir nor recorded
 // as the basename of any bay's Path in the dock. Worktree directory
 // names are intentionally decoupled from bay names so that renaming
@@ -1639,7 +1639,7 @@ func nextBayDir(wtDir string, dock *manifest.Dock) string {
 		}
 	}
 	for i := 1; ; i++ {
-		name := fmt.Sprintf("w%d", i)
+		name := fmt.Sprintf("%s%d", manifest.CurrentBayIDPrefix, i)
 		if claimed[name] {
 			continue
 		}

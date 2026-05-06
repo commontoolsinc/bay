@@ -50,7 +50,7 @@ bay ls
 
 ```
 dk bay-tutorial *
-  bay w1 *  n=1
+  bay b1 *  n=1
 ```
 
 One dock, one bay with a shell surface. Everything
@@ -76,7 +76,7 @@ bay new --branch fix/login-bug
 
 That creates a second bay on the `fix/login-bug` branch (or
 checks it out if it already exists on the remote).
-Within a few seconds the tmux tab name updates to `w1.login-bug` — bay
+Within a few seconds the tmux tab name updates to `b2.login-bug` — bay
 watches your branch in the background and keeps the name in sync.
 
 You can also create a branch manually in an existing bay with
@@ -109,14 +109,14 @@ bay ls
 
 ```
 dk bay-tutorial *
-  bay w1             n=1
+  bay b1             n=1
   bay login-bug      br=fix/login-bug  n=1
   bay auth-refactor  br=fix/auth-refactor  n=1
   bay review *       n=1
 ```
 
 Four bays in creation order. The two with `--branch` show their
-branch; `review` and `w1` have no branch. The `*` marks where you
+branch; `review` and `b1` have no branch. The `*` marks where you
 are now.
 
 Switch between them with `Option+g` (bay picker, requires
@@ -161,13 +161,13 @@ bay tree
 
 ```
 dk bay-tutorial *
-  bay login-bug *  br=fix/login-bug  dir=w1
+  bay login-bug *  br=fix/login-bug  dir=b2
     sf shell *    ty=shell
     sf shell-2    ty=shell
     sf monitor    ty=cmd
 ```
 
-The `dir=w1` column shows the on-disk worktree directory basename,
+The `dir=b2` column shows the on-disk worktree directory basename,
 which doubles as the bay's stable handle for worktree bays. It only
 appears when the dir basename and Name differ; auto-numbered bays
 (no Name yet) display the handle directly in the `bay` column. For
@@ -239,12 +239,12 @@ Other useful commands:
 ## 7. Clean up
 
 Close a bay when you're done with it. Use the bay **ID**
-(`w1`, `w2`, etc.) — visible in `bay ls` and `bay tree`. Friendly
+(`b1`, `b2`, etc.) — visible in `bay ls` and `bay tree`. Friendly
 Names like "review" are display labels; the ID is what every command
 takes:
 
 ```
-bay close w1     # by ID
+bay close b1     # by ID
 bay close self   # close the current bay
 ```
 

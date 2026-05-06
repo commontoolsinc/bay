@@ -47,7 +47,7 @@ func newSurfaceNewCmd() *cobra.Command {
   bay sf new shell                       split a shell
   bay sf new shell logs --window         new tmux window named "logs"
   bay sf new agent claude                start an agent surface
-  bay sf new agent codex --bay w1        agent in another bay
+  bay sf new agent codex --bay b1        agent in another bay
   bay sf new cmd "npm test" tests        run a command
   bay sf new edit                        open the editor`,
 	}
@@ -75,8 +75,8 @@ type surfaceNewOpts struct {
 }
 
 // validateSurfaceName rejects names containing a colon. Users who type
-// `bay surface new shell w1:logs` expecting colon-path semantics would
-// otherwise land a surface literally named "w1:logs" in the current bay.
+// `bay surface new shell b1:logs` expecting colon-path semantics would
+// otherwise land a surface literally named "b1:logs" in the current bay.
 func validateSurfaceName(name string) error {
 	if strings.Contains(name, ":") {
 		return fmt.Errorf("surface name %q cannot contain ':' (use --bay/--dock to specify a bay)", name)
@@ -143,9 +143,9 @@ func newSurfaceCloseCmd() *cobra.Command {
 		Long: `Close a surface by name. Use 'self' to target the current surface.
 
   bay sf close monitor              close "monitor" in the current bay
-  bay sf close w1:monitor           close "monitor" in bay w1
-  bay sf close labs:w1:monitor      fully-qualified
-  bay sf close monitor --bay w1     same as w1:monitor
+  bay sf close b1:monitor           close "monitor" in bay b1
+  bay sf close labs:b1:monitor      fully-qualified
+  bay sf close monitor --bay b1     same as b1:monitor
   bay sf close self                 close the current pane's surface
   bay sf rm shell-2                 same thing with the rm alias
 
@@ -638,8 +638,8 @@ func newSurfaceRenameCmd() *cobra.Command {
 
   bay sf rename agent2                    rename current surface
   bay sf rename agent agent2              rename in current bay
-  bay sf rename w1:agent agent2           rename agent in bay w1
-  bay sf rename agent agent2 --bay w1     same as w1:agent`,
+  bay sf rename b1:agent agent2           rename agent in bay b1
+  bay sf rename agent agent2 --bay b1     same as b1:agent`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()

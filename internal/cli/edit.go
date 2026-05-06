@@ -26,7 +26,7 @@ Terminal editors split the current tmux window by default; use --window
 for a new tmux window.
 
   bay edit                    bay editor as a split pane
-  bay edit w1                 specific bay as a split pane
+  bay edit b1                 specific bay as a split pane
   bay edit --bay home         edit the dock checkout
   bay edit --dock             dock editor (all bays)
   bay edit --dock src/main.go focus dock editor on a file

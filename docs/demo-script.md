@@ -53,7 +53,7 @@ bay dk tree
 
 **Do:** Close it. Bays are addressed by ID — `bay dk tree` shows
 the ID column when it differs from the friendly Name; here the new
-bay's ID is the next free `w<N>`.
+bay's ID is the next free `b<N>`.
 
 ```
 bay close <id>

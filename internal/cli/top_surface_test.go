@@ -17,7 +17,7 @@ func TestRunSurfaceNew_Shell(t *testing.T) {
 		t.Fatalf("BayNew: %v", err)
 	}
 
-	err := runSurfaceNew(eng, "labs", "w1", surfaceNewOpts{
+	err := runSurfaceNew(eng, "labs", "b1", surfaceNewOpts{
 		Type:     manifest.SurfaceTypeShell,
 		SplitDir: "v",
 	})
@@ -25,8 +25,8 @@ func TestRunSurfaceNew_Shell(t *testing.T) {
 		t.Fatalf("runSurfaceNew: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
-	// w1 was created with --shell so it has one shell already; the new one
+	bay, _ := eng.BayShow("labs", "b1")
+	// b1 was created with --shell so it has one shell already; the new one
 	// should be the second.
 	if len(bay.Surfaces) != 2 {
 		t.Fatalf("expected 2 surfaces, got %d", len(bay.Surfaces))
@@ -100,7 +100,7 @@ func TestRunSurfaceNew_Agent(t *testing.T) {
 		t.Fatalf("BayNew: %v", err)
 	}
 
-	err := runSurfaceNew(eng, "labs", "w1", surfaceNewOpts{
+	err := runSurfaceNew(eng, "labs", "b1", surfaceNewOpts{
 		Type:     manifest.SurfaceTypeAgent,
 		Agent:    "claude",
 		SplitDir: "v",
@@ -109,7 +109,7 @@ func TestRunSurfaceNew_Agent(t *testing.T) {
 		t.Fatalf("runSurfaceNew: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	if len(bay.Surfaces) != 2 {
 		t.Fatalf("expected 2 surfaces, got %d", len(bay.Surfaces))
 	}
@@ -128,7 +128,7 @@ func TestRunSurfaceNew_Cmd(t *testing.T) {
 		t.Fatalf("BayNew: %v", err)
 	}
 
-	err := runSurfaceNew(eng, "labs", "w1", surfaceNewOpts{
+	err := runSurfaceNew(eng, "labs", "b1", surfaceNewOpts{
 		Type:     manifest.SurfaceTypeCmd,
 		Command:  "tail -f log.txt",
 		Name:     "tail",
@@ -138,7 +138,7 @@ func TestRunSurfaceNew_Cmd(t *testing.T) {
 		t.Fatalf("runSurfaceNew: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	if len(bay.Surfaces) != 2 {
 		t.Fatalf("expected 2 surfaces, got %d", len(bay.Surfaces))
 	}
@@ -161,7 +161,7 @@ func TestRunSurfaceNew_AgentDefaultName(t *testing.T) {
 	}
 
 	// No opts.Name — should default to "agent".
-	err := runSurfaceNew(eng, "labs", "w1", surfaceNewOpts{
+	err := runSurfaceNew(eng, "labs", "b1", surfaceNewOpts{
 		Type:     manifest.SurfaceTypeAgent,
 		Agent:    "claude",
 		SplitDir: "v",
@@ -170,7 +170,7 @@ func TestRunSurfaceNew_AgentDefaultName(t *testing.T) {
 		t.Fatalf("runSurfaceNew: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	foundAgent := false
 	for _, s := range bay.Surfaces {
 		if s.Type == manifest.SurfaceTypeAgent && strings.HasPrefix(s.Name, "agent") {
@@ -190,7 +190,7 @@ func TestRunSurfaceNew_CmdDefaultName(t *testing.T) {
 	}
 
 	// No opts.Name — should default to "cmd".
-	err := runSurfaceNew(eng, "labs", "w1", surfaceNewOpts{
+	err := runSurfaceNew(eng, "labs", "b1", surfaceNewOpts{
 		Type:     manifest.SurfaceTypeCmd,
 		Command:  "tail -f log.txt",
 		SplitDir: "v",
@@ -199,7 +199,7 @@ func TestRunSurfaceNew_CmdDefaultName(t *testing.T) {
 		t.Fatalf("runSurfaceNew: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	foundCmd := false
 	for _, s := range bay.Surfaces {
 		if s.Type == manifest.SurfaceTypeCmd && strings.HasPrefix(s.Name, "tail") {
@@ -218,9 +218,9 @@ func TestRunSurfaceNew_NameWithColonIsRejected(t *testing.T) {
 		t.Fatalf("BayNew: %v", err)
 	}
 
-	err := runSurfaceNew(eng, "labs", "w1", surfaceNewOpts{
+	err := runSurfaceNew(eng, "labs", "b1", surfaceNewOpts{
 		Type:     manifest.SurfaceTypeShell,
-		Name:     "w1:logs",
+		Name:     "b1:logs",
 		SplitDir: "v",
 	})
 	if err == nil || !strings.Contains(err.Error(), "cannot contain ':'") {
@@ -274,8 +274,8 @@ func TestEditTargetFromArgs(t *testing.T) {
 		{"no args no flags", nil, "", "", "self", false},
 		{"positional only", []string{"auth-fix"}, "", "", "auth-fix", false},
 		{"positional with dock prefix", []string{"labs:auth-fix"}, "", "", "labs:auth-fix", false},
-		{"bay flag", nil, "w1", "", "w1", false},
-		{"bay + dock flags", nil, "w1", "labs", "labs:w1", false},
+		{"bay flag", nil, "b1", "", "b1", false},
+		{"bay + dock flags", nil, "b1", "labs", "labs:b1", false},
 		{"positional + bay flag", []string{"a"}, "b", "", "", true},
 		{"positional + dock flag", []string{"a"}, "", "labs", "", true},
 		{"dock flag alone", nil, "", "labs", "", true},
@@ -323,18 +323,18 @@ func TestRunSurfaceClose_ByName(t *testing.T) {
 	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("BayNew: %v", err)
 	}
-	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 
 	// Use qualified form to avoid depending on tmux ResolveSelf state.
 	// force=true bypasses the agent close prompt — the prompt path is
 	// covered by dedicated tests below.
-	if err := runSurfaceClose(eng, []string{"w1:agent"}, "", "", true); err != nil {
+	if err := runSurfaceClose(eng, []string{"b1:agent"}, "", "", true); err != nil {
 		t.Fatalf("runSurfaceClose: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	for _, s := range bay.Surfaces {
 		if s.Name == "agent" {
 			t.Errorf("surface 'agent' should have been closed, still present")
@@ -351,7 +351,7 @@ func TestRunSurfaceClose_NoArgsErrors(t *testing.T) {
 		t.Errorf("expected 'specify a surface name' error, got %v", err)
 	}
 	// Flags set but no positional: more specific message.
-	err = runSurfaceClose(eng, nil, "w1", "", false)
+	err = runSurfaceClose(eng, nil, "b1", "", false)
 	if err == nil || !strings.Contains(err.Error(), "--bay/--dock require") {
 		t.Errorf("expected '--bay/--dock require' error with --bay, got %v", err)
 	}
@@ -364,16 +364,16 @@ func TestRunSurfaceClose_NoArgsErrors(t *testing.T) {
 func TestRunSurfaceClose_CrossBay(t *testing.T) {
 	eng := surfaceArgFixture(t)
 
-	// labs:w2 (the "solo" bay) has a uniquely-addressable bare ID.
+	// labs:b2 (the "solo" bay) has a uniquely-addressable bare ID.
 	// Close its agent surface via the helper using bare bay:surface form.
-	if err := runSurfaceClose(eng, []string{"w2:agent"}, "", "", true); err != nil {
+	if err := runSurfaceClose(eng, []string{"b2:agent"}, "", "", true); err != nil {
 		t.Fatalf("runSurfaceClose: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w2")
+	bay, _ := eng.BayShow("labs", "b2")
 	for _, s := range bay.Surfaces {
 		if s.Name == "agent" {
-			t.Errorf("agent should have been closed in labs:w2")
+			t.Errorf("agent should have been closed in labs:b2")
 		}
 	}
 }
@@ -389,7 +389,7 @@ func TestRunSurfaceClose_Self(t *testing.T) {
 	if err := runSurfaceClose(eng, []string{"self"}, "", "", true); err != nil {
 		t.Fatalf("runSurfaceClose self: %v", err)
 	}
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	for _, s := range bay.Surfaces {
 		if s.Name == "second" {
 			t.Errorf("surface 'second' should have been closed via 'self'")
@@ -400,7 +400,7 @@ func TestRunSurfaceClose_Self(t *testing.T) {
 func TestRunSurfaceClose_LiteralSelfWins(t *testing.T) {
 	eng := selfFixture(t)
 	// Add a literal surface named "self" — bay close self should target it.
-	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeShell, Name: "self", SplitDir: "v"}); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeShell, Name: "self", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd self: %v", err)
 	}
 
@@ -408,7 +408,7 @@ func TestRunSurfaceClose_LiteralSelfWins(t *testing.T) {
 		t.Fatalf("runSurfaceClose self: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	hasLiteralSelf, hasSecond := false, false
 	for _, s := range bay.Surfaces {
 		if s.Name == "self" {
@@ -439,7 +439,7 @@ func TestRunSurfaceRename_Self(t *testing.T) {
 	if err := runSurfaceRename(eng, []string{"self", "renamed"}, "", ""); err != nil {
 		t.Fatalf("runSurfaceRename self: %v", err)
 	}
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	foundRenamed, foundSecond := false, false
 	for _, s := range bay.Surfaces {
 		if s.Name == "renamed" {
@@ -464,17 +464,17 @@ func TestRunSurfaceShow_FoundAndNotFound(t *testing.T) {
 	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("BayNew: %v", err)
 	}
-	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 
 	// Found case: should not error.
-	if err := runSurfaceShow(eng, []string{"w1:agent"}, "", ""); err != nil {
+	if err := runSurfaceShow(eng, []string{"b1:agent"}, "", ""); err != nil {
 		t.Errorf("runSurfaceShow on existing surface: %v", err)
 	}
 
 	// Not found case: should error.
-	err := runSurfaceShow(eng, []string{"w1:nonexistent"}, "", "")
+	err := runSurfaceShow(eng, []string{"b1:nonexistent"}, "", "")
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("expected not-found error, got %v", err)
 	}
@@ -487,15 +487,15 @@ func TestRunSurfaceRename(t *testing.T) {
 	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("BayNew: %v", err)
 	}
-	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 
-	if err := runSurfaceRename(eng, []string{"w1:agent", "agent2"}, "", ""); err != nil {
+	if err := runSurfaceRename(eng, []string{"b1:agent", "agent2"}, "", ""); err != nil {
 		t.Fatalf("runSurfaceRename: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	foundOld, foundNew := false, false
 	for _, s := range bay.Surfaces {
 		if s.Name == "agent" {
@@ -525,8 +525,8 @@ func TestResolveSurfaceBay_NoFlagsUsesSelf(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveSurfaceBay: %v", err)
 	}
-	if dock != "labs" || bayName != "w1" {
-		t.Errorf("got (%q,%q), want (labs,w1)", dock, bayName)
+	if dock != "labs" || bayName != "b1" {
+		t.Errorf("got (%q,%q), want (labs,b1)", dock, bayName)
 	}
 }
 
@@ -586,13 +586,13 @@ func TestResolveSurfaceBay_FromHomeTmuxTargetsHome(t *testing.T) {
 func TestResolveSurfaceBay_BayFlag(t *testing.T) {
 	eng := bayArgFixture(t)
 
-	// solo's ID is w2 (second labs bay).
-	dock, bayName, err := resolveSurfaceBay(eng, "w2", "")
+	// solo's ID is b2 (second labs bay).
+	dock, bayName, err := resolveSurfaceBay(eng, "b2", "")
 	if err != nil {
 		t.Fatalf("resolveSurfaceBay: %v", err)
 	}
-	if dock != "labs" || bayName != "w2" {
-		t.Errorf("got (%q,%q), want (labs,w2)", dock, bayName)
+	if dock != "labs" || bayName != "b2" {
+		t.Errorf("got (%q,%q), want (labs,b2)", dock, bayName)
 	}
 }
 

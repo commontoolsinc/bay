@@ -20,15 +20,15 @@ func noFlash(string, int) error { return nil }
 func TestCloseConfirm_RoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "close-confirm")
 	now := time.Now()
-	if err := writeCloseConfirm(path, "labs", "w1", now); err != nil {
+	if err := writeCloseConfirm(path, "labs", "b1", now); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	d, w, when, ok := readCloseConfirm(path)
 	if !ok {
 		t.Fatalf("read: !ok")
 	}
-	if d != "labs" || w != "w1" {
-		t.Errorf("got dock=%q bay=%q, want labs/w1", d, w)
+	if d != "labs" || w != "b1" {
+		t.Errorf("got dock=%q bay=%q, want labs/b1", d, w)
 	}
 	if !when.Equal(now) {
 		t.Errorf("timestamp mismatch: got %v, want %v", when, now)
@@ -38,7 +38,7 @@ func TestCloseConfirm_RoundTrip(t *testing.T) {
 func TestRecordedRecently(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "close-confirm")
 	now := time.Now()
-	_ = writeCloseConfirm(path, "labs", "w1", now)
+	_ = writeCloseConfirm(path, "labs", "b1", now)
 
 	cases := []struct {
 		name string
@@ -47,11 +47,11 @@ func TestRecordedRecently(t *testing.T) {
 		when time.Time
 		want bool
 	}{
-		{"same target, within window", "labs", "w1", now.Add(closeConfirmWindow / 2), true},
-		{"same target, at edge", "labs", "w1", now.Add(closeConfirmWindow), true},
-		{"same target, expired", "labs", "w1", now.Add(closeConfirmWindow + time.Millisecond), false},
-		{"different bay", "labs", "w2", now, false},
-		{"different dock", "other", "w1", now, false},
+		{"same target, within window", "labs", "b1", now.Add(closeConfirmWindow / 2), true},
+		{"same target, at edge", "labs", "b1", now.Add(closeConfirmWindow), true},
+		{"same target, expired", "labs", "b1", now.Add(closeConfirmWindow + time.Millisecond), false},
+		{"different bay", "labs", "b2", now, false},
+		{"different dock", "other", "b1", now, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -64,7 +64,7 @@ func TestRecordedRecently(t *testing.T) {
 
 func TestRecordedRecently_MissingFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "does-not-exist")
-	if recordedRecently(path, "labs", "w1", time.Now()) {
+	if recordedRecently(path, "labs", "b1", time.Now()) {
 		t.Error("recordedRecently should be false for missing file")
 	}
 }
@@ -116,18 +116,18 @@ func TestRunSurfaceClose_LastSurface_NonInteractiveFiresDoubleTap(t *testing.T) 
 
 	// Sole surface in the bay — closing it should trigger the
 	// last-surface confirmation, which our stub declines.
-	if err := runSurfaceClose(eng, []string{"w1:shell"}, "", "", false); err != nil {
+	if err := runSurfaceClose(eng, []string{"b1:shell"}, "", "", false); err != nil {
 		t.Fatalf("runSurfaceClose: %v", err)
 	}
 
-	if len(*last) != 1 || (*last)[0] != "labs:w1" {
-		t.Errorf("expected one last-surface confirm for labs:w1, got %v", *last)
+	if len(*last) != 1 || (*last)[0] != "labs:b1" {
+		t.Errorf("expected one last-surface confirm for labs:b1, got %v", *last)
 	}
 	if len(*agent) != 0 {
 		t.Errorf("agent prompt should not fire for shell surface, got %v", *agent)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	if len(bay.Surfaces) != 1 {
 		t.Errorf("declined confirmation should leave surface intact, got %d surfaces", len(bay.Surfaces))
 	}
@@ -152,7 +152,7 @@ func TestRunSurfaceClose_LastSurface_DirtyShowsRefusalInsteadOfDoubleTap(t *test
 	}
 	mockGit.SetDirty(bay.Path, true)
 
-	if err := runSurfaceClose(eng, []string{"w1:shell"}, "", "", false); err != nil {
+	if err := runSurfaceClose(eng, []string{"b1:shell"}, "", "", false); err != nil {
 		t.Fatalf("runSurfaceClose: %v", err)
 	}
 
@@ -166,7 +166,7 @@ func TestRunSurfaceClose_LastSurface_DirtyShowsRefusalInsteadOfDoubleTap(t *test
 		t.Fatalf("expected dirty refusal toast, got %v", msgs)
 	}
 
-	got, _ := eng.BayShow("labs", "w1")
+	got, _ := eng.BayShow("labs", "b1")
 	if len(got.Surfaces) != 1 {
 		t.Errorf("dirty refusal should leave surface intact, got %d surfaces", len(got.Surfaces))
 	}
@@ -191,7 +191,7 @@ func TestRunSurfaceClose_LastSurface_UnpushedShowsRefusalInsteadOfDoubleTap(t *t
 	}
 	mockGit.SetUnpushed(bay.Path, true)
 
-	if err := runSurfaceClose(eng, []string{"w1:shell"}, "", "", false); err != nil {
+	if err := runSurfaceClose(eng, []string{"b1:shell"}, "", "", false); err != nil {
 		t.Fatalf("runSurfaceClose: %v", err)
 	}
 
@@ -205,7 +205,7 @@ func TestRunSurfaceClose_LastSurface_UnpushedShowsRefusalInsteadOfDoubleTap(t *t
 		t.Fatalf("expected unlanded refusal toast, got %v", msgs)
 	}
 
-	got, _ := eng.BayShow("labs", "w1")
+	got, _ := eng.BayShow("labs", "b1")
 	if len(got.Surfaces) != 1 {
 		t.Errorf("unlanded refusal should leave surface intact, got %d surfaces", len(got.Surfaces))
 	}
@@ -219,11 +219,11 @@ func TestRunSurfaceClose_LastSurface_NonInteractiveAcceptedCloses(t *testing.T) 
 		t.Fatalf("BayNew: %v", err)
 	}
 
-	if err := runSurfaceClose(eng, []string{"w1:shell"}, "", "", false); err != nil {
+	if err := runSurfaceClose(eng, []string{"b1:shell"}, "", "", false); err != nil {
 		t.Fatalf("runSurfaceClose: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	if len(bay.Surfaces) != 0 {
 		t.Errorf("accepted confirmation should close surface, got %d surfaces", len(bay.Surfaces))
 	}
@@ -244,7 +244,7 @@ func TestRunSurfaceClose_LastSurface_InteractiveSkipsDoubleTap(t *testing.T) {
 		t.Fatalf("BayNew: %v", err)
 	}
 
-	if err := runSurfaceClose(eng, []string{"w1:shell"}, "", "", false); err != nil {
+	if err := runSurfaceClose(eng, []string{"b1:shell"}, "", "", false); err != nil {
 		t.Fatalf("runSurfaceClose: %v", err)
 	}
 
@@ -255,7 +255,7 @@ func TestRunSurfaceClose_LastSurface_InteractiveSkipsDoubleTap(t *testing.T) {
 		t.Errorf("agent prompt should not fire for shell surface, got %v", *agent)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	if len(bay.Surfaces) != 0 {
 		t.Errorf("interactive last-surface close should close surface, got %d surfaces", len(bay.Surfaces))
 	}
@@ -268,12 +268,12 @@ func TestRunSurfaceClose_NotLastSurface_SkipsDoubleTap(t *testing.T) {
 	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("BayNew: %v", err)
 	}
-	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeShell, Name: "extra", SplitDir: "v"}); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeShell, Name: "extra", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 
 	// Two surfaces present — closing one shouldn't trigger last-surface.
-	if err := runSurfaceClose(eng, []string{"w1:extra"}, "", "", false); err != nil {
+	if err := runSurfaceClose(eng, []string{"b1:extra"}, "", "", false); err != nil {
 		t.Fatalf("runSurfaceClose: %v", err)
 	}
 
@@ -299,7 +299,7 @@ func TestRunSurfaceClose_LastSurface_ForceBypassesBoth(t *testing.T) {
 		t.Fatalf("BayNew: %v", err)
 	}
 
-	if err := runSurfaceClose(eng, []string{"w1:shell"}, "", "", true); err != nil {
+	if err := runSurfaceClose(eng, []string{"b1:shell"}, "", "", true); err != nil {
 		t.Fatalf("runSurfaceClose: %v", err)
 	}
 	if len(*last) != 0 || len(*agent) != 0 {
@@ -320,14 +320,14 @@ func TestRunSurfaceClose_LastSurfaceAgent_NonInteractiveOnlyDoubleTap(t *testing
 	// shell so the agent is the sole remaining surface. Closing the shell
 	// while the agent exists isn't "last surface," so it goes through
 	// without firing either prompt.
-	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeAgent, Name: "claude", Agent: "claude", SplitDir: "v"}); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeAgent, Name: "claude", Agent: "claude", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd agent: %v", err)
 	}
-	if err := eng.SurfaceClose("labs", "w1", "shell", true); err != nil {
+	if err := eng.SurfaceClose("labs", "b1", "shell", true); err != nil {
 		t.Fatalf("seed close shell: %v", err)
 	}
 
-	if err := runSurfaceClose(eng, []string{"w1:claude"}, "", "", false); err != nil {
+	if err := runSurfaceClose(eng, []string{"b1:claude"}, "", "", false); err != nil {
 		t.Fatalf("runSurfaceClose: %v", err)
 	}
 
@@ -353,14 +353,14 @@ func TestRunSurfaceClose_LastSurfaceAgent_InteractivePromptsAgent(t *testing.T) 
 	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("BayNew: %v", err)
 	}
-	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeAgent, Name: "claude", Agent: "claude", SplitDir: "v"}); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeAgent, Name: "claude", Agent: "claude", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd agent: %v", err)
 	}
-	if err := eng.SurfaceClose("labs", "w1", "shell", true); err != nil {
+	if err := eng.SurfaceClose("labs", "b1", "shell", true); err != nil {
 		t.Fatalf("seed close shell: %v", err)
 	}
 
-	if err := runSurfaceClose(eng, []string{"w1:claude"}, "", "", false); err != nil {
+	if err := runSurfaceClose(eng, []string{"b1:claude"}, "", "", false); err != nil {
 		t.Fatalf("runSurfaceClose: %v", err)
 	}
 
@@ -385,19 +385,19 @@ func TestConfirmLastSurfaceClose_DefaultBehavior(t *testing.T) {
 		return nil
 	}
 
-	if confirmLastSurfaceClose(flash, "labs", "w1") {
+	if confirmLastSurfaceClose(flash, "labs", "b1") {
 		t.Fatal("first call should require a second tap")
 	}
 	if len(msgs) != 1 {
 		t.Errorf("first call should flash a message, got %d", len(msgs))
 	}
 
-	if !confirmLastSurfaceClose(flash, "labs", "w1") {
+	if !confirmLastSurfaceClose(flash, "labs", "b1") {
 		t.Fatal("second call within window should accept")
 	}
 
 	// Third call after a successful confirm starts fresh — file was cleared.
-	if confirmLastSurfaceClose(flash, "labs", "w1") {
+	if confirmLastSurfaceClose(flash, "labs", "b1") {
 		t.Error("third call (after consume) should require a fresh tap")
 	}
 }
@@ -405,13 +405,13 @@ func TestConfirmLastSurfaceClose_DefaultBehavior(t *testing.T) {
 func TestConfirmLastSurfaceClose_DifferentBay_DoesNotCarry(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 
-	if confirmLastSurfaceClose(noFlash, "labs", "w1") {
-		t.Fatal("first call on w1 should require second tap")
+	if confirmLastSurfaceClose(noFlash, "labs", "b1") {
+		t.Fatal("first call on b1 should require second tap")
 	}
-	// Pressing again on a DIFFERENT bay should not consume w1's
+	// Pressing again on a DIFFERENT bay should not consume b1's
 	// pending confirmation — each bay stands alone.
-	if confirmLastSurfaceClose(noFlash, "labs", "w2") {
-		t.Error("close on w2 should not be accepted by w1's pending tap")
+	if confirmLastSurfaceClose(noFlash, "labs", "b2") {
+		t.Error("close on b2 should not be accepted by b1's pending tap")
 	}
 }
 
@@ -692,7 +692,7 @@ func TestRunBayCloseAll_UsesHomeConfirmationForFinalDismissal(t *testing.T) {
 	if len(closed) != 0 || len(skipped) != 0 {
 		t.Fatalf("declined close-all closed=%v skipped=%v, want none", closed, skipped)
 	}
-	if _, err := eng.BayShow("labs", "w1"); err != nil {
+	if _, err := eng.BayShow("labs", "b1"); err != nil {
 		t.Fatalf("declined close-all removed non-home bay: %v", err)
 	}
 	if home := mustBay(t, eng, "labs", manifest.HomeBayID); len(home.Surfaces) != 1 {
@@ -710,8 +710,8 @@ func TestRunBayCloseAll_UsesHomeConfirmationForFinalDismissal(t *testing.T) {
 	if confirmCalls != 2 {
 		t.Fatalf("home confirmation calls = %d, want 2", confirmCalls)
 	}
-	if len(closed) != 2 || closed[0] != "labs:w1" || closed[1] != "labs:"+manifest.HomeBayID || len(skipped) != 0 {
-		t.Fatalf("confirmed close-all closed=%v skipped=%v, want w1 then home", closed, skipped)
+	if len(closed) != 2 || closed[0] != "labs:b1" || closed[1] != "labs:"+manifest.HomeBayID || len(skipped) != 0 {
+		t.Fatalf("confirmed close-all closed=%v skipped=%v, want b1 then home", closed, skipped)
 	}
 	if has, _ := mockTmux.HasSession("labs"); has {
 		t.Fatal("tmux session still exists after confirmed close-all")

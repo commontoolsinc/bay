@@ -35,8 +35,8 @@ func TestParseSurfaceArg(t *testing.T) {
 		wantErr            bool
 	}{
 		{"agent", "", "", "agent", false},
-		{"w1:agent", "", "w1", "agent", false},
-		{"labs:w1:agent", "labs", "w1", "agent", false},
+		{"b1:agent", "", "b1", "agent", false},
+		{"labs:b1:agent", "labs", "b1", "agent", false},
 		{"a:b:c:d", "", "", "", true},
 	}
 	for _, c := range cases {
@@ -61,8 +61,8 @@ func TestParseBayArg(t *testing.T) {
 		dock, bay string
 		wantErr   bool
 	}{
-		{"w1", "", "w1", false},
-		{"labs:w1", "labs", "w1", false},
+		{"b1", "", "b1", false},
+		{"labs:b1", "labs", "b1", false},
 		{"a:b:c", "", "", true},
 	}
 	for _, c := range cases {
@@ -86,29 +86,29 @@ func surfaceArgFixture(t *testing.T) *engine.Engine {
 	t.Helper()
 	eng := twoDockFixture(t)
 
-	// labs:w1 with default shell + extra agent surface
+	// labs:b1 with default shell + extra agent surface
 	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
-		t.Fatalf("BayNew labs:w1: %v", err)
+		t.Fatalf("BayNew labs:b1: %v", err)
 	}
-	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
-		t.Fatalf("SurfaceAdd labs:w1:agent: %v", err)
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
+		t.Fatalf("SurfaceAdd labs:b1:agent: %v", err)
 	}
 
-	// labs2:w1 with the same surface — bare bay name "w1" is now ambiguous.
+	// labs2:b1 with the same surface — bare bay name "b1" is now ambiguous.
 	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs2", Shell: true}); err != nil {
-		t.Fatalf("BayNew labs2:w1: %v", err)
+		t.Fatalf("BayNew labs2:b1: %v", err)
 	}
-	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs2", BayName: "w1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
-		t.Fatalf("SurfaceAdd labs2:w1:agent: %v", err)
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs2", BayName: "b1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
+		t.Fatalf("SurfaceAdd labs2:b1:agent: %v", err)
 	}
 
 	// Also create a uniquely-named bay so bare resolution works.
-	// Bay's ID is w2 (auto-assigned, since solo is the second labs bay).
+	// Bay's ID is b2 (auto-assigned, since solo is the second labs bay).
 	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Name: "solo", Shell: true}); err != nil {
 		t.Fatalf("BayNew labs:solo: %v", err)
 	}
-	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "w2", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
-		t.Fatalf("SurfaceAdd labs:w2:agent: %v", err)
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "b2", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "claude", SplitDir: "v"}); err != nil {
+		t.Fatalf("SurfaceAdd labs:b2:agent: %v", err)
 	}
 
 	return eng
@@ -117,33 +117,33 @@ func surfaceArgFixture(t *testing.T) *engine.Engine {
 func TestResolveSurfaceArg_FullyQualified(t *testing.T) {
 	eng := surfaceArgFixture(t)
 
-	dock, bay, surface, err := resolveSurfaceArg(eng, "labs:w1:agent", "", "")
+	dock, bay, surface, err := resolveSurfaceArg(eng, "labs:b1:agent", "", "")
 	if err != nil {
 		t.Fatalf("resolveSurfaceArg: %v", err)
 	}
-	if dock != "labs" || bay != "w1" || surface != "agent" {
-		t.Errorf("got (%q,%q,%q), want (labs,w1,agent)", dock, bay, surface)
+	if dock != "labs" || bay != "b1" || surface != "agent" {
+		t.Errorf("got (%q,%q,%q), want (labs,b1,agent)", dock, bay, surface)
 	}
 }
 
 func TestResolveSurfaceArg_BayQualified(t *testing.T) {
 	eng := surfaceArgFixture(t)
 
-	// w2 is uniquely owned by labs, so bare ID lookup succeeds.
-	dock, bay, surface, err := resolveSurfaceArg(eng, "w2:agent", "", "")
+	// b2 is uniquely owned by labs, so bare ID lookup succeeds.
+	dock, bay, surface, err := resolveSurfaceArg(eng, "b2:agent", "", "")
 	if err != nil {
 		t.Fatalf("resolveSurfaceArg: %v", err)
 	}
-	if dock != "labs" || bay != "w2" || surface != "agent" {
-		t.Errorf("got (%q,%q,%q), want (labs,w2,agent)", dock, bay, surface)
+	if dock != "labs" || bay != "b2" || surface != "agent" {
+		t.Errorf("got (%q,%q,%q), want (labs,b2,agent)", dock, bay, surface)
 	}
 }
 
 func TestResolveSurfaceArg_AmbiguousBay(t *testing.T) {
 	eng := surfaceArgFixture(t)
 
-	// "w1" exists in both labs and labs2.
-	_, _, _, err := resolveSurfaceArg(eng, "w1:agent", "", "")
+	// "b1" exists in both labs and labs2.
+	_, _, _, err := resolveSurfaceArg(eng, "b1:agent", "", "")
 	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
 		t.Errorf("expected ambiguous error, got %v", err)
 	}
@@ -152,13 +152,13 @@ func TestResolveSurfaceArg_AmbiguousBay(t *testing.T) {
 func TestResolveSurfaceArg_FlagsResolveAmbiguity(t *testing.T) {
 	eng := surfaceArgFixture(t)
 
-	// Use --dock to disambiguate the bare "w1".
-	dock, bay, surface, err := resolveSurfaceArg(eng, "w1:agent", "", "labs2")
+	// Use --dock to disambiguate the bare "b1".
+	dock, bay, surface, err := resolveSurfaceArg(eng, "b1:agent", "", "labs2")
 	if err != nil {
 		t.Fatalf("resolveSurfaceArg: %v", err)
 	}
-	if dock != "labs2" || bay != "w1" || surface != "agent" {
-		t.Errorf("got (%q,%q,%q), want (labs2,w1,agent)", dock, bay, surface)
+	if dock != "labs2" || bay != "b1" || surface != "agent" {
+		t.Errorf("got (%q,%q,%q), want (labs2,b1,agent)", dock, bay, surface)
 	}
 }
 
@@ -166,12 +166,12 @@ func TestResolveSurfaceArg_FlagsAlone(t *testing.T) {
 	eng := surfaceArgFixture(t)
 
 	// Bare surface name + --bay + --dock.
-	dock, bay, surface, err := resolveSurfaceArg(eng, "agent", "w1", "labs2")
+	dock, bay, surface, err := resolveSurfaceArg(eng, "agent", "b1", "labs2")
 	if err != nil {
 		t.Fatalf("resolveSurfaceArg: %v", err)
 	}
-	if dock != "labs2" || bay != "w1" || surface != "agent" {
-		t.Errorf("got (%q,%q,%q), want (labs2,w1,agent)", dock, bay, surface)
+	if dock != "labs2" || bay != "b1" || surface != "agent" {
+		t.Errorf("got (%q,%q,%q), want (labs2,b1,agent)", dock, bay, surface)
 	}
 }
 
@@ -179,7 +179,7 @@ func TestResolveSurfaceArg_DockFlagConflict(t *testing.T) {
 	eng := surfaceArgFixture(t)
 
 	// --dock conflicts with dock prefix in the positional.
-	_, _, _, err := resolveSurfaceArg(eng, "labs:w1:agent", "", "labs2")
+	_, _, _, err := resolveSurfaceArg(eng, "labs:b1:agent", "", "labs2")
 	if err == nil || !strings.Contains(err.Error(), "--dock") {
 		t.Errorf("expected --dock conflict, got %v", err)
 	}
@@ -189,7 +189,7 @@ func TestResolveSurfaceArg_BayFlagConflict(t *testing.T) {
 	eng := surfaceArgFixture(t)
 
 	// --bay conflicts with bay prefix in the positional.
-	_, _, _, err := resolveSurfaceArg(eng, "w1:agent", "other", "")
+	_, _, _, err := resolveSurfaceArg(eng, "b1:agent", "other", "")
 	if err == nil || !strings.Contains(err.Error(), "--bay") {
 		t.Errorf("expected --bay conflict, got %v", err)
 	}
@@ -222,10 +222,10 @@ func bayArgFixture(t *testing.T) *engine.Engine {
 
 	// Ambiguous bare bay name.
 	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
-		t.Fatalf("BayNew labs:w1: %v", err)
+		t.Fatalf("BayNew labs:b1: %v", err)
 	}
 	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs2", Shell: true}); err != nil {
-		t.Fatalf("BayNew labs2:w1: %v", err)
+		t.Fatalf("BayNew labs2:b1: %v", err)
 	}
 
 	// Unique bay name for bare resolution.
@@ -239,32 +239,32 @@ func bayArgFixture(t *testing.T) *engine.Engine {
 func TestResolveBayArg_BareUnique(t *testing.T) {
 	eng := bayArgFixture(t)
 
-	// w2 is unique to labs (labs has ID w1 and w2; labs2 has only w1).
-	dock, bay, err := resolveBayArg(eng, "w2", "")
+	// b2 is unique to labs (labs has ID b1 and b2; labs2 has only b1).
+	dock, bay, err := resolveBayArg(eng, "b2", "")
 	if err != nil {
 		t.Fatalf("resolveBayArg: %v", err)
 	}
-	if dock != "labs" || bay != "w2" {
-		t.Errorf("got (%q,%q), want (labs,w2)", dock, bay)
+	if dock != "labs" || bay != "b2" {
+		t.Errorf("got (%q,%q), want (labs,b2)", dock, bay)
 	}
 }
 
 func TestResolveBayArg_DockQualified(t *testing.T) {
 	eng := bayArgFixture(t)
 
-	dock, bay, err := resolveBayArg(eng, "labs2:w1", "")
+	dock, bay, err := resolveBayArg(eng, "labs2:b1", "")
 	if err != nil {
 		t.Fatalf("resolveBayArg: %v", err)
 	}
-	if dock != "labs2" || bay != "w1" {
-		t.Errorf("got (%q,%q), want (labs2,w1)", dock, bay)
+	if dock != "labs2" || bay != "b1" {
+		t.Errorf("got (%q,%q), want (labs2,b1)", dock, bay)
 	}
 }
 
 func TestResolveBayArg_BareAmbiguous(t *testing.T) {
 	eng := bayArgFixture(t)
 
-	_, _, err := resolveBayArg(eng, "w1", "")
+	_, _, err := resolveBayArg(eng, "b1", "")
 	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
 		t.Errorf("expected ambiguous error, got %v", err)
 	}
@@ -273,19 +273,19 @@ func TestResolveBayArg_BareAmbiguous(t *testing.T) {
 func TestResolveBayArg_DockFlagDisambiguates(t *testing.T) {
 	eng := bayArgFixture(t)
 
-	dock, bay, err := resolveBayArg(eng, "w1", "labs2")
+	dock, bay, err := resolveBayArg(eng, "b1", "labs2")
 	if err != nil {
 		t.Fatalf("resolveBayArg: %v", err)
 	}
-	if dock != "labs2" || bay != "w1" {
-		t.Errorf("got (%q,%q), want (labs2,w1)", dock, bay)
+	if dock != "labs2" || bay != "b1" {
+		t.Errorf("got (%q,%q), want (labs2,b1)", dock, bay)
 	}
 }
 
 func TestResolveBayArg_DockFlagConflict(t *testing.T) {
 	eng := bayArgFixture(t)
 
-	_, _, err := resolveBayArg(eng, "labs:w1", "labs2")
+	_, _, err := resolveBayArg(eng, "labs:b1", "labs2")
 	if err == nil || !strings.Contains(err.Error(), "--dock") {
 		t.Errorf("expected --dock conflict, got %v", err)
 	}
@@ -310,41 +310,41 @@ func chdirTo(t *testing.T, eng *engine.Engine, dockName, bayName string) {
 }
 
 func TestResolveBayArg_BareAmbiguousPrefersCurrentDock(t *testing.T) {
-	// Both labs and labs2 have a bay with ID "w1". From inside
-	// labs:w2 (the "solo" bay), a bare `w1` should resolve to labs:w1,
+	// Both labs and labs2 have a bay with ID "b1". From inside
+	// labs:b2 (the "solo" bay), a bare `b1` should resolve to labs:b1,
 	// not error.
 	eng := bayArgFixture(t)
-	chdirTo(t, eng, "labs", "w2")
+	chdirTo(t, eng, "labs", "b2")
 
-	dock, bay, err := resolveBayArg(eng, "w1", "")
+	dock, bay, err := resolveBayArg(eng, "b1", "")
 	if err != nil {
 		t.Fatalf("resolveBayArg: %v", err)
 	}
-	if dock != "labs" || bay != "w1" {
-		t.Errorf("got (%q,%q), want (labs,w1)", dock, bay)
+	if dock != "labs" || bay != "b1" {
+		t.Errorf("got (%q,%q), want (labs,b1)", dock, bay)
 	}
 }
 
 func TestResolveBayArg_BareFallsThroughWhenCurrentDockLacksIt(t *testing.T) {
-	// labs2 has no w2. From inside labs2:w1, a bare `w2` should still
+	// labs2 has no b2. From inside labs2:b1, a bare `b2` should still
 	// resolve — the current-dock shortcut falls through to the all-dock
 	// search when it misses.
 	eng := bayArgFixture(t)
-	chdirTo(t, eng, "labs2", "w1")
+	chdirTo(t, eng, "labs2", "b1")
 
-	dock, bay, err := resolveBayArg(eng, "w2", "")
+	dock, bay, err := resolveBayArg(eng, "b2", "")
 	if err != nil {
 		t.Fatalf("resolveBayArg: %v", err)
 	}
-	if dock != "labs" || bay != "w2" {
-		t.Errorf("got (%q,%q), want (labs,w2)", dock, bay)
+	if dock != "labs" || bay != "b2" {
+		t.Errorf("got (%q,%q), want (labs,b2)", dock, bay)
 	}
 }
 
 func TestResolveBayArg_BareAmbiguousWhenCurrentDockLacksIt(t *testing.T) {
 	// Without a current-dock context (cwd is outside every bay),
-	// a bare `w1` should fall through to the manifest-wide search and
-	// surface the cross-dock ambiguity (labs:w1 and labs2:w1).
+	// a bare `b1` should fall through to the manifest-wide search and
+	// surface the cross-dock ambiguity (labs:b1 and labs2:b1).
 	eng := bayArgFixture(t)
 	// Make sure CurrentContext won't pick up any ambient bay.
 	dir := t.TempDir()
@@ -354,7 +354,7 @@ func TestResolveBayArg_BareAmbiguousWhenCurrentDockLacksIt(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(orig) })
 
-	_, _, err := resolveBayArg(eng, "w1", "")
+	_, _, err := resolveBayArg(eng, "b1", "")
 	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
 		t.Errorf("expected ambiguous error, got %v", err)
 	}
@@ -362,7 +362,7 @@ func TestResolveBayArg_BareAmbiguousWhenCurrentDockLacksIt(t *testing.T) {
 
 func TestResolveBayArg_BareHomeUsesCurrentDock(t *testing.T) {
 	eng := bayArgFixture(t)
-	chdirTo(t, eng, "labs", "w2")
+	chdirTo(t, eng, "labs", "b2")
 
 	dock, bay, err := resolveBayArg(eng, manifest.HomeBayID, "")
 	if err != nil {
@@ -399,10 +399,10 @@ func selfFixture(t *testing.T) *engine.Engine {
 	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("BayNew: %v", err)
 	}
-	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeShell, Name: "second", SplitDir: "v"}); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeShell, Name: "second", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd second: %v", err)
 	}
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	// Pin tmux context to the "second" surface (index 1).
 	mockTmux.SetCurrentWindowID(bay.Surfaces[1].Tmux.WindowID)
 	mockTmux.SetCurrentPaneID(bay.Surfaces[1].Tmux.PaneID)
@@ -417,15 +417,15 @@ func TestResolveSurfaceArgOrSelf_VirtualSelf(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveSurfaceArgOrSelf: %v", err)
 	}
-	if dock != "labs" || bay != "w1" || surface != "second" {
-		t.Errorf("got (%q,%q,%q), want (labs,w1,second)", dock, bay, surface)
+	if dock != "labs" || bay != "b1" || surface != "second" {
+		t.Errorf("got (%q,%q,%q), want (labs,b1,second)", dock, bay, surface)
 	}
 }
 
 func TestResolveSurfaceArgOrSelf_LiteralWinsOverVirtual(t *testing.T) {
 	eng := selfFixture(t)
 	// Add a literal surface named "self" — should win over the virtual lookup.
-	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeShell, Name: "self", SplitDir: "v"}); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeShell, Name: "self", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd self: %v", err)
 	}
 
@@ -443,7 +443,7 @@ func TestResolveSurfaceArgOrSelf_QualifiedSelfIsAlwaysLiteral(t *testing.T) {
 	// Qualified form must NOT silently substitute the current pane's surface.
 	// It should return the literal "self" name regardless of whether such a
 	// surface exists; the engine call would error later if not.
-	_, _, surface, err := resolveSurfaceArgOrSelf(eng, "w1:self", "", "")
+	_, _, surface, err := resolveSurfaceArgOrSelf(eng, "b1:self", "", "")
 	if err != nil {
 		t.Fatalf("resolveSurfaceArgOrSelf: %v", err)
 	}
@@ -455,7 +455,7 @@ func TestResolveSurfaceArgOrSelf_QualifiedSelfIsAlwaysLiteral(t *testing.T) {
 func TestResolveSurfaceArgOrSelf_FlagDisablesSelfFallback(t *testing.T) {
 	eng := selfFixture(t)
 	// --bay set means "self" is a literal name, not the virtual keyword.
-	_, _, surface, err := resolveSurfaceArgOrSelf(eng, "self", "w1", "")
+	_, _, surface, err := resolveSurfaceArgOrSelf(eng, "self", "b1", "")
 	if err != nil {
 		t.Fatalf("resolveSurfaceArgOrSelf: %v", err)
 	}
@@ -467,12 +467,12 @@ func TestResolveSurfaceArgOrSelf_FlagDisablesSelfFallback(t *testing.T) {
 func TestResolveSurfaceArgOrSelf_NonSelfDelegates(t *testing.T) {
 	eng := selfFixture(t)
 	// Any non-"self" positional should behave exactly like resolveSurfaceArg.
-	dock, bay, surface, err := resolveSurfaceArgOrSelf(eng, "w1:second", "", "")
+	dock, bay, surface, err := resolveSurfaceArgOrSelf(eng, "b1:second", "", "")
 	if err != nil {
 		t.Fatalf("resolveSurfaceArgOrSelf: %v", err)
 	}
-	if dock != "labs" || bay != "w1" || surface != "second" {
-		t.Errorf("got (%q,%q,%q), want (labs,w1,second)", dock, bay, surface)
+	if dock != "labs" || bay != "b1" || surface != "second" {
+		t.Errorf("got (%q,%q,%q), want (labs,b1,second)", dock, bay, surface)
 	}
 }
 
@@ -481,12 +481,12 @@ func TestResolveSurfaceArgOrSelf_NonSelfDelegates(t *testing.T) {
 // names the canonical ID, so the user can copy it directly.
 func TestResolveBayArg_NameRejectedWithHint(t *testing.T) {
 	eng := bayArgFixture(t)
-	// "solo" is the Name the user might type; its ID is w2 in labs.
+	// "solo" is the Name the user might type; its ID is b2 in labs.
 	_, _, err := resolveBayArg(eng, "solo", "")
 	if err == nil {
 		t.Fatal("expected error: Name lookup should fail under strict resolver")
 	}
-	if !strings.Contains(err.Error(), `did you mean "w2"`) {
+	if !strings.Contains(err.Error(), `did you mean "b2"`) {
 		t.Errorf("error should hint at canonical ID; got %v", err)
 	}
 }

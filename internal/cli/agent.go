@@ -13,7 +13,7 @@ omitted, uses the dock's default agent.
   bay agent claude             specific agent
   bay agent codex my-codex     specific agent with custom name
   bay agent --window           as a new tmux window
-  bay agent --bay w1           target a different bay`,
+  bay agent --bay b1           target a different bay`,
 		args:      cobra.MaximumNArgs(2),
 		buildOpts: agentSurfaceOpts,
 	})

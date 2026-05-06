@@ -232,7 +232,7 @@ func addQualifiedCandidate(completions *[]string, seen map[string]bool, dock, va
 // Names are strictly not CLI keys under the strict resolver, so they
 // aren't emitted as candidate values — but the friendly Name is woven
 // into each ID candidate's description so the user can see, for
-// example, that `w1` is "auth-fix".
+// example, that `b1` is "auth-fix".
 func bayCandidates(m *manifest.Manifest) []string {
 	seen := make(map[string]bool)
 	var completions []string
@@ -375,7 +375,7 @@ func bayCompletions() func(cmd *cobra.Command, args []string, toComplete string)
 
 // surfaceCompletions returns a positional completer for surface identifiers.
 // 'self' is only included when toComplete has no colon, since qualified
-// `self` (`w1:self`, `labs:w1:self`) is always literal in the resolver.
+// `self` (`b1:self`, `labs:b1:self`) is always literal in the resolver.
 func surfaceCompletions() func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {

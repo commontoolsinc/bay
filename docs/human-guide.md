@@ -117,7 +117,7 @@ bay pwd                     # current bay location
 ### Clean up
 
 ```
-bay close w1             # by ID; safety checks for uncommitted work
+bay close b1             # by ID; safety checks for uncommitted work
 bay close --done         # close bays that are not dirty or pending
 bay close --clean        # close all non-dirty bays
 ```
@@ -182,24 +182,25 @@ A **bay** is a working directory with metadata. Three types:
 
 Each bay has three identity concepts:
 
-- An **ID** like `w1`, `w2`, `w3` — the stable handle. Set at creation,
+- An **ID** like `b1`, `b2`, `b3` — the stable handle. Set at creation,
   never changes, unique within a dock. Every command that targets a
-  bay takes the ID: `bay close w1`, `bay show w1`,
-  `bay edit w1`. The ID matches the on-disk directory basename for
-  worktree bays (so `~/projects/myproject-worktrees/w1` is
-  bay `w1`).
+  bay takes the ID: `bay close b1`, `bay show b1`,
+  `bay edit b1`. The ID matches the on-disk directory basename for
+  worktree bays (so `~/projects/myproject-worktrees/b1` is
+  bay `b1`). Older bays may still have legacy `w<N>` IDs and paths;
+  those persisted IDs remain valid.
 - A **Name** like `auth-fix` — a friendly display label. Sticky once
   set. May be empty initially; sync fills it from the branch on first
   detection (`feature/refactor-memory` becomes `refactor-memory`).
   You can rename with `bay rename`. Names are
-  not CLI keys — typing one returns `did you mean "w1"?` with the
+  not CLI keys — typing one returns `did you mean "b1"?` with the
   canonical ID.
 - An optional **description** (see below) for richer context.
 
 An ID is stable for a bay's lifetime, but the slot is released
 when the bay closes — the next creation may reuse a freed
-trailing slot, while gaps in the middle of the sequence (`w1`, `w3`,
-`w7`) stay until you fill them. The picker, `bay ls`, and `bay tree`
+trailing slot, while gaps in the middle of the sequence (`b1`, `b3`,
+`b7`) stay until you fill them. The picker, `bay ls`, and `bay tree`
 all show both the ID and the friendly Name; pick whichever makes
 sense for the task at hand.
 
@@ -316,8 +317,8 @@ starting fresh — see [Session resumption](#session-resumption).
 
 ### Identifiers and references
 
-Bays are referenced by **ID** in commands. Bare form is `w1`;
-fully qualified is `dev:w1`. The keyword `self` resolves to the
+Bays are referenced by **ID** in commands. Bare form is `b1`;
+fully qualified is `dev:b1`. The keyword `self` resolves to the
 bay at your current tmux pane and working directory.
 
 A bare ID resolves to the current dock first; if absent there, falls
@@ -325,10 +326,11 @@ through to a cross-dock search (which errors on ambiguity). Pass
 `--dock <name>` to target a different dock without changing context.
 
 Bay **Names** must match `[a-zA-Z0-9_-]+`, cannot match the
-reserved ID pattern `^w[1-9]\d*$`, and cannot equal the reserved
-`home` handle — those namespaces are bay's. If you type a Name where
-bay expects an ID, the error names the ID for you: `bay "auth-fix"
-not found; did you mean "w1"?`.
+reserved generated ID patterns `^b[1-9]\d*$` or legacy
+`^w[1-9]\d*$`, and cannot equal the reserved `home` handle — those
+namespaces are bay's. If you type a Name where bay expects an ID, the
+error names the ID for you: `bay "auth-fix" not found; did you mean
+"b1"?`.
 
 ## Configuration
 
@@ -768,7 +770,7 @@ individual files, open a shell and launch your editor from there.
 
 ```
 bay edit                    # current bay (default)
-bay edit w1                 # specific bay
+bay edit b1                 # specific bay
 bay edit --bay home         # dock checkout
 bay edit --editor vim       # use a specific editor this time
 bay edit --dock             # dock editor (all bays)
@@ -901,7 +903,7 @@ dk dev
 ```
 dk dev
   bay auth-fix  br=feature/auth  n=3
-  bay w2                         n=1
+  bay b2                         n=1
 dk staging
   bay deploy    br=release/v2    merged  n=1
 ```
@@ -918,7 +920,7 @@ bay pwd --json | jq '.bay_id'
 bay ls --json | jq '.[] | select(.pending)'
 bay tree --json | jq '.docks[].bays[] | select(.pending)'
 bay tree --json --rows | jq '.[] | select(.bay_waiting)'
-bay show w1 --json | jq '.branch'
+bay show b1 --json | jq '.branch'
 ```
 
 ## Status line
@@ -938,7 +940,7 @@ You can also add it manually if you skipped the prompt. If your
 it; setup prints the recommended lines so you can merge them yourself.
 
 The `full` field outputs `label branch #PR status` (e.g.
-`w4.auth-fix fix/login #42 dirty`). The label keeps the path-derived
+`b4.auth-fix fix/login #42 dirty`). The label keeps the path-derived
 worktree dir tag visible after rename. The `--width` flag enables
 adaptive truncation — when space is tight, it crops the label's
 bay-name portion first, then shortens branch/status metadata.
@@ -970,7 +972,7 @@ bays are closed.
 When sibling bays in a dock share a hyphen-separated prefix (e.g.
 `codex-home-mail-account-filter` and `codex-lane-scheduler-phase1`),
 the shared prefix is replaced with a leading `…` so the unique tail
-of each name stays visible: `w1.…home-mail-…` and `w2.…lane-sched…`
+of each name stays visible: `b1.…home-mail-…` and `b2.…lane-sched…`
 instead of two tabs that both crop to `codex-`.
 
 ## Recovery

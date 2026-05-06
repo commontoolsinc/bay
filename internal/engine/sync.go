@@ -387,7 +387,7 @@ func (e *Engine) applyBaySyncUpdate(m *manifest.Manifest, update baySyncUpdate, 
 		bay.Worktree.Merged = false
 		changed = true
 		// Sticky-once-set: only fill Name from the branch when it's a
-		// placeholder (empty or auto-assigned w<N>). User-set Names are
+		// placeholder (empty or generated b<N>/legacy w<N>). User-set Names are
 		// stable — live branch info is on right-status, so the tab label
 		// doesn't need to follow.
 		if isPlaceholderName(bay.Name) {

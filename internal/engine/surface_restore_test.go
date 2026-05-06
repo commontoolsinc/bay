@@ -18,14 +18,14 @@ func TestSurfaceClose_PushesUndoEntry(t *testing.T) {
 		t.Fatalf("BayNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(SurfaceAddOptions{
-		DockName: "labs", BayName: "w1",
+		DockName: "labs", BayName: "b1",
 		Type: manifest.SurfaceTypeShell, Name: "shell-2", SplitDir: "v",
 	}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 
 	before := time.Now().Unix()
-	if err := eng.SurfaceClose("labs", "w1", "shell-2", false); err != nil {
+	if err := eng.SurfaceClose("labs", "b1", "shell-2", false); err != nil {
 		t.Fatalf("SurfaceClose: %v", err)
 	}
 
@@ -43,7 +43,7 @@ func TestSurfaceClose_PushesUndoEntry(t *testing.T) {
 	if e.Surface == nil {
 		t.Fatal("missing Surface payload")
 	}
-	if e.Surface.Bay != "w1" || e.Surface.Name != "shell-2" {
+	if e.Surface.Bay != "b1" || e.Surface.Name != "shell-2" {
 		t.Errorf("wrong payload: %+v", e.Surface)
 	}
 	if e.Surface.Type != manifest.SurfaceTypeShell {
@@ -61,16 +61,16 @@ func TestSurfaceRestore_RoundTripsSurface(t *testing.T) {
 		t.Fatalf("BayNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(SurfaceAddOptions{
-		DockName: "labs", BayName: "w1",
+		DockName: "labs", BayName: "b1",
 		Type: manifest.SurfaceTypeShell, Name: "logs", SplitDir: "v",
 	}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
-	if err := eng.SurfaceClose("labs", "w1", "logs", false); err != nil {
+	if err := eng.SurfaceClose("labs", "b1", "logs", false); err != nil {
 		t.Fatalf("SurfaceClose: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	if s := bay.FindSurface("logs"); s != nil {
 		t.Fatal("surface should be gone before restore")
 	}
@@ -83,7 +83,7 @@ func TestSurfaceRestore_RoundTripsSurface(t *testing.T) {
 		t.Fatalf("SurfaceRestore returned unexpected entry: %+v", entry)
 	}
 
-	bay, _ = eng.BayShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", "b1")
 	restored := bay.FindSurface("logs")
 	if restored == nil {
 		t.Fatal("restored surface not found in bay")
@@ -131,10 +131,10 @@ func TestSurfaceRestore_DropsStaleEntryWhenBayGone(t *testing.T) {
 	if _, err := eng.BayNew(BayNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("BayNew: %v", err)
 	}
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	first := bay.Surfaces[0].Name
 
-	if err := eng.SurfaceClose("labs", "w1", first, false); err != nil {
+	if err := eng.SurfaceClose("labs", "b1", first, false); err != nil {
 		t.Fatalf("SurfaceClose: %v", err)
 	}
 	// Zero grace → next sync finalizes the bay close. Queue entry
@@ -162,13 +162,13 @@ func TestSurfaceRestore_RestoreWithinGraceCancelsPendingClose(t *testing.T) {
 	if _, err := eng.BayNew(BayNewOptions{Dock: "labs"}); err != nil {
 		t.Fatalf("BayNew: %v", err)
 	}
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	first := bay.Surfaces[0].Name
 
-	if err := eng.SurfaceClose("labs", "w1", first, false); err != nil {
+	if err := eng.SurfaceClose("labs", "b1", first, false); err != nil {
 		t.Fatalf("SurfaceClose: %v", err)
 	}
-	bay, _ = eng.BayShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", "b1")
 	if bay.PendingCloseAt == 0 {
 		t.Fatal("expected PendingCloseAt scheduled after last-surface close")
 	}
@@ -177,7 +177,7 @@ func TestSurfaceRestore_RestoreWithinGraceCancelsPendingClose(t *testing.T) {
 		t.Fatalf("SurfaceRestore: %v", err)
 	}
 
-	bay, _ = eng.BayShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", "b1")
 	if bay.PendingCloseAt != 0 {
 		t.Errorf("PendingCloseAt not cleared after restore: %d", bay.PendingCloseAt)
 	}
@@ -193,13 +193,13 @@ func TestSurfaceRestore_DiscoveredDeadAgentQueuesUndo(t *testing.T) {
 		t.Fatalf("BayNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(SurfaceAddOptions{
-		DockName: "labs", BayName: "w1",
+		DockName: "labs", BayName: "b1",
 		Type: manifest.SurfaceTypeAgent, Name: "codex-agent", Agent: "codex", SplitDir: "v",
 	}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	agent := bay.FindSurface("codex-agent")
 	if agent == nil || agent.Tmux == nil {
 		t.Fatalf("agent surface missing tmux attrs: %+v", bay.Surfaces)
@@ -223,14 +223,14 @@ func TestSurfaceRestore_DiscoveredDeadAgentQueuesUndo(t *testing.T) {
 	if got == nil {
 		t.Fatal("queued entry missing surface payload")
 	}
-	if got.Bay != "w1" || got.Name != "codex-agent" || got.Type != manifest.SurfaceTypeAgent || got.Agent != "codex" {
+	if got.Bay != "b1" || got.Name != "codex-agent" || got.Type != manifest.SurfaceTypeAgent || got.Agent != "codex" {
 		t.Fatalf("wrong queued surface payload: %+v", got)
 	}
 	if got.SplitDir != "v" || got.LayoutGroup != agentLayoutGroup {
 		t.Fatalf("queued layout attrs = SplitDir %q LayoutGroup %d, want v/%d", got.SplitDir, got.LayoutGroup, agentLayoutGroup)
 	}
 
-	bay, _ = eng.BayShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", "b1")
 	if bay.FindSurface("codex-agent") != nil {
 		t.Fatal("dead agent surface should be stripped before restore")
 	}
@@ -238,7 +238,7 @@ func TestSurfaceRestore_DiscoveredDeadAgentQueuesUndo(t *testing.T) {
 	if _, err := eng.SurfaceRestore("labs"); err != nil {
 		t.Fatalf("SurfaceRestore: %v", err)
 	}
-	bay, _ = eng.BayShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", "b1")
 	restored := bay.FindSurface("codex-agent")
 	if restored == nil {
 		t.Fatal("agent surface was not restored")
@@ -256,7 +256,7 @@ func TestMoveClosedEntriesBelowKnown_LeavesConcurrentCloseOnTop(t *testing.T) {
 			ClosedAt: closedAt,
 			Kind:     manifest.ClosedKindSurface,
 			Surface: &manifest.ClosedSurface{
-				Bay:  "w1",
+				Bay:  "b1",
 				Name: name,
 				Type: manifest.SurfaceTypeShell,
 			},
@@ -302,7 +302,7 @@ func TestMoveClosedEntriesBelowKnown_FullQueueDropsDiscoveredBeforeKnown(t *test
 			ClosedAt: closedAt,
 			Kind:     manifest.ClosedKindSurface,
 			Surface: &manifest.ClosedSurface{
-				Bay:  "w1",
+				Bay:  "b1",
 				Name: name,
 				Type: manifest.SurfaceTypeShell,
 			},
@@ -371,7 +371,7 @@ func TestSurfaceRestore_PreservesQueueOnAddFailure(t *testing.T) {
 			ClosedAt: time.Now().Unix(),
 			Kind:     manifest.ClosedKindSurface,
 			Surface: &manifest.ClosedSurface{
-				Bay:   "w1",
+				Bay:   "b1",
 				Name:  "a1",
 				Type:  manifest.SurfaceTypeAgent,
 				Agent: "definitely-not-a-real-agent",
@@ -411,23 +411,23 @@ func TestSurfaceRestore_RootPaneRejoinsWindow(t *testing.T) {
 	// BayNew's initial surface is the root (SplitDir=""). Add two split
 	// children so the layout group survives after the root is closed.
 	if err := eng.SurfaceAdd(SurfaceAddOptions{
-		DockName: "labs", BayName: "w1",
+		DockName: "labs", BayName: "b1",
 		Type: manifest.SurfaceTypeShell, Name: "middle", SplitDir: "v",
 	}); err != nil {
 		t.Fatalf("SurfaceAdd middle: %v", err)
 	}
 	if err := eng.SurfaceAdd(SurfaceAddOptions{
-		DockName: "labs", BayName: "w1",
+		DockName: "labs", BayName: "b1",
 		Type: manifest.SurfaceTypeShell, Name: "bottom", SplitDir: "v",
 	}); err != nil {
 		t.Fatalf("SurfaceAdd bottom: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	rootName := bay.Surfaces[0].Name
 	rootLayoutGroup := bay.Surfaces[0].Tmux.LayoutGroup
 
-	if err := eng.SurfaceClose("labs", "w1", rootName, false); err != nil {
+	if err := eng.SurfaceClose("labs", "b1", rootName, false); err != nil {
 		t.Fatalf("SurfaceClose root: %v", err)
 	}
 
@@ -451,7 +451,7 @@ func TestSurfaceRestore_RootPaneRejoinsWindow(t *testing.T) {
 		t.Error("expected SplitWindowBefore call during root-pane restore")
 	}
 
-	bay, _ = eng.BayShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", "b1")
 	restored := bay.FindSurface(rootName)
 	if restored == nil {
 		t.Fatal("root surface not found after restore")
@@ -478,16 +478,16 @@ func TestSurfaceRestore_SplitChildRejoinsWindow(t *testing.T) {
 		t.Fatalf("BayNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(SurfaceAddOptions{
-		DockName: "labs", BayName: "w1",
+		DockName: "labs", BayName: "b1",
 		Type: manifest.SurfaceTypeShell, Name: "split", SplitDir: "v",
 	}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	splitLayoutGroup := bay.FindSurface("split").Tmux.LayoutGroup
 
-	if err := eng.SurfaceClose("labs", "w1", "split", false); err != nil {
+	if err := eng.SurfaceClose("labs", "b1", "split", false); err != nil {
 		t.Fatalf("SurfaceClose: %v", err)
 	}
 
@@ -511,7 +511,7 @@ func TestSurfaceRestore_SplitChildRejoinsWindow(t *testing.T) {
 		t.Error("expected SplitWindow call during split-child restore")
 	}
 
-	bay, _ = eng.BayShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", "b1")
 	restored := bay.FindSurface("split")
 	if restored == nil || restored.Tmux == nil {
 		t.Fatal("split surface not found after restore")
@@ -536,25 +536,25 @@ func TestSurfaceRestore_StackedRestoreRejoinsOriginalWindow(t *testing.T) {
 		t.Fatalf("BayNew: %v", err)
 	}
 	if err := eng.SurfaceAdd(SurfaceAddOptions{
-		DockName: "labs", BayName: "w1",
+		DockName: "labs", BayName: "b1",
 		Type: manifest.SurfaceTypeShell, Name: "middle", SplitDir: "v",
 	}); err != nil {
 		t.Fatalf("SurfaceAdd middle: %v", err)
 	}
 	if err := eng.SurfaceAdd(SurfaceAddOptions{
-		DockName: "labs", BayName: "w1",
+		DockName: "labs", BayName: "b1",
 		Type: manifest.SurfaceTypeShell, Name: "bottom", SplitDir: "v",
 	}); err != nil {
 		t.Fatalf("SurfaceAdd bottom: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	rootName := bay.Surfaces[0].Name
 	originalLayoutGroup := bay.Surfaces[0].Tmux.LayoutGroup
 
 	// Close all three in order: bottom, middle, root.
 	for _, name := range []string{"bottom", "middle", rootName} {
-		if err := eng.SurfaceClose("labs", "w1", name, false); err != nil {
+		if err := eng.SurfaceClose("labs", "b1", name, false); err != nil {
 			t.Fatalf("SurfaceClose %s: %v", name, err)
 		}
 	}
@@ -566,7 +566,7 @@ func TestSurfaceRestore_StackedRestoreRejoinsOriginalWindow(t *testing.T) {
 		}
 	}
 
-	bay, _ = eng.BayShow("labs", "w1")
+	bay, _ = eng.BayShow("labs", "b1")
 	if len(bay.Surfaces) != 3 {
 		t.Fatalf("expected 3 surfaces after stacked restore, got %d", len(bay.Surfaces))
 	}
@@ -597,18 +597,18 @@ func TestSurfaceRestore_FallsBackToNewWindowWhenLayoutGroupGone(t *testing.T) {
 	// layout group; this gives SurfaceRestore somewhere to land while
 	// confirming it DOESN'T mistakenly rejoin the wrong group.
 	if err := eng.SurfaceAdd(SurfaceAddOptions{
-		DockName: "labs", BayName: "w1",
+		DockName: "labs", BayName: "b1",
 		Type: manifest.SurfaceTypeShell, Name: "other-window",
 	}); err != nil {
 		t.Fatalf("SurfaceAdd other-window: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	rootName := bay.Surfaces[0].Name
 
 	// Close the root (layout group 1). Its layout group becomes empty
 	// because it had no siblings.
-	if err := eng.SurfaceClose("labs", "w1", rootName, false); err != nil {
+	if err := eng.SurfaceClose("labs", "b1", rootName, false); err != nil {
 		t.Fatalf("SurfaceClose: %v", err)
 	}
 
@@ -656,14 +656,14 @@ func TestSurfaceRestore_AgentResumesPriorSession(t *testing.T) {
 			// a sibling — keeps the layout group alive and the restore
 			// path simple.
 			if err := eng.SurfaceAdd(SurfaceAddOptions{
-				DockName: "labs", BayName: "w1",
+				DockName: "labs", BayName: "b1",
 				Type: manifest.SurfaceTypeAgent, Name: "side",
 				Agent: tc.agent, SplitDir: "v",
 			}); err != nil {
 				t.Fatalf("SurfaceAdd: %v", err)
 			}
 
-			if err := eng.SurfaceClose("labs", "w1", "side", false); err != nil {
+			if err := eng.SurfaceClose("labs", "b1", "side", false); err != nil {
 				t.Fatalf("SurfaceClose: %v", err)
 			}
 

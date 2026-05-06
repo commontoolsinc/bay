@@ -60,15 +60,15 @@ func TestRunSurfaceClose_NonAgentSkipsPrompt(t *testing.T) {
 	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("BayNew: %v", err)
 	}
-	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeShell, Name: "extra", SplitDir: "v"}); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeShell, Name: "extra", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 
-	if err := runSurfaceClose(eng, []string{"w1:extra"}, "", "", false); err != nil {
+	if err := runSurfaceClose(eng, []string{"b1:extra"}, "", "", false); err != nil {
 		t.Fatalf("runSurfaceClose: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	for _, s := range bay.Surfaces {
 		if s.Name == "extra" {
 			t.Errorf("extra shell surface should be closed (no prompt for non-agent)")
@@ -87,15 +87,15 @@ func TestRunSurfaceClose_DeclinedKeepsAgentSurface(t *testing.T) {
 	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("BayNew: %v", err)
 	}
-	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeAgent, Name: "claude", Agent: "claude", SplitDir: "v"}); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeAgent, Name: "claude", Agent: "claude", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 
-	if err := runSurfaceClose(eng, []string{"w1:claude"}, "", "", false); err != nil {
+	if err := runSurfaceClose(eng, []string{"b1:claude"}, "", "", false); err != nil {
 		t.Fatalf("runSurfaceClose declined: expected nil error, got %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	foundAgent := false
 	for _, s := range bay.Surfaces {
 		if s.Name == "claude" {
@@ -118,15 +118,15 @@ func TestRunSurfaceClose_ConfirmedClosesAgentSurface(t *testing.T) {
 	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("BayNew: %v", err)
 	}
-	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeAgent, Name: "claude", Agent: "claude", SplitDir: "v"}); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeAgent, Name: "claude", Agent: "claude", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 
-	if err := runSurfaceClose(eng, []string{"w1:claude"}, "", "", false); err != nil {
+	if err := runSurfaceClose(eng, []string{"b1:claude"}, "", "", false); err != nil {
 		t.Fatalf("runSurfaceClose confirmed: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	for _, s := range bay.Surfaces {
 		if s.Name == "claude" {
 			t.Error("agent surface should be closed after user confirmed the prompt")
@@ -148,15 +148,15 @@ func TestRunSurfaceClose_ForceSkipsConfirmEntirely(t *testing.T) {
 	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("BayNew: %v", err)
 	}
-	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "w1", Type: manifest.SurfaceTypeAgent, Name: "claude", Agent: "claude", SplitDir: "v"}); err != nil {
+	if err := eng.SurfaceAdd(engine.SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeAgent, Name: "claude", Agent: "claude", SplitDir: "v"}); err != nil {
 		t.Fatalf("SurfaceAdd: %v", err)
 	}
 
-	if err := runSurfaceClose(eng, []string{"w1:claude"}, "", "", true); err != nil {
+	if err := runSurfaceClose(eng, []string{"b1:claude"}, "", "", true); err != nil {
 		t.Fatalf("runSurfaceClose force: %v", err)
 	}
 
-	bay, _ := eng.BayShow("labs", "w1")
+	bay, _ := eng.BayShow("labs", "b1")
 	for _, s := range bay.Surfaces {
 		if s.Name == "claude" {
 			t.Error("agent surface should be closed when force=true")
