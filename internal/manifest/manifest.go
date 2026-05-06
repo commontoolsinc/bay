@@ -16,7 +16,7 @@ import (
 )
 
 // CurrentVersion is the manifest schema version.
-const CurrentVersion = 6
+const CurrentVersion = 7
 
 // BayType constants.
 const (
@@ -48,6 +48,18 @@ const (
 	SyncStatusMissing SyncStatus = "missing"
 )
 
+// PrepareStatus constants — per-step prepare lifecycle state. See
+// docs/design/prepare.md for the legal-transition table.
+type PrepareStatus = string
+
+const (
+	PrepareStatusPending PrepareStatus = "pending"
+	PrepareStatusRunning PrepareStatus = "running"
+	PrepareStatusReady   PrepareStatus = "ready"
+	PrepareStatusFailed  PrepareStatus = "failed"
+	PrepareStatusStale   PrepareStatus = "stale"
+)
+
 // SurfaceBackend constants — how bay interacts with a surface.
 const (
 	SurfaceBackendTmux SurfaceBackend = "tmux-pane"
@@ -75,17 +87,18 @@ type Manifest struct {
 
 // Dock represents a tmux session and its associated terminal window.
 type Dock struct {
-	Name          string              `json:"name"`           // unique; matches config key and tmux session name
-	Path          string              `json:"path,omitempty"` // git checkout this dock owns
-	WorktreeDir   string              `json:"worktree_dir,omitempty"`
-	Repo          string              `json:"repo,omitempty"`       // legacy v5 default repo; migrated to Path/WorktreeDir
-	Agent         string              `json:"agent,omitempty"`      // default agent
-	AgentArgs     map[string][]string `json:"agent_args,omitempty"` // per-agent args
-	Host          *GUIAttrs           `json:"host,omitempty"`       // terminal window hosting this dock's tmux session; nil if unmanaged
-	SessionID     string              `json:"session_id,omitempty"` // identifies the tmux session bay set up; matched against the @bay-session-id session option to detect server restarts
-	Surfaces      []Surface           `json:"surfaces,omitempty"`   // dock-level surfaces (e.g., dock-scoped editor)
-	Bays          []Bay               `json:"bays"`
-	ClosedEntries []ClosedEntry       `json:"closed_entries,omitempty"` // undo-close queue (see docs/design/undo-close.md)
+	Name                 string              `json:"name"`           // unique; matches config key and tmux session name
+	Path                 string              `json:"path,omitempty"` // git checkout this dock owns
+	WorktreeDir          string              `json:"worktree_dir,omitempty"`
+	Repo                 string              `json:"repo,omitempty"`       // legacy v5 default repo; migrated to Path/WorktreeDir
+	Agent                string              `json:"agent,omitempty"`      // default agent
+	AgentArgs            map[string][]string `json:"agent_args,omitempty"` // per-agent args
+	Host                 *GUIAttrs           `json:"host,omitempty"`       // terminal window hosting this dock's tmux session; nil if unmanaged
+	SessionID            string              `json:"session_id,omitempty"` // identifies the tmux session bay set up; matched against the @bay-session-id session option to detect server restarts
+	Surfaces             []Surface           `json:"surfaces,omitempty"`   // dock-level surfaces (e.g., dock-scoped editor)
+	Bays                 []Bay               `json:"bays"`
+	ClosedEntries        []ClosedEntry       `json:"closed_entries,omitempty"`         // undo-close queue (see docs/design/undo-close.md)
+	TrustPromptDismissed bool                `json:"trust_prompt_dismissed,omitempty"` // user answered "Skip" in bay setup's trust prompt; suppresses re-asking
 }
 
 // EffectiveWorktreeDir returns the dock's worktree directory, defaulting to
@@ -99,20 +112,44 @@ func (d Dock) EffectiveWorktreeDir() string {
 
 // Bay represents a unit of work — typically one branch/PR.
 type Bay struct {
-	ID             string         `json:"id"`                         // stable handle (current ^b[1-9]\d*$, legacy ^w[1-9]\d*$); set at creation, never changes; unique within dock
-	Name           string         `json:"name"`                       // user-facing display label, renameable; not a CLI key. Empty until set explicitly or filled from a branch.
-	Type           BayType        `json:"type"`                       // "worktree", "external", or "home"
-	Path           string         `json:"path,omitempty"`             // absolute path to the working directory
-	Description    string         `json:"description,omitempty"`      // short free-form label shown in picker/ls/tree
-	LastFocused    int            `json:"last_focused,omitempty"`     // surface ID; 0 = none yet
-	LastActive     int64          `json:"last_active,omitempty"`      // unix timestamp; updated by bay commands
-	PendingCloseAt int64          `json:"pending_close_at,omitempty"` // unix ts; non-zero = scheduled for auto-close at this time unless a surface is re-added first
-	Surfaces       []Surface      `json:"surfaces"`
-	Worktree       *WorktreeAttrs `json:"worktree,omitempty"` // type=worktree only
+	ID              string          `json:"id"`                         // stable handle (current ^b[1-9]\d*$, legacy ^w[1-9]\d*$); set at creation, never changes; unique within dock
+	Name            string          `json:"name"`                       // user-facing display label, renameable; not a CLI key. Empty until set explicitly or filled from a branch.
+	Type            BayType         `json:"type"`                       // "worktree", "external", or "home"
+	Path            string          `json:"path,omitempty"`             // absolute path to the working directory
+	Description     string          `json:"description,omitempty"`      // short free-form label shown in picker/ls/tree
+	LastFocused     int             `json:"last_focused,omitempty"`     // surface ID; 0 = none yet
+	LastActive      int64           `json:"last_active,omitempty"`      // unix timestamp; updated by bay commands
+	PendingCloseAt  int64           `json:"pending_close_at,omitempty"` // unix ts; non-zero = scheduled for auto-close at this time unless a surface is re-added first
+	Surfaces        []Surface       `json:"surfaces"`
+	Worktree        *WorktreeAttrs  `json:"worktree,omitempty"`         // type=worktree only
+	Prepare         []PrepareStep   `json:"prepare,omitempty"`          // per-step prepare lifecycle state; see docs/design/prepare.md
+	PendingSurfaces []PendingLaunch `json:"pending_surfaces,omitempty"` // queued surface launches blocked on prepare; written by Phase E
 
 	// DeprecatedStatus exists only for v2→v3 manifest migration. Cleared after
 	// migration. The "status" JSON tag is reserved by this field.
 	DeprecatedStatus string `json:"status,omitempty"`
+}
+
+// PrepareStep is one step of a bay's prepare lifecycle. Mirrors the
+// effective merged config entry by name; status fields track runtime
+// state. See docs/design/prepare.md.
+type PrepareStep struct {
+	Name           string        `json:"name"`
+	Status         PrepareStatus `json:"status"`
+	StartedAt      int64         `json:"started_at,omitempty"`
+	FinishedAt     int64         `json:"finished_at,omitempty"`
+	HeartbeatAt    int64         `json:"heartbeat_at,omitempty"` // unix seconds; refreshed every 5s by the worker while running
+	Pid            int           `json:"pid,omitempty"`
+	DefinitionHash string        `json:"definition_hash,omitempty"` // sha256 of canonical-encoded {command, ready_command, blocks, timeout}
+	RunLogOffset   int64         `json:"run_log_offset,omitempty"`  // byte offset of the current run's start separator in today's prepare.log; cleared on terminal status
+}
+
+// PendingLaunch is a surface launch queued behind a blocked prepare step.
+// Reserved in v7 schema for Phase E; not written by Phase A code.
+type PendingLaunch struct {
+	Kind  SurfaceType `json:"kind"`            // "agent" or "cmd"
+	Agent string      `json:"agent,omitempty"` // when Kind=="agent"
+	Args  []string    `json:"args,omitempty"`
 }
 
 // WorktreeAttrs holds git worktree metadata. Only present for worktree bays.

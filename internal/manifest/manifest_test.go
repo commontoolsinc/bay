@@ -1619,3 +1619,109 @@ func TestResolveBay_NameHintMultipleDocks(t *testing.T) {
 		t.Errorf("expected multi-dock hint listing both candidates, got %v", err)
 	}
 }
+
+// TestParse_V6ToV7AdditiveMigration confirms a v6 manifest parses
+// cleanly as v7 with empty Prepare/PendingSurfaces and unset
+// TrustPromptDismissed (the migration is purely additive).
+func TestParse_V6ToV7AdditiveMigration(t *testing.T) {
+	data := []byte(`{
+		"version": 6,
+		"docks": [
+			{
+				"name": "loom",
+				"path": "/p/loom",
+				"bays": [
+					{"id": "w1", "name": "vendor-fix", "type": "worktree", "path": "/wt/loom/w1", "worktree": {"branch": "fix/vendor"}}
+				]
+			}
+		]
+	}`)
+	m, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Version != CurrentVersion {
+		t.Errorf("version = %d, want %d", m.Version, CurrentVersion)
+	}
+	dock := m.FindDock("loom")
+	if dock == nil {
+		t.Fatal("dock not found")
+	}
+	if dock.TrustPromptDismissed {
+		t.Errorf("TrustPromptDismissed = true, want default false")
+	}
+	bay := dock.FindBayByID("w1")
+	if bay == nil {
+		t.Fatal("bay not found")
+	}
+	if len(bay.Prepare) != 0 {
+		t.Errorf("Prepare = %v, want empty", bay.Prepare)
+	}
+	if len(bay.PendingSurfaces) != 0 {
+		t.Errorf("PendingSurfaces = %v, want empty", bay.PendingSurfaces)
+	}
+}
+
+// TestParse_V7RoundTripWithPrepare confirms the new prepare/pending
+// fields persist through Parse → Save → Parse.
+func TestParse_V7RoundTripWithPrepare(t *testing.T) {
+	data := []byte(`{
+		"version": 7,
+		"docks": [
+			{
+				"name": "loom",
+				"path": "/p/loom",
+				"trust_prompt_dismissed": true,
+				"bays": [
+					{
+						"id": "w1",
+						"name": "vendor-fix",
+						"type": "worktree",
+						"path": "/wt/loom/w1",
+						"worktree": {"branch": "fix/vendor"},
+						"prepare": [
+							{
+								"name": "vendors",
+								"status": "ready",
+								"started_at": 1777248000,
+								"finished_at": 1777248030,
+								"definition_hash": "sha256:abc"
+							}
+						],
+						"pending_surfaces": [
+							{"kind": "agent", "agent": "claude"}
+						]
+					}
+				]
+			}
+		]
+	}`)
+	m, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dock := m.FindDock("loom")
+	if dock == nil || !dock.TrustPromptDismissed {
+		t.Fatalf("dock = %#v, want TrustPromptDismissed=true", dock)
+	}
+	bay := dock.FindBayByID("w1")
+	if bay == nil {
+		t.Fatal("bay not found")
+	}
+	if len(bay.Prepare) != 1 {
+		t.Fatalf("Prepare = %v, want 1 step", bay.Prepare)
+	}
+	step := bay.Prepare[0]
+	if step.Name != "vendors" || step.Status != PrepareStatusReady {
+		t.Errorf("step = %#v", step)
+	}
+	if step.StartedAt != 1777248000 || step.FinishedAt != 1777248030 {
+		t.Errorf("timestamps wrong: %#v", step)
+	}
+	if step.DefinitionHash != "sha256:abc" {
+		t.Errorf("DefinitionHash = %q", step.DefinitionHash)
+	}
+	if len(bay.PendingSurfaces) != 1 || bay.PendingSurfaces[0].Kind != SurfaceTypeAgent || bay.PendingSurfaces[0].Agent != "claude" {
+		t.Errorf("PendingSurfaces = %#v", bay.PendingSurfaces)
+	}
+}

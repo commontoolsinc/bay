@@ -13,12 +13,13 @@ import (
 
 // Config represents the top-level bay configuration.
 type Config struct {
-	DefaultAgent  string                  `toml:"default_agent,omitempty"`
-	DefaultEditor string                  `toml:"default_editor,omitempty"`
-	Agents        map[string]AgentConfig  `toml:"agents,omitempty"`
-	Editors       map[string]EditorConfig `toml:"editors,omitempty"`
-	Docks         map[string]DockConfig   `toml:"docks,omitempty"`
-	Monitor       MonitorConfig           `toml:"monitor,omitempty"`
+	DefaultAgent     string                  `toml:"default_agent,omitempty"`
+	DefaultEditor    string                  `toml:"default_editor,omitempty"`
+	TrustRepoBayToml *bool                   `toml:"trust_repo_bay_toml,omitempty"` // bay-level default for honoring repo-local .bay.toml; nil = unset, falls through to built-in default false
+	Agents           map[string]AgentConfig  `toml:"agents,omitempty"`
+	Editors          map[string]EditorConfig `toml:"editors,omitempty"`
+	Docks            map[string]DockConfig   `toml:"docks,omitempty"`
+	Monitor          MonitorConfig           `toml:"monitor,omitempty"`
 }
 
 // EditorConfig allows marking a custom editor as GUI.
@@ -85,9 +86,11 @@ func (c *Config) ResolveAgent(name string) (AgentInfo, bool) {
 // DockConfig holds optional per-dock overrides.
 // Fields are only set when the user explicitly overrides manifest defaults.
 type DockConfig struct {
-	Agent     string              `toml:"agent"`
-	AgentArgs map[string][]string `toml:"agent_args"`
-	Terminal  string              `toml:"terminal,omitempty"`
+	Agent            string              `toml:"agent"`
+	AgentArgs        map[string][]string `toml:"agent_args"`
+	Terminal         string              `toml:"terminal,omitempty"`
+	TrustRepoBayToml *bool               `toml:"trust_repo_bay_toml,omitempty"` // dock-level override of bay-level trust default; nil = inherit from bay-level
+	BayPrepare       []BayPrepareConfig  `toml:"bay_prepare,omitempty"`         // dock-level prepare entries; merged per-field with repo-local .bay.toml entries by name
 }
 
 // MonitorConfig configures the pane monitor.
