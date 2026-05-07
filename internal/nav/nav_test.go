@@ -170,6 +170,55 @@ func TestCollectEntries_EmptyManifest(t *testing.T) {
 	}
 }
 
+func TestCollectEntries_PreservesBayIDForDisplayLabel(t *testing.T) {
+	m := manifest.New()
+	m.Docks = []manifest.Dock{
+		{
+			Name: "labs",
+			Bays: []manifest.Bay{
+				{
+					ID:   "b7",
+					Name: "",
+					Surfaces: []manifest.Surface{
+						{ID: 1, Name: "shell", Type: manifest.SurfaceTypeShell, Backend: manifest.SurfaceBackendTmux, Tmux: &manifest.TmuxAttrs{WindowID: "@7", PaneID: "%7", LayoutGroup: 1}},
+					},
+				},
+			},
+		},
+	}
+
+	entries := CollectEntries(m, tmux.NewMock())
+	if len(entries) != 1 {
+		t.Fatalf("entries = %+v, want one unnamed bay", entries)
+	}
+	if entries[0].BayID != "b7" {
+		t.Fatalf("BayID = %q, want b7", entries[0].BayID)
+	}
+	if got := entries[0].DisplayLabel(); got != "b7" {
+		t.Fatalf("DisplayLabel = %q, want b7", got)
+	}
+}
+
+func TestEntryDisplayLabel(t *testing.T) {
+	tests := []struct {
+		name string
+		in   Entry
+		want string
+	}{
+		{"unnamed bay", Entry{BayID: "b7"}, "b7"},
+		{"named bay", Entry{BayID: "b7", BayName: "auth-fix"}, "b7.auth-fix"},
+		{"home", Entry{BayID: manifest.HomeBayID, BayName: manifest.HomeBayID}, manifest.HomeBayID},
+		{"legacy no id", Entry{BayName: "auth-fix"}, "auth-fix"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.in.DisplayLabel(); got != tt.want {
+				t.Fatalf("DisplayLabel() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestFuzzyMatch_NoQuery(t *testing.T) {
 	entries := []Entry{
 		{BayName: "a", DockName: "d1"},
@@ -194,6 +243,23 @@ func TestFuzzyMatch_ByName(t *testing.T) {
 	}
 	if result[0].BayName != "mem-refactor" {
 		t.Errorf("expected mem-refactor, got %q", result[0].BayName)
+	}
+}
+
+func TestFuzzyMatch_ByBayIDAndDisplayLabel(t *testing.T) {
+	entries := []Entry{
+		{BayID: "b12", BayName: "", Branch: "feature/empty", DockName: "labs"},
+		{BayID: "b13", BayName: "auth-fix", Branch: "bugfix/auth", DockName: "labs"},
+	}
+
+	result := FuzzyMatch(entries, "b12")
+	if len(result) != 1 || result[0].BayID != "b12" {
+		t.Fatalf("query by bay ID got %+v, want b12 only", result)
+	}
+
+	result = FuzzyMatch(entries, "b13.auth")
+	if len(result) != 1 || result[0].BayID != "b13" {
+		t.Fatalf("query by display label got %+v, want b13 only", result)
 	}
 }
 

@@ -1113,7 +1113,7 @@ func bayGo(eng *engine.Engine, args []string, waiting, nextWaiting bool) error {
 		}
 		var homeEntry *nav.Entry
 		for i := range entries {
-			if entries[i].BayName == manifest.HomeBayID {
+			if entries[i].BayID == manifest.HomeBayID || entries[i].BayName == manifest.HomeBayID {
 				homeEntry = &entries[i]
 				break
 			}
@@ -1194,13 +1194,25 @@ func bayCycle(eng *engine.Engine, forward bool) error {
 // pickBay shows the built-in picker for bay selection.
 func pickBay(eng *engine.Engine, entries []nav.Entry) error {
 	currentWinID, _ := eng.Tmux.CurrentWindowID()
+	items, currentIdx := formatBayItems(entries, currentWinID)
+
+	selected, err := defaultPicker.Pick(items, picker.Options{Prompt: "bay> ", Selected: currentIdx})
+	if err != nil || selected < 0 {
+		return nil
+	}
+	return eng.Tmux.SelectWindow(entries[selected].TmuxWindowID)
+}
+
+func formatBayItems(entries []nav.Entry, currentWinID string) ([]picker.Item, int) {
 	currentIdx := 0
 	maxBay, maxDesc, maxBranch, maxPR := 0, 0, 0, 0
 	descs := make([]string, len(entries))
+	labels := make([]string, len(entries))
 	for i, e := range entries {
+		labels[i] = e.DisplayLabel()
 		descs[i] = engine.TruncateName(engine.DescriptionFirstLine(e.Description), pickerDescMaxLen)
-		if len(e.BayName) > maxBay {
-			maxBay = len(e.BayName)
+		if len(labels[i]) > maxBay {
+			maxBay = len(labels[i])
 		}
 		if len(descs[i]) > maxDesc {
 			maxDesc = len(descs[i])
@@ -1234,20 +1246,15 @@ func pickBay(eng *engine.Engine, entries []nav.Entry) error {
 		}
 		if maxDesc > 0 {
 			s := fmt.Sprintf("%-*s  %-*s  %-*s  %-*s%s",
-				maxBay, e.BayName, maxDesc, descs[i], maxBranch, e.Branch, maxPR, pr, tags)
+				maxBay, labels[i], maxDesc, descs[i], maxBranch, e.Branch, maxPR, pr, tags)
 			items[i] = picker.Item{Display: s, Value: i}
 			continue
 		}
 		s := fmt.Sprintf("%-*s  %-*s  %-*s%s",
-			maxBay, e.BayName, maxBranch, e.Branch, maxPR, pr, tags)
+			maxBay, labels[i], maxBranch, e.Branch, maxPR, pr, tags)
 		items[i] = picker.Item{Display: s, Value: i}
 	}
-
-	selected, err := defaultPicker.Pick(items, picker.Options{Prompt: "bay> ", Selected: currentIdx})
-	if err != nil || selected < 0 {
-		return nil
-	}
-	return eng.Tmux.SelectWindow(entries[selected].TmuxWindowID)
+	return items, currentIdx
 }
 
 // pickerDescMaxLen caps description width in the bay picker. Larger than
