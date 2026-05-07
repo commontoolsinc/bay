@@ -145,6 +145,66 @@ trust_repo_bay_toml = true
 	assertConfig(t, path, want)
 }
 
+func TestSetField_UsesLocalNewlineForInsertion(t *testing.T) {
+	path := writeConfig(t, "[top]\r\nkey = true\r\n\r\n[docks.loom]\nagent = \"codex\"\n")
+
+	if err := SetField(path, "docks.loom", "trust_repo_bay_toml", "true"); err != nil {
+		t.Fatalf("SetField: %v", err)
+	}
+
+	want := "[top]\r\nkey = true\r\n\r\n[docks.loom]\nagent = \"codex\"\ntrust_repo_bay_toml = true\n"
+	assertConfig(t, path, want)
+}
+
+func TestSetField_DoesNotOverwriteTmpSibling(t *testing.T) {
+	path := writeConfig(t, "[docks.loom]\nagent = \"codex\"\n")
+	tmpSibling := path + ".tmp"
+	if err := os.WriteFile(tmpSibling, []byte("keep me\n"), 0o644); err != nil {
+		t.Fatalf("write tmp sibling: %v", err)
+	}
+
+	if err := SetField(path, "docks.loom", "trust_repo_bay_toml", "true"); err != nil {
+		t.Fatalf("SetField: %v", err)
+	}
+
+	got, err := os.ReadFile(tmpSibling)
+	if err != nil {
+		t.Fatalf("read tmp sibling: %v", err)
+	}
+	if string(got) != "keep me\n" {
+		t.Fatalf("tmp sibling = %q, want keep me", got)
+	}
+}
+
+func TestSetField_PreservesSymlinkPath(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.toml")
+	if err := os.WriteFile(target, []byte("[docks.loom]\nagent = \"codex\"\n"), 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+	link := filepath.Join(dir, "config.toml")
+	if err := os.Symlink("target.toml", link); err != nil {
+		t.Skipf("symlink not available: %v", err)
+	}
+
+	if err := SetField(link, "docks.loom", "trust_repo_bay_toml", "true"); err != nil {
+		t.Fatalf("SetField: %v", err)
+	}
+
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatalf("lstat link: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("config path is no longer a symlink: mode %s", info.Mode())
+	}
+
+	want := "[docks.loom]\n" +
+		"agent = \"codex\"\n" +
+		"trust_repo_bay_toml = true\n"
+	assertConfig(t, target, want)
+}
+
 func writeConfig(t *testing.T, contents string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "nested", "config.toml")

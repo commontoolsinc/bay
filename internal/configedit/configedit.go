@@ -86,8 +86,8 @@ func SetField(path, header, key, value string) error {
 		return nil
 	}
 
-	newline := preferredLineNewline(lines)
 	insertAt := insertionIndex(lines, start, end)
+	newline := newlineForInsertion(lines, insertAt)
 	if insertAt > 0 && lines[insertAt-1].newline == "" {
 		lines[insertAt-1].newline = newline
 	}
@@ -230,7 +230,13 @@ func preferredNewline(data []byte) string {
 	return "\n"
 }
 
-func preferredLineNewline(lines []line) string {
+func newlineForInsertion(lines []line, insertAt int) string {
+	if insertAt > 0 && lines[insertAt-1].newline != "" {
+		return lines[insertAt-1].newline
+	}
+	if insertAt < len(lines) && lines[insertAt].newline != "" {
+		return lines[insertAt].newline
+	}
 	for _, line := range lines {
 		if line.newline != "" {
 			return line.newline
@@ -279,11 +285,73 @@ func writeFile(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("creating config dir: %w", err)
 	}
+	target, err := writeTarget(path)
+	if err != nil {
+		return err
+	}
+
 	mode := os.FileMode(0o644)
-	if info, err := os.Stat(path); err == nil {
+	if info, err := os.Stat(target); err == nil {
 		mode = info.Mode().Perm()
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("stating config: %w", err)
 	}
-	return os.WriteFile(path, data, mode)
+
+	tmp, err := os.CreateTemp(filepath.Dir(target), "."+filepath.Base(target)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	keepTmp := false
+	defer func() {
+		if !keepTmp {
+			os.Remove(tmpPath)
+		}
+	}()
+
+	if err := tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, target); err != nil {
+		return err
+	}
+	keepTmp = true
+	return nil
+}
+
+func writeTarget(path string) (string, error) {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return path, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("stating config path: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return path, nil
+	}
+
+	target, err := os.Readlink(path)
+	if err != nil {
+		return "", fmt.Errorf("reading config symlink: %w", err)
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(filepath.Dir(path), target)
+	}
+	resolved, err := filepath.EvalSymlinks(target)
+	if err == nil {
+		return resolved, nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return target, nil
+	}
+	return "", fmt.Errorf("resolving config symlink: %w", err)
 }
