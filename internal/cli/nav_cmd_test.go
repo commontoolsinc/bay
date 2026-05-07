@@ -327,6 +327,32 @@ func TestSurfaceGo_NextWaitingIncludesBellWindow(t *testing.T) {
 
 // --- formatSurfaceItems ---
 
+func TestFormatBayItemsUsesStableLabels(t *testing.T) {
+	entries := []nav.Entry{
+		{BayID: "b7", BayName: "", TmuxWindowID: "@7"},
+		{BayID: "b8", BayName: "auth-fix", Description: "Login fixes", Branch: "fix/login", PR: "123", Pending: true, Waiting: true, TmuxWindowID: "@8"},
+	}
+
+	items, currentIdx := formatBayItems(entries, "@8")
+	if currentIdx != 1 {
+		t.Fatalf("currentIdx = %d, want 1", currentIdx)
+	}
+	if len(items) != 2 {
+		t.Fatalf("items = %d, want 2", len(items))
+	}
+	if fields := strings.Fields(items[0].Display); len(fields) == 0 || fields[0] != "b7" {
+		t.Fatalf("unnamed bay display = %q, want first field b7", items[0].Display)
+	}
+	if fields := strings.Fields(items[1].Display); len(fields) == 0 || fields[0] != "b8.auth-fix" {
+		t.Fatalf("named bay display = %q, want first field b8.auth-fix", items[1].Display)
+	}
+	for _, want := range []string{"Login fixes", "fix/login", "#123", "PENDING", "WAITING"} {
+		if !strings.Contains(items[1].Display, want) {
+			t.Errorf("format missing %q in %q", want, items[1].Display)
+		}
+	}
+}
+
 func TestFormatSurfaceItems(t *testing.T) {
 	entries := []nav.SurfaceEntry{
 		{Name: "agent", Type: "agent", Current: true, Waiting: true},

@@ -12,6 +12,7 @@ import (
 // Entry represents a navigable bay.
 type Entry struct {
 	DockName    string
+	BayID       string
 	BayName     string
 	Description string
 	Branch      string
@@ -21,6 +22,21 @@ type Entry struct {
 	// TmuxWindowID of any surface in this bay (for focusing).
 	TmuxWindowID string
 	SurfaceCount int
+}
+
+// DisplayLabel returns the compact target label shown in bay navigation.
+// Names are optional, so unnamed bays fall back to their stable ID.
+func (e Entry) DisplayLabel() string {
+	if e.BayID == manifest.HomeBayID || e.BayName == manifest.HomeBayID {
+		return manifest.HomeBayID
+	}
+	if e.BayID == "" {
+		return e.BayName
+	}
+	if e.BayName == "" || e.BayName == e.BayID {
+		return e.BayID
+	}
+	return e.BayID + "." + e.BayName
 }
 
 func validHomeBay(dock *manifest.Dock, bay *manifest.Bay) bool {
@@ -84,6 +100,7 @@ func CollectEntries(m *manifest.Manifest, tc tmux.Interface) []Entry {
 
 			entries = append(entries, Entry{
 				DockName:     dockName,
+				BayID:        bay.ID,
 				BayName:      bay.Name,
 				Description:  bay.Description,
 				Branch:       branch,
@@ -106,7 +123,9 @@ func FuzzyMatch(entries []Entry, query string) []Entry {
 	q := strings.ToLower(query)
 	var matched []Entry
 	for _, e := range entries {
-		if strings.Contains(strings.ToLower(e.BayName), q) ||
+		if strings.Contains(strings.ToLower(e.DisplayLabel()), q) ||
+			strings.Contains(strings.ToLower(e.BayID), q) ||
+			strings.Contains(strings.ToLower(e.BayName), q) ||
 			strings.Contains(strings.ToLower(e.Description), q) ||
 			strings.Contains(strings.ToLower(e.Branch), q) ||
 			strings.Contains(strings.ToLower(e.PR), q) ||
