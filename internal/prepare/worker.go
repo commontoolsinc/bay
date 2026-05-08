@@ -173,17 +173,13 @@ func (w *Worker) markRunning(opts Options, allSteps []config.BayPrepareConfig, s
 
 func (w *Worker) runStep(ctx context.Context, opts Options, bayPath string, step config.BayPrepareConfig, defHash string) (bool, error) {
 	started := w.now()
-	logFile, offset, err := w.openLog(opts.Dock, started)
+	logFile, offset, err := w.openLogAndWriteStart(opts.Dock, started, opts.Bay, step.Name)
 	if err != nil {
 		_ = w.markFinished(opts, step.Name, manifest.PrepareStatusFailed, "")
 		return true, err
 	}
 	defer logFile.Close()
 
-	if _, err := fmt.Fprintf(logFile, "==== run bay=%s step=%s %s ====\n", opts.Bay, step.Name, started.Format(time.RFC3339)); err != nil {
-		_ = w.markFinished(opts, step.Name, manifest.PrepareStatusFailed, "")
-		return true, fmt.Errorf("writing prepare log: %w", err)
-	}
 	if err := w.setRunLogOffset(opts, step.Name, offset); err != nil {
 		return true, err
 	}
@@ -211,7 +207,7 @@ func (w *Worker) runStep(ctx context.Context, opts Options, bayPath string, step
 	return failed, nil
 }
 
-func (w *Worker) openLog(dock string, ts time.Time) (*os.File, int64, error) {
+func (w *Worker) openLogAndWriteStart(dock string, ts time.Time, bayID, stepName string) (*runLog, int64, error) {
 	dir := filepath.Join(w.DataDir, "logs", dock, ts.Format("2006-01-02"))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, 0, fmt.Errorf("creating prepare log dir: %w", err)
@@ -221,15 +217,51 @@ func (w *Worker) openLog(dock string, ts time.Time) (*os.File, int64, error) {
 	if err != nil {
 		return nil, 0, fmt.Errorf("opening prepare log: %w", err)
 	}
-	offset, err := f.Seek(0, io.SeekEnd)
+	log := &runLog{file: f, lockPath: path + ".lock"}
+	offset, err := log.writeStart(bayID, stepName, ts)
 	if err != nil {
 		f.Close()
-		return nil, 0, fmt.Errorf("seeking prepare log: %w", err)
+		return nil, 0, err
 	}
-	return f, offset, nil
+	return log, offset, nil
 }
 
-func runCommand(ctx context.Context, bayPath string, step config.BayPrepareConfig, logFile *os.File) error {
+type runLog struct {
+	file     *os.File
+	lockPath string
+}
+
+func (l *runLog) Write(p []byte) (int, error) {
+	unlock, err := lockExclusive(l.lockPath)
+	if err != nil {
+		return 0, fmt.Errorf("locking prepare log: %w", err)
+	}
+	defer unlock()
+	return l.file.Write(p)
+}
+
+func (l *runLog) Close() error {
+	return l.file.Close()
+}
+
+func (l *runLog) writeStart(bayID, stepName string, ts time.Time) (int64, error) {
+	unlock, err := lockExclusive(l.lockPath)
+	if err != nil {
+		return 0, fmt.Errorf("locking prepare log: %w", err)
+	}
+	defer unlock()
+
+	offset, err := l.file.Seek(0, io.SeekEnd)
+	if err != nil {
+		return 0, fmt.Errorf("seeking prepare log: %w", err)
+	}
+	if _, err := fmt.Fprintf(l.file, "==== run bay=%s step=%s %s ====\n", bayID, stepName, ts.Format(time.RFC3339)); err != nil {
+		return 0, fmt.Errorf("writing prepare log: %w", err)
+	}
+	return offset, nil
+}
+
+func runCommand(ctx context.Context, bayPath string, step config.BayPrepareConfig, logFile io.Writer) error {
 	runCtx := ctx
 	cancel := func() {}
 	if timeout, err := step.ParsedTimeout(); err != nil {
@@ -430,6 +462,24 @@ func tryStepLock(path string) (*stepLock, bool, error) {
 		return nil, false, fmt.Errorf("acquiring prepare lock: %w", err)
 	}
 	return &stepLock{file: f}, true, nil
+}
+
+func lockExclusive(path string) (func(), error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return func() {
+		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		f.Close()
+	}, nil
 }
 
 func (l *stepLock) Unlock() {

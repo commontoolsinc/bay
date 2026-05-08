@@ -133,6 +133,42 @@ func TestWorker_SkipsReadyStepWithMatchingDefinitionHash(t *testing.T) {
 	}
 }
 
+func TestWorker_RunLogOffsetsPointAtRunSeparators(t *testing.T) {
+	h := newWorkerHarness(t, nil)
+	ts := time.Date(2026, 5, 7, 10, 0, 0, 0, time.UTC)
+
+	first, firstOffset, err := h.worker.openLogAndWriteStart("labs", ts, "b1", "vendors")
+	if err != nil {
+		t.Fatalf("first openLogAndWriteStart: %v", err)
+	}
+	if _, err := first.Write([]byte("first output\n")); err != nil {
+		t.Fatalf("write first output: %v", err)
+	}
+	first.Close()
+	second, secondOffset, err := h.worker.openLogAndWriteStart("labs", ts, "b2", "vendors")
+	if err != nil {
+		t.Fatalf("second openLogAndWriteStart: %v", err)
+	}
+	second.Close()
+
+	if firstOffset != 0 {
+		t.Fatalf("first offset = %d, want 0", firstOffset)
+	}
+	if secondOffset <= firstOffset {
+		t.Fatalf("second offset = %d, want after first offset %d", secondOffset, firstOffset)
+	}
+
+	log := h.readLog(t)
+	wantSecond := "==== run bay=b2 step=vendors 2026-05-07T10:00:00Z ===="
+	gotSecond := strings.Index(log, wantSecond)
+	if gotSecond == -1 {
+		t.Fatalf("second run separator missing:\n%s", log)
+	}
+	if int64(gotSecond) != secondOffset {
+		t.Fatalf("second offset = %d, want separator index %d\n%s", secondOffset, gotSecond, log)
+	}
+}
+
 type workerHarness struct {
 	t            *testing.T
 	dataDir      string
