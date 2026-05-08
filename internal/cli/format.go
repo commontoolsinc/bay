@@ -74,6 +74,7 @@ type ListRow struct {
 	BayBranch      string `json:"bay_branch,omitempty"`
 	BayDirty       bool   `json:"bay_dirty,omitempty"`
 	BayPending     bool   `json:"bay_pending,omitempty"`
+	BaySetup       string `json:"bay_setup,omitempty"`
 	BaySyncStatus  string `json:"bay_sync_status,omitempty"`
 	BayWaiting     bool   `json:"bay_waiting,omitempty"`
 	SurfaceID      int    `json:"surface_id,omitempty"`
@@ -159,6 +160,7 @@ func ListRows(view ListView) []ListRow {
 					BayBranch:     bay.Branch,
 					BayDirty:      bay.Dirty,
 					BayPending:    bay.Pending,
+					BaySetup:      bay.Setup,
 					BaySyncStatus: bay.SyncStatus,
 					BayWaiting:    bay.Waiting,
 				})
@@ -171,6 +173,7 @@ func ListRows(view ListView) []ListRow {
 					BayBranch:      bay.Branch,
 					BayDirty:       bay.Dirty,
 					BayPending:     bay.Pending,
+					BaySetup:       bay.Setup,
 					BaySyncStatus:  bay.SyncStatus,
 					BayWaiting:     bay.Waiting,
 					SurfaceID:      s.ID,
@@ -276,14 +279,14 @@ func truncateListField(s string, maxLen int) string {
 // bayMetaCols returns fixed-position columns for bay metadata.
 // Column positions: 0=description, 1=branch, 2=dir (only when different from
 // name), 3=id (only when it adds info beyond name and dir), 4=status,
-// 5=count, 6=sync/waiting.
+// 5=setup, 6=count, 7=sync/waiting.
 //
 // Descriptions come through at full stored length; FormatListView shrinks
 // them in place (index 0) if the computed terminal budget is tighter. Only
 // the first line of the description is shown — bodies are opt-in and appear
 // in the M-? popup, not on the list row.
 func bayMetaCols(bay engine.BayInfo, showCounts, short bool) []metaCol {
-	cols := make([]metaCol, 7)
+	cols := make([]metaCol, 8)
 	if first := engine.DescriptionFirstLine(bay.Description); first != "" {
 		cols[0] = descField(first, engine.MaxDescriptionFirstLineLen, short)
 	}
@@ -307,8 +310,9 @@ func bayMetaCols(bay engine.BayInfo, showCounts, short bool) []metaCol {
 	} else if bay.Pending {
 		cols[4] = metaField("st", "pending", short)
 	}
+	cols[5] = metaField("setup", bay.Setup, short)
 	if showCounts {
-		cols[5] = metaField("n", fmt.Sprintf("%d", bay.SurfaceCount), short)
+		cols[6] = metaField("n", fmt.Sprintf("%d", bay.SurfaceCount), short)
 	}
 	// Sync and waiting indicators share the trailing column.
 	var parts []string
@@ -331,7 +335,7 @@ func bayMetaCols(bay engine.BayInfo, showCounts, short bool) []metaCol {
 		}
 	}
 	if len(parts) > 0 {
-		cols[6] = metaCol{text: strings.Join(parts, " "), width: tailWidth}
+		cols[7] = metaCol{text: strings.Join(parts, " "), width: tailWidth}
 	}
 	return cols
 }
@@ -733,6 +737,9 @@ func FormatBayShow(dockName string, bay *engine.BayInfo, long bool) string {
 	}
 	if bay.Pending {
 		rows = append(rows, showRow{"pending", "yes"})
+	}
+	if bay.Setup != "" {
+		rows = append(rows, showRow{"setup", bay.Setup})
 	}
 	if bay.DefaultAgent != "" {
 		rows = append(rows, showRow{"default agent", bay.DefaultAgent})

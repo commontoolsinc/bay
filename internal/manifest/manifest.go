@@ -141,6 +141,23 @@ type PrepareStep struct {
 	RunLogOffset   int64         `json:"run_log_offset,omitempty"`
 }
 
+// PrepareSetupSummary returns the compact non-ready setup state for display.
+func PrepareSetupSummary(steps []PrepareStep) string {
+	for _, status := range []PrepareStatus{
+		PrepareStatusRunning,
+		PrepareStatusFailed,
+		PrepareStatusStale,
+		PrepareStatusPending,
+	} {
+		for _, step := range steps {
+			if step.Status == status {
+				return string(status) + ":" + step.Name
+			}
+		}
+	}
+	return ""
+}
+
 // PendingLaunch reserves the manifest shape used by later prepare phases to
 // swap blocked placeholder panes into real bay surfaces.
 type PendingLaunch struct {

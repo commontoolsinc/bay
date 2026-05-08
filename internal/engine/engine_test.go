@@ -510,6 +510,55 @@ func TestBayNew_Worktree(t *testing.T) {
 	}
 }
 
+func TestBayNew_DispatchesPrepareWorkerWhenConfigured(t *testing.T) {
+	eng, _ := testEngine(t)
+	eng.Config.Docks["labs"] = config.DockConfig{
+		BayPrepare: []config.BayPrepareConfig{{
+			Name:    "vendors",
+			Command: []string{"true"},
+		}},
+	}
+	var calls [][]string
+	oldStart := startPrepareWorkerProcess
+	startPrepareWorkerProcess = func(exe string, args []string) error {
+		calls = append(calls, append([]string{exe}, args...))
+		return nil
+	}
+	t.Cleanup(func() { startPrepareWorkerProcess = oldStart })
+
+	bay, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true})
+	if err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("prepare worker starts = %d, want 1", len(calls))
+	}
+	got := strings.Join(calls[0], " ")
+	for _, want := range []string{"prepare-worker", "--dock labs", "--bay " + bay.ID} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("prepare worker args %q missing %q", got, want)
+		}
+	}
+}
+
+func TestBayNew_DoesNotDispatchPrepareWorkerWithoutConfig(t *testing.T) {
+	eng, _ := testEngine(t)
+	var calls int
+	oldStart := startPrepareWorkerProcess
+	startPrepareWorkerProcess = func(exe string, args []string) error {
+		calls++
+		return nil
+	}
+	t.Cleanup(func() { startPrepareWorkerProcess = oldStart })
+
+	if _, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true}); err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("prepare worker starts = %d, want 0", calls)
+	}
+}
+
 func TestBayNew_InvalidNameDoesNotCreateWorktree(t *testing.T) {
 	eng, _ := testEngine(t)
 
@@ -1603,6 +1652,24 @@ func TestDockClose(t *testing.T) {
 	dock := m.FindDock("labs")
 	if dock != nil && len(dock.Bays) != 0 {
 		t.Errorf("expected 0 bays, got %d", len(dock.Bays))
+	}
+}
+
+func TestDockClose_RemovesPrepareLogs(t *testing.T) {
+	eng, dir := testEngine(t)
+	logDir := filepath.Join(dir, "logs", "labs", "2026-05-07")
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		t.Fatalf("mkdir log dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(logDir, "prepare.log"), []byte("log"), 0o644); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+
+	if err := eng.DockClose("labs", true); err != nil {
+		t.Fatalf("DockClose: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "logs", "labs")); !os.IsNotExist(err) {
+		t.Fatalf("logs stat error = %v, want not exist", err)
 	}
 }
 

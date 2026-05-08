@@ -5,7 +5,31 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
+
+	"github.com/commontoolsinc/bay/internal/prepare"
 )
+
+var startPrepareWorkerProcess = func(exe string, args []string) error {
+	cmd := exec.Command(exe, args...)
+	cmd.Dir = "/"
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("starting prepare worker: %w", err)
+	}
+	if err := cmd.Process.Release(); err != nil {
+		return fmt.Errorf("releasing prepare worker: %w", err)
+	}
+	return nil
+}
+
+// PreparePlan returns the effective prepare plan for a bay.
+func (e *Engine) PreparePlan(dockName, bayID string) (prepare.Plan, error) {
+	manager := prepare.Manager{
+		Config:       e.Config,
+		ManifestPath: e.manifestPath,
+	}
+	return manager.Plan(prepare.Options{Dock: dockName, Bay: bayID})
+}
 
 // DispatchPrepareWorker starts a detached same-binary prepare worker for a bay.
 func (e *Engine) DispatchPrepareWorker(dockName, bayID string) error {
@@ -25,14 +49,5 @@ func (e *Engine) DispatchPrepareWorker(dockName, bayID string) error {
 		args = append(args, "--config", e.configPath)
 	}
 	args = append(args, "prepare-worker", "--dock", dockName, "--bay", bayID)
-	cmd := exec.Command(exe, args...)
-	cmd.Dir = "/"
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("starting prepare worker: %w", err)
-	}
-	if err := cmd.Process.Release(); err != nil {
-		return fmt.Errorf("releasing prepare worker: %w", err)
-	}
-	return nil
+	return startPrepareWorkerProcess(exe, args)
 }
