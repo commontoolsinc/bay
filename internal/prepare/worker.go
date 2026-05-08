@@ -110,13 +110,9 @@ func (w *Worker) loadPlan(opts Options) (plan, error) {
 	if err != nil {
 		return plan{}, err
 	}
-	dock := m.FindDock(opts.Dock)
-	if dock == nil {
-		return plan{}, fmt.Errorf("dock %q not found", opts.Dock)
-	}
-	bay := dock.FindBayByID(opts.Bay)
-	if bay == nil {
-		return plan{}, fmt.Errorf("bay %q not found in dock %q", opts.Bay, opts.Dock)
+	bay, err := findBay(m, opts)
+	if err != nil {
+		return plan{}, err
 	}
 
 	var repoSteps []config.BayPrepareConfig
@@ -259,13 +255,18 @@ func runCommand(ctx context.Context, bayPath string, step config.BayPrepareConfi
 }
 
 func (w *Worker) setRunLogOffset(opts Options, stepName string, offset int64) error {
+	return w.mutateEntry(opts, stepName, func(entry *manifest.PrepareStep) {
+		entry.RunLogOffset = offset
+	})
+}
+
+func (w *Worker) mutateEntry(opts Options, stepName string, fn func(*manifest.PrepareStep)) error {
 	return manifest.LockedUpdate(w.ManifestPath, func(m *manifest.Manifest) error {
 		bay, err := findBay(m, opts)
 		if err != nil {
 			return err
 		}
-		entry := ensurePrepareEntry(bay, stepName)
-		entry.RunLogOffset = offset
+		fn(ensurePrepareEntry(bay, stepName))
 		return nil
 	})
 }
@@ -298,34 +299,22 @@ func (w *Worker) startHeartbeat(ctx context.Context, opts Options, stepName stri
 
 func (w *Worker) setHeartbeat(opts Options, stepName string) error {
 	now := w.now().Unix()
-	return manifest.LockedUpdate(w.ManifestPath, func(m *manifest.Manifest) error {
-		bay, err := findBay(m, opts)
-		if err != nil {
-			return err
-		}
-		entry := ensurePrepareEntry(bay, stepName)
+	return w.mutateEntry(opts, stepName, func(entry *manifest.PrepareStep) {
 		if entry.Status == manifest.PrepareStatusRunning {
 			entry.HeartbeatAt = now
 		}
-		return nil
 	})
 }
 
 func (w *Worker) markFinished(opts Options, stepName string, status manifest.PrepareStatus, defHash string) error {
 	finishedAt := w.now().Unix()
-	return manifest.LockedUpdate(w.ManifestPath, func(m *manifest.Manifest) error {
-		bay, err := findBay(m, opts)
-		if err != nil {
-			return err
-		}
-		entry := ensurePrepareEntry(bay, stepName)
+	return w.mutateEntry(opts, stepName, func(entry *manifest.PrepareStep) {
 		entry.Status = status
 		entry.FinishedAt = finishedAt
 		entry.HeartbeatAt = 0
 		entry.PID = 0
 		entry.RunLogOffset = 0
 		entry.DefinitionHash = defHash
-		return nil
 	})
 }
 
@@ -388,6 +377,9 @@ func (w *Worker) heartbeatInterval() time.Duration {
 	return defaultHeartbeatInterval
 }
 
+// stepDefinition is the BayPrepareConfig subset whose changes invalidate a
+// cached "ready" status. Name is the lookup key, and Run only controls
+// dispatch policy, so neither belongs in the definition hash.
 type stepDefinition struct {
 	Command      []string `json:"command"`
 	ReadyCommand []string `json:"ready_command"`
