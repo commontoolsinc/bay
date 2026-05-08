@@ -19,7 +19,7 @@ func TestNewRootCmd(t *testing.T) {
 		"recover": false, "doctor": false, "setup": false, "monitor": false, "version": false,
 		"shell": false, "edit": false, "status-line": false,
 		"agent-guide": false,
-		"palette":     false,
+		"palette":     false, "prepare-worker": false,
 	}
 	for _, cmd := range root.Commands() {
 		if _, ok := expected[cmd.Name()]; ok {
@@ -54,6 +54,12 @@ func TestNewRootCmd(t *testing.T) {
 	for _, cmd := range root.Commands() {
 		if cmd.Name() == "clean-review" && !cmd.Hidden {
 			t.Error("clean-review should be hidden")
+		}
+	}
+
+	for _, cmd := range root.Commands() {
+		if cmd.Name() == "prepare-worker" && !cmd.Hidden {
+			t.Error("prepare-worker should be hidden")
 		}
 	}
 }
