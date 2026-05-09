@@ -23,6 +23,10 @@ type Engine struct {
 	configPath   string
 	manifestPath string
 	archivePath  string
+
+	// startWorker dispatches a detached prepare-worker process. Tests
+	// override this to record calls without forking.
+	startWorker func(exe string, args []string) error
 }
 
 // New creates a new Engine.
@@ -34,6 +38,7 @@ func New(cfg *config.Config, configPath, manifestPath, archivePath string, t tmu
 		archivePath:  archivePath,
 		Tmux:         t,
 		Git:          g,
+		startWorker:  startPrepareWorkerProcess,
 	}
 }
 

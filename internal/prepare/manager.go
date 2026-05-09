@@ -1,6 +1,7 @@
 package prepare
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -47,15 +48,18 @@ func (m Manager) Plan(opts Options) (Plan, error) {
 
 // Status refreshes derived stale state and returns the current step statuses.
 func (m Manager) Status(opts Options) ([]StepStatus, error) {
-	plan, err := m.loadPlan(opts)
-	if err != nil {
+	if err := m.validateOpts(opts); err != nil {
 		return nil, err
 	}
 
 	now := m.now().Unix()
 	var statuses []StepStatus
-	err = manifest.LockedUpdateMaybe(m.ManifestPath, func(mf *manifest.Manifest) (bool, error) {
+	err := manifest.LockedUpdateMaybe(m.ManifestPath, func(mf *manifest.Manifest) (bool, error) {
 		bay, err := findBay(mf, opts)
+		if err != nil {
+			return false, err
+		}
+		plan, err := m.planForBay(opts, bay)
 		if err != nil {
 			return false, err
 		}
@@ -94,12 +98,13 @@ func (m Manager) Status(opts Options) ([]StepStatus, error) {
 	return statuses, err
 }
 
-// Retry resets failed, stale, and never-started steps to pending.
-// It returns the affected step names and whether a worker should be dispatched.
-func (m Manager) Retry(opts Options) ([]string, bool, error) {
+// Retry resets failed, stale, and never-started steps to pending. The returned
+// slice is empty when nothing needed retrying — callers should dispatch a
+// worker only when at least one step was reset.
+func (m Manager) Retry(opts Options) ([]string, error) {
 	statuses, err := m.Status(opts)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	retry := map[string]bool{}
 	for _, status := range statuses {
@@ -110,7 +115,7 @@ func (m Manager) Retry(opts Options) ([]string, bool, error) {
 		}
 	}
 	if len(retry) == 0 {
-		return nil, false, nil
+		return nil, nil
 	}
 
 	var names []string
@@ -131,12 +136,14 @@ func (m Manager) Retry(opts Options) ([]string, bool, error) {
 		}
 		return changed, nil
 	})
-	return names, true, err
+	return names, err
 }
 
 // Kill sends SIGTERM to running prepare workers and marks any non-terminal
-// running steps stale if the worker does not exit within wait.
-func (m Manager) Kill(opts Options, wait time.Duration) ([]string, error) {
+// running steps stale if the worker does not exit within wait. Returns early
+// if ctx is canceled — the affected step names are returned alongside the
+// cancel error so callers can surface what was already signaled.
+func (m Manager) Kill(ctx context.Context, opts Options, wait time.Duration) ([]string, error) {
 	statuses, err := m.Status(opts)
 	if err != nil {
 		return nil, err
@@ -162,8 +169,15 @@ func (m Manager) Kill(opts Options, wait time.Duration) ([]string, error) {
 		_ = proc.Signal(syscall.SIGTERM)
 	}
 
-	deadline := time.Now().Add(wait)
-	for wait > 0 {
+	if wait <= 0 {
+		return names, m.markStepsStale(opts, names)
+	}
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	deadline := time.After(wait)
+
+	for {
 		statuses, err = m.Status(opts)
 		if err != nil {
 			return names, err
@@ -171,13 +185,14 @@ func (m Manager) Kill(opts Options, wait time.Duration) ([]string, error) {
 		if len(runningStatuses(statuses)) == 0 {
 			return names, nil
 		}
-		if time.Now().After(deadline) {
-			break
+		select {
+		case <-ctx.Done():
+			return names, ctx.Err()
+		case <-deadline:
+			return names, m.markStepsStale(opts, names)
+		case <-ticker.C:
 		}
-		time.Sleep(100 * time.Millisecond)
 	}
-
-	return names, m.markStepsStale(opts, names)
 }
 
 // StepNames returns step names in declaration order.
@@ -205,16 +220,9 @@ func TodayLogPath(dataDir, dock string, now time.Time) string {
 }
 
 func (m Manager) loadPlan(opts Options) (Plan, error) {
-	if opts.Dock == "" {
-		return Plan{}, fmt.Errorf("dock is required")
+	if err := m.validateOpts(opts); err != nil {
+		return Plan{}, err
 	}
-	if opts.Bay == "" {
-		return Plan{}, fmt.Errorf("bay is required")
-	}
-	if m.ManifestPath == "" {
-		return Plan{}, fmt.Errorf("manifest path is required")
-	}
-
 	mf, err := manifest.Load(m.ManifestPath)
 	if err != nil {
 		return Plan{}, err
@@ -223,7 +231,25 @@ func (m Manager) loadPlan(opts Options) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
+	return m.planForBay(opts, bay)
+}
 
+func (m Manager) validateOpts(opts Options) error {
+	if opts.Dock == "" {
+		return fmt.Errorf("dock is required")
+	}
+	if opts.Bay == "" {
+		return fmt.Errorf("bay is required")
+	}
+	if m.ManifestPath == "" {
+		return fmt.Errorf("manifest path is required")
+	}
+	return nil
+}
+
+// planForBay derives the effective prepare plan for an already-loaded bay,
+// reading the repo-local config when the dock is trusted.
+func (m Manager) planForBay(opts Options, bay *manifest.Bay) (Plan, error) {
 	cfg := m.config()
 	var repoSteps []config.BayPrepareConfig
 	if bay.Path != "" && config.ResolveTrust(cfg, opts.Dock) {

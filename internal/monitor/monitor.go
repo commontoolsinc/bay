@@ -355,6 +355,9 @@ func prunePrepareLogs(logsRoot string, now time.Time) error {
 	if err := os.WriteFile(sentinel, []byte(now.Format(time.RFC3339)), 0o644); err != nil {
 		return err
 	}
+	// Stamp mtime from the caller's clock, not the kernel's, so the
+	// throttle gate (info.ModTime() comparison above) honors a fake
+	// `now` in tests.
 	return os.Chtimes(sentinel, now, now)
 }
 

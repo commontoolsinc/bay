@@ -519,12 +519,10 @@ func TestBayNew_DispatchesPrepareWorkerWhenConfigured(t *testing.T) {
 		}},
 	}
 	var calls [][]string
-	oldStart := startPrepareWorkerProcess
-	startPrepareWorkerProcess = func(exe string, args []string) error {
+	eng.startWorker = func(exe string, args []string) error {
 		calls = append(calls, append([]string{exe}, args...))
 		return nil
 	}
-	t.Cleanup(func() { startPrepareWorkerProcess = oldStart })
 
 	bay, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true})
 	if err != nil {
@@ -544,12 +542,10 @@ func TestBayNew_DispatchesPrepareWorkerWhenConfigured(t *testing.T) {
 func TestBayNew_DoesNotDispatchPrepareWorkerWithoutConfig(t *testing.T) {
 	eng, _ := testEngine(t)
 	var calls int
-	oldStart := startPrepareWorkerProcess
-	startPrepareWorkerProcess = func(exe string, args []string) error {
+	eng.startWorker = func(exe string, args []string) error {
 		calls++
 		return nil
 	}
-	t.Cleanup(func() { startPrepareWorkerProcess = oldStart })
 
 	if _, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true}); err != nil {
 		t.Fatalf("BayNew: %v", err)

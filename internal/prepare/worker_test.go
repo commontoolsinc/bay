@@ -1,6 +1,7 @@
 package prepare
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -250,12 +251,9 @@ func TestManager_RetryResetsFailedStaleAndPending(t *testing.T) {
 		t.Fatalf("seed manifest: %v", err)
 	}
 
-	names, dispatch, err := h.manager().Retry(Options{Dock: "labs", Bay: "b1"})
+	names, err := h.manager().Retry(Options{Dock: "labs", Bay: "b1"})
 	if err != nil {
 		t.Fatalf("Retry: %v", err)
-	}
-	if !dispatch {
-		t.Fatal("Retry dispatch = false, want true")
 	}
 	if strings.Join(names, ",") != "pending,failed,stale" {
 		t.Fatalf("retry names = %v, want pending,failed,stale", names)
@@ -306,7 +304,7 @@ func TestManager_KillSignalsRunningStepAndMarksStaleOnTimeout(t *testing.T) {
 		t.Fatalf("seed manifest: %v", err)
 	}
 
-	names, err := h.manager().Kill(Options{Dock: "labs", Bay: "b1"}, 50*time.Millisecond)
+	names, err := h.manager().Kill(context.Background(), Options{Dock: "labs", Bay: "b1"}, 50*time.Millisecond)
 	if err != nil {
 		t.Fatalf("Kill: %v", err)
 	}
@@ -316,6 +314,99 @@ func TestManager_KillSignalsRunningStepAndMarksStaleOnTimeout(t *testing.T) {
 	step := h.prepareStep(t, "vendors")
 	if step.Status != manifest.PrepareStatusStale || step.PID != 0 {
 		t.Fatalf("killed step = %#v, want stale with pid cleared", step)
+	}
+}
+
+func TestManager_KillWaitZeroMarksStaleImmediately(t *testing.T) {
+	h := newWorkerHarness(t, []config.BayPrepareConfig{
+		{Name: "vendors", Command: []string{commandPath(t, "true")}},
+	})
+	sleep := exec.Command(commandPath(t, "sleep"), "10")
+	if err := sleep.Start(); err != nil {
+		t.Fatalf("start sleep: %v", err)
+	}
+	defer func() {
+		_ = sleep.Process.Kill()
+		_ = sleep.Wait()
+	}()
+	lock, _, err := tryStepLock(stepLockPath(h.dataDir, "labs", "b1", "vendors"))
+	if err != nil {
+		t.Fatalf("tryStepLock: %v", err)
+	}
+	defer lock.Unlock()
+
+	if err := manifest.LockedUpdate(h.manifestPath, func(m *manifest.Manifest) error {
+		bay := m.FindDock("labs").FindBayByID("b1")
+		bay.Prepare = []manifest.PrepareStep{{
+			Name:        "vendors",
+			Status:      manifest.PrepareStatusRunning,
+			PID:         sleep.Process.Pid,
+			HeartbeatAt: h.worker.Now().Unix(),
+		}}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed manifest: %v", err)
+	}
+
+	start := time.Now()
+	names, err := h.manager().Kill(context.Background(), Options{Dock: "labs", Bay: "b1"}, 0)
+	if err != nil {
+		t.Fatalf("Kill: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
+		t.Fatalf("wait=0 Kill took %s, want immediate return", elapsed)
+	}
+	if strings.Join(names, ",") != "vendors" {
+		t.Fatalf("kill names = %v, want vendors", names)
+	}
+	if step := h.prepareStep(t, "vendors"); step.Status != manifest.PrepareStatusStale {
+		t.Fatalf("step.Status = %s, want stale", step.Status)
+	}
+}
+
+func TestManager_KillReturnsCtxErrWhenCanceled(t *testing.T) {
+	h := newWorkerHarness(t, []config.BayPrepareConfig{
+		{Name: "vendors", Command: []string{commandPath(t, "true")}},
+	})
+	sleep := exec.Command(commandPath(t, "sleep"), "10")
+	if err := sleep.Start(); err != nil {
+		t.Fatalf("start sleep: %v", err)
+	}
+	defer func() {
+		_ = sleep.Process.Kill()
+		_ = sleep.Wait()
+	}()
+
+	lock, _, err := tryStepLock(stepLockPath(h.dataDir, "labs", "b1", "vendors"))
+	if err != nil {
+		t.Fatalf("tryStepLock: %v", err)
+	}
+	defer lock.Unlock()
+
+	if err := manifest.LockedUpdate(h.manifestPath, func(m *manifest.Manifest) error {
+		bay := m.FindDock("labs").FindBayByID("b1")
+		bay.Prepare = []manifest.PrepareStep{{
+			Name:        "vendors",
+			Status:      manifest.PrepareStatusRunning,
+			PID:         sleep.Process.Pid,
+			HeartbeatAt: h.worker.Now().Unix(),
+		}}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed manifest: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	names, err := h.manager().Kill(ctx, Options{Dock: "labs", Bay: "b1"}, time.Hour)
+	if err != context.Canceled {
+		t.Fatalf("Kill err = %v, want context.Canceled", err)
+	}
+	if strings.Join(names, ",") != "vendors" {
+		t.Fatalf("kill names = %v, want vendors (signaled before cancel returned)", names)
+	}
+	if step := h.prepareStep(t, "vendors"); step.Status != manifest.PrepareStatusRunning {
+		t.Fatalf("step.Status = %s, want running (cancel skipped markStepsStale)", step.Status)
 	}
 }
 

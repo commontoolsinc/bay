@@ -40,14 +40,8 @@ type Worker struct {
 
 // Run executes configured prepare steps serially for opts.
 func (w *Worker) Run(ctx context.Context, opts Options) error {
-	if opts.Dock == "" {
-		return fmt.Errorf("dock is required")
-	}
-	if opts.Bay == "" {
-		return fmt.Errorf("bay is required")
-	}
-	if w.ManifestPath == "" {
-		return fmt.Errorf("manifest path is required")
+	if err := w.manager().validateOpts(opts); err != nil {
+		return err
 	}
 	if w.DataDir == "" {
 		return fmt.Errorf("data dir is required")
@@ -100,13 +94,17 @@ func (w *Worker) Run(ctx context.Context, opts Options) error {
 	return nil
 }
 
-func (w *Worker) loadPlan(opts Options) (Plan, error) {
+func (w *Worker) manager() Manager {
 	return Manager{
 		Config:       w.Config,
 		ManifestPath: w.ManifestPath,
 		DataDir:      w.DataDir,
 		Now:          w.Now,
-	}.loadPlan(opts)
+	}
+}
+
+func (w *Worker) loadPlan(opts Options) (Plan, error) {
+	return w.manager().loadPlan(opts)
 }
 
 func (w *Worker) markRunning(opts Options, allSteps []config.BayPrepareConfig, step config.BayPrepareConfig, defHash string) (bool, error) {
@@ -220,7 +218,7 @@ func (l *runLog) writeStart(bayID, stepName string, ts time.Time) (int64, error)
 	if err != nil {
 		return 0, fmt.Errorf("seeking prepare log: %w", err)
 	}
-	if _, err := fmt.Fprintf(l.file, "==== run bay=%s step=%s %s ====\n", bayID, stepName, ts.Format(time.RFC3339)); err != nil {
+	if err := writeRunHeader(l.file, bayID, stepName, ts); err != nil {
 		return 0, fmt.Errorf("writing prepare log: %w", err)
 	}
 	return offset, nil

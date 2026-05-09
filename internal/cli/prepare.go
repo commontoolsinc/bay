@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/commontoolsinc/bay/internal/prepare"
 	"github.com/spf13/cobra"
 )
@@ -63,7 +64,7 @@ func newPrepareCmd() *cobra.Command {
 				return runPrepareLog(cmd.Context(), out, manager, opts, follow, timeout)
 			}
 			if kill {
-				names, err := manager.Kill(opts, 5*time.Second)
+				names, err := manager.Kill(cmd.Context(), opts, 5*time.Second)
 				if err != nil {
 					return err
 				}
@@ -75,17 +76,17 @@ func newPrepareCmd() *cobra.Command {
 				return nil
 			}
 			if retry {
-				names, dispatched, err := manager.Retry(opts)
+				names, err := manager.Retry(opts)
 				if err != nil {
 					return err
 				}
-				if dispatched {
+				if len(names) == 0 {
+					fmt.Fprintln(out, "prepare is already ready")
+				} else {
 					if err := eng.DispatchPrepareWorker(dockName, bayID); err != nil {
 						return err
 					}
 					fmt.Fprintf(out, "prepare retry started: %s\n", strings.Join(names, ","))
-				} else {
-					fmt.Fprintln(out, "prepare is already ready")
 				}
 			}
 			if wait {
@@ -146,6 +147,9 @@ func waitForPrepare(ctx context.Context, manager prepare.Manager, opts prepare.O
 	}
 	defer cancel()
 
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
 	for {
 		statuses, err := manager.Status(opts)
 		if err != nil {
@@ -160,7 +164,7 @@ func waitForPrepare(ctx context.Context, manager prepare.Manager, opts prepare.O
 				return nil, fmt.Errorf("timed out waiting for prepare after %s", timeout)
 			}
 			return nil, waitCtx.Err()
-		case <-time.After(500 * time.Millisecond):
+		case <-ticker.C:
 		}
 	}
 }
@@ -168,7 +172,7 @@ func waitForPrepare(ctx context.Context, manager prepare.Manager, opts prepare.O
 func runPrepareLog(ctx context.Context, out io.Writer, manager prepare.Manager, opts prepare.Options, follow bool, timeout time.Duration) error {
 	logPath := prepare.TodayLogPath(manager.DataDir, opts.Dock, time.Now())
 	if !follow {
-		return printFilteredPrepareLog(out, logPath, opts.Bay)
+		return prepare.FilterRunsForBayFile(out, logPath, opts.Bay)
 	}
 
 	followCtx := ctx
@@ -183,19 +187,22 @@ func runPrepareLog(ctx context.Context, out io.Writer, manager prepare.Manager, 
 		return err
 	}
 	if !ok {
-		return printFilteredPrepareLog(out, logPath, opts.Bay)
+		return prepare.FilterRunsForBayFile(out, logPath, opts.Bay)
 	}
 	return followPrepareLog(followCtx, out, logPath, offset, manager, opts)
 }
 
 func waitForRunLogOffset(ctx context.Context, manager prepare.Manager, opts prepare.Options) (int64, bool, error) {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
 	for {
 		statuses, err := manager.Status(opts)
 		if err != nil {
 			return 0, false, err
 		}
 		for _, status := range statuses {
-			if status.Status == "running" {
+			if status.Status == manifest.PrepareStatusRunning {
 				return status.RunLogOffset, true, nil
 			}
 		}
@@ -205,13 +212,16 @@ func waitForRunLogOffset(ctx context.Context, manager prepare.Manager, opts prep
 		select {
 		case <-ctx.Done():
 			return 0, false, ctx.Err()
-		case <-time.After(100 * time.Millisecond):
+		case <-ticker.C:
 		}
 	}
 }
 
 func followPrepareLog(ctx context.Context, out io.Writer, path string, offset int64, manager prepare.Manager, opts prepare.Options) error {
 	pos := offset
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+
 	for {
 		if err := copyPrepareLogFrom(out, path, &pos); err != nil {
 			return err
@@ -226,7 +236,7 @@ func followPrepareLog(ctx context.Context, out io.Writer, path string, offset in
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(250 * time.Millisecond):
+		case <-ticker.C:
 		}
 	}
 }
@@ -246,33 +256,4 @@ func copyPrepareLogFrom(out io.Writer, path string, pos *int64) error {
 	n, err := io.Copy(out, f)
 	*pos += n
 	return err
-}
-
-func printFilteredPrepareLog(out io.Writer, path, bayID string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	_, err = io.WriteString(out, filterPrepareLogForBay(string(data), bayID))
-	return err
-}
-
-func filterPrepareLogForBay(data, bayID string) string {
-	if bayID == "" {
-		return data
-	}
-	var b strings.Builder
-	include := false
-	for _, line := range strings.SplitAfter(data, "\n") {
-		if strings.HasPrefix(line, "==== run ") {
-			include = strings.Contains(line, " bay="+bayID+" ")
-		}
-		if include {
-			b.WriteString(line)
-		}
-	}
-	return b.String()
 }
