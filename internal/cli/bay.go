@@ -14,6 +14,7 @@ import (
 	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/commontoolsinc/bay/internal/nav"
 	"github.com/commontoolsinc/bay/internal/picker"
+	"github.com/commontoolsinc/bay/internal/prepare"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -96,6 +97,7 @@ func newBayNewCmd() *cobra.Command {
 			}
 			if !quiet {
 				fmt.Printf("Created %s:%s\n", opts.Dock, bay.Name)
+				printPrepareStartedSummary(eng, opts.Dock, bay.ID)
 				currentSession, tmuxErr := eng.Tmux.CurrentSession()
 				if tmuxErr != nil || os.Getenv("TMUX") == "" {
 					fmt.Printf("\nAttach with:\n  tmux attach -t %s\n", opts.Dock)
@@ -118,6 +120,17 @@ func newBayNewCmd() *cobra.Command {
 	cmd.Flags().Lookup("agent").NoOptDefVal = "default"
 
 	return cmd
+}
+
+func printPrepareStartedSummary(eng *engine.Engine, dockName, bayID string) {
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		return
+	}
+	plan, err := eng.PreparePlan(dockName, bayID)
+	if err != nil || len(plan.Steps) == 0 {
+		return
+	}
+	fmt.Printf("prepare started: %s; follow with 'bay prepare --log', stop with 'bay prepare --kill'\n", strings.Join(prepare.StepNames(plan.Steps), ","))
 }
 
 func newBayCloseCmd() *cobra.Command {
@@ -1240,6 +1253,9 @@ func formatBayItems(entries []nav.Entry, currentWinID string) ([]picker.Item, in
 		tags := ""
 		if e.Pending {
 			tags += "  PENDING"
+		}
+		if e.Setup != "" {
+			tags += "  SETUP " + e.Setup
 		}
 		if e.Waiting {
 			tags += "  WAITING"

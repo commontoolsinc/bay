@@ -142,6 +142,41 @@ func TestLoadPatterns_BadRegex(t *testing.T) {
 	}
 }
 
+func TestPrunePrepareLogsRemovesOldDatesAndThrottles(t *testing.T) {
+	root := t.TempDir()
+	logsRoot := filepath.Join(root, "logs")
+	oldDir := filepath.Join(logsRoot, "labs", "2026-04-20")
+	keepDir := filepath.Join(logsRoot, "labs", "2026-05-01")
+	if err := os.MkdirAll(oldDir, 0o755); err != nil {
+		t.Fatalf("mkdir old log dir: %v", err)
+	}
+	if err := os.MkdirAll(keepDir, 0o755); err != nil {
+		t.Fatalf("mkdir keep log dir: %v", err)
+	}
+	now := time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+
+	if err := prunePrepareLogs(logsRoot, now); err != nil {
+		t.Fatalf("prunePrepareLogs: %v", err)
+	}
+	if _, err := os.Stat(oldDir); !os.IsNotExist(err) {
+		t.Fatalf("old dir stat = %v, want not exist", err)
+	}
+	if _, err := os.Stat(keepDir); err != nil {
+		t.Fatalf("keep dir stat = %v, want exist", err)
+	}
+
+	newOldDir := filepath.Join(logsRoot, "labs", "2026-04-19")
+	if err := os.MkdirAll(newOldDir, 0o755); err != nil {
+		t.Fatalf("mkdir second old log dir: %v", err)
+	}
+	if err := prunePrepareLogs(logsRoot, now.Add(time.Hour)); err != nil {
+		t.Fatalf("second prunePrepareLogs: %v", err)
+	}
+	if _, err := os.Stat(newOldDir); err != nil {
+		t.Fatalf("throttled prune should leave second old dir, stat = %v", err)
+	}
+}
+
 // --- TestCheckPane ---
 
 func TestCheckPane(t *testing.T) {

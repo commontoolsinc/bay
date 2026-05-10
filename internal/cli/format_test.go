@@ -370,6 +370,24 @@ func TestFormatListView_SuppressesSyncOKAndShowsStale(t *testing.T) {
 	}
 }
 
+func TestFormatListView_ShowsPrepareSetupStatus(t *testing.T) {
+	view := BuildListView([]engine.DockInfo{
+		{
+			Name: "api",
+			Bays: []engine.BayInfo{{
+				Name:       "auth-fix",
+				Setup:      "running:vendors",
+				SyncStatus: "ok",
+			}},
+		},
+	}, ListViewOptions{Focus: ListFocus{Kind: FocusDock, Dock: "api"}})
+
+	out := stripANSI(FormatListView(view, false, false))
+	if !strings.Contains(out, "setup=running:vendors") {
+		t.Fatalf("prepare setup status missing:\n%s", out)
+	}
+}
+
 func TestFormatBayShow_RendersMultiLineDescription(t *testing.T) {
 	bay := &engine.BayInfo{
 		Name:        "auth-fix",

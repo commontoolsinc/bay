@@ -1,6 +1,7 @@
 package prepare
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -169,6 +170,276 @@ func TestWorker_RunLogOffsetsPointAtRunSeparators(t *testing.T) {
 	}
 }
 
+func TestManager_StatusReportsFiveStates(t *testing.T) {
+	steps := []config.BayPrepareConfig{
+		{Name: "pending", Command: []string{commandPath(t, "true")}},
+		{Name: "running", Command: []string{commandPath(t, "true")}},
+		{Name: "ready", Command: []string{commandPath(t, "true")}},
+		{Name: "failed", Command: []string{commandPath(t, "true")}},
+		{Name: "stale", Command: []string{commandPath(t, "true")}},
+	}
+	h := newWorkerHarness(t, steps)
+	readyHash, err := DefinitionHash(steps[2])
+	if err != nil {
+		t.Fatalf("DefinitionHash: %v", err)
+	}
+	if err := manifest.LockedUpdate(h.manifestPath, func(m *manifest.Manifest) error {
+		bay := m.FindDock("labs").FindBayByID("b1")
+		bay.Prepare = []manifest.PrepareStep{
+			{Name: "pending", Status: manifest.PrepareStatusPending},
+			{Name: "running", Status: manifest.PrepareStatusRunning, PID: 1234, HeartbeatAt: h.worker.Now().Unix()},
+			{Name: "ready", Status: manifest.PrepareStatusReady, DefinitionHash: readyHash},
+			{Name: "failed", Status: manifest.PrepareStatusFailed},
+			{Name: "stale", Status: manifest.PrepareStatusStale},
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed manifest: %v", err)
+	}
+	lock, acquired, err := tryStepLock(stepLockPath(h.dataDir, "labs", "b1", "running"))
+	if err != nil {
+		t.Fatalf("tryStepLock: %v", err)
+	}
+	if !acquired {
+		t.Fatal("could not acquire running lock")
+	}
+	defer lock.Unlock()
+
+	statuses, err := h.manager().Status(Options{Dock: "labs", Bay: "b1"})
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	got := map[string]manifest.PrepareStatus{}
+	for _, status := range statuses {
+		got[status.Name] = status.Status
+	}
+	for name, want := range map[string]manifest.PrepareStatus{
+		"pending": manifest.PrepareStatusPending,
+		"running": manifest.PrepareStatusRunning,
+		"ready":   manifest.PrepareStatusReady,
+		"failed":  manifest.PrepareStatusFailed,
+		"stale":   manifest.PrepareStatusStale,
+	} {
+		if got[name] != want {
+			t.Fatalf("%s status = %q, want %q (all statuses: %#v)", name, got[name], want, got)
+		}
+	}
+}
+
+func TestManager_RetryResetsFailedStaleAndPending(t *testing.T) {
+	steps := []config.BayPrepareConfig{
+		{Name: "pending", Command: []string{commandPath(t, "true")}},
+		{Name: "failed", Command: []string{commandPath(t, "true")}},
+		{Name: "stale", Command: []string{commandPath(t, "true")}},
+		{Name: "ready", Command: []string{commandPath(t, "true")}},
+	}
+	h := newWorkerHarness(t, steps)
+	readyHash, err := DefinitionHash(steps[3])
+	if err != nil {
+		t.Fatalf("DefinitionHash: %v", err)
+	}
+	if err := manifest.LockedUpdate(h.manifestPath, func(m *manifest.Manifest) error {
+		bay := m.FindDock("labs").FindBayByID("b1")
+		bay.Prepare = []manifest.PrepareStep{
+			{Name: "pending", Status: manifest.PrepareStatusPending, StartedAt: 1},
+			{Name: "failed", Status: manifest.PrepareStatusFailed, FinishedAt: 2},
+			{Name: "stale", Status: manifest.PrepareStatusStale, PID: 1234, RunLogOffset: 9},
+			{Name: "ready", Status: manifest.PrepareStatusReady, DefinitionHash: readyHash},
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed manifest: %v", err)
+	}
+
+	names, err := h.manager().Retry(Options{Dock: "labs", Bay: "b1"})
+	if err != nil {
+		t.Fatalf("Retry: %v", err)
+	}
+	if strings.Join(names, ",") != "pending,failed,stale" {
+		t.Fatalf("retry names = %v, want pending,failed,stale", names)
+	}
+	for _, name := range []string{"pending", "failed", "stale"} {
+		step := h.prepareStep(t, name)
+		if step.Status != manifest.PrepareStatusPending || step.PID != 0 || step.RunLogOffset != 0 || step.FinishedAt != 0 {
+			t.Fatalf("%s not reset to clean pending: %#v", name, step)
+		}
+	}
+	if ready := h.prepareStep(t, "ready"); ready.Status != manifest.PrepareStatusReady {
+		t.Fatalf("ready step should stay ready, got %#v", ready)
+	}
+}
+
+func TestManager_KillSignalsRunningStepAndMarksStaleOnTimeout(t *testing.T) {
+	h := newWorkerHarness(t, []config.BayPrepareConfig{
+		{Name: "vendors", Command: []string{commandPath(t, "true")}},
+	})
+	sleep := exec.Command(commandPath(t, "sleep"), "10")
+	if err := sleep.Start(); err != nil {
+		t.Fatalf("start sleep: %v", err)
+	}
+	defer func() {
+		_ = sleep.Process.Kill()
+		_ = sleep.Wait()
+	}()
+
+	lock, acquired, err := tryStepLock(stepLockPath(h.dataDir, "labs", "b1", "vendors"))
+	if err != nil {
+		t.Fatalf("tryStepLock: %v", err)
+	}
+	if !acquired {
+		t.Fatal("could not acquire running lock")
+	}
+	defer lock.Unlock()
+
+	if err := manifest.LockedUpdate(h.manifestPath, func(m *manifest.Manifest) error {
+		bay := m.FindDock("labs").FindBayByID("b1")
+		bay.Prepare = []manifest.PrepareStep{{
+			Name:        "vendors",
+			Status:      manifest.PrepareStatusRunning,
+			PID:         sleep.Process.Pid,
+			HeartbeatAt: h.worker.Now().Unix(),
+		}}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed manifest: %v", err)
+	}
+
+	names, err := h.manager().Kill(context.Background(), Options{Dock: "labs", Bay: "b1"}, 50*time.Millisecond)
+	if err != nil {
+		t.Fatalf("Kill: %v", err)
+	}
+	if strings.Join(names, ",") != "vendors" {
+		t.Fatalf("kill names = %v, want vendors", names)
+	}
+	step := h.prepareStep(t, "vendors")
+	if step.Status != manifest.PrepareStatusStale || step.PID != 0 {
+		t.Fatalf("killed step = %#v, want stale with pid cleared", step)
+	}
+}
+
+func TestManager_KillWaitZeroMarksStaleImmediately(t *testing.T) {
+	h := newWorkerHarness(t, []config.BayPrepareConfig{
+		{Name: "vendors", Command: []string{commandPath(t, "true")}},
+	})
+	sleep := exec.Command(commandPath(t, "sleep"), "10")
+	if err := sleep.Start(); err != nil {
+		t.Fatalf("start sleep: %v", err)
+	}
+	defer func() {
+		_ = sleep.Process.Kill()
+		_ = sleep.Wait()
+	}()
+	lock, _, err := tryStepLock(stepLockPath(h.dataDir, "labs", "b1", "vendors"))
+	if err != nil {
+		t.Fatalf("tryStepLock: %v", err)
+	}
+	defer lock.Unlock()
+
+	if err := manifest.LockedUpdate(h.manifestPath, func(m *manifest.Manifest) error {
+		bay := m.FindDock("labs").FindBayByID("b1")
+		bay.Prepare = []manifest.PrepareStep{{
+			Name:        "vendors",
+			Status:      manifest.PrepareStatusRunning,
+			PID:         sleep.Process.Pid,
+			HeartbeatAt: h.worker.Now().Unix(),
+		}}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed manifest: %v", err)
+	}
+
+	start := time.Now()
+	names, err := h.manager().Kill(context.Background(), Options{Dock: "labs", Bay: "b1"}, 0)
+	if err != nil {
+		t.Fatalf("Kill: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
+		t.Fatalf("wait=0 Kill took %s, want immediate return", elapsed)
+	}
+	if strings.Join(names, ",") != "vendors" {
+		t.Fatalf("kill names = %v, want vendors", names)
+	}
+	if step := h.prepareStep(t, "vendors"); step.Status != manifest.PrepareStatusStale {
+		t.Fatalf("step.Status = %s, want stale", step.Status)
+	}
+}
+
+func TestManager_KillReturnsCtxErrWhenCanceled(t *testing.T) {
+	h := newWorkerHarness(t, []config.BayPrepareConfig{
+		{Name: "vendors", Command: []string{commandPath(t, "true")}},
+	})
+	sleep := exec.Command(commandPath(t, "sleep"), "10")
+	if err := sleep.Start(); err != nil {
+		t.Fatalf("start sleep: %v", err)
+	}
+	defer func() {
+		_ = sleep.Process.Kill()
+		_ = sleep.Wait()
+	}()
+
+	lock, _, err := tryStepLock(stepLockPath(h.dataDir, "labs", "b1", "vendors"))
+	if err != nil {
+		t.Fatalf("tryStepLock: %v", err)
+	}
+	defer lock.Unlock()
+
+	if err := manifest.LockedUpdate(h.manifestPath, func(m *manifest.Manifest) error {
+		bay := m.FindDock("labs").FindBayByID("b1")
+		bay.Prepare = []manifest.PrepareStep{{
+			Name:        "vendors",
+			Status:      manifest.PrepareStatusRunning,
+			PID:         sleep.Process.Pid,
+			HeartbeatAt: h.worker.Now().Unix(),
+		}}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed manifest: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	names, err := h.manager().Kill(ctx, Options{Dock: "labs", Bay: "b1"}, time.Hour)
+	if err != context.Canceled {
+		t.Fatalf("Kill err = %v, want context.Canceled", err)
+	}
+	if strings.Join(names, ",") != "vendors" {
+		t.Fatalf("kill names = %v, want vendors (signaled before cancel returned)", names)
+	}
+	if step := h.prepareStep(t, "vendors"); step.Status != manifest.PrepareStatusRunning {
+		t.Fatalf("step.Status = %s, want running (cancel skipped markStepsStale)", step.Status)
+	}
+}
+
+func TestManager_PlanGatesRepoLocalConfigByTrust(t *testing.T) {
+	h := newWorkerHarness(t, nil)
+	bayPath := h.loadManifest(t).FindDock("labs").FindBayByID("b1").Path
+	if err := os.WriteFile(filepath.Join(bayPath, config.RepoLocalFilename), []byte(`
+[[bay_prepare]]
+name = "vendors"
+command = ["true"]
+`), 0o644); err != nil {
+		t.Fatalf("write repo-local config: %v", err)
+	}
+
+	plan, err := h.manager().Plan(Options{Dock: "labs", Bay: "b1"})
+	if err != nil {
+		t.Fatalf("Plan untrusted: %v", err)
+	}
+	if len(plan.Steps) != 0 {
+		t.Fatalf("untrusted repo-local steps = %#v, want none", plan.Steps)
+	}
+
+	trust := true
+	h.worker.Config.TrustRepoBayToml = &trust
+	plan, err = h.manager().Plan(Options{Dock: "labs", Bay: "b1"})
+	if err != nil {
+		t.Fatalf("Plan trusted: %v", err)
+	}
+	if len(plan.Steps) != 1 || plan.Steps[0].Name != "vendors" {
+		t.Fatalf("trusted repo-local steps = %#v, want vendors", plan.Steps)
+	}
+}
+
 type workerHarness struct {
 	t            *testing.T
 	dataDir      string
@@ -253,6 +524,15 @@ func (h workerHarness) readLog(t *testing.T) string {
 
 func (h workerHarness) logPath() string {
 	return filepath.Join(h.dataDir, "logs", "labs", "2026-05-07", "prepare.log")
+}
+
+func (h workerHarness) manager() Manager {
+	return Manager{
+		Config:       h.worker.Config,
+		ManifestPath: h.manifestPath,
+		DataDir:      h.dataDir,
+		Now:          h.worker.Now,
+	}
 }
 
 func commandPath(t *testing.T, name string) string {

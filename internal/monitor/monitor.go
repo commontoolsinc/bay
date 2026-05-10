@@ -47,6 +47,9 @@ const (
 	// activityWindow is how long a bay must have been active to
 	// trigger fetch + merge checks (2 hours in seconds).
 	activityWindow = 2 * 60 * 60
+
+	prepareLogRetention     = 14 * 24 * time.Hour
+	prepareLogPruneInterval = 23 * time.Hour
 )
 
 // Monitor watches agent panes for input prompts and highlights their tmux windows.
@@ -238,6 +241,7 @@ func (m *Monitor) CheckOnce() error {
 	if m.engine != nil {
 		m.engine.SyncAll()
 	}
+	_ = m.prunePrepareLogsIfDue(time.Now())
 
 	patterns, err := LoadPatterns(m.patternsPath)
 	if err != nil {
@@ -302,6 +306,59 @@ func (m *Monitor) CheckOnce() error {
 	}
 
 	return nil
+}
+
+func (m *Monitor) prunePrepareLogsIfDue(now time.Time) error {
+	if m.manifestPath == "" {
+		return nil
+	}
+	return prunePrepareLogs(filepath.Join(filepath.Dir(m.manifestPath), "logs"), now)
+}
+
+func prunePrepareLogs(logsRoot string, now time.Time) error {
+	if logsRoot == "" {
+		return nil
+	}
+	sentinel := filepath.Join(logsRoot, ".last-prune")
+	if info, err := os.Stat(sentinel); err == nil && now.Sub(info.ModTime()) < prepareLogPruneInterval {
+		return nil
+	}
+	if err := os.MkdirAll(logsRoot, 0o755); err != nil {
+		return err
+	}
+	docks, err := os.ReadDir(logsRoot)
+	if err != nil {
+		return err
+	}
+	for _, dockEntry := range docks {
+		if !dockEntry.IsDir() {
+			continue
+		}
+		dockPath := filepath.Join(logsRoot, dockEntry.Name())
+		days, err := os.ReadDir(dockPath)
+		if err != nil {
+			continue
+		}
+		for _, dayEntry := range days {
+			if !dayEntry.IsDir() {
+				continue
+			}
+			day, err := time.ParseInLocation("2006-01-02", dayEntry.Name(), now.Location())
+			if err != nil {
+				continue
+			}
+			if now.Sub(day) > prepareLogRetention {
+				_ = os.RemoveAll(filepath.Join(dockPath, dayEntry.Name()))
+			}
+		}
+	}
+	if err := os.WriteFile(sentinel, []byte(now.Format(time.RFC3339)), 0o644); err != nil {
+		return err
+	}
+	// Stamp mtime from the caller's clock, not the kernel's, so the
+	// throttle gate (info.ModTime() comparison above) honors a fake
+	// `now` in tests.
+	return os.Chtimes(sentinel, now, now)
 }
 
 // detectPRs checks bays with a branch but no PR and tries to find one.

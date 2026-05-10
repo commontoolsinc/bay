@@ -42,6 +42,7 @@ type BayInfo struct {
 	PR           string        `json:"pr,omitempty"`
 	Dirty        bool          `json:"dirty"`
 	Pending      bool          `json:"pending"`
+	Setup        string        `json:"setup,omitempty"`
 	Waiting      bool          `json:"waiting,omitempty"`
 	Missing      bool          `json:"missing,omitempty"`
 	Stale        bool          `json:"stale,omitempty"`
@@ -315,6 +316,8 @@ func (e *Engine) DockClose(name string, force bool) error {
 		}
 	}
 
+	_ = os.RemoveAll(filepath.Join(filepath.Dir(e.manifestPath), "logs", name))
+
 	// All manifest state is persisted. Now kill the tmux session.
 	// KillSession errors are non-fatal — the session may already be dead.
 	_ = e.Tmux.KillSession(name)
@@ -389,6 +392,7 @@ func (e *Engine) buildBayInfo(bay *manifest.Bay, agent string, waitingWindows ma
 		Branch:       branch,
 		PR:           pr,
 		Pending:      !manifest.IsHomeBay(bay) && bay.Worktree != nil && bay.Worktree.Branch != "" && !bay.IsMerged(),
+		Setup:        manifest.PrepareSetupSummary(bay.Prepare),
 		Missing:      !manifest.IsHomeBay(bay) && bay.Path != "" && statErr != nil,
 		DefaultAgent: agent,
 		SyncStatus:   manifest.SyncStatusOK,

@@ -323,6 +323,16 @@ func (e *Engine) BayNew(opts BayNewOptions) (*manifest.Bay, error) {
 		return nil, fmt.Errorf("bay at %q not found in dock %q", bayPath, dockName)
 	}
 
+	preparePlan, err := e.PreparePlan(dockName, updatedBay.ID)
+	if err != nil {
+		return updatedBay, fmt.Errorf("bay created but prepare plan failed: %w", err)
+	}
+	if len(preparePlan.Steps) > 0 {
+		if err := e.DispatchPrepareWorker(dockName, updatedBay.ID); err != nil {
+			return updatedBay, fmt.Errorf("bay created but prepare dispatch failed: %w", err)
+		}
+	}
+
 	// Re-evaluate tab name lengths now that bay count changed.
 	e.refreshDockWindowNames(updatedDock)
 

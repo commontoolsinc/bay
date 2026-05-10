@@ -40,14 +40,8 @@ type Worker struct {
 
 // Run executes configured prepare steps serially for opts.
 func (w *Worker) Run(ctx context.Context, opts Options) error {
-	if opts.Dock == "" {
-		return fmt.Errorf("dock is required")
-	}
-	if opts.Bay == "" {
-		return fmt.Errorf("bay is required")
-	}
-	if w.ManifestPath == "" {
-		return fmt.Errorf("manifest path is required")
+	if err := w.manager().validateOpts(opts); err != nil {
+		return err
 	}
 	if w.DataDir == "" {
 		return fmt.Errorf("data dir is required")
@@ -57,11 +51,11 @@ func (w *Worker) Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
-	if len(plan.steps) == 0 {
+	if len(plan.Steps) == 0 {
 		return nil
 	}
 
-	for _, step := range plan.steps {
+	for _, step := range plan.Steps {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -78,7 +72,7 @@ func (w *Worker) Run(ctx context.Context, opts Options) error {
 			return nil
 		}
 
-		shouldRun, err := w.markRunning(opts, plan.steps, step, defHash)
+		shouldRun, err := w.markRunning(opts, plan.Steps, step, defHash)
 		if err != nil {
 			lock.Unlock()
 			return err
@@ -88,7 +82,7 @@ func (w *Worker) Run(ctx context.Context, opts Options) error {
 			continue
 		}
 
-		failed, err := w.runStep(ctx, opts, plan.bayPath, step, defHash)
+		failed, err := w.runStep(ctx, opts, plan.BayPath, step, defHash)
 		lock.Unlock()
 		if err != nil {
 			return err
@@ -100,48 +94,17 @@ func (w *Worker) Run(ctx context.Context, opts Options) error {
 	return nil
 }
 
-type plan struct {
-	bayPath string
-	steps   []config.BayPrepareConfig
+func (w *Worker) manager() Manager {
+	return Manager{
+		Config:       w.Config,
+		ManifestPath: w.ManifestPath,
+		DataDir:      w.DataDir,
+		Now:          w.Now,
+	}
 }
 
-func (w *Worker) loadPlan(opts Options) (plan, error) {
-	m, err := manifest.Load(w.ManifestPath)
-	if err != nil {
-		return plan{}, err
-	}
-	bay, err := findBay(m, opts)
-	if err != nil {
-		return plan{}, err
-	}
-
-	var repoSteps []config.BayPrepareConfig
-	if bay.Path != "" {
-		repoCfg, err := config.LoadRepoLocal(bay.Path)
-		if err != nil {
-			return plan{}, err
-		}
-		if repoCfg != nil {
-			repoSteps = repoCfg.BayPrepare
-		}
-	}
-
-	var dockSteps []config.BayPrepareConfig
-	cfg := w.Config
-	if cfg == nil {
-		cfg = config.DefaultConfig()
-	}
-	if dockCfg, ok := cfg.Docks[opts.Dock]; ok {
-		dockSteps = dockCfg.BayPrepare
-	}
-
-	if errs := config.ValidatePrepare(repoSteps, dockSteps); len(errs) > 0 {
-		return plan{}, fmt.Errorf("invalid prepare config: %s", strings.Join(errs, "; "))
-	}
-	return plan{
-		bayPath: bay.Path,
-		steps:   config.MergePrepare(repoSteps, dockSteps),
-	}, nil
+func (w *Worker) loadPlan(opts Options) (Plan, error) {
+	return w.manager().loadPlan(opts)
 }
 
 func (w *Worker) markRunning(opts Options, allSteps []config.BayPrepareConfig, step config.BayPrepareConfig, defHash string) (bool, error) {
@@ -255,7 +218,7 @@ func (l *runLog) writeStart(bayID, stepName string, ts time.Time) (int64, error)
 	if err != nil {
 		return 0, fmt.Errorf("seeking prepare log: %w", err)
 	}
-	if _, err := fmt.Fprintf(l.file, "==== run bay=%s step=%s %s ====\n", bayID, stepName, ts.Format(time.RFC3339)); err != nil {
+	if err := writeRunHeader(l.file, bayID, stepName, ts); err != nil {
 		return 0, fmt.Errorf("writing prepare log: %w", err)
 	}
 	return offset, nil

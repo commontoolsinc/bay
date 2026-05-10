@@ -94,7 +94,7 @@ func registerCompletions(root *cobra.Command) {
 	// surface new / shell / bay new select their target via
 	// --bay/--dock flags, not a positional, so they're not in this list.
 	for _, path := range []string{
-		"close", "show", "rename",
+		"close", "show", "rename", "prepare",
 		"edit",
 		"surface new edit",
 	} {
@@ -167,7 +167,7 @@ func registerCompletions(root *cobra.Command) {
 			cmd.RegisterFlagCompletionFunc("split", splitCompletions)
 		}
 	}
-	for _, path := range []string{"close", "show", "rename"} {
+	for _, path := range []string{"close", "show", "rename", "prepare"} {
 		if cmd := findCmd(root, path); cmd != nil {
 			cmd.RegisterFlagCompletionFunc("dock", dockFlagCompl)
 		}

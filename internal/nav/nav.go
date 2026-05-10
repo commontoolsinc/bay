@@ -18,6 +18,7 @@ type Entry struct {
 	Branch      string
 	PR          string
 	Pending     bool
+	Setup       string
 	Waiting     bool
 	// TmuxWindowID of any surface in this bay (for focusing).
 	TmuxWindowID string
@@ -106,6 +107,7 @@ func CollectEntries(m *manifest.Manifest, tc tmux.Interface) []Entry {
 				Branch:       branch,
 				PR:           pr,
 				Pending:      !manifest.IsHomeBay(bay) && bay.Worktree != nil && bay.Worktree.Branch != "" && !bay.IsMerged(),
+				Setup:        manifest.PrepareSetupSummary(bay.Prepare),
 				TmuxWindowID: tmuxWindowID,
 				Waiting:      waiting,
 				SurfaceCount: len(bay.Surfaces),
