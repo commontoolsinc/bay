@@ -36,6 +36,11 @@ type Worker struct {
 	HeartbeatInterval time.Duration
 	Now               func() time.Time
 	PID               int
+
+	// OnStepReady is called after a step is persisted as ready. Callers use it
+	// to release work that was blocked on prepare without introducing an
+	// engine dependency into this package.
+	OnStepReady func(context.Context, Options, config.BayPrepareConfig) error
 }
 
 // Run executes configured prepare steps serially for opts.
@@ -159,6 +164,7 @@ func (w *Worker) runStep(ctx context.Context, opts Options, bayPath string, step
 		hash = ""
 		failed = true
 		fmt.Fprintf(logFile, "prepare command failed: %v\n", cmdErr)
+		fmt.Fprintf(logFile, "retry with: bay prepare %s --dock %s --retry\n", opts.Bay, opts.Dock)
 	}
 	if _, err := fmt.Fprintf(logFile, "==== finished bay=%s step=%s %s status=%s ====\n", opts.Bay, step.Name, w.now().Format(time.RFC3339), status); err != nil {
 		_ = w.markFinished(opts, step.Name, manifest.PrepareStatusFailed, "")
@@ -166,6 +172,12 @@ func (w *Worker) runStep(ctx context.Context, opts Options, bayPath string, step
 	}
 	if err := w.markFinished(opts, step.Name, status, hash); err != nil {
 		return true, err
+	}
+	if status == manifest.PrepareStatusReady && w.OnStepReady != nil {
+		if err := w.OnStepReady(ctx, opts, step); err != nil {
+			fmt.Fprintf(logFile, "pending surface dispatch failed: %v\n", err)
+			return true, err
+		}
 	}
 	return failed, nil
 }

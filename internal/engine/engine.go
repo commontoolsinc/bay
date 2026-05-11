@@ -263,10 +263,14 @@ func (e *Engine) launchSurfaceInTmux(tmuxPaneID, dockName string, surfaceType ma
 		if err != nil {
 			return manifest.Surface{}, err
 		}
-		_ = e.Tmux.RespawnPane(tmuxPaneID, cwd, agentCmd)
+		if err := e.Tmux.RespawnPane(tmuxPaneID, cwd, agentCmd); err != nil {
+			return manifest.Surface{}, err
+		}
 	case manifest.SurfaceTypeCmd:
 		s.Command = &cmd
-		_ = e.Tmux.RespawnPane(tmuxPaneID, cwd, cmd)
+		if err := e.Tmux.RespawnPane(tmuxPaneID, cwd, cmd); err != nil {
+			return manifest.Surface{}, err
+		}
 	case manifest.SurfaceTypeShell:
 		// Shell — no command to send.
 	case manifest.SurfaceTypeEditor:
@@ -274,7 +278,9 @@ func (e *Engine) launchSurfaceInTmux(tmuxPaneID, dockName string, surfaceType ma
 			s.Command = &cmd
 			// Use RespawnPane so the pane dies when the editor exits,
 			// rather than falling back to a shell.
-			_ = e.Tmux.RespawnPane(tmuxPaneID, cwd, cmd)
+			if err := e.Tmux.RespawnPane(tmuxPaneID, cwd, cmd); err != nil {
+				return manifest.Surface{}, err
+			}
 		}
 	}
 
