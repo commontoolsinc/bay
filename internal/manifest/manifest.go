@@ -382,6 +382,15 @@ type TmuxAttrs struct {
 	SplitDir    string `json:"split_dir,omitempty"`  // "h" or "v"; empty for first pane in group
 }
 
+// Clone returns a deep copy, or nil if a is nil.
+func (a *TmuxAttrs) Clone() *TmuxAttrs {
+	if a == nil {
+		return nil
+	}
+	clone := *a
+	return &clone
+}
+
 // GUIAttrs holds state for a GUI application — either a surface or a dock host.
 type GUIAttrs struct {
 	AppCommand string `json:"app_command"`         // launch command (e.g. "cursor", "ghostty")

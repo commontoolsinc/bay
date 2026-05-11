@@ -72,6 +72,20 @@ func (e *Engine) withManifestMaybe(fn func(m *manifest.Manifest) (bool, error)) 
 	return manifest.LockedUpdateMaybe(e.manifestPath, fn)
 }
 
+// findDockBay looks up the named dock and bay in m, returning a consistent
+// error pair when either is missing.
+func findDockBay(m *manifest.Manifest, dockName, bayID string) (*manifest.Dock, *manifest.Bay, error) {
+	dock := m.FindDock(dockName)
+	if dock == nil {
+		return nil, nil, fmt.Errorf("unknown dock %q", dockName)
+	}
+	bay := dock.FindBayByID(bayID)
+	if bay == nil {
+		return dock, nil, fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
+	}
+	return dock, bay, nil
+}
+
 // SaveConfig writes the current config to disk.
 func (e *Engine) SaveConfig() error {
 	if e.configPath == "" {

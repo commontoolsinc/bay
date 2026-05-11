@@ -867,6 +867,59 @@ func TestSurfaceAdd_BlockedAgentQueuesPlaceholder(t *testing.T) {
 	}
 }
 
+func TestSurfaceAdd_FailedPrepareQueuesPlaceholderWithoutDispatch(t *testing.T) {
+	eng, _ := testEngine(t)
+	if _, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true}); err != nil {
+		t.Fatalf("BayNew failed: %v", err)
+	}
+
+	trueCmd := testCommandPath(t, "true")
+	step := config.BayPrepareConfig{
+		Name:         "setup",
+		Command:      []string{trueCmd},
+		ReadyCommand: []string{trueCmd},
+		Blocks:       []string{"agent"},
+		Run:          config.PrepareRunAuto,
+	}
+	eng.Config.Docks["labs"] = config.DockConfig{BayPrepare: []config.BayPrepareConfig{step}}
+	var starts int
+	eng.startWorker = func(exe string, args []string) error {
+		starts++
+		return nil
+	}
+	if err := manifest.LockedUpdate(eng.manifestPath, func(m *manifest.Manifest) error {
+		bay := m.FindDock("labs").FindBayByID("b1")
+		bay.Prepare = []manifest.PrepareStep{{
+			Name:   "setup",
+			Status: manifest.PrepareStatusFailed,
+		}}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed failed prepare: %v", err)
+	}
+
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "codex", SplitDir: "v"}); err != nil {
+		t.Fatalf("SurfaceAdd failed: %v", err)
+	}
+
+	bay, err := eng.BayShow("labs", "b1")
+	if err != nil {
+		t.Fatalf("BayShow failed: %v", err)
+	}
+	if starts != 0 {
+		t.Fatalf("prepare worker starts = %d, want 0 for failed prepare", starts)
+	}
+	if len(bay.PendingSurfaces) != 1 {
+		t.Fatalf("pending surfaces = %#v, want one placeholder", bay.PendingSurfaces)
+	}
+	if bay.Prepare[0].Status != manifest.PrepareStatusFailed {
+		t.Fatalf("prepare status = %q, want failed", bay.Prepare[0].Status)
+	}
+	if got := len(bay.Surfaces); got != 1 {
+		t.Fatalf("surfaces = %d, want only original shell", got)
+	}
+}
+
 func TestDispatchReadyPrepareSurfaces_SwapsPlaceholderForAgent(t *testing.T) {
 	eng, _ := testEngine(t)
 	created, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true})

@@ -214,22 +214,13 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 	}
 	rollbackSurface := placement.rollback
 
-	// Resolve agent args.
-	m2, _ := e.LoadManifest()
-	agentArgs := e.resolvedAgentArgs(dockName, agent, m2)
-
-	// Launch the surface process.
+	agentArgs := e.resolvedAgentArgs(dockName, agent, m)
 	surface, err := e.launchSurfaceInTmux(placement.PaneID, dockName, surfaceType, agent, cmd, cwd, agentArgs, opts.Resume)
 	if err != nil {
 		rollbackSurface()
 		return err
 	}
-	surface.Name = uniqueSurfaceName(bay, name)
-	surface.Tmux.PaneID = placement.PaneID
-	surface.Tmux.WindowID = placement.WindowID
-	surface.Tmux.LayoutGroup = placement.LayoutGroup
-	surface.Tmux.SplitFrom = placement.SplitFrom
-	surface.Tmux.SplitDir = placement.SplitDir
+	surface.Tmux = placement.TmuxAttrs.Clone()
 
 	err = e.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)
@@ -281,28 +272,14 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 }
 
 type tmuxPlacement struct {
-	PaneID      string
-	WindowID    string
-	LayoutGroup int
-	SplitFrom   int
-	SplitDir    string
-	rollback    func()
-}
-
-func (p tmuxPlacement) attrs() *manifest.TmuxAttrs {
-	return &manifest.TmuxAttrs{
-		PaneID:      p.PaneID,
-		WindowID:    p.WindowID,
-		LayoutGroup: p.LayoutGroup,
-		SplitFrom:   p.SplitFrom,
-		SplitDir:    p.SplitDir,
-	}
+	manifest.TmuxAttrs
+	rollback func()
 }
 
 func (e *Engine) placeSurfacePane(dockName, bayID string, bay *manifest.Bay, name, cwd, splitDir string, restoreLayoutGroup int) (tmuxPlacement, error) {
 	placement := tmuxPlacement{
-		SplitDir: splitDir,
-		rollback: func() {},
+		TmuxAttrs: manifest.TmuxAttrs{SplitDir: splitDir},
+		rollback:  func() {},
 	}
 
 	// Determine the layout group — find an existing tmux window to split into,
@@ -406,7 +383,7 @@ func (e *Engine) queuePrepareBlockedSurface(dockName, bayID string, bay *manifes
 		Command:  command,
 		SplitDir: splitDir,
 	}
-	if findPendingLaunchRequestIndex(bay.PendingSurfaces, request) != -1 {
+	if findPendingLaunchIndex(bay.PendingSurfaces, request) != -1 {
 		return false, nil
 	}
 
@@ -422,20 +399,16 @@ func (e *Engine) queuePrepareBlockedSurface(dockName, bayID string, bay *manifes
 
 	pending := request
 	pending.CreatedAt = time.Now().Unix()
-	pending.Tmux = placement.attrs()
+	pending.Tmux = placement.TmuxAttrs.Clone()
 
 	queued := false
 	duplicate := false
 	err = e.withManifest(func(m *manifest.Manifest) error {
-		dock := m.FindDock(dockName)
-		if dock == nil {
-			return fmt.Errorf("unknown dock %q", dockName)
+		_, bay, err := findDockBay(m, dockName, bayID)
+		if err != nil {
+			return err
 		}
-		bay := dock.FindBayByID(bayID)
-		if bay == nil {
-			return fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
-		}
-		if findPendingLaunchRequestIndex(bay.PendingSurfaces, request) != -1 {
+		if findPendingLaunchIndex(bay.PendingSurfaces, request) != -1 {
 			duplicate = true
 			return nil
 		}
@@ -456,21 +429,17 @@ func (e *Engine) queuePrepareBlockedSurface(dockName, bayID string, bay *manifes
 	return queued, nil
 }
 
-func findPendingLaunchRequestIndex(pending []manifest.PendingLaunch, request manifest.PendingLaunch) int {
+// findPendingLaunchIndex returns the index of a pending launch matching
+// target's request fields (kind/name/agent/command/splitdir). If target also
+// has a tmux pane recorded, candidates with a different pane are skipped —
+// the pane is what disambiguates two queued launches with the same request
+// shape after they've been placed.
+func findPendingLaunchIndex(pending []manifest.PendingLaunch, target manifest.PendingLaunch) int {
 	for i, candidate := range pending {
-		if pendingLaunchRequestsMatch(candidate, request) {
-			return i
-		}
-	}
-	return -1
-}
-
-func findPendingLaunchIndex(pending []manifest.PendingLaunch, request manifest.PendingLaunch) int {
-	for i, candidate := range pending {
-		if !pendingLaunchRequestsMatch(candidate, request) {
+		if !pendingLaunchRequestsMatch(candidate, target) {
 			continue
 		}
-		if candidate.Tmux != nil && request.Tmux != nil && candidate.Tmux.PaneID != request.Tmux.PaneID {
+		if target.Tmux != nil && candidate.Tmux != nil && candidate.Tmux.PaneID != target.Tmux.PaneID {
 			continue
 		}
 		return i

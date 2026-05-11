@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -53,8 +54,7 @@ func (e *Engine) prepareBlockDecision(ctx context.Context, dockName, bayID strin
 		if !prepareStepBlocks(step, kind) {
 			continue
 		}
-		status := statusByName[step.Name]
-		switch status.Status {
+		switch statusByName[step.Name].Status {
 		case manifest.PrepareStatusReady:
 			if err := runPrepareReadyCommand(ctx, plan.BayPath, step); err != nil {
 				stale = append(stale, step.Name)
@@ -63,9 +63,7 @@ func (e *Engine) prepareBlockDecision(ctx context.Context, dockName, bayID strin
 					decision.Dispatch = true
 				}
 			}
-		case manifest.PrepareStatusRunning:
-			decision.Blocked = true
-		case manifest.PrepareStatusFailed:
+		case manifest.PrepareStatusRunning, manifest.PrepareStatusFailed:
 			decision.Blocked = true
 		default:
 			decision.Blocked = true
@@ -93,15 +91,27 @@ func (e *Engine) DispatchReadyPrepareSurfaces(ctx context.Context, opts prepare.
 	if err != nil {
 		return err
 	}
+	if len(pending) == 0 {
+		return nil
+	}
+
+	kindsToCheck := map[manifest.SurfaceType]bool{}
 	for _, launch := range pending {
-		if !prepareStepBlocks(readyStep, launch.Kind) {
-			continue
+		if prepareStepBlocks(readyStep, launch.Kind) {
+			kindsToCheck[launch.Kind] = true
 		}
-		ready, err := e.prepareReadyForPendingLaunch(ctx, opts, launch.Kind)
-		if err != nil {
-			return err
-		}
-		if !ready {
+	}
+	if len(kindsToCheck) == 0 {
+		return nil
+	}
+
+	readyByKind, err := e.prepareKindReadiness(ctx, opts, kindsToCheck)
+	if err != nil {
+		return err
+	}
+
+	for _, launch := range pending {
+		if !readyByKind[launch.Kind] {
 			continue
 		}
 		if err := e.launchPendingPrepareSurface(opts, launch); err != nil {
@@ -116,91 +126,101 @@ func (e *Engine) pendingPrepareLaunches(opts prepare.Options) ([]manifest.Pendin
 	if err != nil {
 		return nil, err
 	}
-	dock := m.FindDock(opts.Dock)
-	if dock == nil {
-		return nil, fmt.Errorf("unknown dock %q", opts.Dock)
+	_, bay, err := findDockBay(m, opts.Dock, opts.Bay)
+	if err != nil {
+		return nil, err
 	}
-	bay := dock.FindBayByID(opts.Bay)
-	if bay == nil {
-		return nil, fmt.Errorf("bay %q not found in dock %q", opts.Bay, opts.Dock)
-	}
+	// Copy so the caller can iterate even though launchPendingPrepareSurface
+	// will mutate bay.PendingSurfaces via withManifest.
 	return append([]manifest.PendingLaunch(nil), bay.PendingSurfaces...), nil
 }
 
-func (e *Engine) prepareReadyForPendingLaunch(ctx context.Context, opts prepare.Options, kind manifest.SurfaceType) (bool, error) {
+// prepareKindReadiness reports, for each kind in kinds, whether all blocking
+// steps for that kind are ready. Ready-status steps are re-verified via
+// ready_command once per step (regardless of how many launches block on it);
+// any whose ready_command fails are marked failed and excluded.
+func (e *Engine) prepareKindReadiness(ctx context.Context, opts prepare.Options, kinds map[manifest.SurfaceType]bool) (map[manifest.SurfaceType]bool, error) {
 	manager := e.prepareManager()
 	plan, err := manager.Plan(opts)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	statuses, err := manager.Status(opts)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	statusByName := prepareStatusByName(statuses)
 
-	var failed []string
-	for _, step := range plan.Steps {
-		if !prepareStepBlocks(step, kind) {
-			continue
+	// Cache ready_command results so steps shared across kinds run only once.
+	verified := map[string]bool{}
+	failedSet := map[string]bool{}
+	ready := map[manifest.SurfaceType]bool{}
+	for kind := range kinds {
+		kindReady := true
+		for _, step := range plan.Steps {
+			if !prepareStepBlocks(step, kind) {
+				continue
+			}
+			if statusByName[step.Name].Status != manifest.PrepareStatusReady {
+				kindReady = false
+				break
+			}
+			if failedSet[step.Name] {
+				kindReady = false
+				break
+			}
+			if !verified[step.Name] {
+				if err := runPrepareReadyCommand(ctx, plan.BayPath, step); err != nil {
+					failedSet[step.Name] = true
+					kindReady = false
+					break
+				}
+				verified[step.Name] = true
+			}
 		}
-		if statusByName[step.Name].Status != manifest.PrepareStatusReady {
-			return false, nil
-		}
-		if err := runPrepareReadyCommand(ctx, plan.BayPath, step); err != nil {
-			failed = append(failed, step.Name)
+		if kindReady {
+			ready[kind] = true
 		}
 	}
-	if len(failed) > 0 {
+	if len(failedSet) > 0 {
+		failed := make([]string, 0, len(failedSet))
+		for name := range failedSet {
+			failed = append(failed, name)
+		}
 		if err := manager.MarkStepsFailed(opts, failed); err != nil {
-			return false, err
+			return ready, err
 		}
-		return false, fmt.Errorf("prepare ready check failed after rerun: %s", strings.Join(failed, ","))
+		return ready, fmt.Errorf("prepare ready check failed after rerun: %s", strings.Join(failed, ","))
 	}
-	return true, nil
+	return ready, nil
 }
 
 func (e *Engine) launchPendingPrepareSurface(opts prepare.Options, pending manifest.PendingLaunch) error {
 	if pending.Tmux == nil || pending.Tmux.PaneID == "" {
 		return e.removePendingPrepareSurface(opts, pending)
 	}
-
-	m, err := e.LoadManifest()
-	if err != nil {
-		return err
-	}
-	dock := m.FindDock(opts.Dock)
-	if dock == nil {
-		return fmt.Errorf("unknown dock %q", opts.Dock)
-	}
-	bay := dock.FindBayByID(opts.Bay)
-	if bay == nil {
-		return fmt.Errorf("bay %q not found in dock %q", opts.Bay, opts.Dock)
-	}
-	cwd := homeSurfaceCWD(dock, bay)
 	if pending.Kind == manifest.SurfaceTypeAgent {
 		if err := e.validateAgentName(pending.Agent); err != nil {
 			return err
 		}
 	}
 
-	surface := surfaceForPendingLaunch(pending)
-
-	var finalName string
+	var cwd, finalName string
+	var agentArgs []string
 	added := false
-	err = e.withManifest(func(m *manifest.Manifest) error {
-		dock := m.FindDock(opts.Dock)
-		if dock == nil {
-			return fmt.Errorf("unknown dock %q", opts.Dock)
-		}
-		bay := dock.FindBayByID(opts.Bay)
-		if bay == nil {
-			return fmt.Errorf("bay %q not found in dock %q", opts.Bay, opts.Dock)
+	err := e.withManifest(func(m *manifest.Manifest) error {
+		dock, bay, err := findDockBay(m, opts.Dock, opts.Bay)
+		if err != nil {
+			return err
 		}
 		index := findPendingLaunchIndex(bay.PendingSurfaces, pending)
 		if index == -1 {
 			return nil
 		}
+		cwd = homeSurfaceCWD(dock, bay)
+		agentArgs = e.resolvedAgentArgs(opts.Dock, pending.Agent, m)
+
+		surface := surfaceForPendingLaunch(pending)
 		surface.Name = uniqueSurfaceName(bay, surface.Name)
 		if _, err := bay.AddSurface(surface); err != nil {
 			return err
@@ -219,8 +239,6 @@ func (e *Engine) launchPendingPrepareSurface(opts prepare.Options, pending manif
 		return nil
 	}
 
-	m2, _ := e.LoadManifest()
-	agentArgs := e.resolvedAgentArgs(opts.Dock, pending.Agent, m2)
 	if _, err := e.launchSurfaceInTmux(pending.Tmux.PaneID, opts.Dock, pending.Kind, pending.Agent, pending.Command, cwd, agentArgs, false); err != nil {
 		_ = e.rollbackPendingPrepareLaunch(opts, pending, finalName)
 		return err
@@ -236,7 +254,7 @@ func surfaceForPendingLaunch(pending manifest.PendingLaunch) manifest.Surface {
 		Name:    pendingSurfaceName(pending),
 		Type:    pending.Kind,
 		Backend: manifest.SurfaceBackendTmux,
-		Tmux:    copyTmuxAttrs(pending.Tmux),
+		Tmux:    pending.Tmux.Clone(),
 	}
 	switch pending.Kind {
 	case manifest.SurfaceTypeAgent:
@@ -249,13 +267,9 @@ func surfaceForPendingLaunch(pending manifest.PendingLaunch) manifest.Surface {
 
 func (e *Engine) rollbackPendingPrepareLaunch(opts prepare.Options, pending manifest.PendingLaunch, surfaceName string) error {
 	return e.withManifest(func(m *manifest.Manifest) error {
-		dock := m.FindDock(opts.Dock)
-		if dock == nil {
-			return fmt.Errorf("unknown dock %q", opts.Dock)
-		}
-		bay := dock.FindBayByID(opts.Bay)
-		if bay == nil {
-			return fmt.Errorf("bay %q not found in dock %q", opts.Bay, opts.Dock)
+		_, bay, err := findDockBay(m, opts.Dock, opts.Bay)
+		if err != nil {
+			return err
 		}
 		if surfaceName != "" {
 			_ = bay.RemoveSurface(surfaceName)
@@ -269,13 +283,9 @@ func (e *Engine) rollbackPendingPrepareLaunch(opts prepare.Options, pending mani
 
 func (e *Engine) removePendingPrepareSurface(opts prepare.Options, pending manifest.PendingLaunch) error {
 	return e.withManifest(func(m *manifest.Manifest) error {
-		dock := m.FindDock(opts.Dock)
-		if dock == nil {
-			return fmt.Errorf("unknown dock %q", opts.Dock)
-		}
-		bay := dock.FindBayByID(opts.Bay)
-		if bay == nil {
-			return fmt.Errorf("bay %q not found in dock %q", opts.Bay, opts.Dock)
+		_, bay, err := findDockBay(m, opts.Dock, opts.Bay)
+		if err != nil {
+			return err
 		}
 		index := findPendingLaunchIndex(bay.PendingSurfaces, pending)
 		if index != -1 {
@@ -294,12 +304,7 @@ func prepareStatusByName(statuses []prepare.StepStatus) map[string]prepare.StepS
 }
 
 func prepareStepBlocks(step config.BayPrepareConfig, kind manifest.SurfaceType) bool {
-	for _, block := range step.Blocks {
-		if block == string(kind) {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(step.Blocks, string(kind))
 }
 
 func prepareStepRunsAuto(step config.BayPrepareConfig) bool {
@@ -372,17 +377,4 @@ func pendingSurfaceName(pending manifest.PendingLaunch) string {
 		return pending.Agent
 	}
 	return string(pending.Kind)
-}
-
-func copyTmuxAttrs(attrs *manifest.TmuxAttrs) *manifest.TmuxAttrs {
-	if attrs == nil {
-		return nil
-	}
-	return &manifest.TmuxAttrs{
-		PaneID:      attrs.PaneID,
-		WindowID:    attrs.WindowID,
-		LayoutGroup: attrs.LayoutGroup,
-		SplitFrom:   attrs.SplitFrom,
-		SplitDir:    attrs.SplitDir,
-	}
 }
