@@ -986,6 +986,91 @@ func TestDispatchReadyPrepareSurfaces_SwapsPlaceholderForAgent(t *testing.T) {
 	}
 }
 
+func TestDispatchReadyPrepareSurfaces_LaunchesReadyKindsBeforeReportingFailures(t *testing.T) {
+	eng, _ := testEngine(t)
+	created, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true})
+	if err != nil {
+		t.Fatalf("BayNew failed: %v", err)
+	}
+	if err := os.MkdirAll(created.Path, 0o755); err != nil {
+		t.Fatalf("mkdir bay path: %v", err)
+	}
+
+	trueCmd := testCommandPath(t, "true")
+	falseCmd := testCommandPath(t, "false")
+	shared := config.BayPrepareConfig{
+		Name:         "shared",
+		Command:      []string{trueCmd},
+		ReadyCommand: []string{trueCmd},
+		Blocks:       []string{"agent", "cmd"},
+		Run:          config.PrepareRunAuto,
+	}
+	agentOnly := config.BayPrepareConfig{
+		Name:         "agent-only",
+		Command:      []string{trueCmd},
+		ReadyCommand: []string{falseCmd},
+		Blocks:       []string{"agent"},
+		Run:          config.PrepareRunAuto,
+	}
+	eng.Config.Docks["labs"] = config.DockConfig{BayPrepare: []config.BayPrepareConfig{shared, agentOnly}}
+	eng.startWorker = func(exe string, args []string) error { return nil }
+
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "codex", SplitDir: "v"}); err != nil {
+		t.Fatalf("SurfaceAdd agent failed: %v", err)
+	}
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeCmd, Name: "watch", Command: "watch date", SplitDir: "h"}); err != nil {
+		t.Fatalf("SurfaceAdd cmd failed: %v", err)
+	}
+
+	sharedHash, err := prepare.DefinitionHash(shared)
+	if err != nil {
+		t.Fatalf("DefinitionHash(shared): %v", err)
+	}
+	agentHash, err := prepare.DefinitionHash(agentOnly)
+	if err != nil {
+		t.Fatalf("DefinitionHash(agentOnly): %v", err)
+	}
+	if err := manifest.LockedUpdate(eng.manifestPath, func(m *manifest.Manifest) error {
+		bay := m.FindDock("labs").FindBayByID("b1")
+		bay.Prepare = []manifest.PrepareStep{
+			{Name: "shared", Status: manifest.PrepareStatusReady, DefinitionHash: sharedHash},
+			{Name: "agent-only", Status: manifest.PrepareStatusReady, DefinitionHash: agentHash},
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed ready prepare: %v", err)
+	}
+
+	err = eng.DispatchReadyPrepareSurfaces(context.Background(), prepare.Options{Dock: "labs", Bay: "b1"}, shared)
+	if err == nil || !strings.Contains(err.Error(), "agent-only") {
+		t.Fatalf("DispatchReadyPrepareSurfaces error = %v, want agent-only readiness failure", err)
+	}
+
+	bay, err := eng.BayShow("labs", "b1")
+	if err != nil {
+		t.Fatalf("BayShow failed: %v", err)
+	}
+	if bay.FindSurface("watch") == nil {
+		t.Fatalf("ready cmd surface was not launched: %#v", bay.Surfaces)
+	}
+	if bay.FindSurface("agent") != nil {
+		t.Fatalf("agent surface launched despite failed agent-only readiness: %#v", bay.Surfaces)
+	}
+	if len(bay.PendingSurfaces) != 1 || bay.PendingSurfaces[0].Kind != manifest.SurfaceTypeAgent {
+		t.Fatalf("pending surfaces = %#v, want only agent placeholder", bay.PendingSurfaces)
+	}
+	statuses := map[string]manifest.PrepareStatus{}
+	for _, step := range bay.Prepare {
+		statuses[step.Name] = step.Status
+	}
+	if statuses["agent-only"] != manifest.PrepareStatusFailed {
+		t.Fatalf("agent-only status = %q, want failed", statuses["agent-only"])
+	}
+	if statuses["shared"] != manifest.PrepareStatusReady {
+		t.Fatalf("shared status = %q, want ready", statuses["shared"])
+	}
+}
+
 func TestSurfaceAdd_ReadyCommandRerunIsBounded(t *testing.T) {
 	eng, _ := testEngine(t)
 	created, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true})

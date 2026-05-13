@@ -105,18 +105,21 @@ func (e *Engine) DispatchReadyPrepareSurfaces(ctx context.Context, opts prepare.
 		return nil
 	}
 
-	readyByKind, err := e.prepareKindReadiness(ctx, opts, kindsToCheck)
+	readiness, err := e.prepareKindReadiness(ctx, opts, kindsToCheck)
 	if err != nil {
 		return err
 	}
 
 	for _, launch := range pending {
-		if !readyByKind[launch.Kind] {
+		if !readiness.Ready[launch.Kind] {
 			continue
 		}
 		if err := e.launchPendingPrepareSurface(opts, launch); err != nil {
 			return err
 		}
+	}
+	if len(readiness.Failed) > 0 {
+		return fmt.Errorf("prepare ready check failed after rerun: %s", strings.Join(readiness.Failed, ","))
 	}
 	return nil
 }
@@ -135,26 +138,31 @@ func (e *Engine) pendingPrepareLaunches(opts prepare.Options) ([]manifest.Pendin
 	return append([]manifest.PendingLaunch(nil), bay.PendingSurfaces...), nil
 }
 
+type prepareKindReadiness struct {
+	Ready  map[manifest.SurfaceType]bool
+	Failed []string
+}
+
 // prepareKindReadiness reports, for each kind in kinds, whether all blocking
 // steps for that kind are ready. Ready-status steps are re-verified via
 // ready_command once per step (regardless of how many launches block on it);
 // any whose ready_command fails are marked failed and excluded.
-func (e *Engine) prepareKindReadiness(ctx context.Context, opts prepare.Options, kinds map[manifest.SurfaceType]bool) (map[manifest.SurfaceType]bool, error) {
+func (e *Engine) prepareKindReadiness(ctx context.Context, opts prepare.Options, kinds map[manifest.SurfaceType]bool) (prepareKindReadiness, error) {
 	manager := e.prepareManager()
 	plan, err := manager.Plan(opts)
 	if err != nil {
-		return nil, err
+		return prepareKindReadiness{}, err
 	}
 	statuses, err := manager.Status(opts)
 	if err != nil {
-		return nil, err
+		return prepareKindReadiness{}, err
 	}
 	statusByName := prepareStatusByName(statuses)
 
 	// Cache ready_command results so steps shared across kinds run only once.
 	verified := map[string]bool{}
 	failedSet := map[string]bool{}
-	ready := map[manifest.SurfaceType]bool{}
+	result := prepareKindReadiness{Ready: map[manifest.SurfaceType]bool{}}
 	for kind := range kinds {
 		kindReady := true
 		for _, step := range plan.Steps {
@@ -179,20 +187,20 @@ func (e *Engine) prepareKindReadiness(ctx context.Context, opts prepare.Options,
 			}
 		}
 		if kindReady {
-			ready[kind] = true
+			result.Ready[kind] = true
 		}
 	}
 	if len(failedSet) > 0 {
-		failed := make([]string, 0, len(failedSet))
+		result.Failed = make([]string, 0, len(failedSet))
 		for name := range failedSet {
-			failed = append(failed, name)
+			result.Failed = append(result.Failed, name)
 		}
-		if err := manager.MarkStepsFailed(opts, failed); err != nil {
-			return ready, err
+		slices.Sort(result.Failed)
+		if err := manager.MarkStepsFailed(opts, result.Failed); err != nil {
+			return result, err
 		}
-		return ready, fmt.Errorf("prepare ready check failed after rerun: %s", strings.Join(failed, ","))
 	}
-	return ready, nil
+	return result, nil
 }
 
 func (e *Engine) launchPendingPrepareSurface(opts prepare.Options, pending manifest.PendingLaunch) error {
