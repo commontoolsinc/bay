@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -184,112 +185,42 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 	}
 	cwd := homeSurfaceCWD(dock, bay)
 
-	// Determine the layout group — find an existing tmux window to split into,
-	// or create a new one.
-	var tmuxWindowID string
-	var tmuxSplitTargetID string
-	var layoutGroup int
-	var splitFromSurface int
-	splitBefore := false
-	splitAxis := splitDir
-
-	if opts.RestoreLayoutGroup > 0 && len(bay.Surfaces) > 0 {
-		if sibling := lastSurfaceInLayoutGroup(bay, opts.RestoreLayoutGroup); sibling != nil && sibling.Tmux != nil {
-			tmuxWindowID = sibling.Tmux.WindowID
-			tmuxSplitTargetID = sibling.Tmux.PaneID
-			layoutGroup = sibling.Tmux.LayoutGroup
-			if splitDir == "" {
-				// Root-pane restore: insert at the root position of the
-				// layout group via -fb. Infer axis from any sibling's
-				// SplitDir; default "v" if the layout group has no
-				// recorded splits yet. SplitFrom stays 0 — the restored
-				// surface is the new root.
-				splitBefore = true
-				splitAxis = inferRestoreAxis(bay, opts.RestoreLayoutGroup)
-			} else {
-				// Split child: parent is whichever sibling we land against.
-				splitFromSurface = sibling.ID
-			}
-		}
-	} else if splitDir != "" && len(bay.Surfaces) > 0 {
-		if parent := e.preferredSplitTarget(bay); parent != nil {
-			tmuxWindowID = parent.Tmux.WindowID
-			tmuxSplitTargetID = parent.Tmux.PaneID
-			layoutGroup = parent.Tmux.LayoutGroup
-			splitFromSurface = parent.ID
-		}
-	}
-
-	var tmuxPaneID string
-	rollbackSurface := func() {}
-
-	if tmuxWindowID != "" && (splitDir != "" || splitBefore) {
-		// Split an existing window.
-		targetID := tmuxSplitTargetID
-		if targetID == "" {
-			targetID = tmuxWindowID
-		}
-		newPaneID, splitErr := e.Tmux.SplitWindow(targetID, splitAxis, cwd, splitBefore)
-		if splitErr != nil {
-			return fmt.Errorf("splitting window: %w", splitErr)
-		}
-		tmuxPaneID = newPaneID
-		rollbackSurface = func() {
-			_ = e.Tmux.KillPane(newPaneID)
-		}
-	} else {
-		// Create a new tmux window. Secondary windows get a ":surfacename"
-		// tab name; the first window keeps the bay compact label.
-		windowName := bayWindowLabel(bay)
-		if len(bay.Surfaces) > 0 {
-			windowName = ":" + name
-		}
-		winID, err := e.Tmux.NewWindow(dockName, windowName, cwd)
-		if err != nil {
-			return fmt.Errorf("creating tmux window: %w", err)
-		}
-		e.cleanPlaceholders(dockName)
-		if bay.Type == manifest.BayTypeHome && len(bay.Surfaces) == 0 {
-			_ = e.Tmux.MoveWindow(winID, 0)
-		} else {
-			e.positionNewWindow(dockName, winID, bayID, nil)
-		}
-
-		tmuxWindowID = winID
-		layoutGroup = nextLayoutGroup(bay)
-
-		panes, _ := e.Tmux.ListPanes(winID)
-		if len(panes) > 0 {
-			tmuxPaneID = panes[0].ID
-		}
-		rollbackSurface = func() {
-			_ = e.Tmux.KillWindow(winID)
-		}
-	}
-
 	if surfaceType == manifest.SurfaceTypeAgent {
 		if err := e.validateAgentName(agent); err != nil {
-			rollbackSurface()
 			return err
 		}
 	}
 
-	// Resolve agent args.
-	m2, _ := e.LoadManifest()
-	agentArgs := e.resolvedAgentArgs(dockName, agent, m2)
+	if bay.Type != manifest.BayTypeHome {
+		decision, err := e.prepareBlockDecision(context.Background(), dockName, bayID, surfaceType)
+		if err != nil {
+			return err
+		}
+		if decision.Blocked {
+			queued, err := e.queuePrepareBlockedSurface(dockName, bayID, bay, surfaceType, name, agent, cmd, cwd, splitDir, opts.RestoreLayoutGroup)
+			if err != nil {
+				return err
+			}
+			if queued && decision.Dispatch {
+				return e.DispatchPrepareWorker(dockName, bayID)
+			}
+			return nil
+		}
+	}
 
-	// Launch the surface process.
-	surface, err := e.launchSurfaceInTmux(tmuxPaneID, dockName, surfaceType, agent, cmd, cwd, agentArgs, opts.Resume)
+	placement, err := e.placeSurfacePane(dockName, bayID, bay, name, cwd, splitDir, opts.RestoreLayoutGroup)
+	if err != nil {
+		return err
+	}
+	rollbackSurface := placement.rollback
+
+	agentArgs := e.resolvedAgentArgs(dockName, agent, m)
+	surface, err := e.launchSurfaceInTmux(placement.PaneID, dockName, surfaceType, agent, cmd, cwd, agentArgs, opts.Resume)
 	if err != nil {
 		rollbackSurface()
 		return err
 	}
-	surface.Name = uniqueSurfaceName(bay, name)
-	surface.Tmux.PaneID = tmuxPaneID
-	surface.Tmux.WindowID = tmuxWindowID
-	surface.Tmux.LayoutGroup = layoutGroup
-	surface.Tmux.SplitFrom = splitFromSurface
-	surface.Tmux.SplitDir = splitDir
+	surface.Tmux = placement.TmuxAttrs.Clone()
 
 	err = e.withManifest(func(m *manifest.Manifest) error {
 		dock := m.FindDock(dockName)
@@ -334,10 +265,194 @@ func (e *Engine) SurfaceAdd(opts SurfaceAddOptions) error {
 
 	// If this is a secondary window and the name was uniquified (e.g.,
 	// "shell" → "shell-2"), update the tmux window name to match.
-	if layoutGroup > 1 && surface.Name != name {
-		_ = e.Tmux.RenameWindow(tmuxWindowID, ":"+surface.Name)
+	if placement.LayoutGroup > 1 && surface.Name != name {
+		_ = e.Tmux.RenameWindow(placement.WindowID, ":"+surface.Name)
 	}
 	return nil
+}
+
+type tmuxPlacement struct {
+	manifest.TmuxAttrs
+	rollback func()
+}
+
+func (e *Engine) placeSurfacePane(dockName, bayID string, bay *manifest.Bay, name, cwd, splitDir string, restoreLayoutGroup int) (tmuxPlacement, error) {
+	placement := tmuxPlacement{
+		TmuxAttrs: manifest.TmuxAttrs{SplitDir: splitDir},
+		rollback:  func() {},
+	}
+
+	// Determine the layout group — find an existing tmux window to split into,
+	// or create a new one.
+	var tmuxWindowID string
+	var tmuxSplitTargetID string
+	var layoutGroup int
+	var splitFromSurface int
+	splitBefore := false
+	splitAxis := splitDir
+
+	if restoreLayoutGroup > 0 && len(bay.Surfaces) > 0 {
+		if sibling := lastSurfaceInLayoutGroup(bay, restoreLayoutGroup); sibling != nil && sibling.Tmux != nil {
+			tmuxWindowID = sibling.Tmux.WindowID
+			tmuxSplitTargetID = sibling.Tmux.PaneID
+			layoutGroup = sibling.Tmux.LayoutGroup
+			if splitDir == "" {
+				// Root-pane restore: insert at the root position of the
+				// layout group via -fb. Infer axis from any sibling's
+				// SplitDir; default "v" if the layout group has no
+				// recorded splits yet. SplitFrom stays 0 — the restored
+				// surface is the new root.
+				splitBefore = true
+				splitAxis = inferRestoreAxis(bay, restoreLayoutGroup)
+			} else {
+				// Split child: parent is whichever sibling we land against.
+				splitFromSurface = sibling.ID
+			}
+		}
+	} else if splitDir != "" && len(bay.Surfaces) > 0 {
+		if parent := e.preferredSplitTarget(bay); parent != nil {
+			tmuxWindowID = parent.Tmux.WindowID
+			tmuxSplitTargetID = parent.Tmux.PaneID
+			layoutGroup = parent.Tmux.LayoutGroup
+			splitFromSurface = parent.ID
+		}
+	}
+
+	var tmuxPaneID string
+
+	if tmuxWindowID != "" && (splitDir != "" || splitBefore) {
+		// Split an existing window.
+		targetID := tmuxSplitTargetID
+		if targetID == "" {
+			targetID = tmuxWindowID
+		}
+		newPaneID, splitErr := e.Tmux.SplitWindow(targetID, splitAxis, cwd, splitBefore)
+		if splitErr != nil {
+			return tmuxPlacement{}, fmt.Errorf("splitting window: %w", splitErr)
+		}
+		tmuxPaneID = newPaneID
+		placement.rollback = func() {
+			_ = e.Tmux.KillPane(newPaneID)
+		}
+	} else {
+		// Create a new tmux window. Secondary windows get a ":surfacename"
+		// tab name; the first window keeps the bay compact label.
+		windowName := bayWindowLabel(bay)
+		if len(bay.Surfaces) > 0 {
+			windowName = ":" + name
+		}
+		winID, err := e.Tmux.NewWindow(dockName, windowName, cwd)
+		if err != nil {
+			return tmuxPlacement{}, fmt.Errorf("creating tmux window: %w", err)
+		}
+		e.cleanPlaceholders(dockName)
+		if bay.Type == manifest.BayTypeHome && len(bay.Surfaces) == 0 {
+			_ = e.Tmux.MoveWindow(winID, 0)
+		} else {
+			e.positionNewWindow(dockName, winID, bayID, nil)
+		}
+
+		tmuxWindowID = winID
+		layoutGroup = nextLayoutGroup(bay)
+
+		panes, _ := e.Tmux.ListPanes(winID)
+		if len(panes) > 0 {
+			tmuxPaneID = panes[0].ID
+		}
+		placement.rollback = func() {
+			_ = e.Tmux.KillWindow(winID)
+		}
+	}
+
+	if tmuxPaneID == "" {
+		placement.rollback()
+		return tmuxPlacement{}, fmt.Errorf("tmux pane not found for new surface")
+	}
+	placement.PaneID = tmuxPaneID
+	placement.WindowID = tmuxWindowID
+	placement.LayoutGroup = layoutGroup
+	placement.SplitFrom = splitFromSurface
+	return placement, nil
+}
+
+func (e *Engine) queuePrepareBlockedSurface(dockName, bayID string, bay *manifest.Bay, kind manifest.SurfaceType, name, agent, command, cwd, splitDir string, restoreLayoutGroup int) (bool, error) {
+	request := manifest.PendingLaunch{
+		Kind:     kind,
+		Name:     name,
+		Agent:    agent,
+		Command:  command,
+		SplitDir: splitDir,
+	}
+	if findPendingLaunchIndex(bay.PendingSurfaces, request) != -1 {
+		return false, nil
+	}
+
+	placement, err := e.placeSurfacePane(dockName, bayID, bay, name, cwd, splitDir, restoreLayoutGroup)
+	if err != nil {
+		return false, err
+	}
+	placeholderCmd := prepareLogFollowerCommand(e.configPath, dockName, bayID)
+	if err := e.Tmux.RespawnPane(placement.PaneID, cwd, placeholderCmd); err != nil {
+		placement.rollback()
+		return false, fmt.Errorf("launching prepare placeholder: %w", err)
+	}
+
+	pending := request
+	pending.CreatedAt = time.Now().Unix()
+	pending.Tmux = placement.TmuxAttrs.Clone()
+
+	queued := false
+	duplicate := false
+	err = e.withManifest(func(m *manifest.Manifest) error {
+		_, bay, err := findDockBay(m, dockName, bayID)
+		if err != nil {
+			return err
+		}
+		if findPendingLaunchIndex(bay.PendingSurfaces, request) != -1 {
+			duplicate = true
+			return nil
+		}
+		bay.PendingSurfaces = append(bay.PendingSurfaces, pending)
+		bay.LastActive = time.Now().Unix()
+		bay.PendingCloseAt = 0
+		queued = true
+		return nil
+	})
+	if err != nil {
+		placement.rollback()
+		return false, err
+	}
+	if duplicate {
+		placement.rollback()
+		return false, nil
+	}
+	return queued, nil
+}
+
+// findPendingLaunchIndex returns the index of a pending launch matching
+// target's request fields (kind/name/agent/command/splitdir). If target also
+// has a tmux pane recorded, candidates with a different pane are skipped —
+// the pane is what disambiguates two queued launches with the same request
+// shape after they've been placed.
+func findPendingLaunchIndex(pending []manifest.PendingLaunch, target manifest.PendingLaunch) int {
+	for i, candidate := range pending {
+		if !pendingLaunchRequestsMatch(candidate, target) {
+			continue
+		}
+		if target.Tmux != nil && candidate.Tmux != nil && candidate.Tmux.PaneID != target.Tmux.PaneID {
+			continue
+		}
+		return i
+	}
+	return -1
+}
+
+func pendingLaunchRequestsMatch(a, b manifest.PendingLaunch) bool {
+	return a.Kind == b.Kind &&
+		a.Name == b.Name &&
+		a.Agent == b.Agent &&
+		a.Command == b.Command &&
+		a.SplitDir == b.SplitDir
 }
 
 // DockSurfaceClose removes a dock-level surface and kills its tmux pane/window.

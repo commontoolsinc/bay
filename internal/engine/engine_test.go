@@ -1,8 +1,10 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +12,7 @@ import (
 	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/git"
 	"github.com/commontoolsinc/bay/internal/manifest"
+	"github.com/commontoolsinc/bay/internal/prepare"
 	"github.com/commontoolsinc/bay/internal/tmux"
 )
 
@@ -54,6 +57,15 @@ func makeCheckout(t *testing.T, path string) string {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(path, ".git"), 0o755); err != nil {
 		t.Fatalf("creating checkout %s: %v", path, err)
+	}
+	return path
+}
+
+func testCommandPath(t *testing.T, name string) string {
+	t.Helper()
+	path, err := exec.LookPath(name)
+	if err != nil {
+		t.Fatalf("looking up %s: %v", name, err)
 	}
 	return path
 }
@@ -778,6 +790,365 @@ func TestSurfaceAdd_UnknownAgentFailsWithoutPersistingSurface(t *testing.T) {
 	}
 	if got := len(bay.Surfaces); got != 1 {
 		t.Fatalf("surfaces = %d, want 1", got)
+	}
+}
+
+func TestSurfaceAdd_BlockedAgentQueuesPlaceholder(t *testing.T) {
+	eng, _ := testEngine(t)
+	if _, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true}); err != nil {
+		t.Fatalf("BayNew failed: %v", err)
+	}
+
+	trueCmd := testCommandPath(t, "true")
+	eng.Config.Docks["labs"] = config.DockConfig{
+		BayPrepare: []config.BayPrepareConfig{{
+			Name:         "setup",
+			Command:      []string{trueCmd},
+			ReadyCommand: []string{trueCmd},
+			Blocks:       []string{"agent"},
+			Run:          config.PrepareRunAuto,
+		}},
+	}
+	var starts int
+	eng.startWorker = func(exe string, args []string) error {
+		starts++
+		return nil
+	}
+
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "codex", SplitDir: "v"}); err != nil {
+		t.Fatalf("SurfaceAdd failed: %v", err)
+	}
+
+	bay, err := eng.BayShow("labs", "b1")
+	if err != nil {
+		t.Fatalf("BayShow failed: %v", err)
+	}
+	if got := len(bay.Surfaces); got != 1 {
+		t.Fatalf("surfaces = %d, want only original shell", got)
+	}
+	if len(bay.PendingSurfaces) != 1 {
+		t.Fatalf("pending surfaces = %#v, want one placeholder", bay.PendingSurfaces)
+	}
+	pending := bay.PendingSurfaces[0]
+	if pending.Kind != manifest.SurfaceTypeAgent || pending.Agent != "codex" || pending.Tmux == nil || pending.Tmux.PaneID == "" {
+		t.Fatalf("pending launch not recorded correctly: %#v", pending)
+	}
+	if starts != 1 {
+		t.Fatalf("prepare worker starts = %d, want 1", starts)
+	}
+
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	foundPlaceholder := false
+	for _, call := range mockTmux.Calls {
+		if call.Method == "RespawnPane" && len(call.Args) == 3 &&
+			call.Args[0] == pending.Tmux.PaneID &&
+			strings.Contains(call.Args[2], "prepare") &&
+			strings.Contains(call.Args[2], "--log") &&
+			strings.Contains(call.Args[2], "-f") {
+			foundPlaceholder = true
+		}
+	}
+	if !foundPlaceholder {
+		t.Fatalf("placeholder RespawnPane call not found in calls: %#v", mockTmux.Calls)
+	}
+
+	callsBefore := len(mockTmux.Calls)
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "codex", SplitDir: "v"}); err != nil {
+		t.Fatalf("duplicate SurfaceAdd failed: %v", err)
+	}
+	bay, _ = eng.BayShow("labs", "b1")
+	if len(bay.PendingSurfaces) != 1 {
+		t.Fatalf("duplicate launch changed pending surfaces: %#v", bay.PendingSurfaces)
+	}
+	for _, call := range mockTmux.Calls[callsBefore:] {
+		if call.Method == "SplitWindow" || call.Method == "RespawnPane" {
+			t.Fatalf("duplicate launch should not create another placeholder, got call %#v", call)
+		}
+	}
+}
+
+func TestSurfaceAdd_FailedPrepareQueuesPlaceholderWithoutDispatch(t *testing.T) {
+	eng, _ := testEngine(t)
+	if _, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true}); err != nil {
+		t.Fatalf("BayNew failed: %v", err)
+	}
+
+	trueCmd := testCommandPath(t, "true")
+	step := config.BayPrepareConfig{
+		Name:         "setup",
+		Command:      []string{trueCmd},
+		ReadyCommand: []string{trueCmd},
+		Blocks:       []string{"agent"},
+		Run:          config.PrepareRunAuto,
+	}
+	eng.Config.Docks["labs"] = config.DockConfig{BayPrepare: []config.BayPrepareConfig{step}}
+	var starts int
+	eng.startWorker = func(exe string, args []string) error {
+		starts++
+		return nil
+	}
+	if err := manifest.LockedUpdate(eng.manifestPath, func(m *manifest.Manifest) error {
+		bay := m.FindDock("labs").FindBayByID("b1")
+		bay.Prepare = []manifest.PrepareStep{{
+			Name:   "setup",
+			Status: manifest.PrepareStatusFailed,
+		}}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed failed prepare: %v", err)
+	}
+
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "codex", SplitDir: "v"}); err != nil {
+		t.Fatalf("SurfaceAdd failed: %v", err)
+	}
+
+	bay, err := eng.BayShow("labs", "b1")
+	if err != nil {
+		t.Fatalf("BayShow failed: %v", err)
+	}
+	if starts != 0 {
+		t.Fatalf("prepare worker starts = %d, want 0 for failed prepare", starts)
+	}
+	if len(bay.PendingSurfaces) != 1 {
+		t.Fatalf("pending surfaces = %#v, want one placeholder", bay.PendingSurfaces)
+	}
+	if bay.Prepare[0].Status != manifest.PrepareStatusFailed {
+		t.Fatalf("prepare status = %q, want failed", bay.Prepare[0].Status)
+	}
+	if got := len(bay.Surfaces); got != 1 {
+		t.Fatalf("surfaces = %d, want only original shell", got)
+	}
+}
+
+func TestDispatchReadyPrepareSurfaces_SwapsPlaceholderForAgent(t *testing.T) {
+	eng, _ := testEngine(t)
+	created, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true})
+	if err != nil {
+		t.Fatalf("BayNew failed: %v", err)
+	}
+	if err := os.MkdirAll(created.Path, 0o755); err != nil {
+		t.Fatalf("mkdir bay path: %v", err)
+	}
+
+	trueCmd := testCommandPath(t, "true")
+	step := config.BayPrepareConfig{
+		Name:         "setup",
+		Command:      []string{trueCmd},
+		ReadyCommand: []string{trueCmd},
+		Blocks:       []string{"agent"},
+		Run:          config.PrepareRunAuto,
+	}
+	eng.Config.Docks["labs"] = config.DockConfig{BayPrepare: []config.BayPrepareConfig{step}}
+	eng.startWorker = func(exe string, args []string) error { return nil }
+
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "codex", SplitDir: "v"}); err != nil {
+		t.Fatalf("SurfaceAdd failed: %v", err)
+	}
+	bay, _ := eng.BayShow("labs", "b1")
+	pendingPane := bay.PendingSurfaces[0].Tmux.PaneID
+
+	hash, err := prepare.DefinitionHash(step)
+	if err != nil {
+		t.Fatalf("DefinitionHash: %v", err)
+	}
+	if err := manifest.LockedUpdate(eng.manifestPath, func(m *manifest.Manifest) error {
+		bay := m.FindDock("labs").FindBayByID("b1")
+		bay.Prepare = []manifest.PrepareStep{{
+			Name:           "setup",
+			Status:         manifest.PrepareStatusReady,
+			DefinitionHash: hash,
+		}}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed ready prepare: %v", err)
+	}
+
+	if err := eng.DispatchReadyPrepareSurfaces(context.Background(), prepare.Options{Dock: "labs", Bay: "b1"}, step); err != nil {
+		t.Fatalf("DispatchReadyPrepareSurfaces: %v", err)
+	}
+
+	bay, err = eng.BayShow("labs", "b1")
+	if err != nil {
+		t.Fatalf("BayShow failed: %v", err)
+	}
+	if len(bay.PendingSurfaces) != 0 {
+		t.Fatalf("pending surfaces = %#v, want none", bay.PendingSurfaces)
+	}
+	s := bay.FindSurface("agent")
+	if s == nil {
+		t.Fatalf("agent surface not found after dispatch: %#v", bay.Surfaces)
+	}
+	if s.Agent == nil || *s.Agent != "codex" {
+		t.Fatalf("agent = %v, want codex", s.Agent)
+	}
+	if s.Tmux == nil || s.Tmux.PaneID != pendingPane {
+		t.Fatalf("agent pane = %#v, want placeholder pane %s", s.Tmux, pendingPane)
+	}
+}
+
+func TestDispatchReadyPrepareSurfaces_LaunchesReadyKindsBeforeReportingFailures(t *testing.T) {
+	eng, _ := testEngine(t)
+	created, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true})
+	if err != nil {
+		t.Fatalf("BayNew failed: %v", err)
+	}
+	if err := os.MkdirAll(created.Path, 0o755); err != nil {
+		t.Fatalf("mkdir bay path: %v", err)
+	}
+
+	trueCmd := testCommandPath(t, "true")
+	falseCmd := testCommandPath(t, "false")
+	shared := config.BayPrepareConfig{
+		Name:         "shared",
+		Command:      []string{trueCmd},
+		ReadyCommand: []string{trueCmd},
+		Blocks:       []string{"agent", "cmd"},
+		Run:          config.PrepareRunAuto,
+	}
+	agentOnly := config.BayPrepareConfig{
+		Name:         "agent-only",
+		Command:      []string{trueCmd},
+		ReadyCommand: []string{falseCmd},
+		Blocks:       []string{"agent"},
+		Run:          config.PrepareRunAuto,
+	}
+	eng.Config.Docks["labs"] = config.DockConfig{BayPrepare: []config.BayPrepareConfig{shared, agentOnly}}
+	eng.startWorker = func(exe string, args []string) error { return nil }
+
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "codex", SplitDir: "v"}); err != nil {
+		t.Fatalf("SurfaceAdd agent failed: %v", err)
+	}
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeCmd, Name: "watch", Command: "watch date", SplitDir: "h"}); err != nil {
+		t.Fatalf("SurfaceAdd cmd failed: %v", err)
+	}
+
+	sharedHash, err := prepare.DefinitionHash(shared)
+	if err != nil {
+		t.Fatalf("DefinitionHash(shared): %v", err)
+	}
+	agentHash, err := prepare.DefinitionHash(agentOnly)
+	if err != nil {
+		t.Fatalf("DefinitionHash(agentOnly): %v", err)
+	}
+	if err := manifest.LockedUpdate(eng.manifestPath, func(m *manifest.Manifest) error {
+		bay := m.FindDock("labs").FindBayByID("b1")
+		bay.Prepare = []manifest.PrepareStep{
+			{Name: "shared", Status: manifest.PrepareStatusReady, DefinitionHash: sharedHash},
+			{Name: "agent-only", Status: manifest.PrepareStatusReady, DefinitionHash: agentHash},
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed ready prepare: %v", err)
+	}
+
+	err = eng.DispatchReadyPrepareSurfaces(context.Background(), prepare.Options{Dock: "labs", Bay: "b1"}, shared)
+	if err == nil || !strings.Contains(err.Error(), "agent-only") {
+		t.Fatalf("DispatchReadyPrepareSurfaces error = %v, want agent-only readiness failure", err)
+	}
+
+	bay, err := eng.BayShow("labs", "b1")
+	if err != nil {
+		t.Fatalf("BayShow failed: %v", err)
+	}
+	if bay.FindSurface("watch") == nil {
+		t.Fatalf("ready cmd surface was not launched: %#v", bay.Surfaces)
+	}
+	if bay.FindSurface("agent") != nil {
+		t.Fatalf("agent surface launched despite failed agent-only readiness: %#v", bay.Surfaces)
+	}
+	if len(bay.PendingSurfaces) != 1 || bay.PendingSurfaces[0].Kind != manifest.SurfaceTypeAgent {
+		t.Fatalf("pending surfaces = %#v, want only agent placeholder", bay.PendingSurfaces)
+	}
+	statuses := map[string]manifest.PrepareStatus{}
+	for _, step := range bay.Prepare {
+		statuses[step.Name] = step.Status
+	}
+	if statuses["agent-only"] != manifest.PrepareStatusFailed {
+		t.Fatalf("agent-only status = %q, want failed", statuses["agent-only"])
+	}
+	if statuses["shared"] != manifest.PrepareStatusReady {
+		t.Fatalf("shared status = %q, want ready", statuses["shared"])
+	}
+}
+
+func TestSurfaceAdd_ReadyCommandRerunIsBounded(t *testing.T) {
+	eng, _ := testEngine(t)
+	created, err := eng.BayNew(BayNewOptions{Dock: "labs", Shell: true})
+	if err != nil {
+		t.Fatalf("BayNew failed: %v", err)
+	}
+	if err := os.MkdirAll(created.Path, 0o755); err != nil {
+		t.Fatalf("mkdir bay path: %v", err)
+	}
+
+	trueCmd := testCommandPath(t, "true")
+	falseCmd := testCommandPath(t, "false")
+	step := config.BayPrepareConfig{
+		Name:         "setup",
+		Command:      []string{trueCmd},
+		ReadyCommand: []string{falseCmd},
+		Blocks:       []string{"agent"},
+		Run:          config.PrepareRunAuto,
+	}
+	eng.Config.Docks["labs"] = config.DockConfig{BayPrepare: []config.BayPrepareConfig{step}}
+
+	var starts int
+	eng.startWorker = func(exe string, args []string) error {
+		starts++
+		return nil
+	}
+	hash, err := prepare.DefinitionHash(step)
+	if err != nil {
+		t.Fatalf("DefinitionHash: %v", err)
+	}
+	if err := manifest.LockedUpdate(eng.manifestPath, func(m *manifest.Manifest) error {
+		bay := m.FindDock("labs").FindBayByID("b1")
+		bay.Prepare = []manifest.PrepareStep{{
+			Name:           "setup",
+			Status:         manifest.PrepareStatusReady,
+			DefinitionHash: hash,
+		}}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed ready prepare: %v", err)
+	}
+
+	if err := eng.SurfaceAdd(SurfaceAddOptions{DockName: "labs", BayName: "b1", Type: manifest.SurfaceTypeAgent, Name: "agent", Agent: "codex", SplitDir: "v"}); err != nil {
+		t.Fatalf("SurfaceAdd failed: %v", err)
+	}
+	if starts != 1 {
+		t.Fatalf("prepare worker starts = %d, want one bounded rerun", starts)
+	}
+	bay, _ := eng.BayShow("labs", "b1")
+	if len(bay.PendingSurfaces) != 1 {
+		t.Fatalf("pending surfaces = %#v, want one", bay.PendingSurfaces)
+	}
+	if bay.Prepare[0].Status != manifest.PrepareStatusStale {
+		t.Fatalf("prepare status = %q, want stale", bay.Prepare[0].Status)
+	}
+
+	if err := manifest.LockedUpdate(eng.manifestPath, func(m *manifest.Manifest) error {
+		entry := &m.FindDock("labs").FindBayByID("b1").Prepare[0]
+		entry.Status = manifest.PrepareStatusReady
+		entry.DefinitionHash = hash
+		return nil
+	}); err != nil {
+		t.Fatalf("seed rerun ready prepare: %v", err)
+	}
+
+	err = eng.DispatchReadyPrepareSurfaces(context.Background(), prepare.Options{Dock: "labs", Bay: "b1"}, step)
+	if err == nil || !strings.Contains(err.Error(), "ready check failed") {
+		t.Fatalf("DispatchReadyPrepareSurfaces error = %v, want ready check failure", err)
+	}
+	if starts != 1 {
+		t.Fatalf("prepare worker starts after second failure = %d, want still 1", starts)
+	}
+	bay, _ = eng.BayShow("labs", "b1")
+	if bay.Prepare[0].Status != manifest.PrepareStatusFailed {
+		t.Fatalf("prepare status after second failure = %q, want failed", bay.Prepare[0].Status)
+	}
+	if len(bay.PendingSurfaces) != 1 || len(bay.Surfaces) != 1 {
+		t.Fatalf("pending/surfaces after second failure = %#v / %#v, want placeholder kept", bay.PendingSurfaces, bay.Surfaces)
 	}
 }
 

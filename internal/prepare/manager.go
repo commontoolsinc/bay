@@ -170,7 +170,7 @@ func (m Manager) Kill(ctx context.Context, opts Options, wait time.Duration) ([]
 	}
 
 	if wait <= 0 {
-		return names, m.markStepsStale(opts, names)
+		return names, m.markRunningStepsStale(opts, names)
 	}
 
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -189,10 +189,59 @@ func (m Manager) Kill(ctx context.Context, opts Options, wait time.Duration) ([]
 		case <-ctx.Done():
 			return names, ctx.Err()
 		case <-deadline:
-			return names, m.markStepsStale(opts, names)
+			return names, m.markRunningStepsStale(opts, names)
 		case <-ticker.C:
 		}
 	}
+}
+
+// MarkStepsStale marks the named prepare steps stale. It is used when a
+// ready_command check discovers that previously-ready setup is no longer
+// valid and a worker should re-run the affected step.
+func (m Manager) MarkStepsStale(opts Options, names []string) error {
+	return m.transitionSteps(opts, names, manifest.PrepareStatusStale, nil)
+}
+
+// MarkStepsFailed marks the named prepare steps failed and clears running
+// fields. This is used to stop the bounded ready_command re-check loop after
+// a worker rerun still does not satisfy readiness.
+func (m Manager) MarkStepsFailed(opts Options, names []string) error {
+	return m.transitionSteps(opts, names, manifest.PrepareStatusFailed, nil)
+}
+
+// transitionSteps moves entries matching names into target status and clears
+// running fields. Entries already in target are left alone. shouldSkip lets a
+// caller exclude additional statuses; nil means "no extra skips".
+func (m Manager) transitionSteps(opts Options, names []string, target manifest.PrepareStatus, shouldSkip func(manifest.PrepareStatus) bool) error {
+	if len(names) == 0 {
+		return nil
+	}
+	wanted := wantedNames(names)
+	now := m.now().Unix()
+	return manifest.LockedUpdateMaybe(m.ManifestPath, func(mf *manifest.Manifest) (bool, error) {
+		bay, err := findBay(mf, opts)
+		if err != nil {
+			return false, err
+		}
+		changed := false
+		for i := range bay.Prepare {
+			entry := &bay.Prepare[i]
+			if !wanted[entry.Name] || entry.Status == target {
+				continue
+			}
+			if shouldSkip != nil && shouldSkip(entry.Status) {
+				continue
+			}
+			entry.Status = target
+			entry.FinishedAt = now
+			entry.HeartbeatAt = 0
+			entry.PID = 0
+			entry.RunLogOffset = 0
+			entry.DefinitionHash = ""
+			changed = true
+		}
+		return changed, nil
+	})
 }
 
 // StepNames returns step names in declaration order.
@@ -305,31 +354,18 @@ func (m Manager) stepLockHeld(opts Options, stepName string) (bool, error) {
 	return true, nil
 }
 
-func (m Manager) markStepsStale(opts Options, names []string) error {
-	if len(names) == 0 {
-		return nil
-	}
+func (m Manager) markRunningStepsStale(opts Options, names []string) error {
+	return m.transitionSteps(opts, names, manifest.PrepareStatusStale, func(current manifest.PrepareStatus) bool {
+		return current != manifest.PrepareStatusRunning
+	})
+}
+
+func wantedNames(names []string) map[string]bool {
 	wanted := map[string]bool{}
 	for _, name := range names {
 		wanted[name] = true
 	}
-	now := m.now().Unix()
-	return manifest.LockedUpdateMaybe(m.ManifestPath, func(mf *manifest.Manifest) (bool, error) {
-		bay, err := findBay(mf, opts)
-		if err != nil {
-			return false, err
-		}
-		changed := false
-		for i := range bay.Prepare {
-			entry := &bay.Prepare[i]
-			if !wanted[entry.Name] || entry.Status != manifest.PrepareStatusRunning {
-				continue
-			}
-			markEntryStale(entry, now)
-			changed = true
-		}
-		return changed, nil
-	})
+	return wanted
 }
 
 func stepStatusFromEntry(entry manifest.PrepareStep) StepStatus {

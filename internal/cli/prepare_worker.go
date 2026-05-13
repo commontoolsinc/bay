@@ -31,6 +31,7 @@ func newPrepareWorkerCmd() *cobra.Command {
 				Config:       eng.Config,
 				ManifestPath: p.ManifestFile,
 				DataDir:      p.DataDir,
+				OnStepReady:  eng.DispatchReadyPrepareSurfaces,
 			}
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()

@@ -74,6 +74,9 @@ func TestWorker_RunFalseMarksFailedAndStops(t *testing.T) {
 	if later.StartedAt != 0 {
 		t.Fatalf("later step was started: %#v", later)
 	}
+	if log := h.readLog(t); !strings.Contains(log, "retry with: bay prepare b1 --dock labs --retry") {
+		t.Fatalf("failure log missing retry hint:\n%s", log)
+	}
 }
 
 func TestWorker_LockContentionExitsWithoutManifestChange(t *testing.T) {
