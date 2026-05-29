@@ -3,7 +3,6 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/commontoolsinc/bay/internal/engine"
@@ -50,15 +49,10 @@ func formatPWD(ctx *engine.Context) string {
 	if ctx.Dock != "" {
 		parts = append(parts, labelValue("dock", ctx.Dock))
 	}
-	if ctx.Bay != "" {
-		bay := ctx.Bay
-		if ctx.Path != "" {
-			dir := filepath.Base(ctx.Path)
-			if dir != ctx.Bay {
-				bay += " " + dim("(") + dim("dir") + " " + dir + dim(")")
-			}
-		}
-		parts = append(parts, labelValue("bay", bay))
+	// The canonical bay label already carries the dir tag (e.g. "b1.auth-fix"),
+	// so no separate "(dir b1)" parenthetical is needed.
+	if label := ctx.BayLabel(); label != "" {
+		parts = append(parts, labelValue("bay", label))
 	}
 	if ctx.Surface != "" {
 		parts = append(parts, labelValue("surface", ctx.Surface))

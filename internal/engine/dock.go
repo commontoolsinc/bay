@@ -52,6 +52,22 @@ type BayInfo struct {
 	Surfaces     []SurfaceInfo `json:"surfaces,omitempty"`
 }
 
+// Label returns the canonical display label for the bay — the same string
+// shown in the picker, tmux tabs, and status-line `full` field
+// (e.g. "home", "b1", or "b1.auth-fix"). Use this for any user-facing
+// reference to a bay so unnamed bays don't render as a blank.
+//
+// The label is derived from the path-backed dir tag and the optional
+// Name; it never depends on the (possibly empty) Name alone. Type is
+// forwarded so the home pseudo-bay short-circuits to "home".
+func (b BayInfo) Label() string {
+	return BayCompactLabel(&manifest.Bay{
+		Type: manifest.BayType(b.Type),
+		Name: b.Name,
+		Path: b.Path,
+	})
+}
+
 // DockNew creates a new dock configuration and tmux session.
 func (e *Engine) DockNew(name, path, worktreeDir, agent, terminal string) error {
 	if err := ValidateName(name); err != nil {

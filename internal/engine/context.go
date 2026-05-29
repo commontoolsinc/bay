@@ -19,6 +19,16 @@ type Context struct {
 	Path      string `json:"path,omitempty"`
 }
 
+// BayLabel returns the canonical display label for the bay portion of the
+// context — "home" for the home bay, the stable BayID for unnamed bays,
+// and "<id>.<name>" when both are set. Mirrors what the picker, tmux
+// tabs, and `bay ls` show.
+//
+// Returns "" when the context has no bay (e.g. a dock-only location).
+func (c Context) BayLabel() string {
+	return manifest.BayLabel(c.BayID, c.Bay)
+}
+
 // MarshalJSON emits the user-facing bay vocabulary while preserving the
 // internal field names used by the rest of the engine.
 func (c Context) MarshalJSON() ([]byte, error) {

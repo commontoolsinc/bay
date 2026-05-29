@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/commontoolsinc/bay/internal/config"
+	"github.com/commontoolsinc/bay/internal/engine"
 	gitpkg "github.com/commontoolsinc/bay/internal/git"
 	"github.com/commontoolsinc/bay/internal/manifest"
 	tmuxpkg "github.com/commontoolsinc/bay/internal/tmux"
@@ -250,6 +251,9 @@ func bayCandidates(m *manifest.Manifest) []string {
 			}
 		}
 
+		// Include the bay's optional Name in descriptions so users can
+		// tell named bays apart by their friendly tag (the candidate
+		// itself is the stable ID). Empty for unnamed bays.
 		nameSuffix := ""
 		if bay.Name != "" {
 			nameSuffix = " " + bay.Name
@@ -280,8 +284,9 @@ func surfaceCandidates(m *manifest.Manifest, tc tmuxpkg.Interface, includeSelf b
 		addCandidate(&completions, seen, "self", "current surface")
 	}
 
-	// Determine current bay for bare-name completions.
-	var currentDock, currentBay string
+	// Determine current bay for bare-name completions. Track by stable ID
+	// so unnamed bays still match (Name can be empty).
+	var currentDock, currentBayID string
 	if session, err := tc.CurrentSession(); err == nil {
 		currentDock = session
 		if winID, err := tc.CurrentWindowID(); err == nil {
@@ -291,11 +296,11 @@ func surfaceCandidates(m *manifest.Manifest, tc tmuxpkg.Interface, includeSelf b
 				}
 				for _, s := range ref.Bay.Surfaces {
 					if s.Tmux != nil && s.Tmux.WindowID == winID {
-						currentBay = ref.Bay.Name
+						currentBayID = ref.Bay.ID
 						break
 					}
 				}
-				if currentBay != "" {
+				if currentBayID != "" {
 					break
 				}
 			}
@@ -310,17 +315,20 @@ func surfaceCandidates(m *manifest.Manifest, tc tmuxpkg.Interface, includeSelf b
 		}
 	}
 
-	// Bay surfaces.
+	// Bay surfaces. Qualified candidates use bay.ID (the stable handle
+	// the resolver accepts) so unnamed bays still produce valid refs;
+	// descriptions show the canonical label so users see "b1.auth-fix"
+	// rather than a blank.
 	for _, ref := range manifest.AllBays(m) {
 		bay := ref.Bay
+		label := engine.BayCompactLabel(bay)
 		for _, s := range bay.Surfaces {
-			desc := string(s.Type) + " in " + ref.Dock + ":" + bay.Name
-			// Bare name for surfaces in the current bay.
-			if ref.Dock == currentDock && bay.Name == currentBay {
+			desc := string(s.Type) + " in " + ref.Dock + ":" + label
+			if ref.Dock == currentDock && bay.ID == currentBayID {
 				addCandidate(&completions, seen, s.Name, desc)
 			}
-			addCandidate(&completions, seen, bay.Name+":"+s.Name, desc)
-			addCandidate(&completions, seen, ref.Dock+":"+bay.Name+":"+s.Name, desc)
+			addCandidate(&completions, seen, bay.ID+":"+s.Name, desc)
+			addCandidate(&completions, seen, ref.Dock+":"+bay.ID+":"+s.Name, desc)
 		}
 	}
 	return completions
@@ -433,14 +441,15 @@ func goCompletions() func(cmd *cobra.Command, args []string, toComplete string) 
 
 		for _, ref := range manifest.AllBays(m) {
 			bay := ref.Bay
-			add(bay.Name, ref.Dock)
+			label := engine.BayCompactLabel(bay)
+			add(label, ref.Dock)
 			add(ref.Dock, "dock")
 			if !manifest.IsHomeBay(bay) && bay.Worktree != nil {
 				if bay.Worktree.Branch != "" {
-					add(bay.Worktree.Branch, ref.Dock+" "+bay.Name)
+					add(bay.Worktree.Branch, ref.Dock+" "+label)
 				}
 				if bay.Worktree.PR != "" {
-					add("#"+bay.Worktree.PR, ref.Dock+" "+bay.Name)
+					add("#"+bay.Worktree.PR, ref.Dock+" "+label)
 				}
 			}
 		}

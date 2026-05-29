@@ -277,42 +277,41 @@ func truncateListField(s string, maxLen int) string {
 }
 
 // bayMetaCols returns fixed-position columns for bay metadata.
-// Column positions: 0=description, 1=branch, 2=dir (only when different from
-// name), 3=id (only when it adds info beyond name and dir), 4=status,
-// 5=setup, 6=count, 7=sync/waiting.
+// Column positions: 0=description, 1=branch, 2=id (only when it adds
+// info beyond the bay label), 3=status, 4=setup, 5=count, 6=sync/waiting.
+//
+// The bay column itself renders BayInfo.Label() (e.g. "b1.auth-fix"),
+// which already carries the path-derived dir tag — so no separate `dir`
+// column is needed. The `id` slot is preserved for external bays whose
+// ID diverges from both the dir tag and the name (rare).
 //
 // Descriptions come through at full stored length; FormatListView shrinks
 // them in place (index 0) if the computed terminal budget is tighter. Only
 // the first line of the description is shown — bodies are opt-in and appear
 // in the M-? popup, not on the list row.
 func bayMetaCols(bay engine.BayInfo, showCounts, short bool) []metaCol {
-	cols := make([]metaCol, 8)
+	cols := make([]metaCol, 7)
 	if first := engine.DescriptionFirstLine(bay.Description); first != "" {
 		cols[0] = descField(first, engine.MaxDescriptionFirstLineLen, short)
 	}
 	cols[1] = metaField("br", truncateListField(bay.Branch, listBranchStrMax), short)
-	// Show directory basename only when it differs from the bay name.
+	// Surface the raw ID only when the label hides it — i.e. external bays
+	// whose ID isn't reflected in either the path-derived dir tag or Name.
 	dir := ""
 	if bay.Path != "" {
 		dir = filepath.Base(bay.Path)
-		if dir != bay.Name {
-			cols[2] = metaField("dir", dir, short)
-		}
 	}
-	// Show ID only when it adds info beyond name and dir. Worktree bays have
-	// ID == basename(Path) by construction, so the dir column already carries
-	// it; surface id only for external bays where the dir basename diverges.
 	if bay.ID != "" && bay.ID != bay.Name && bay.ID != dir {
-		cols[3] = metaField("id", bay.ID, short)
+		cols[2] = metaField("id", bay.ID, short)
 	}
 	if bay.Dirty {
-		cols[4] = metaField("st", "dirty", short)
+		cols[3] = metaField("st", "dirty", short)
 	} else if bay.Pending {
-		cols[4] = metaField("st", "pending", short)
+		cols[3] = metaField("st", "pending", short)
 	}
-	cols[5] = metaField("setup", bay.Setup, short)
+	cols[4] = metaField("setup", bay.Setup, short)
 	if showCounts {
-		cols[6] = metaField("n", fmt.Sprintf("%d", bay.SurfaceCount), short)
+		cols[5] = metaField("n", fmt.Sprintf("%d", bay.SurfaceCount), short)
 	}
 	// Sync and waiting indicators share the trailing column.
 	var parts []string
@@ -335,7 +334,7 @@ func bayMetaCols(bay engine.BayInfo, showCounts, short bool) []metaCol {
 		}
 	}
 	if len(parts) > 0 {
-		cols[7] = metaCol{text: strings.Join(parts, " "), width: tailWidth}
+		cols[6] = metaCol{text: strings.Join(parts, " "), width: tailWidth}
 	}
 	return cols
 }
@@ -603,11 +602,11 @@ func FormatListView(view ListView, long, short bool) string {
 		var allSfRows []alignedRow
 		for i, bay := range dock.Bays {
 			isCurrentBay := dock.Name == view.CurrentDock && bay.ID == view.CurrentBayID
-			bayName := truncateListField(bay.Name, listBayNameStrMax)
+			bayLabel := truncateListField(bay.Label(), listBayNameStrMax)
 			if isCurrentBay {
-				bayName += " *"
+				bayLabel += " *"
 			}
-			p, w := indentedPrefix(1, "bay", bayName, short)
+			p, w := indentedPrefix(1, "bay", bayLabel, short)
 			bayRows[i] = alignedRow{
 				prefix:      p,
 				prefixWidth: w,
@@ -706,8 +705,14 @@ func FormatBayShow(dockName string, bay *engine.BayInfo, long bool) string {
 	var b strings.Builder
 
 	var rows []showRow
-	rows = append(rows, showRow{"bay", bay.Name})
-	if bay.ID != "" && bay.ID != bay.Name {
+	rows = append(rows, showRow{"bay", bay.Label()})
+	// Surface the raw ID only when the label hides it — external bays whose
+	// ID matches neither the path-derived dir tag nor the Name.
+	dir := ""
+	if bay.Path != "" {
+		dir = filepath.Base(bay.Path)
+	}
+	if bay.ID != "" && bay.ID != bay.Name && bay.ID != dir {
 		rows = append(rows, showRow{"id", bay.ID})
 	}
 	if bay.Description != "" {

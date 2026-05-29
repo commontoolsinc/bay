@@ -232,6 +232,7 @@ func (e *Engine) recoverDockBays(dock *manifest.Dock, m *manifest.Manifest) reco
 		}
 
 		bayRecovered := false
+		label := BayCompactLabel(bay)
 
 		// Group surfaces by layout group for recovery.
 		groups := groupSurfacesByLayout(bay)
@@ -245,7 +246,7 @@ func (e *Engine) recoverDockBays(dock *manifest.Dock, m *manifest.Manifest) reco
 				if s.Tmux != nil && s.Tmux.WindowID != "" {
 					exists, err := e.Tmux.WindowExists(s.Tmux.WindowID)
 					if err != nil {
-						outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: check window %s: %v", bay.Name, s.Tmux.WindowID, err))
+						outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: check window %s: %v", label, s.Tmux.WindowID, err))
 						continue
 					}
 					if exists {
@@ -268,7 +269,7 @@ func (e *Engine) recoverDockBays(dock *manifest.Dock, m *manifest.Manifest) reco
 				}
 				newWindowID, err := e.Tmux.NewWindow(dock.Name, windowName, cwd)
 				if err != nil {
-					outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: create window: %v", bay.Name, err))
+					outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: create window: %v", label, err))
 					continue
 				}
 				outcome.changed = true
@@ -285,16 +286,16 @@ func (e *Engine) recoverDockBays(dock *manifest.Dock, m *manifest.Manifest) reco
 						// First surface uses the window's initial pane.
 						panes, err := e.Tmux.ListPanes(newWindowID)
 						if err != nil {
-							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: list panes for %s: %v", bay.Name, newWindowID, err))
+							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: list panes for %s: %v", label, newWindowID, err))
 							continue
 						}
 						if len(panes) == 0 {
-							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: window %s has no initial pane", bay.Name, newWindowID))
+							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: window %s has no initial pane", label, newWindowID))
 							continue
 						}
 						s.Tmux.PaneID = panes[0].ID
 						if err := e.recoverSurfaceLaunch(dock.Name, s, s.Tmux.PaneID, cwd, m, true); err != nil {
-							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", bay.Name, s.Name, err))
+							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", label, s.Name, err))
 						}
 					} else {
 						// Subsequent surfaces split from their recorded parent pane.
@@ -304,17 +305,17 @@ func (e *Engine) recoverDockBays(dock *manifest.Dock, m *manifest.Manifest) reco
 						}
 						splitTargetID, err := recoverSplitTargetID(bay, s, newWindowID)
 						if err != nil {
-							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", bay.Name, s.Name, err))
+							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", label, s.Name, err))
 							continue
 						}
 						newPaneID, err := e.Tmux.SplitWindow(splitTargetID, dir, cwd, false)
 						if err != nil {
-							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: split window: %v", bay.Name, s.Name, err))
+							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: split window: %v", label, s.Name, err))
 							continue
 						}
 						s.Tmux.PaneID = newPaneID
 						if err := e.recoverSurfaceLaunch(dock.Name, s, newPaneID, cwd, m, true); err != nil {
-							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", bay.Name, s.Name, err))
+							outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", label, s.Name, err))
 						}
 					}
 				}
@@ -322,7 +323,7 @@ func (e *Engine) recoverDockBays(dock *manifest.Dock, m *manifest.Manifest) reco
 		}
 
 		if bayRecovered {
-			outcome.recovered = append(outcome.recovered, bay.Name)
+			outcome.recovered = append(outcome.recovered, label)
 		}
 	}
 	return outcome
@@ -330,9 +331,10 @@ func (e *Engine) recoverDockBays(dock *manifest.Dock, m *manifest.Manifest) reco
 
 // reconcileSurfaces checks existing panes against manifest surfaces and repairs missing ones.
 func (e *Engine) reconcileSurfaces(dockName, tmuxWindowID, cwd string, bay *manifest.Bay, surfaceIndices []int, m *manifest.Manifest, outcome *recoverOutcome) bool {
+	label := BayCompactLabel(bay)
 	tmuxPanes, err := e.Tmux.ListPanes(tmuxWindowID)
 	if err != nil {
-		outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: list panes for %s: %v", bay.Name, tmuxWindowID, err))
+		outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s: list panes for %s: %v", label, tmuxWindowID, err))
 		return false
 	}
 	changed := false
@@ -358,18 +360,18 @@ func (e *Engine) reconcileSurfaces(dockName, tmuxWindowID, cwd string, bay *mani
 		}
 		splitTargetID, err := recoverSplitTargetID(bay, s, tmuxWindowID)
 		if err != nil {
-			outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", bay.Name, s.Name, err))
+			outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", label, s.Name, err))
 			continue
 		}
 		newPaneID, err := e.Tmux.SplitWindow(splitTargetID, dir, cwd, false)
 		if err != nil {
-			outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: split window: %v", bay.Name, s.Name, err))
+			outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: split window: %v", label, s.Name, err))
 			continue
 		}
 		s.Tmux.PaneID = newPaneID
 		changed = true
 		if err := e.recoverSurfaceLaunch(dockName, s, newPaneID, cwd, m, true); err != nil {
-			outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", bay.Name, s.Name, err))
+			outcome.errs = append(outcome.errs, fmt.Sprintf("bay %s surface %s: %v", label, s.Name, err))
 		}
 	}
 	return changed

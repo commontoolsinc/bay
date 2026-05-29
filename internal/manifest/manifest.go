@@ -30,6 +30,29 @@ const (
 // HomeBayID is the reserved ID/Name for every dock's home pseudo-bay.
 const HomeBayID = "home"
 
+// BayLabel returns the canonical display label for a bay identified by
+// its stable ID and (optional) Name — "home" for the home pseudo-bay,
+// the bare ID when Name is empty or matches it, and "<id>.<name>"
+// otherwise. The same rule backs every human-facing surface (picker,
+// tmux tabs, status line, ls/tree/show, pwd) so unnamed bays render as
+// their ID rather than blank.
+//
+// Callers that have a full *Bay should prefer engine.BayCompactLabel,
+// which also takes the path-derived dir tag into account (relevant for
+// external bays whose ID was migrated to b<N>).
+func BayLabel(id, name string) string {
+	if id == HomeBayID || name == HomeBayID {
+		return HomeBayID
+	}
+	if id == "" {
+		return name
+	}
+	if name == "" || name == id {
+		return id
+	}
+	return id + "." + name
+}
+
 // SurfaceType constants — the semantic role of a surface.
 const (
 	SurfaceTypeAgent  SurfaceType = "agent"

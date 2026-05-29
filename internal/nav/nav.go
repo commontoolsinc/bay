@@ -28,16 +28,7 @@ type Entry struct {
 // DisplayLabel returns the compact target label shown in bay navigation.
 // Names are optional, so unnamed bays fall back to their stable ID.
 func (e Entry) DisplayLabel() string {
-	if e.BayID == manifest.HomeBayID || e.BayName == manifest.HomeBayID {
-		return manifest.HomeBayID
-	}
-	if e.BayID == "" {
-		return e.BayName
-	}
-	if e.BayName == "" || e.BayName == e.BayID {
-		return e.BayID
-	}
-	return e.BayID + "." + e.BayName
+	return manifest.BayLabel(e.BayID, e.BayName)
 }
 
 func validHomeBay(dock *manifest.Dock, bay *manifest.Bay) bool {

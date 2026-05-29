@@ -51,3 +51,32 @@ func TestFormatPWD_HomeShowsBayAndSurface(t *testing.T) {
 		}
 	}
 }
+
+// TestFormatPWD_UnnamedBayFallsBackToID confirms pwd never renders a
+// blank bay reference for an unnamed bay — it shows the canonical label
+// (the stable ID).
+func TestFormatPWD_UnnamedBayFallsBackToID(t *testing.T) {
+	out := stripANSI(formatPWD(&engine.Context{
+		Dock:  "api",
+		BayID: "b2",
+		Bay:   "",
+		Path:  "/wt/b2",
+	}))
+	if !strings.Contains(out, "bay b2") {
+		t.Fatalf("unnamed bay should render 'bay b2', got %q", out)
+	}
+}
+
+// TestFormatPWD_NamedBayUsesDottedLabel confirms named bays render the
+// canonical "<id>.<name>" label so pwd matches the picker.
+func TestFormatPWD_NamedBayUsesDottedLabel(t *testing.T) {
+	out := stripANSI(formatPWD(&engine.Context{
+		Dock:  "api",
+		BayID: "b1",
+		Bay:   "auth-fix",
+		Path:  "/wt/b1",
+	}))
+	if !strings.Contains(out, "bay b1.auth-fix") {
+		t.Fatalf("named bay should render 'bay b1.auth-fix', got %q", out)
+	}
+}
