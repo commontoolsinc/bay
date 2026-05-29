@@ -189,20 +189,28 @@ Each bay has three identity concepts:
   worktree bays (so `~/projects/myproject-worktrees/b1` is
   bay `b1`). Older bays may still have legacy `w<N>` IDs and paths;
   those persisted IDs remain valid.
-- A **Name** like `auth-fix` — a friendly display label. Sticky once
+- A **Name** like `auth-fix` — an optional friendly tag. Sticky once
   set. May be empty initially; sync fills it from the branch on first
   detection (`feature/refactor-memory` becomes `refactor-memory`).
-  You can rename with `bay rename`. Names are
-  not CLI keys — typing one returns `did you mean "b1"?` with the
-  canonical ID.
+  You can rename with `bay rename`. Names are not CLI keys — typing
+  one returns `did you mean "b1"?` with the canonical ID.
 - An optional **description** (see below) for richer context.
+
+Together the ID and Name produce the bay's **canonical label**:
+- `home` for the home pseudo-bay,
+- `<id>` when the Name is empty (e.g. `b2`),
+- `<id>.<name>` when both are set (e.g. `b1.auth-fix`).
+
+This single label is what every human surface shows — the bay picker
+(M-g), tmux tabs, the status line, `bay ls`/`tree`/`show`, and
+`bay pwd`. Unnamed bays render as their ID rather than blank. JSON
+output keeps `id` and `name` as separate fields so scripts can use
+them independently.
 
 An ID is stable for a bay's lifetime, but the slot is released
 when the bay closes — the next creation may reuse a freed
 trailing slot, while gaps in the middle of the sequence (`b1`, `b3`,
-`b7`) stay until you fill them. The picker, `bay ls`, and `bay tree`
-all show both the ID and the friendly Name; pick whichever makes
-sense for the task at hand.
+`b7`) stay until you fill them.
 
 Bays can also carry a **description** — commit-message-style
 text with two parts:
@@ -897,25 +905,28 @@ heartbeat is old but the version and binary match, status still reports
 `bay pwd` shows your current location:
 
 ```
-dock dev / bay auth-fix / surface agent
+dock dev / bay b1.auth-fix / surface agent
 ```
 
-`bay ls` lists bays in the current dock:
+`bay ls` lists bays in the current dock. The `bay` column carries
+the canonical label (`<id>.<name>` for named bays, bare `<id>` for
+unnamed ones), so unnamed bays never render blank:
 
 ```
 dk dev
-  bay auth-fix  br=feature/auth  n=3
-  bay perf-fix  br=fix/perf      n=1
+  bay b1.auth-fix  br=feature/auth  n=3
+  bay b2.perf-fix  br=fix/perf      n=1
+  bay b3                            n=1
 ```
 
 `bay tree` shows the full hierarchy:
 
 ```
 dk dev
-  bay auth-fix  br=feature/auth  n=3
-  bay b2                         n=1
+  bay b1.auth-fix  br=feature/auth  n=3
+  bay b2                            n=1
 dk staging
-  bay deploy    br=release/v2    merged  n=1
+  bay b1.deploy    br=release/v2    merged  n=1
 ```
 
 Use `bay tree -l` for tmux IDs. Use `bay ls -s` for compact bay-list
@@ -967,11 +978,17 @@ you'll see a stale status from another window until the next tick.
 Interpolating the window ID gives each window its own cache, and bay
 uses the explicit ID instead of asking tmux which window is "current".
 
-Other fields: `id`, `name`, `dir`, `branch`, `pr`, `status`, `dock`,
-`merged`.
+Other fields:
 
-The `merged` field shows a count of merged bays in the current
-dock (e.g. "2 merged"). Useful for a status bar reminder to clean up.
+- `id` — raw bay ID (`b1`).
+- `name` — canonical bay label, the same string the picker and
+  `bay ls` show (`home`, `b1`, or `b1.auth-fix`). Never blank for a
+  real bay. Equivalent to the label portion of `full`.
+- `dir` — path-derived worktree dir basename (`b1`).
+- `branch`, `pr`, `status` — worktree metadata (suppressed for home).
+- `dock` — current tmux session name.
+- `merged` — count of merged bays in the current dock (e.g.
+  "2 merged"). Useful for a status-bar reminder to clean up.
 
 ### Tab name truncation
 

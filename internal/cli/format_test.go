@@ -447,30 +447,30 @@ func TestFormatBayShow_IncludesDefaultAgentAndSurfaces(t *testing.T) {
 func TestBayMetaCols_ShobayIDOnlyWhenDifferent(t *testing.T) {
 	// Auto-named bay with no rename: ID matches Name, suppress id.
 	same := engine.BayInfo{ID: "b1", Name: "b1", SyncStatus: "ok"}
-	if got := bayMetaCols(same, false, true); got[3].text != "" {
-		t.Errorf("expected no id col when ID==Name; got %q", got[3].text)
+	if got := bayMetaCols(same, false, true); got[2].text != "" {
+		t.Errorf("expected no id col when ID==Name; got %q", got[2].text)
 	}
 
 	// Renamed worktree bay: dir basename == ID, so dir column carries the
 	// handle and id is redundant.
 	renamedWorktree := engine.BayInfo{ID: "b1", Name: "auth-fix", Path: "/wt/b1", SyncStatus: "ok"}
-	if got := bayMetaCols(renamedWorktree, false, false); got[3].text != "" {
-		t.Errorf("expected no id col when ID==dir basename; got %q", got[3].text)
+	if got := bayMetaCols(renamedWorktree, false, false); got[2].text != "" {
+		t.Errorf("expected no id col when ID==dir basename; got %q", got[2].text)
 	}
 
 	// Renamed external bay: dir basename diverges from ID, so id is the
 	// only column carrying the stable handle.
 	renamedExternal := engine.BayInfo{ID: "b3", Name: "frontend", Path: "/proj/myapp", SyncStatus: "ok"}
 	cols := bayMetaCols(renamedExternal, false, false)
-	if !strings.Contains(cols[3].text, "b3") {
-		t.Errorf("expected id col to contain b3 for external bay; got %q", cols[3].text)
+	if !strings.Contains(cols[2].text, "b3") {
+		t.Errorf("expected id col to contain b3 for external bay; got %q", cols[2].text)
 	}
 
 	// No Path, no Name: dir is empty so id is the only identifier.
 	empty := engine.BayInfo{ID: "b1", Name: "", SyncStatus: "ok"}
 	cols = bayMetaCols(empty, false, false)
-	if !strings.Contains(cols[3].text, "b1") {
-		t.Errorf("expected id col to contain b1 when Name and Path are empty; got %q", cols[3].text)
+	if !strings.Contains(cols[2].text, "b1") {
+		t.Errorf("expected id col to contain b1 when Name and Path are empty; got %q", cols[2].text)
 	}
 }
 
@@ -485,6 +485,60 @@ func TestFormatBayShow_IncludesIDWhenDifferent(t *testing.T) {
 	bayDiff := &engine.BayInfo{ID: "b1", Name: "auth-fix", Type: "worktree", SyncStatus: "ok"}
 	if !strings.Contains(stripANSI(FormatBayShow("api", bayDiff, false)), "id b1") {
 		t.Error("ID row should appear when ID differs from Name")
+	}
+}
+
+// TestFormatBayShow_UsesCanonicalLabel pins the unification: the bay
+// row carries BayInfo.Label() so unnamed bays show their ID and named
+// path-backed bays show the dotted "<id>.<name>" form. The separate id
+// row is then redundant for worktree bays whose ID matches the dir tag.
+func TestFormatBayShow_UsesCanonicalLabel(t *testing.T) {
+	unnamed := &engine.BayInfo{ID: "b2", Name: "", Type: "worktree", Path: "/wt/b2", SyncStatus: "ok"}
+	out := stripANSI(FormatBayShow("api", unnamed, false))
+	if !strings.Contains(out, "bay b2") {
+		t.Fatalf("unnamed bay should render label 'b2':\n%s", out)
+	}
+	if strings.Contains(out, "id b2") {
+		t.Errorf("id row is redundant when label already carries it:\n%s", out)
+	}
+
+	named := &engine.BayInfo{ID: "b1", Name: "auth-fix", Type: "worktree", Path: "/wt/b1", SyncStatus: "ok"}
+	out = stripANSI(FormatBayShow("api", named, false))
+	if !strings.Contains(out, "bay b1.auth-fix") {
+		t.Fatalf("named bay should render dotted label 'b1.auth-fix':\n%s", out)
+	}
+	if strings.Contains(out, "id b1") {
+		t.Errorf("id row is redundant when label already carries it:\n%s", out)
+	}
+}
+
+// TestFormatListView_UsesCanonicalBayLabel confirms the same unification
+// in the table view: unnamed bays fall back to ID instead of rendering
+// blank, and named bays show the dotted "<id>.<name>" form.
+func TestFormatListView_UsesCanonicalBayLabel(t *testing.T) {
+	docks := []engine.DockInfo{
+		{
+			Name: "api",
+			Bays: []engine.BayInfo{
+				{ID: "b1", Name: "auth-fix", Path: "/wt/b1", SyncStatus: "ok"},
+				{ID: "b2", Name: "", Path: "/wt/b2", SyncStatus: "ok"},
+			},
+		},
+	}
+	view := BuildListView(docks, ListViewOptions{
+		Focus: ListFocus{Kind: FocusDock, Dock: "api"},
+	})
+	out := stripANSI(FormatListView(view, false, false))
+
+	if !strings.Contains(out, "bay b1.auth-fix") {
+		t.Errorf("named path-backed bay should render dotted label:\n%s", out)
+	}
+	if !strings.Contains(out, "bay b2") {
+		t.Errorf("unnamed bay should fall back to ID:\n%s", out)
+	}
+	// The label already carries the dir tag, so no separate dir column.
+	if strings.Contains(out, "dir=b1") || strings.Contains(out, "dir=b2") {
+		t.Errorf("dir column is redundant once label carries it:\n%s", out)
 	}
 }
 

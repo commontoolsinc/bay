@@ -17,11 +17,23 @@ PR, dirty/merged flags). Each bay has three identity concepts:
   later be reused by a new bay, so don't treat IDs as globally permanent
   across close + recreate. The ID is what every command takes:
   `bay close b1`, `bay sf show b1:agent`, `bay show b1`.
-- A **Name** — a mutable display label. Sticks once set. May be empty
-  (display falls back to ID). Filled automatically when a branch is
-  detected for the first time, or explicitly via `bay rename`. Names
-  are not CLI keys — passing a Name where bay expects an ID errors
-  with `did you mean "b1"?`.
+- A **Name** — a mutable, optional display tag. Sticks once set. May
+  be empty. Filled automatically when a branch is detected for the
+  first time, or explicitly via `bay rename`. Names are not CLI keys —
+  passing a Name where bay expects an ID errors with `did you mean
+  "b1"?`.
+- A **Label** — the canonical display string the CLI uses for human
+  output. Derived from the ID and (optional) Name as:
+  - `home` for the home pseudo-bay
+  - `<id>` when no Name is set (e.g. `b2`)
+  - `<id>.<name>` when both are set (e.g. `b1.auth-fix`)
+
+  The same Label appears in the bay picker (M-g), tmux tabs, the
+  status line (`name` and `full` fields), `bay ls`/`tree`/`show`, and
+  `bay pwd`. It is never blank for a real bay, so unnamed bays render
+  as `b2` rather than empty. JSON output keeps `id` and `name` as
+  separate fields (Name may be empty); consumers that want the label
+  can derive it from those, or use the `dir` basename of `path`.
 - An optional **description** — commit-message-style text for context
   recall. The first line is a short label (cap 80) shown in the picker,
   `bay ls`/`bay tree`, and the `M-/` flash. Optional trailing lines
@@ -162,7 +174,10 @@ Returns the current bay context:
 Fields:
 - `dock` — dock name (tmux session).
 - `bay_id` — bay ID (`b<N>`, the stable handle).
-- `bay` — bay Name (display label, may be empty).
+- `bay` — bay Name (optional display tag, may be empty). The human
+  `bay pwd` output renders the canonical label (`<id>.<name>`, or
+  `<id>` alone when Name is empty); the JSON keeps `bay_id` and `bay`
+  as separate fields.
 - `surface` — current surface name (resolved from tmux pane).
 - `surface_id` — current surface ID.
 - `path` — absolute working directory path.
@@ -241,8 +256,11 @@ Use `bay tree --json` for the global hierarchy:
 
 Field semantics:
 - `id` — bay ID (`b<N>`, the stable handle for this bay's lifetime).
-- `name` — bay Name (display label; may be empty for unnamed
-  bays, in which case display falls back to ID).
+- `name` — bay Name (optional, may be empty). To get the canonical
+  display label the CLI shows (`<id>.<name>`, or `<id>` alone when
+  Name is empty, or `home`), compose it from `id` + `name`, or use
+  the human `bay ls`/`tree` output where the unified label appears
+  in the `bay` column.
 - `focus` — the scope bay inferred from CWD and tmux.
   `focus.bay_id` is the same ID surfaced by the per-bay
   `id` field; consumers can match on either.

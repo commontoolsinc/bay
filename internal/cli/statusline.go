@@ -122,7 +122,10 @@ func statusLineOutput(field, dockName string, bay *manifest.Bay, m *manifest.Man
 	case "id":
 		return bay.ID, nil
 	case "name":
-		return bay.Name, nil
+		// Canonical bay label (e.g. "home", "b1", "b1.auth-fix") — matches
+		// the picker, tmux tabs, and `bay ls`. Never blank for a bay that
+		// has either an ID or a Name.
+		return engine.BayCompactLabel(bay), nil
 	case "dir":
 		return engine.BayDirTag(bay), nil
 	case "branch":

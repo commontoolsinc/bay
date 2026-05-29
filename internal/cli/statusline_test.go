@@ -184,3 +184,37 @@ func TestStatusLineOutput_HomeSkipsWorktreeMetadataAndGitChecks(t *testing.T) {
 		t.Fatalf("home status line checked git dirty state: %+v", calls)
 	}
 }
+
+// TestStatusLineOutput_NameRendersCanonicalLabel pins that the `name`
+// field follows the unified labeling: dotted "<id>.<name>" for named
+// bays, bare ID for unnamed ones, "home" for the home bay. Matches the
+// picker and `bay ls` so users see the same string everywhere.
+func TestStatusLineOutput_NameRendersCanonicalLabel(t *testing.T) {
+	m := &manifest.Manifest{Docks: []manifest.Dock{{
+		Name: "labs",
+		Bays: []manifest.Bay{
+			{ID: "b1", Name: "auth-fix", Path: "/wt/b1"},
+			{ID: "b2", Name: "", Path: "/wt/b2"},
+			{ID: manifest.HomeBayID, Name: manifest.HomeBayID, Type: manifest.BayTypeHome, Path: "/repo/labs"},
+		},
+	}}}
+	g := git.NewMock()
+	tests := []struct {
+		bayIdx int
+		want   string
+	}{
+		{0, "b1.auth-fix"},
+		{1, "b2"},
+		{2, "home"},
+	}
+	for _, tt := range tests {
+		bay := &m.Docks[0].Bays[tt.bayIdx]
+		got, err := statusLineOutput("name", "labs", bay, m, g, "")
+		if err != nil {
+			t.Fatalf("statusLineOutput: %v", err)
+		}
+		if got != tt.want {
+			t.Errorf("name(bay %d) = %q, want %q", tt.bayIdx, got, tt.want)
+		}
+	}
+}

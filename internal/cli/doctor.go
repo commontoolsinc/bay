@@ -117,7 +117,7 @@ func runDoctor(eng *engine.Engine, w io.Writer) {
 				}
 				bayPath := config.ExpandPath(bay.Path)
 				if _, err := os.Stat(bayPath); err != nil {
-					fmt.Fprintf(w, "[WARN] bay %s:%s path missing: %s\n", dock.Name, bay.Name, bayPath)
+					fmt.Fprintf(w, "[WARN] bay %s:%s path missing: %s\n", dock.Name, engine.BayCompactLabel(bay), bayPath)
 					missingCount++
 					ok = false
 				}
@@ -280,19 +280,20 @@ func checkManifestConsistency(m *manifest.Manifest, cfg *config.Config) []string
 				seenNames[bay.Name] = true
 			}
 
+			bayLabel := engine.BayCompactLabel(bay)
 			seenSurfaceIDs := map[int]bool{}
 			seenSurfaceNames := map[string]bool{}
 			for _, s := range bay.Surfaces {
 				if seenSurfaceIDs[s.ID] {
-					warnings = append(warnings, fmt.Sprintf("bay %s:%s has duplicate surface id %d", dock.Name, bay.Name, s.ID))
+					warnings = append(warnings, fmt.Sprintf("bay %s:%s has duplicate surface id %d", dock.Name, bayLabel, s.ID))
 				}
 				seenSurfaceIDs[s.ID] = true
 				if seenSurfaceNames[s.Name] {
-					warnings = append(warnings, fmt.Sprintf("bay %s:%s has duplicate surface name %q", dock.Name, bay.Name, s.Name))
+					warnings = append(warnings, fmt.Sprintf("bay %s:%s has duplicate surface name %q", dock.Name, bayLabel, s.Name))
 				}
 				seenSurfaceNames[s.Name] = true
 				for _, e := range s.Validate() {
-					warnings = append(warnings, fmt.Sprintf("bay %s:%s: %s", dock.Name, bay.Name, e))
+					warnings = append(warnings, fmt.Sprintf("bay %s:%s: %s", dock.Name, bayLabel, e))
 				}
 			}
 		}

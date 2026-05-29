@@ -96,7 +96,7 @@ func newBayNewCmd() *cobra.Command {
 				return err
 			}
 			if !quiet {
-				fmt.Printf("Created %s:%s\n", opts.Dock, bay.Name)
+				fmt.Printf("Created %s:%s\n", opts.Dock, engine.BayCompactLabel(bay))
 				printPrepareStartedSummary(eng, opts.Dock, bay.ID)
 				currentSession, tmuxErr := eng.Tmux.CurrentSession()
 				if tmuxErr != nil || os.Getenv("TMUX") == "" {
@@ -531,9 +531,6 @@ func renderPopupBody(bay *manifest.Bay) {
 func buildPopupContent(bay *manifest.Bay, width, height int) string {
 	var header strings.Builder
 	label := engine.BayCompactLabel(bay)
-	if label == "" {
-		label = bay.Name
-	}
 	fmt.Fprintln(&header, "\x1b[1m"+label+"\x1b[0m")
 	if bay.Path != "" {
 		fmt.Fprintln(&header, dim(bay.Path))
