@@ -366,6 +366,26 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 			},
 		},
 		{
+			ID:      "tidy-bay",
+			Title:   "Tidy bay (detach + drop merged branch)",
+			Section: palette.SectionCurrentBay,
+			Needs:   palette.ScopeInBay,
+			Action: func() (string, error) {
+				res, err := env.Engine.BayTidy(env.Ctx.Dock, env.Ctx.BayID)
+				if err != nil {
+					return "", err
+				}
+				msg := fmt.Sprintf("Detached at origin/%s", res.DefaultBranch)
+				if res.AlreadyDetached {
+					msg = fmt.Sprintf("Already detached at origin/%s", res.DefaultBranch)
+				} else if res.DeletedBranch != "" {
+					msg += fmt.Sprintf(", deleted branch %s", res.DeletedBranch)
+				}
+				palette.Notice(env.In, env.Out, msg)
+				return "", nil
+			},
+		},
+		{
 			ID:      "close-bay",
 			Title:   "Close bay",
 			Section: palette.SectionCurrentBay,

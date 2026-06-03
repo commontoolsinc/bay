@@ -491,6 +491,30 @@ via `SurfaceAdd`, which clears `PendingCloseAt` as part of its normal
 cancel path. Past the grace window, the bay is gone and a `bay sf
 restore` call drops the stale entry silently.
 
+#### `bay tidy [id] [--dock <name>]`
+
+Return a bay's worktree to a clean detached HEAD at `origin/<default>` and
+delete its local branch, keeping the bay alive for reuse. This is the
+post-merge reset: run it once the bay's PR has landed instead of checking
+out the default branch. Because it detaches at the remote ref rather than
+the local default branch — which the dock root already holds checked out —
+it never hits git's "branch is already checked out" error. The bay returns
+to the same detached base `bay new` creates a worktree in.
+
+Refuses if the worktree is dirty or carries commits that are neither pushed
+nor merged, so no work is lost. A worktree that is already detached is a
+no-op. Defaults to the current bay; pass an ID (optionally `--dock`-qualified)
+to tidy another.
+
+```
+bay tidy            # tidy the current bay after its PR merged
+bay tidy b1
+bay tidy b1 --dock labs
+```
+
+Use `bay tidy` when you want to keep the bay; use `bay close` when you're
+done with it entirely.
+
 #### `bay show [id] [--json|--short|--flash|--popup] [--plain]`
 
 Show bay details: path, branch, PR, dirty/merged, surfaces. Defaults
@@ -965,9 +989,23 @@ External bays let bay manage tmux recovery for directories it
 does not own. Closing removes surfaces but leaves the directory
 untouched.
 
-### Close a bay after a PR merges
+### After a PR merges
 
-Merged is set to true automatically when bay detects a merge. Then:
+Merged is set to true automatically when bay detects a merge. Then either
+keep the bay or close it.
+
+**Do not** run `git checkout main` / `gh pr merge --delete-branch` in a bay
+worktree — the dock root already holds the default branch checked out, so
+those fail. To get a clean base, detach instead.
+
+Keep the bay for the next task — reset it to a clean detached base and drop
+the merged branch:
+
+```
+bay tidy b1
+```
+
+Close the bay entirely:
 
 ```
 bay close b1

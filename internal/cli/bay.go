@@ -324,6 +324,61 @@ whole worktree exactly matches a recoverable git ref.
 	return cmd
 }
 
+func newBayTidyCmd() *cobra.Command {
+	var dockFlag string
+
+	cmd := &cobra.Command{
+		Use:   "tidy [id]",
+		Short: "Detach a merged bay back to a clean base",
+		Long: `Return a bay's worktree to a clean detached HEAD at origin/<default>
+and delete its local branch. Run it after the bay's PR has merged to reset
+the worktree for reuse — it detaches at the remote ref rather than checking
+out the default branch (which the dock root already holds), so it never hits
+the "branch is already checked out" error.
+
+  bay tidy                 tidy the current bay
+  bay tidy b1              tidy a specific bay
+  bay tidy b1 --dock labs  dock-qualified
+
+Refuses if the worktree is dirty or has commits that are neither pushed nor
+merged, so no work is lost.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine()
+			if err != nil {
+				return err
+			}
+
+			var dockName, bayID string
+			if len(args) == 0 {
+				dockName, bayID, err = eng.ResolveSelf()
+			} else {
+				dockName, bayID, err = resolveBayArg(eng, args[0], dockFlag)
+			}
+			if err != nil {
+				return err
+			}
+
+			res, err := eng.BayTidy(dockName, bayID)
+			if err != nil {
+				return err
+			}
+			if res.AlreadyDetached {
+				fmt.Printf("%s:%s already detached at origin/%s\n", dockName, bayID, res.DefaultBranch)
+				return nil
+			}
+			msg := fmt.Sprintf("Tidied %s:%s — detached at origin/%s", dockName, bayID, res.DefaultBranch)
+			if res.DeletedBranch != "" {
+				msg += fmt.Sprintf(", deleted branch %s", res.DeletedBranch)
+			}
+			fmt.Println(msg)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (disambiguates a bare bay ID)")
+	return cmd
+}
+
 func newBayShowCmd() *cobra.Command {
 	var jsonOutput, short, plain, flash, popup, popupBody bool
 	var dockFlag string
