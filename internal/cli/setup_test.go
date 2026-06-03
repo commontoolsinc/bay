@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -616,6 +617,29 @@ bind-key -n M-p display-popup -w 80% -h 80% -E 'bay palette --split window || tr
 		}
 	})
 
+	t.Run("previous gemini agent bindings drift to antigravity", func(t *testing.T) {
+		agentKbs := []bayKeybinding{
+			agentInBay("g", "antigravity", "pane"),
+			newBayWithAgent("g", "antigravity"),
+			homeAgent("g", "antigravity"),
+		}
+		block := `# Bay keybindings
+bind-key -T bay-agent g run-shell 'bay agent gemini --pane || true'
+bind-key -T bay-agent-bay g run-shell 'bay new -q --agent=gemini || true'
+bind-key -T bay-home g run-shell 'bay agent gemini --bay home || true'
+`
+		got := mismatchedBindings(block, agentKbs)
+		wantIDs := []string{"bay-agent:g", "bay-agent-bay:g", "bay-home:g"}
+		if len(got) != len(wantIDs) {
+			t.Fatalf("mismatchedBindings() = %+v; want %v", got, wantIDs)
+		}
+		for i, want := range wantIDs {
+			if got[i].canonical.id() != want {
+				t.Errorf("mismatchedBindings()[%d] = %s; want %s", i, got[i].canonical.id(), want)
+			}
+		}
+	})
+
 	t.Run("previousCmds entry catches isTmuxCommand drift", func(t *testing.T) {
 		// Regression: when a tmux-command binding's display-message hint
 		// changes (e.g. M-o gaining `| h=home` in home-bay phase 6), the
@@ -689,14 +713,14 @@ func TestHomeChordKeybindings(t *testing.T) {
 	joined := strings.Join(lines, "\n")
 
 	for _, want := range []string{
-		`bind-key -n M-o display-message -d 2000 "agent: c Claude, x Codex, g Gemini | Shift=window | b=bay | h=home" \; switch-client -T bay-agent`,
-		`bind-key -T bay-agent h display-message -d 2000 "home: Enter home, s shell, e editor, c Claude, x Codex, g Gemini" \; switch-client -T bay-home`,
+		`bind-key -n M-o display-message -d 2000 "agent: c Claude, x Codex, g Antigravity | Shift=window | b=bay | h=home" \; switch-client -T bay-agent`,
+		`bind-key -T bay-agent h display-message -d 2000 "home: Enter home, s shell, e editor, c Claude, x Codex, g Antigravity" \; switch-client -T bay-home`,
 		`bind-key -T bay-home Enter run-shell 'bay home || true'`,
 		`bind-key -T bay-home s run-shell 'bay shell --bay home || true'`,
 		`bind-key -T bay-home e run-shell 'bay edit --bay home || true'`,
 		`bind-key -T bay-home c run-shell 'bay agent claude --bay home || true'`,
 		`bind-key -T bay-home x run-shell 'bay agent codex --bay home || true'`,
-		`bind-key -T bay-home g run-shell 'bay agent gemini --bay home || true'`,
+		`bind-key -T bay-home g run-shell 'bay agent antigravity --bay home || true'`,
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("home chord binding missing %q\nall bindings:\n%s", want, joined)
@@ -745,10 +769,10 @@ func TestParseBindLine_KeyTable(t *testing.T) {
 			cmd:   "bay agent claude --pane || true",
 		},
 		{
-			line:  `bind-key -T bay-agent-bay g run-shell 'bay new -q --agent=gemini || true'`,
+			line:  `bind-key -T bay-agent-bay g run-shell 'bay new -q --agent=antigravity || true'`,
 			table: "bay-agent-bay",
 			key:   "g",
-			cmd:   "bay new -q --agent=gemini || true",
+			cmd:   "bay new -q --agent=antigravity || true",
 		},
 		{
 			line:  `bind-key -T bay-home Enter run-shell 'bay home || true'`,
@@ -757,16 +781,16 @@ func TestParseBindLine_KeyTable(t *testing.T) {
 			cmd:   "bay home || true",
 		},
 		{
-			line:  `bind-key -T bay-agent b display-message -d 2000 "bay: c Claude, x Codex, g Gemini" \; switch-client -T bay-agent-bay`,
+			line:  `bind-key -T bay-agent b display-message -d 2000 "bay: c Claude, x Codex, g Antigravity" \; switch-client -T bay-agent-bay`,
 			table: "bay-agent",
 			key:   "b",
-			cmd:   "bay: c Claude, x Codex, g Gemini", // quoted region only — matches existing tmux-cmd extraction behavior
+			cmd:   "bay: c Claude, x Codex, g Antigravity", // quoted region only — matches existing tmux-cmd extraction behavior
 		},
 		{
-			line:  `bind-key -T bay-agent h display-message -d 2000 "home: Enter home, s shell, e editor, c Claude, x Codex, g Gemini" \; switch-client -T bay-home`,
+			line:  `bind-key -T bay-agent h display-message -d 2000 "home: Enter home, s shell, e editor, c Claude, x Codex, g Antigravity" \; switch-client -T bay-home`,
 			table: "bay-agent",
 			key:   "h",
-			cmd:   "home: Enter home, s shell, e editor, c Claude, x Codex, g Gemini", // quoted region only — matches existing tmux-cmd extraction behavior
+			cmd:   "home: Enter home, s shell, e editor, c Claude, x Codex, g Antigravity", // quoted region only — matches existing tmux-cmd extraction behavior
 		},
 	}
 	for _, tc := range cases {
@@ -780,6 +804,65 @@ func TestParseBindLine_KeyTable(t *testing.T) {
 					gotTable, gotKey, gotCmd, tc.table, tc.key, tc.cmd)
 			}
 		})
+	}
+}
+
+func TestWriteAntigravityHook(t *testing.T) {
+	// Seed an unrelated named hook to prove the merge preserves it.
+	path := filepath.Join(t.TempDir(), "config", "hooks.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	seed := `{"user-linter": {"PreInvocation": [{"type": "command", "command": "lint.sh"}]}}`
+	if err := os.WriteFile(path, []byte(seed), 0o644); err != nil {
+		t.Fatalf("seed write: %v", err)
+	}
+
+	if err := writeAntigravityHook(path, agentReadyCommand); err != nil {
+		t.Fatalf("writeAntigravityHook: %v", err)
+	}
+	if !antigravityHookConfigured(path) {
+		t.Fatal("antigravity hook should be configured")
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	// Real Antigravity hooks.json schema: a top-level map of named
+	// hooks, each keyed by event. No "hooks" wrapper object.
+	var hooks map[string]any
+	if err := json.Unmarshal(data, &hooks); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if _, ok := hooks["user-linter"]; !ok {
+		t.Errorf("merge dropped the existing user-linter hook: %#v", hooks)
+	}
+	bayHook, ok := hooks[antigravityBayHookName].(map[string]any)
+	if !ok {
+		t.Fatalf("%s hook = %#v, want object", antigravityBayHookName, hooks[antigravityBayHookName])
+	}
+	stop, ok := bayHook["Stop"].([]any)
+	if !ok || len(stop) != 1 {
+		t.Fatalf("Stop = %#v, want one handler", bayHook["Stop"])
+	}
+	handler, ok := stop[0].(map[string]any)
+	if !ok {
+		t.Fatalf("Stop handler = %#v, want object", stop[0])
+	}
+	if handler["type"] != "command" || handler["command"] != agentReadyCommand {
+		t.Errorf("handler = %#v, want bay command handler", handler)
+	}
+
+	// Re-running must stay idempotent (no duplicate handlers).
+	if err := writeAntigravityHook(path, agentReadyCommand); err != nil {
+		t.Fatalf("writeAntigravityHook (rerun): %v", err)
+	}
+	data, _ = os.ReadFile(path)
+	_ = json.Unmarshal(data, &hooks)
+	rerun := hooks[antigravityBayHookName].(map[string]any)["Stop"].([]any)
+	if len(rerun) != 1 {
+		t.Errorf("Stop after rerun = %d handlers, want 1", len(rerun))
 	}
 }
 

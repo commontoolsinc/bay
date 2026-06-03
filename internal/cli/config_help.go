@@ -16,7 +16,7 @@ DEFAULTS
 
   Set via CLI: 'bay config editor cursor' or 'bay setup'.
 
-  Built-in agents: claude, codex, gemini. Built-in editors: cursor,
+  Built-in agents: claude, codex, antigravity. Built-in editors: cursor,
   code, zed, nvim, vim. These don't need config entries — bay knows
   their commands, resume args, and GUI detection.
 

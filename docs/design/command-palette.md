@@ -2,7 +2,7 @@
 
 Captured 2026-04-20. No code has been written. The design emerged from a
 discussion about extending bay's tmux keybindings. The user wanted a
-lightweight way to launch a non-default agent (codex, gemini) without
+lightweight way to launch a non-default agent (codex, antigravity) without
 dropping to a shell. That conversation made it clear the keybinding space
 is already dense — every new feature argues for "just one more key" and
 the argument never ends. A VS Code-style command palette solves the
@@ -190,7 +190,7 @@ Six entries chain to further input. Two flavors.
 #### Sub-picker (entries 6, 12)
 
 Selecting "New agent..." replaces the item list with agent types
-drawn from `KnownAgents` (claude, codex, gemini) plus any entries
+drawn from `KnownAgents` (claude, codex, antigravity) plus any entries
 from `config.Agents`. Prompt changes to reflect depth:
 
 ```
@@ -200,7 +200,7 @@ agent type >
   ──
   claude
   codex
-  gemini
+  antigravity
   my-claude-sonnet
 ```
 

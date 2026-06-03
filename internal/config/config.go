@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -29,7 +30,7 @@ type EditorConfig struct {
 
 // AgentConfig allows overriding built-in agent defaults.
 // Most users won't need this — the built-in registry covers claude,
-// codex, and gemini. Use this for custom agents or to override
+// codex, and antigravity. Use this for custom agents or to override
 // resume_args / project_file for a known agent.
 type AgentConfig struct {
 	Command     string   `toml:"command"`
@@ -50,37 +51,101 @@ type AgentInfo struct {
 // have a built-in GUI detection list. These are used when no config
 // override exists for the agent.
 var KnownAgents = map[string]AgentInfo{
-	"claude": {Command: "claude", ResumeArgs: "--continue", ProjectFile: "CLAUDE.local.md"},
-	"codex":  {Command: "codex", ResumeArgs: "resume --last"},
-	"gemini": {Command: "gemini", ResumeArgs: "--resume latest"},
+	"claude":      {Command: "claude", ResumeArgs: "--continue", ProjectFile: "CLAUDE.local.md"},
+	"codex":       {Command: "codex", ResumeArgs: "resume --last"},
+	"antigravity": {Command: "agy", ResumeArgs: "--continue"},
+}
+
+// AgentAliases preserves compatibility with manifests/configs created
+// before a built-in agent was renamed or replaced.
+var AgentAliases = map[string]string{
+	"gemini": "antigravity",
+}
+
+var agentAliasLegacyCommands = map[string]string{
+	"gemini": "gemini",
+}
+
+var knownAgentProbeOrder = []string{"claude", "codex", "antigravity"}
+
+// CanonicalAgentName returns the preferred built-in name for name.
+func CanonicalAgentName(name string) string {
+	if canonical, ok := AgentAliases[name]; ok {
+		return canonical
+	}
+	return name
+}
+
+// KnownAgentNames returns sorted canonical built-in agent names.
+func KnownAgentNames() []string {
+	names := make([]string, 0, len(KnownAgents))
+	for name := range KnownAgents {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // ResolveAgent returns the effective AgentInfo for a named agent,
 // checking config overrides first, then built-in defaults.
 func (c *Config) ResolveAgent(name string) (AgentInfo, bool) {
+	canonical := CanonicalAgentName(name)
 	if ac, ok := c.Agents[name]; ok {
-		info := AgentInfo(ac)
-		// Fill in gaps from built-in if the config only partially overrides.
-		if builtin, ok := KnownAgents[name]; ok {
-			if info.Command == "" {
-				info.Command = builtin.Command
-			}
-			if len(info.Args) == 0 {
-				info.Args = builtin.Args
-			}
-			if info.ResumeArgs == "" {
-				info.ResumeArgs = builtin.ResumeArgs
-			}
-			if info.ProjectFile == "" {
-				info.ProjectFile = builtin.ProjectFile
-			}
+		if canonical != name && aliasConfigUsesLegacyDefault(name, ac) {
+			info := c.agentInfoFromConfig(canonical, AgentConfig{
+				Args:        ac.Args,
+				ProjectFile: ac.ProjectFile,
+			})
+			return info, info.Command != ""
 		}
+		info := c.agentInfoFromConfig(name, ac)
 		return info, info.Command != ""
 	}
-	if builtin, ok := KnownAgents[name]; ok {
+	if canonical != name {
+		if info, ok := c.resolveConfiguredAgent(canonical); ok {
+			return info, info.Command != ""
+		}
+	}
+	if builtin, ok := KnownAgents[canonical]; ok {
 		return builtin, builtin.Command != ""
 	}
 	return AgentInfo{}, false
+}
+
+func (c *Config) resolveConfiguredAgent(name string) (AgentInfo, bool) {
+	if ac, ok := c.Agents[name]; ok {
+		info := c.agentInfoFromConfig(name, ac)
+		return info, info.Command != ""
+	}
+	return AgentInfo{}, false
+}
+
+func (c *Config) agentInfoFromConfig(name string, ac AgentConfig) AgentInfo {
+	info := AgentInfo(ac)
+	// Fill in gaps from built-in if the config only partially overrides.
+	if builtin, ok := KnownAgents[CanonicalAgentName(name)]; ok {
+		if info.Command == "" {
+			info.Command = builtin.Command
+		}
+		if len(info.Args) == 0 {
+			info.Args = builtin.Args
+		}
+		if info.ResumeArgs == "" {
+			info.ResumeArgs = builtin.ResumeArgs
+		}
+		if info.ProjectFile == "" {
+			info.ProjectFile = builtin.ProjectFile
+		}
+	}
+	return info
+}
+
+func aliasConfigUsesLegacyDefault(alias string, ac AgentConfig) bool {
+	legacyCommand, ok := agentAliasLegacyCommands[alias]
+	if !ok {
+		return ac.Command == ""
+	}
+	return ac.Command == "" || (ac.Command == legacyCommand && ac.ResumeArgs == "")
 }
 
 // DockConfig holds optional per-dock overrides.
@@ -238,14 +303,31 @@ func (c *Config) ResolvedDockAgent(dockName, manifestDefault string) string {
 
 // ProbeAgent checks PATH for known agents and returns the first found.
 func ProbeAgent() string {
-	for name, info := range KnownAgents {
-		if info.Command != "" {
-			if _, err := exec.LookPath(info.Command); err == nil {
-				return name
-			}
+	seen := map[string]bool{}
+	for _, name := range knownAgentProbeOrder {
+		seen[name] = true
+		if probeKnownAgent(name) {
+			return name
+		}
+	}
+	for _, name := range KnownAgentNames() {
+		if seen[name] {
+			continue
+		}
+		if probeKnownAgent(name) {
+			return name
 		}
 	}
 	return ""
+}
+
+func probeKnownAgent(name string) bool {
+	info, ok := KnownAgents[name]
+	if !ok || info.Command == "" {
+		return false
+	}
+	_, err := exec.LookPath(info.Command)
+	return err == nil
 }
 
 // ResolvedAgentArgs returns the effective args for an agent in a dock.
@@ -253,15 +335,40 @@ func ProbeAgent() string {
 // → global agent args → nothing.
 func (c *Config) ResolvedAgentArgs(dockName, agentName string, manifestDefault map[string][]string) []string {
 	if dc, ok := c.Docks[dockName]; ok {
-		if args, ok := dc.AgentArgs[agentName]; ok && len(args) > 0 {
+		if args := agentArgsFor(dc.AgentArgs, agentName); len(args) > 0 {
 			return args
 		}
 	}
-	if args, ok := manifestDefault[agentName]; ok && len(args) > 0 {
+	if args := agentArgsFor(manifestDefault, agentName); len(args) > 0 {
 		return args
 	}
 	info, _ := c.ResolveAgent(agentName)
 	return info.Args
+}
+
+func agentArgsFor(argsByAgent map[string][]string, agentName string) []string {
+	for _, name := range agentLookupNames(agentName) {
+		if args, ok := argsByAgent[name]; ok && len(args) > 0 {
+			return args
+		}
+	}
+	return nil
+}
+
+func agentLookupNames(agentName string) []string {
+	names := []string{agentName}
+	canonical := CanonicalAgentName(agentName)
+	if canonical != agentName {
+		names = append(names, canonical)
+	}
+	var aliases []string
+	for alias, target := range AgentAliases {
+		if target == canonical && alias != agentName {
+			aliases = append(aliases, alias)
+		}
+	}
+	sort.Strings(aliases)
+	return append(names, aliases...)
 }
 
 // ResolvedDockTerminal returns the effective terminal for a dock.

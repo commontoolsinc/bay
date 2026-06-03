@@ -363,7 +363,7 @@ default_editor = "cursor"
 ```
 
 Set via `bay setup` or `bay config editor <name>`. Built-in agents
-(claude, codex, gemini) and editors (cursor, code, zed, nvim, vim)
+(claude, codex, antigravity) and editors (cursor, code, zed, nvim, vim)
 don't need config — bay knows their commands, resume args, and GUI
 detection. Run `bay help config` for the full schema.
 
@@ -473,7 +473,7 @@ prefix_rule(pattern=["bay", "describe"], decision="allow")
 ### Session resumption
 
 Built-in agents have resume args (`--continue` for Claude Code,
-`resume --last` for Codex, `--resume latest` for Gemini). Bay appends
+`resume --last` for Codex, `--continue` for Antigravity). Bay appends
 these automatically on `bay recover` and on undo-close (`Option+z` /
 `bay sf restore`). All three agents bind sessions to the project
 directory, so the resume picks up the right conversation when the
@@ -701,16 +701,16 @@ the letters.
 |-------|--------|
 | `Option+o c` / `Option+o C` | Claude in current bay (pane / window) |
 | `Option+o x` / `Option+o X` | Codex in current bay (pane / window) |
-| `Option+o g` / `Option+o G` | Gemini in current bay (pane / window) |
+| `Option+o g` / `Option+o G` | Antigravity in current bay (pane / window) |
 | `Option+o b c` | New bay in current dock with Claude |
 | `Option+o b x` | New bay in current dock with Codex |
-| `Option+o b g` | New bay in current dock with Gemini |
+| `Option+o b g` | New bay in current dock with Antigravity |
 | `Option+o h Enter` | Focus/create home shell (`bay home`) |
 | `Option+o h s` | Home shell (`bay shell --bay home`) |
 | `Option+o h e` | Home editor (`bay edit --bay home`) |
 | `Option+o h c` | Claude in home |
 | `Option+o h x` | Codex in home |
-| `Option+o h g` | Gemini in home |
+| `Option+o h g` | Antigravity in home |
 
 ### Pattern
 
@@ -826,7 +826,7 @@ want to know — not because it's blocked, but so you can review and move
 on. `bay setup` installs hooks for any agent it finds on your PATH:
 
 - Claude Code: `Stop` hook in `~/.claude/settings.json`.
-- Gemini CLI: `AfterAgent` hook in `~/.gemini/settings.json`.
+- Antigravity: `Stop` hook in `~/.gemini/config/hooks.json`.
 - Codex: `notify` entry in `~/.codex/config.toml`.
 
 The hooks set `@bay-waiting=1` on the agent's tmux window without
@@ -847,7 +847,7 @@ matching against regex patterns in
 Allow.*Deny
 # Codex
 \[Y/n\]
-# Gemini
+# Antigravity
 Approve\? \(y/n
 # Generic
 \(y/n\)
