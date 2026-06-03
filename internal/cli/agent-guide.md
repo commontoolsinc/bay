@@ -855,7 +855,7 @@ Waiting detection uses three mechanisms, all feeding into
 - **Turn-complete hooks** — `@bay-waiting=1` set by an agent when it
   finishes a turn. `bay setup` installs Claude's `Stop` hook in
   `~/.claude/settings.json`, Antigravity's `Stop` hook in
-  `~/.gemini/antigravity-cli/settings.json`, and Codex's `notify` entry in
+  `~/.gemini/config/hooks.json`, and Codex's `notify` entry in
   `~/.codex/config.toml`. The flag auto-clears on window focus via the
   `after-select-window` tmux hook (also installed by `bay setup`).
 - **Pattern-based** (fallback) — the monitor matches the last few

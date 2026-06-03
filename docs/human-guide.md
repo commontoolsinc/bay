@@ -826,7 +826,7 @@ want to know — not because it's blocked, but so you can review and move
 on. `bay setup` installs hooks for any agent it finds on your PATH:
 
 - Claude Code: `Stop` hook in `~/.claude/settings.json`.
-- Antigravity: `Stop` hook in `~/.gemini/antigravity-cli/settings.json`.
+- Antigravity: `Stop` hook in `~/.gemini/config/hooks.json`.
 - Codex: `notify` entry in `~/.codex/config.toml`.
 
 The hooks set `@bay-waiting=1` on the agent's tmux window without

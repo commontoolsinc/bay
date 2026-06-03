@@ -808,8 +808,17 @@ func TestParseBindLine_KeyTable(t *testing.T) {
 }
 
 func TestWriteAntigravityHook(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "settings.json")
-	if err := writeAntigravityHook(path, antigravityReadyCommand); err != nil {
+	// Seed an unrelated named hook to prove the merge preserves it.
+	path := filepath.Join(t.TempDir(), "config", "hooks.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	seed := `{"user-linter": {"PreInvocation": [{"type": "command", "command": "lint.sh"}]}}`
+	if err := os.WriteFile(path, []byte(seed), 0o644); err != nil {
+		t.Fatalf("seed write: %v", err)
+	}
+
+	if err := writeAntigravityHook(path, agentReadyCommand); err != nil {
 		t.Fatalf("writeAntigravityHook: %v", err)
 	}
 	if !antigravityHookConfigured(path) {
@@ -820,13 +829,14 @@ func TestWriteAntigravityHook(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
-	var settings map[string]any
-	if err := json.Unmarshal(data, &settings); err != nil {
+	// Real Antigravity hooks.json schema: a top-level map of named
+	// hooks, each keyed by event. No "hooks" wrapper object.
+	var hooks map[string]any
+	if err := json.Unmarshal(data, &hooks); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
-	hooks, ok := settings["hooks"].(map[string]any)
-	if !ok {
-		t.Fatalf("hooks = %#v, want object", settings["hooks"])
+	if _, ok := hooks["user-linter"]; !ok {
+		t.Errorf("merge dropped the existing user-linter hook: %#v", hooks)
 	}
 	bayHook, ok := hooks[antigravityBayHookName].(map[string]any)
 	if !ok {
@@ -840,8 +850,19 @@ func TestWriteAntigravityHook(t *testing.T) {
 	if !ok {
 		t.Fatalf("Stop handler = %#v, want object", stop[0])
 	}
-	if handler["type"] != "command" || handler["command"] != antigravityReadyCommand {
+	if handler["type"] != "command" || handler["command"] != agentReadyCommand {
 		t.Errorf("handler = %#v, want bay command handler", handler)
+	}
+
+	// Re-running must stay idempotent (no duplicate handlers).
+	if err := writeAntigravityHook(path, agentReadyCommand); err != nil {
+		t.Fatalf("writeAntigravityHook (rerun): %v", err)
+	}
+	data, _ = os.ReadFile(path)
+	_ = json.Unmarshal(data, &hooks)
+	rerun := hooks[antigravityBayHookName].(map[string]any)["Stop"].([]any)
+	if len(rerun) != 1 {
+		t.Errorf("Stop after rerun = %d handlers, want 1", len(rerun))
 	}
 }
 

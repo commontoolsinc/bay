@@ -1226,11 +1226,11 @@ func installClaudeHooks(reader *bufio.Reader) {
 // the flag on focus.
 const agentReadyCommand = `[ -n "$TMUX" ] && tmux set-window-option -t "$TMUX_PANE" @bay-waiting 1 2>/dev/null`
 
+// antigravityBayHookName is the key for bay's named hook in
+// Antigravity's hooks.json. A Stop hook's stdout JSON is optional —
+// emitting nothing lets the agent stop normally — so the plain
+// agentReadyCommand (no decision payload) is all that's needed.
 const antigravityBayHookName = "bay-ready"
-
-// Antigravity Stop hooks expect a JSON response on stdout. An empty
-// decision lets the agent stop normally after marking the pane ready.
-const antigravityReadyCommand = agentReadyCommand + `; printf '{"decision":""}\n'`
 
 // agentHookSpec describes how to install a turn-complete hook for one
 // supported agent. Keyed by canonical agent name (matches config.KnownAgents).
@@ -1254,9 +1254,9 @@ var agentHookSpecs = map[string]agentHookSpec{
 	},
 	"antigravity": {
 		label:      "Antigravity Stop hook",
-		relPath:    ".gemini/antigravity-cli/settings.json",
+		relPath:    ".gemini/config/hooks.json",
 		configured: antigravityHookConfigured,
-		write:      func(p string) error { return writeAntigravityHook(p, antigravityReadyCommand) },
+		write:      func(p string) error { return writeAntigravityHook(p, agentReadyCommand) },
 	},
 	"codex": {
 		label:      "Codex notify entry",
@@ -1389,17 +1389,17 @@ func writeClaudeStyleHook(settingsPath, eventName, command string) error {
 	return os.WriteFile(settingsPath, append(data, '\n'), 0o644)
 }
 
-func antigravityHookConfigured(settingsPath string) bool {
-	data, err := os.ReadFile(settingsPath)
+// antigravityHookConfigured reports whether Antigravity's hooks.json
+// already carries bay's named Stop hook. Antigravity loads hooks from
+// hooks.json files (not settings.json) as a top-level map of named
+// hooks, each keyed by event — there is no "hooks" wrapper object.
+func antigravityHookConfigured(hooksPath string) bool {
+	data, err := os.ReadFile(hooksPath)
 	if err != nil {
 		return false
 	}
-	var settings map[string]any
-	if err := json.Unmarshal(data, &settings); err != nil {
-		return false
-	}
-	hooks, ok := settings["hooks"].(map[string]any)
-	if !ok {
+	var hooks map[string]any
+	if err := json.Unmarshal(data, &hooks); err != nil {
 		return false
 	}
 	hook, ok := hooks[antigravityBayHookName].(map[string]any)
@@ -1410,20 +1410,21 @@ func antigravityHookConfigured(settingsPath string) bool {
 	return ok
 }
 
-func writeAntigravityHook(settingsPath, command string) error {
-	var settings map[string]any
-	if data, err := os.ReadFile(settingsPath); err == nil {
-		if err := json.Unmarshal(data, &settings); err != nil {
-			return fmt.Errorf("parse %s: %w", settingsPath, err)
+// writeAntigravityHook merges bay's named Stop hook into Antigravity's
+// hooks.json, preserving any other named hooks the user has. The file
+// maps a hook name to its per-event handler lists:
+// {"<name>": {"Stop": [{"type": "command", "command": "..."}]}}.
+func writeAntigravityHook(hooksPath, command string) error {
+	hooks := map[string]any{}
+	if data, err := os.ReadFile(hooksPath); err == nil && len(data) > 0 {
+		if err := json.Unmarshal(data, &hooks); err != nil {
+			return fmt.Errorf("parse %s: %w", hooksPath, err)
 		}
-	} else {
-		settings = make(map[string]any)
+		if hooks == nil {
+			hooks = map[string]any{}
+		}
 	}
 
-	hooks, ok := settings["hooks"].(map[string]any)
-	if !ok {
-		hooks = make(map[string]any)
-	}
 	hook, ok := hooks[antigravityBayHookName].(map[string]any)
 	if !ok {
 		hook = make(map[string]any)
@@ -1432,16 +1433,15 @@ func writeAntigravityHook(settingsPath, command string) error {
 		map[string]any{"type": "command", "command": command},
 	}
 	hooks[antigravityBayHookName] = hook
-	settings["hooks"] = hooks
 
-	data, err := json.MarshalIndent(settings, "", "  ")
+	data, err := json.MarshalIndent(hooks, "", "  ")
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(hooksPath), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(settingsPath, append(data, '\n'), 0o644)
+	return os.WriteFile(hooksPath, append(data, '\n'), 0o644)
 }
 
 func codexNotifyConfigured(configPath string) bool {
