@@ -13,18 +13,19 @@ type Call struct {
 
 // repoState holds the simulated state for a single repository path.
 type repoState struct {
-	dirty          bool
-	unpushed       bool
-	branch         string
-	defaultBranch  string
-	ignored        map[string]bool
-	worktrees      map[string]bool
-	prs            map[string]string // branch → PR number
-	recoverableRef string            // non-empty when dirty tree matches a durable ref
-	mergedPRs      map[string]bool   // PR number → local HEAD is contained in merged PR
-	merged         map[string]bool   // branch → merged
-	branchExists   map[string]bool   // branch → exists (local or remote)
-	repoRoot       string
+	dirty           bool
+	unpushed        bool
+	branch          string
+	defaultBranch   string
+	ignored         map[string]bool
+	worktrees       map[string]bool
+	prs             map[string]string // branch → PR number
+	recoverableRef  string            // non-empty when dirty tree matches a durable ref
+	mergedPRs       map[string]bool   // PR number → local HEAD is contained in merged PR
+	merged          map[string]bool   // branch → merged
+	branchExists    map[string]bool   // branch → exists (local or remote)
+	deleteBranchErr bool              // when true, DeleteBranch returns an error
+	repoRoot        string
 	// excludeMatches[excludeFile] → {tracked, untracked}. Set via
 	// SetExcludeMatches for tests exercising .worktreeinclude expansion.
 	excludeMatches map[string]excludeMatch
@@ -297,7 +298,15 @@ func (m *Mock) CreateBranch(path, branchName string) error {
 
 func (m *Mock) DeleteBranch(repoPath, branchName string) error {
 	m.record("DeleteBranch", repoPath, branchName)
+	if m.repo(repoPath).deleteBranchErr {
+		return fmt.Errorf("mock: delete branch %q failed", branchName)
+	}
 	return nil
+}
+
+// SetDeleteBranchErr configures DeleteBranch to fail for a repo.
+func (m *Mock) SetDeleteBranchErr(repoPath string, fail bool) {
+	m.repo(repoPath).deleteBranchErr = fail
 }
 
 func (m *Mock) PRForBranch(path, branch string) (string, error) {

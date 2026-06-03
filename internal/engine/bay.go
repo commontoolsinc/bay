@@ -688,7 +688,11 @@ func (e *Engine) BayTidy(dockName, bayID string) (TidyResult, error) {
 		return TidyResult{DefaultBranch: defaultBranch, AlreadyDetached: true}, nil
 	}
 
-	// Never discard uncommitted work.
+	// Never discard uncommitted work. This is intentionally stricter than
+	// BayClose, which tolerates a dirty tree that matches a recoverable ref
+	// (review changes) because it removes the whole worktree. Tidy keeps the
+	// worktree and detaches it, so any dirt would be carried onto the new
+	// base — block on any dirty state instead.
 	dirty, err := e.Git.IsDirty(bay.Path)
 	if err != nil {
 		return TidyResult{}, fmt.Errorf("checking bay state: %w", err)
@@ -719,27 +723,33 @@ func (e *Engine) BayTidy(dockName, bayID string) (TidyResult, error) {
 	// The branch is no longer checked out in this worktree, so git will
 	// delete it. The safety checks above proved the work is landed or
 	// pushed, so the local copy is recoverable from origin if needed.
-	_ = e.Git.DeleteBranch(repoPath, branch)
-
-	// Clear the now-stale branch metadata so display and the next sync pass
-	// converge immediately, mirroring the detached-branch path in SyncAll.
-	_ = e.withManifest(func(m *manifest.Manifest) error {
-		dock := m.FindDock(dockName)
-		if dock == nil {
+	deletedBranch := ""
+	if delErr := e.Git.DeleteBranch(repoPath, branch); delErr == nil {
+		deletedBranch = branch
+		// Clear the now-stale branch metadata so display and the next sync
+		// pass converge immediately, mirroring the detached-branch path in
+		// SyncAll. Only do this on a successful delete: if the delete failed,
+		// leaving the metadata branch in place lets that same SyncAll path
+		// retry the deletion (and then clear it) rather than orphaning a
+		// local branch whose name we'd otherwise have forgotten.
+		_ = e.withManifest(func(m *manifest.Manifest) error {
+			dock := m.FindDock(dockName)
+			if dock == nil {
+				return nil
+			}
+			bay := dock.FindBayByID(bayID)
+			if bay == nil || bay.Worktree == nil {
+				return nil
+			}
+			bay.Worktree.Branch = ""
+			bay.Worktree.PR = ""
+			bay.Worktree.PRCheckedAt = 0
+			bay.Worktree.Merged = false
 			return nil
-		}
-		bay := dock.FindBayByID(bayID)
-		if bay == nil || bay.Worktree == nil {
-			return nil
-		}
-		bay.Worktree.Branch = ""
-		bay.Worktree.PR = ""
-		bay.Worktree.PRCheckedAt = 0
-		bay.Worktree.Merged = false
-		return nil
-	})
+		})
+	}
 
-	return TidyResult{DefaultBranch: defaultBranch, DeletedBranch: branch}, nil
+	return TidyResult{DefaultBranch: defaultBranch, DeletedBranch: deletedBranch}, nil
 }
 
 func (e *Engine) BayClose(dockName, bayID string, force bool) error {

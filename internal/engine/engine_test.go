@@ -1302,6 +1302,43 @@ func TestBayTidy_RefusesUnlandedCommits(t *testing.T) {
 	}
 }
 
+func TestBayTidy_PreservesBranchMetadataWhenDeleteFails(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	bay, err := eng.BayNew(BayNewOptions{Dock: "labs", Branch: "fix/stuck"})
+	if err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+	os.MkdirAll(bay.Path, 0o755)
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetBranch(bay.Path, "fix/stuck")
+	// The detach succeeds but the local-branch delete fails.
+	m, _ := eng.LoadManifest()
+	repoPath := config.ExpandPath(m.FindDock("labs").Path)
+	mockGit.SetDeleteBranchErr(repoPath, true)
+
+	res, err := eng.BayTidy("labs", bay.ID)
+	if err != nil {
+		t.Fatalf("BayTidy: detach should still succeed when only the delete fails: %v", err)
+	}
+	// The worktree detached...
+	if len(mockGit.Calls("CheckoutDetach")) != 1 {
+		t.Fatalf("expected the detach to proceed, got %v", mockGit.Calls("CheckoutDetach"))
+	}
+	// ...but we must not claim a deletion that failed.
+	if res.DeletedBranch != "" {
+		t.Errorf("DeletedBranch = %q, want empty when the delete failed", res.DeletedBranch)
+	}
+	// Branch metadata stays so SyncAll's detached-branch path can retry the
+	// delete rather than orphaning a branch whose name we'd have forgotten.
+	m2, _ := eng.LoadManifest()
+	got := m2.FindDock("labs").FindBayByID(bay.ID)
+	if got.Worktree == nil || got.Worktree.Branch != "fix/stuck" {
+		t.Errorf("Worktree.Branch = %q, want fix/stuck preserved for sync retry", got.Worktree.Branch)
+	}
+}
+
 func TestBayTidy_AlreadyDetachedIsNoop(t *testing.T) {
 	eng, _ := testEngine(t)
 
