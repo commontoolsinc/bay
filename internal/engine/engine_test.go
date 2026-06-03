@@ -1205,6 +1205,129 @@ func TestBayCleanReview_RefusesDirtyTreeWithoutRecoverableRef(t *testing.T) {
 	}
 }
 
+func TestBayTidy_DetachesAndDeletesLandedBranch(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	bay, err := eng.BayNew(BayNewOptions{Dock: "labs", Branch: "fix/landed"})
+	if err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+	// The worktree path must exist for the safety checks to run.
+	os.MkdirAll(bay.Path, 0o755)
+
+	mockGit := eng.Git.(*git.Mock)
+	// Simulate the worktree sitting on the branch (pushed/landed: unpushed
+	// defaults to false, so HasUnlandedCommits passes).
+	mockGit.SetBranch(bay.Path, "fix/landed")
+
+	res, err := eng.BayTidy("labs", bay.ID)
+	if err != nil {
+		t.Fatalf("BayTidy: %v", err)
+	}
+	if res.AlreadyDetached {
+		t.Fatal("expected a real tidy, got AlreadyDetached")
+	}
+	if res.DefaultBranch != "main" {
+		t.Errorf("DefaultBranch = %q, want main", res.DefaultBranch)
+	}
+	if res.DeletedBranch != "fix/landed" {
+		t.Errorf("DeletedBranch = %q, want fix/landed", res.DeletedBranch)
+	}
+
+	// Detached at origin/<default>, not the local default branch.
+	detaches := mockGit.Calls("CheckoutDetach")
+	if len(detaches) != 1 {
+		t.Fatalf("expected 1 CheckoutDetach, got %v", detaches)
+	}
+	if detaches[0].Args[0] != bay.Path || detaches[0].Args[1] != "origin/main" {
+		t.Errorf("CheckoutDetach args = %v, want [%s origin/main]", detaches[0].Args, bay.Path)
+	}
+
+	// Local branch deleted.
+	deleted := mockGit.DeletedBranches()
+	if len(deleted) != 1 || deleted[0].Args[1] != "fix/landed" {
+		t.Fatalf("expected branch fix/landed deleted, got %v", deleted)
+	}
+
+	// Branch metadata cleared so display and the next sync converge.
+	m, _ := eng.LoadManifest()
+	got := m.FindDock("labs").FindBayByID(bay.ID)
+	if got.Worktree == nil || got.Worktree.Branch != "" {
+		t.Errorf("Worktree.Branch = %q, want empty after tidy", got.Worktree.Branch)
+	}
+}
+
+func TestBayTidy_RefusesDirtyWorktree(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	bay, err := eng.BayNew(BayNewOptions{Dock: "labs", Branch: "fix/dirty"})
+	if err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+	os.MkdirAll(bay.Path, 0o755)
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetBranch(bay.Path, "fix/dirty")
+	mockGit.SetDirty(bay.Path, true)
+
+	if _, err := eng.BayTidy("labs", bay.ID); err == nil {
+		t.Fatal("expected BayTidy to refuse a dirty worktree")
+	}
+	if calls := mockGit.Calls("CheckoutDetach"); len(calls) != 0 {
+		t.Errorf("should not detach a dirty worktree, got %v", calls)
+	}
+	if calls := mockGit.DeletedBranches(); len(calls) != 0 {
+		t.Errorf("should not delete a branch when refusing, got %v", calls)
+	}
+}
+
+func TestBayTidy_RefusesUnlandedCommits(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	bay, err := eng.BayNew(BayNewOptions{Dock: "labs", Branch: "fix/unlanded"})
+	if err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+	os.MkdirAll(bay.Path, 0o755)
+
+	mockGit := eng.Git.(*git.Mock)
+	mockGit.SetBranch(bay.Path, "fix/unlanded")
+	mockGit.SetUnpushed(bay.Path, true) // no PR set → not landed
+
+	if _, err := eng.BayTidy("labs", bay.ID); err == nil {
+		t.Fatal("expected BayTidy to refuse unlanded commits")
+	}
+	if calls := mockGit.Calls("CheckoutDetach"); len(calls) != 0 {
+		t.Errorf("should not detach with unlanded commits, got %v", calls)
+	}
+}
+
+func TestBayTidy_AlreadyDetachedIsNoop(t *testing.T) {
+	eng, _ := testEngine(t)
+
+	// Plain bay: created detached, live branch stays empty.
+	bay, err := eng.BayNew(BayNewOptions{Dock: "labs"})
+	if err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+	os.MkdirAll(bay.Path, 0o755)
+
+	mockGit := eng.Git.(*git.Mock)
+	res, err := eng.BayTidy("labs", bay.ID)
+	if err != nil {
+		t.Fatalf("BayTidy: %v", err)
+	}
+	if !res.AlreadyDetached {
+		t.Error("expected AlreadyDetached for a detached worktree")
+	}
+	if calls := mockGit.Calls("CheckoutDetach"); len(calls) != 0 {
+		t.Errorf("no-op tidy should not detach, got %v", calls)
+	}
+	if calls := mockGit.DeletedBranches(); len(calls) != 0 {
+		t.Errorf("no-op tidy should not delete a branch, got %v", calls)
+	}
+}
+
 func TestBayRename(t *testing.T) {
 	eng, _ := testEngine(t)
 

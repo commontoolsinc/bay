@@ -507,6 +507,7 @@ bay close <id> --force                   # skip safety checks (keeps unlanded br
 bay close --done                         # close bays not dirty or pending
 bay close --clean                        # close all non-dirty bays
 bay close --done --dry-run               # preview what --done would close
+bay tidy [id]                            # post-merge: detach to clean base + delete branch, keep the bay
 bay show [id]                            # detailed view (default: current)
 bay show [id] --json                     # machine-readable
 bay show [id] --short                    # one-line summary (id — name — branch — #PR)
@@ -872,6 +873,16 @@ detected:
 - Navigating to a merged bay shows a suggestion to close it.
 
 No fetches happen for idle checkouts or bays without recent activity.
+
+Once a PR has merged, you have two ways to move on. If you're done with
+the bay, `bay close` it. If you want to reuse it for the next task, run
+`bay tidy` — it returns the worktree to a clean detached HEAD at
+`origin/<default>` and deletes the merged branch, the same base a fresh
+bay starts from. Don't reach for `git checkout main` in a worktree: the
+dock root already holds the default branch, so the checkout fails. `bay
+tidy` sidesteps that by detaching at the remote ref, and it refuses to run
+if the worktree is dirty or has unpushed/unmerged commits, so nothing is
+lost.
 
 ### PR detection
 

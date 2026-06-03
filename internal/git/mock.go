@@ -208,6 +208,12 @@ func (m *Mock) CreateWorktree(repoPath, worktreePath, branch string) error {
 	return nil
 }
 
+func (m *Mock) CheckoutDetach(path, ref string) error {
+	m.record("CheckoutDetach", path, ref)
+	m.repo(path).branch = "" // detached HEAD
+	return nil
+}
+
 func (m *Mock) RemoveWorktree(repoPath, worktreePath string, force bool) error {
 	m.record("RemoveWorktree", repoPath, worktreePath, fmt.Sprintf("%t", force))
 	r := m.repo(repoPath)

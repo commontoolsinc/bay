@@ -66,6 +66,14 @@ func (r *Real) CreateWorktree(repoPath, worktreePath, branch string) error {
 	return nil
 }
 
+func (r *Real) CheckoutDetach(path, ref string) error {
+	cmd := exec.Command("git", "-C", path, "checkout", "--detach", ref)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git checkout --detach %s: %s: %w", ref, strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
 func (r *Real) RemoveWorktree(repoPath, worktreePath string, force bool) error {
 	args := []string{"-C", repoPath, "worktree", "remove", worktreePath}
 	if force {

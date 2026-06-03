@@ -103,13 +103,13 @@ func TestDetectScope(t *testing.T) {
 	}
 }
 
-func TestBuildPaletteEntries_HasExpected29Entries(t *testing.T) {
+func TestBuildPaletteEntries_HasExpected30Entries(t *testing.T) {
 	// Pin the entry count + unique-ID invariant. Anything that adds or
 	// removes a command should touch this test intentionally.
 	env := testPaletteEnv()
 	entries := buildPaletteEntries(env, palette.ModeWindow)
 
-	const want = 29
+	const want = 30
 	if len(entries) != want {
 		t.Errorf("buildPaletteEntries returned %d entries; want %d", len(entries), want)
 	}

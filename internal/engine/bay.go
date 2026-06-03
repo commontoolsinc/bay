@@ -628,6 +628,120 @@ func (e *Engine) BayCleanReview(dockName, bayID string) (string, error) {
 	return ref, nil
 }
 
+// TidyResult reports what BayTidy did.
+type TidyResult struct {
+	DefaultBranch   string // the repo default, e.g. "main"
+	DeletedBranch   string // branch the worktree was detached from and deleted; "" if none
+	AlreadyDetached bool   // worktree was already on a detached HEAD; nothing to do
+}
+
+// BayTidy returns a bay's worktree to a clean detached HEAD at
+// origin/<default> and deletes its now-idle local branch — the inverse of
+// the detached base BayNew seeds a worktree with. It is the post-merge
+// reset: because it detaches at the remote ref rather than checking out the
+// default branch, it never collides with the dock root that holds that
+// branch.
+//
+// It refuses to run when the worktree is dirty or carries commits that are
+// neither pushed nor merged, so no work is discarded. A worktree that is
+// already detached is a no-op.
+func (e *Engine) BayTidy(dockName, bayID string) (TidyResult, error) {
+	if manifest.IsReservedBayID(bayID) {
+		return TidyResult{}, fmt.Errorf("home is reserved; tidy applies only to worktree bays")
+	}
+	m, err := e.LoadManifest()
+	if err != nil {
+		return TidyResult{}, err
+	}
+	dock := m.FindDock(dockName)
+	if dock == nil {
+		return TidyResult{}, fmt.Errorf("unknown dock %q", dockName)
+	}
+	bay := dock.FindBayByID(bayID)
+	if bay == nil {
+		return TidyResult{}, fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
+	}
+	if bay.Type != manifest.BayTypeWorktree || bay.Path == "" {
+		return TidyResult{}, fmt.Errorf("bay %q is not a worktree", bayID)
+	}
+	if dock.Path == "" {
+		return TidyResult{}, fmt.Errorf("dock %q has no checkout path", dockName)
+	}
+	if _, statErr := os.Stat(bay.Path); statErr != nil {
+		return TidyResult{}, fmt.Errorf("bay %q path: %w", bayID, statErr)
+	}
+
+	repoPath := config.ExpandPath(dock.Path)
+	defaultBranch, err := e.Git.DefaultBranch(repoPath)
+	if err != nil {
+		return TidyResult{}, fmt.Errorf("finding default branch: %w", err)
+	}
+
+	// Read the live branch rather than trusting metadata — the worktree may
+	// have been moved out from under bay. An empty branch means HEAD is
+	// already detached, so there is nothing to tidy.
+	branch, err := e.Git.CurrentBranch(bay.Path)
+	if err != nil {
+		return TidyResult{}, fmt.Errorf("reading current branch: %w", err)
+	}
+	if branch == "" {
+		return TidyResult{DefaultBranch: defaultBranch, AlreadyDetached: true}, nil
+	}
+
+	// Never discard uncommitted work.
+	dirty, err := e.Git.IsDirty(bay.Path)
+	if err != nil {
+		return TidyResult{}, fmt.Errorf("checking bay state: %w", err)
+	}
+	if dirty {
+		return TidyResult{}, fmt.Errorf("bay %q has uncommitted changes; commit or stash before tidying", bayID)
+	}
+	// Never strand commits that exist only locally. HasUnlandedCommits
+	// treats pushed remote branches and merged PRs as safe, so a branch
+	// that landed (or is still open but pushed) passes.
+	unlanded, err := e.HasUnlandedCommits(bay)
+	if err != nil {
+		return TidyResult{}, fmt.Errorf("bay %q: could not verify push status: %w", bayID, err)
+	}
+	if unlanded {
+		return TidyResult{}, fmt.Errorf("bay %q has unlanded commits; push or merge the branch first", bayID)
+	}
+
+	// Refresh origin so we detach at the latest default-branch tip, the way
+	// BayNew seeds a fresh worktree. Best-effort: an offline fetch failure
+	// still leaves a usable, if slightly stale, base to detach onto.
+	_ = e.Git.Fetch(repoPath)
+
+	if err := e.Git.CheckoutDetach(bay.Path, "origin/"+defaultBranch); err != nil {
+		return TidyResult{}, fmt.Errorf("detaching worktree: %w", err)
+	}
+
+	// The branch is no longer checked out in this worktree, so git will
+	// delete it. The safety checks above proved the work is landed or
+	// pushed, so the local copy is recoverable from origin if needed.
+	_ = e.Git.DeleteBranch(repoPath, branch)
+
+	// Clear the now-stale branch metadata so display and the next sync pass
+	// converge immediately, mirroring the detached-branch path in SyncAll.
+	_ = e.withManifest(func(m *manifest.Manifest) error {
+		dock := m.FindDock(dockName)
+		if dock == nil {
+			return nil
+		}
+		bay := dock.FindBayByID(bayID)
+		if bay == nil || bay.Worktree == nil {
+			return nil
+		}
+		bay.Worktree.Branch = ""
+		bay.Worktree.PR = ""
+		bay.Worktree.PRCheckedAt = 0
+		bay.Worktree.Merged = false
+		return nil
+	})
+
+	return TidyResult{DefaultBranch: defaultBranch, DeletedBranch: branch}, nil
+}
+
 func (e *Engine) BayClose(dockName, bayID string, force bool) error {
 	result, err := e.closeBayState(dockName, bayID, force)
 	if err != nil {

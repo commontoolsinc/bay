@@ -15,6 +15,11 @@ type Interface interface {
 	// worktree checks it out directly.
 	CreateWorktree(repoPath, worktreePath, branch string) error
 	RemoveWorktree(repoPath string, worktreePath string, force bool) error
+	// CheckoutDetach moves the worktree at path to a detached HEAD at ref
+	// (e.g. "origin/main"). It targets the ref directly, never a local
+	// branch, so it can return a worktree to a clean base without
+	// colliding with the default branch the dock root already holds.
+	CheckoutDetach(path, ref string) error
 
 	// State checks
 	IsDirty(path string) (bool, error)
