@@ -127,6 +127,47 @@ func TestValidate_UnknownAgent(t *testing.T) {
 	}
 }
 
+func TestResolveAgent_AntigravityAndLegacyGemini(t *testing.T) {
+	cfg := DefaultConfig()
+
+	info, ok := cfg.ResolveAgent("antigravity")
+	if !ok {
+		t.Fatal("antigravity should resolve as a built-in agent")
+	}
+	if info.Command != "agy" || info.ResumeArgs != "--continue" {
+		t.Errorf("antigravity = %+v, want command agy with --continue", info)
+	}
+
+	legacy, ok := cfg.ResolveAgent("gemini")
+	if !ok {
+		t.Fatal("legacy gemini alias should resolve")
+	}
+	if legacy.Command != info.Command ||
+		legacy.ResumeArgs != info.ResumeArgs ||
+		legacy.ProjectFile != info.ProjectFile ||
+		len(legacy.Args) != len(info.Args) {
+		t.Errorf("gemini alias = %+v, want %+v", legacy, info)
+	}
+
+	cfg.Agents["gemini"] = AgentConfig{Command: "gemini"}
+	legacyPartial, ok := cfg.ResolveAgent("gemini")
+	if !ok {
+		t.Fatal("legacy partial gemini config should resolve")
+	}
+	if legacyPartial.Command != "agy" || legacyPartial.ResumeArgs != "--continue" {
+		t.Errorf("legacy partial gemini config = %+v, want agy --continue", legacyPartial)
+	}
+
+	cfg.Agents["gemini"] = AgentConfig{Command: "gemini", ResumeArgs: "--resume latest"}
+	explicitOldGemini, ok := cfg.ResolveAgent("gemini")
+	if !ok {
+		t.Fatal("explicit old gemini config should resolve")
+	}
+	if explicitOldGemini.Command != "gemini" || explicitOldGemini.ResumeArgs != "--resume latest" {
+		t.Errorf("explicit old gemini config = %+v, want gemini --resume latest", explicitOldGemini)
+	}
+}
+
 func TestLoadAndSave(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
@@ -409,5 +450,32 @@ func TestResolvedAgentArgs(t *testing.T) {
 	// No args at any level
 	if got := cfg.ResolvedAgentArgs("other", "codex", nil); len(got) != 0 {
 		t.Errorf("expected no args, got %v", got)
+	}
+}
+
+func TestResolvedAgentArgs_LegacyAlias(t *testing.T) {
+	cfg := &Config{
+		Docks: map[string]DockConfig{
+			"labs": {AgentArgs: map[string][]string{
+				"gemini": {"--legacy-flag"},
+			}},
+		},
+	}
+
+	if got := cfg.ResolvedAgentArgs("labs", "antigravity", nil); len(got) != 1 || got[0] != "--legacy-flag" {
+		t.Errorf("expected legacy gemini args for antigravity, got %v", got)
+	}
+}
+
+func TestAgentLookupNames_LegacyAliasOrder(t *testing.T) {
+	got := agentLookupNames("antigravity")
+	want := []string{"antigravity", "gemini"}
+	if len(got) != len(want) {
+		t.Fatalf("agentLookupNames = %v, want %v", got, want)
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("agentLookupNames[%d] = %q, want %q", i, got[i], w)
+		}
 	}
 }

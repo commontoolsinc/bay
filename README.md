@@ -24,7 +24,7 @@ bay recover                     # reconstruct everything after reboot
 - **Surface model** — each bay contains one or more **surfaces** (agent panes, shell panes, command panes, GUI editors). Bay tracks them all and recovers them after reboot.
 - **Home checkout surfaces** — `bay home` and `--bay home` open shells, agents, editors, or command panes in the dock's canonical checkout without giving it worktree cleanup behavior.
 - **Editor integration** — `bay edit` opens your bay in cursor, VS Code, zed, nvim, or vim. `bay edit --dock` for multi-root.
-- **Agent support** — optionally launch AI agents (Claude Code, Codex, Gemini). Agent surfaces resume on restart and on undo-close via configured `resume_args`. Closing an agent surface prompts for confirmation.
+- **Agent support** — optionally launch AI agents (Claude Code, Codex, Antigravity). Agent surfaces resume on restart and on undo-close via configured `resume_args`. Closing an agent surface prompts for confirmation.
 - **Scoped navigation** — `bay surface go` picks surfaces within the current bay; `bay go` picks bays within the current dock. Cycling flashes a brief position indicator.
 - **Command palette** — `Option+p` opens a VS Code-style palette in a tmux popup: fuzzy-search every bay command, see its hotkey if it has one, and launch without leaving the keyboard.
 - **Hierarchical browsing** — `bay ls` lists bays in the current dock; `bay tree` shows the full hierarchy including surfaces.

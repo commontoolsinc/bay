@@ -202,7 +202,7 @@ bay agent
 ```
 
 This launches your default agent (bay auto-detects Claude Code, Codex,
-or Gemini on your PATH) as a split pane. Use `bay agent --window` if
+or Antigravity on your PATH) as a split pane. Use `bay agent --window` if
 you want a separate tmux window. You can also create a
 bay with an agent as the first surface: `bay new --agent`.
 

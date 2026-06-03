@@ -191,7 +191,7 @@ command."
 | `M-o h e` | home editor |
 | `M-o h c` | Claude in home |
 | `M-o h x` | Codex in home |
-| `M-o h g` | Gemini in home |
+| `M-o h g` | Antigravity in home |
 
 ## Lifecycle rules
 

@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -66,7 +65,7 @@ shift\+tab to approve
 # Codex
 \[Y/n\]
 
-# Gemini
+# Antigravity
 Approve\? \(y/n
 Allow command.*\[y/N\]
 
@@ -274,12 +273,12 @@ var bayKeybindings = []bayKeybinding{
 	// Shift=window matches the rest of bay's creation keys.
 	{
 		key: "M-o",
-		cmd: `display-message -d 2000 "agent: c Claude, x Codex, g Gemini | Shift=window | b=bay | h=home" \; switch-client -T ` + tableAgent,
+		cmd: `display-message -d 2000 "agent: c Claude, x Codex, g Antigravity | Shift=window | b=bay | h=home" \; switch-client -T ` + tableAgent,
 		// previousCmds for display-message bindings hold the old
 		// quoted hint text, not the full bind line: parseBindLine
 		// extracts only the quoted region for tmux-command bindings,
 		// and that's what mismatched-binding detection compares.
-		previousCmds:  []string{"agent: c Claude, x Codex, g Gemini | Shift=window | b=bay"},
+		previousCmds:  []string{"agent: c Claude, x Codex, g Gemini | Shift=window | b=bay", "agent: c Claude, x Codex, g Gemini | Shift=window | b=bay | h=home"},
 		desc:          "Option+o: agent chord launcher",
 		isTmuxCommand: true,
 	},
@@ -288,22 +287,22 @@ var bayKeybindings = []bayKeybinding{
 	agentInBay("C", "claude", "window"),
 	agentInBay("x", "codex", "pane"),
 	agentInBay("X", "codex", "window"),
-	agentInBay("g", "gemini", "pane"),
-	agentInBay("G", "gemini", "window"),
+	agentInBay("g", "antigravity", "pane"),
+	agentInBay("G", "antigravity", "window"),
 
-	{table: tableAgent, key: "b", cmd: `display-message -d 2000 "bay: c Claude, x Codex, g Gemini" \; switch-client -T ` + tableAgentBay, desc: "M-o b: new-bay-with-agent submenu", isTmuxCommand: true},
-	{table: tableAgent, key: "h", cmd: `display-message -d 2000 "home: Enter home, s shell, e editor, c Claude, x Codex, g Gemini" \; switch-client -T ` + tableHome, desc: "M-o h: home submenu", isTmuxCommand: true},
+	{table: tableAgent, key: "b", cmd: `display-message -d 2000 "bay: c Claude, x Codex, g Antigravity" \; switch-client -T ` + tableAgentBay, previousCmds: []string{"bay: c Claude, x Codex, g Gemini"}, desc: "M-o b: new-bay-with-agent submenu", isTmuxCommand: true},
+	{table: tableAgent, key: "h", cmd: `display-message -d 2000 "home: Enter home, s shell, e editor, c Claude, x Codex, g Antigravity" \; switch-client -T ` + tableHome, previousCmds: []string{"home: Enter home, s shell, e editor, c Claude, x Codex, g Gemini"}, desc: "M-o h: home submenu", isTmuxCommand: true},
 
 	newBayWithAgent("c", "claude"),
 	newBayWithAgent("x", "codex"),
-	newBayWithAgent("g", "gemini"),
+	newBayWithAgent("g", "antigravity"),
 
 	homeBinding("Enter", "bay home", "focus/create home shell"),
 	homeBinding("s", "bay shell --bay home", "shell in home"),
 	homeBinding("e", "bay edit --bay home", "editor in home"),
 	homeAgent("c", "claude"),
 	homeAgent("x", "codex"),
-	homeAgent("g", "gemini"),
+	homeAgent("g", "antigravity"),
 }
 
 // Tmux key-table names for the M-o chord. Used both for the `table:`
@@ -317,23 +316,31 @@ const (
 )
 
 func agentInBay(key, agent, mode string) bayKeybinding {
-	return bayKeybinding{
+	kb := bayKeybinding{
 		table:    tableAgent,
 		key:      key,
 		cmd:      fmt.Sprintf("bay agent %s --%s", agent, mode),
 		desc:     fmt.Sprintf("M-o %s: %s in current bay (%s)", key, titleAgent(agent), mode),
 		tmuxVerb: "run-shell",
 	}
+	if agent == "antigravity" {
+		kb.previousCmds = []string{fmt.Sprintf("bay agent gemini --%s", mode)}
+	}
+	return kb
 }
 
 func newBayWithAgent(key, agent string) bayKeybinding {
-	return bayKeybinding{
+	kb := bayKeybinding{
 		table:    tableAgentBay,
 		key:      key,
 		cmd:      "bay new -q --agent=" + agent,
 		desc:     fmt.Sprintf("M-o b %s: new bay with %s", key, titleAgent(agent)),
 		tmuxVerb: "run-shell",
 	}
+	if agent == "antigravity" {
+		kb.previousCmds = []string{"bay new -q --agent=gemini"}
+	}
+	return kb
 }
 
 func homeBinding(key, cmd, action string) bayKeybinding {
@@ -347,11 +354,15 @@ func homeBinding(key, cmd, action string) bayKeybinding {
 }
 
 func homeAgent(key, agent string) bayKeybinding {
-	return homeBinding(
+	kb := homeBinding(
 		key,
 		fmt.Sprintf("bay agent %s --bay home", agent),
 		fmt.Sprintf("%s in home", titleAgent(agent)),
 	)
+	if agent == "antigravity" {
+		kb.previousCmds = []string{"bay agent gemini --bay home"}
+	}
+	return kb
 }
 
 func titleAgent(agent string) string {
@@ -1107,10 +1118,10 @@ func configureAgent(reader *bufio.Reader, configPath string) {
 	}
 
 	if current != "" {
-		fmt.Printf("Set default agent for 'bay agent' (common options: claude, codex, gemini)\n")
+		fmt.Printf("Set default agent for 'bay agent' (common options: claude, codex, antigravity)\n")
 		fmt.Printf("Agent [%s]: ", current)
 	} else {
-		fmt.Println("Set default agent for 'bay agent' (common options: claude, codex, gemini)")
+		fmt.Println("Set default agent for 'bay agent' (common options: claude, codex, antigravity)")
 		fmt.Print("Agent: ")
 	}
 
@@ -1215,8 +1226,14 @@ func installClaudeHooks(reader *bufio.Reader) {
 // the flag on focus.
 const agentReadyCommand = `[ -n "$TMUX" ] && tmux set-window-option -t "$TMUX_PANE" @bay-waiting 1 2>/dev/null`
 
+const antigravityBayHookName = "bay-ready"
+
+// Antigravity Stop hooks expect a JSON response on stdout. An empty
+// decision lets the agent stop normally after marking the pane ready.
+const antigravityReadyCommand = agentReadyCommand + `; printf '{"decision":""}\n'`
+
 // agentHookSpec describes how to install a turn-complete hook for one
-// supported agent. Keyed by agent name (matches config.KnownAgents).
+// supported agent. Keyed by canonical agent name (matches config.KnownAgents).
 type agentHookSpec struct {
 	label      string
 	relPath    string
@@ -1235,11 +1252,11 @@ var agentHookSpecs = map[string]agentHookSpec{
 		configured: func(p string) bool { return claudeStyleHookConfigured(p, "Stop") },
 		write:      func(p string) error { return writeClaudeStyleHook(p, "Stop", agentReadyCommand) },
 	},
-	"gemini": {
-		label:      "Gemini AfterAgent hook",
-		relPath:    ".gemini/settings.json",
-		configured: func(p string) bool { return claudeStyleHookConfigured(p, "AfterAgent") },
-		write:      func(p string) error { return writeClaudeStyleHook(p, "AfterAgent", agentReadyCommand) },
+	"antigravity": {
+		label:      "Antigravity Stop hook",
+		relPath:    ".gemini/antigravity-cli/settings.json",
+		configured: antigravityHookConfigured,
+		write:      func(p string) error { return writeAntigravityHook(p, antigravityReadyCommand) },
 	},
 	"codex": {
 		label:      "Codex notify entry",
@@ -1268,12 +1285,7 @@ func installReadySignaling(reader *bufio.Reader) {
 
 	// Iterate KnownAgents in sorted order so the prompt's bullet list is
 	// stable across runs (Go map iteration is non-deterministic).
-	names := make([]string, 0, len(config.KnownAgents))
-	for name := range config.KnownAgents {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
+	for _, name := range config.KnownAgentNames() {
 		spec, ok := agentHookSpecs[name]
 		if !ok {
 			continue
@@ -1323,8 +1335,7 @@ func installReadySignaling(reader *bufio.Reader) {
 }
 
 // claudeStyleHookConfigured reports whether settings.json has any entry
-// under hooks[eventName]. Used by both Claude Code and Gemini CLI, which
-// share the same hook schema.
+// under hooks[eventName].
 func claudeStyleHookConfigured(settingsPath, eventName string) bool {
 	data, err := os.ReadFile(settingsPath)
 	if err != nil {
@@ -1343,8 +1354,7 @@ func claudeStyleHookConfigured(settingsPath, eventName string) bool {
 }
 
 // writeClaudeStyleHook merges a single hook event into settings.json,
-// preserving any existing top-level fields and other hook events. Used
-// by both Claude Code and Gemini CLI.
+// preserving any existing top-level fields and other hook events.
 func writeClaudeStyleHook(settingsPath, eventName, command string) error {
 	var settings map[string]any
 	if data, err := os.ReadFile(settingsPath); err == nil {
@@ -1367,6 +1377,61 @@ func writeClaudeStyleHook(settingsPath, eventName, command string) error {
 		hooks = make(map[string]any)
 	}
 	hooks[eventName] = hookEntry
+	settings["hooks"] = hooks
+
+	data, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(settingsPath, append(data, '\n'), 0o644)
+}
+
+func antigravityHookConfigured(settingsPath string) bool {
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		return false
+	}
+	var settings map[string]any
+	if err := json.Unmarshal(data, &settings); err != nil {
+		return false
+	}
+	hooks, ok := settings["hooks"].(map[string]any)
+	if !ok {
+		return false
+	}
+	hook, ok := hooks[antigravityBayHookName].(map[string]any)
+	if !ok {
+		return false
+	}
+	_, ok = hook["Stop"]
+	return ok
+}
+
+func writeAntigravityHook(settingsPath, command string) error {
+	var settings map[string]any
+	if data, err := os.ReadFile(settingsPath); err == nil {
+		if err := json.Unmarshal(data, &settings); err != nil {
+			return fmt.Errorf("parse %s: %w", settingsPath, err)
+		}
+	} else {
+		settings = make(map[string]any)
+	}
+
+	hooks, ok := settings["hooks"].(map[string]any)
+	if !ok {
+		hooks = make(map[string]any)
+	}
+	hook, ok := hooks[antigravityBayHookName].(map[string]any)
+	if !ok {
+		hook = make(map[string]any)
+	}
+	hook["Stop"] = []any{
+		map[string]any{"type": "command", "command": command},
+	}
+	hooks[antigravityBayHookName] = hook
 	settings["hooks"] = hooks
 
 	data, err := json.MarshalIndent(settings, "", "  ")

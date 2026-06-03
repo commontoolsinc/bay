@@ -180,7 +180,7 @@ bay dk tree
 > up after themselves.
 >
 > `bay setup` from your terminal, then `bay new` from any repo.
-> Zero config. Works with Claude, Codex, Gemini, or custom agents.
+> Zero config. Works with Claude, Codex, Antigravity, or custom agents.
 
 ---
 

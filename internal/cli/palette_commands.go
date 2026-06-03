@@ -597,13 +597,11 @@ func agentAvailable(cfg *config.Config, agent string) bool {
 	if agent == "" {
 		return false
 	}
-	if _, ok := config.KnownAgents[agent]; ok {
-		return true
-	}
 	if cfg == nil {
-		return false
+		_, ok := config.KnownAgents[config.CanonicalAgentName(agent)]
+		return ok
 	}
-	_, ok := cfg.Agents[agent]
+	_, ok := cfg.ResolveAgent(agent)
 	return ok
 }
 

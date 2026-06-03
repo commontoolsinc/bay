@@ -642,7 +642,8 @@ func TestSurfaceRestore_AgentResumesPriorSession(t *testing.T) {
 	}{
 		{"claude", "claude --continue"},
 		{"codex", "codex resume --last"},
-		{"gemini", "gemini --resume latest"},
+		{"antigravity", "agy --continue"},
+		{"gemini", "agy --continue"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.agent, func(t *testing.T) {

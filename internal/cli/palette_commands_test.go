@@ -11,13 +11,13 @@ import (
 )
 
 func TestBuildAgentPickerItems_FullListAlwaysContainsAllAgents(t *testing.T) {
-	mru := []string{"gemini"}
-	available := []string{"claude", "codex", "gemini"}
+	mru := []string{"antigravity"}
+	available := []string{"antigravity", "claude", "codex"}
 
 	_, labels := buildAgentPickerItems(mru, available)
 
-	// Expected layout: mru first (gemini), separator, then full sorted list.
-	want := []string{"gemini", "──────", "claude", "codex", "gemini"}
+	// Expected layout: mru first (antigravity), separator, then full sorted list.
+	want := []string{"antigravity", "──────", "antigravity", "claude", "codex"}
 	if len(labels) != len(want) {
 		t.Fatalf("labels=%v; want %v", labels, want)
 	}
@@ -57,7 +57,7 @@ func TestBuildAgentPickerItems_LabelsIndexedByItemValue(t *testing.T) {
 	// Real items have Value == their index in labels (except the separator).
 	// This test pins that invariant — paletteAgentPick relies on
 	// labels[sel] to resolve the chosen agent name.
-	items, labels := buildAgentPickerItems([]string{"codex"}, []string{"claude", "codex", "gemini"})
+	items, labels := buildAgentPickerItems([]string{"codex"}, []string{"antigravity", "claude", "codex"})
 	for _, it := range items {
 		if it.Value < 0 {
 			continue // separator
@@ -69,6 +69,16 @@ func TestBuildAgentPickerItems_LabelsIndexedByItemValue(t *testing.T) {
 		if labels[it.Value] != it.Display {
 			t.Errorf("labels[%d]=%q does not match item.Display=%q", it.Value, labels[it.Value], it.Display)
 		}
+	}
+}
+
+func TestAgentAvailable_AcceptsLegacyGeminiAlias(t *testing.T) {
+	cfg := config.DefaultConfig()
+	if !agentAvailable(cfg, "gemini") {
+		t.Fatal("legacy gemini alias should be available")
+	}
+	if !agentAvailable(nil, "gemini") {
+		t.Fatal("legacy gemini alias should be available without config")
 	}
 }
 

@@ -637,7 +637,7 @@ bay agent <type> --bay home
 
 The human `Option+o h` submenu maps to `Enter` for `bay home`, `s` for
 `bay shell --bay home`, `e` for `bay edit --bay home`, and `c`/`x`/`g`
-for Claude/Codex/Gemini agents in home.
+for Claude/Codex/Antigravity agents in home.
 
 #### `bay next` / `bay prev`
 
@@ -854,8 +854,8 @@ Waiting detection uses three mechanisms, all feeding into
   Claude Code's `PermissionRequest` hook (installed by `bay setup`).
 - **Turn-complete hooks** — `@bay-waiting=1` set by an agent when it
   finishes a turn. `bay setup` installs Claude's `Stop` hook in
-  `~/.claude/settings.json`, Gemini's `AfterAgent` hook in
-  `~/.gemini/settings.json`, and Codex's `notify` entry in
+  `~/.claude/settings.json`, Antigravity's `Stop` hook in
+  `~/.gemini/antigravity-cli/settings.json`, and Codex's `notify` entry in
   `~/.codex/config.toml`. The flag auto-clears on window focus via the
   `after-select-window` tmux hook (also installed by `bay setup`).
 - **Pattern-based** (fallback) — the monitor matches the last few

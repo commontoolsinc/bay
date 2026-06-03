@@ -22,8 +22,8 @@ the workflow the indicator is meant to support.
 
 Three signals can mark a bay as waiting:
 
-1. **Turn-complete hooks** (Claude `Stop`, Codex `notify`, Gemini
-   notification settings) run a shell snippet at end-of-turn that sets
+1. **Turn-complete hooks** (Claude `Stop`, Codex `notify`, Antigravity
+   `Stop`) run a shell snippet at end-of-turn that sets
    `@bay-waiting=1` on the current tmux window. Installed by
    `bay setup`. Code: `internal/cli/setup.go:1128`.
 2. **Regex patterns** in `~/.config/bay/waiting-patterns.txt`. The
