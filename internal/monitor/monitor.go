@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -43,6 +44,19 @@ const (
 	// MergeCheckCycles is how many check cycles between merge detection runs.
 	// With a default 3-second interval, 100 cycles = ~5 minutes.
 	MergeCheckCycles = 100
+
+	// DescribeCheckCycles is how many check cycles between auto-description
+	// dispatch rounds (~5 minutes at the default interval). See
+	// docs/design/auto-descriptions.md.
+	DescribeCheckCycles = 100
+
+	// describeMinInterval floors how often a single bay is re-described,
+	// bounding the cheap transcript reads each dispatched worker does.
+	describeMinInterval = 10 * 60
+
+	// describeMaxPerCycle caps describe workers dispatched per round, so a
+	// monitor restart with many eligible bays doesn't spawn a herd.
+	describeMaxPerCycle = 4
 
 	// activityWindow is how long a bay must have been active to
 	// trigger fetch + merge checks (2 hours in seconds).
@@ -305,7 +319,74 @@ func (m *Monitor) CheckOnce() error {
 		_ = manifest.Save(m.manifestPath, mf)
 	}
 
+	// Auto-description dispatch (detached workers; reads mf, never
+	// mutates it here — the workers update the manifest themselves).
+	// Reload config first so enabling the backstop (e.g. via `bay setup`)
+	// takes effect within one gate interval, without a monitor restart.
+	if m.engine != nil && m.cycle%DescribeCheckCycles == 0 {
+		_ = m.engine.ReloadConfig()
+		m.dispatchDescribeWorkers(mf, time.Now().Unix())
+	}
+
 	return nil
+}
+
+// dispatchDescribeWorkers fires detached describe workers for eligible
+// bays on the slow cadence. The selection is coarse and reads no
+// transcripts; each worker decides precisely whether to (re)summarize.
+func (m *Monitor) dispatchDescribeWorkers(mf *manifest.Manifest, now int64) {
+	if m.engine == nil || m.engine.Config == nil || !m.engine.Config.Describe.EffectiveEnabled() {
+		return
+	}
+	for _, c := range selectDescribeCandidates(mf, now, describeMaxPerCycle) {
+		_ = m.engine.DispatchDescribeWorker(c.dock, c.bay)
+	}
+}
+
+type describeCandidate struct {
+	dock string
+	bay  string
+}
+
+// selectDescribeCandidates returns bays due for an auto-description
+// refresh: empty-or-auto descriptions, recently active, and past the
+// min re-describe interval. Oldest-summarized first, capped at max.
+func selectDescribeCandidates(mf *manifest.Manifest, now int64, max int) []describeCandidate {
+	type scored struct {
+		describeCandidate
+		summarizedAt int64
+	}
+	var cands []scored
+	for i := range mf.Docks {
+		dock := &mf.Docks[i]
+		for j := range dock.Bays {
+			bay := &dock.Bays[j]
+			if bay.ID == manifest.HomeBayID || bay.Type == manifest.BayTypeHome || bay.Path == "" {
+				continue
+			}
+			if bay.Description != "" && bay.DescriptionSource != manifest.DescriptionSourceAuto {
+				continue // user-set or legacy — never auto-overwrite
+			}
+			if bay.LastActive == 0 || now-bay.LastActive > activityWindow {
+				continue // not recently active
+			}
+			if bay.DescriptionSummarizedAt != 0 && now-bay.DescriptionSummarizedAt < describeMinInterval {
+				continue // described recently enough
+			}
+			cands = append(cands, scored{describeCandidate{dock.Name, bay.ID}, bay.DescriptionSummarizedAt})
+		}
+	}
+	sort.Slice(cands, func(i, j int) bool {
+		return cands[i].summarizedAt < cands[j].summarizedAt
+	})
+	if max > 0 && len(cands) > max {
+		cands = cands[:max]
+	}
+	out := make([]describeCandidate, len(cands))
+	for i, c := range cands {
+		out[i] = c.describeCandidate
+	}
+	return out
 }
 
 func (m *Monitor) prunePrepareLogsIfDue(now time.Time) error {

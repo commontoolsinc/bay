@@ -1257,6 +1257,103 @@ func TestBayTidy_DetachesAndDeletesLandedBranch(t *testing.T) {
 	}
 }
 
+func TestBayTidy_ClearsAutoDescription(t *testing.T) {
+	eng, dir := testEngine(t)
+	bay, err := eng.BayNew(BayNewOptions{Dock: "labs", Branch: "fix/landed"})
+	if err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+	os.MkdirAll(bay.Path, 0o755)
+	eng.Git.(*git.Mock).SetBranch(bay.Path, "fix/landed")
+
+	// Seed an auto-generated description, as the backstop would.
+	mp := filepath.Join(dir, "manifest.json")
+	m, _ := manifest.Load(mp)
+	b := m.FindDock("labs").FindBayByID(bay.ID)
+	b.Description = "Old merged task"
+	b.DescriptionSource = manifest.DescriptionSourceAuto
+	b.DescriptionSummarizedAt = 123
+	b.DescriptionInputHash = "sha256:x"
+	if err := manifest.Save(mp, m); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := eng.BayTidy("labs", bay.ID); err != nil {
+		t.Fatalf("BayTidy: %v", err)
+	}
+
+	m2, _ := manifest.Load(mp)
+	got := m2.FindDock("labs").FindBayByID(bay.ID)
+	if got.Description != "" || got.DescriptionSource != "" || got.DescriptionSummarizedAt != 0 || got.DescriptionInputHash != "" {
+		t.Errorf("auto description not cleared after tidy: desc=%q source=%q at=%d hash=%q",
+			got.Description, got.DescriptionSource, got.DescriptionSummarizedAt, got.DescriptionInputHash)
+	}
+}
+
+func TestBayTidy_PreservesUserDescription(t *testing.T) {
+	eng, dir := testEngine(t)
+	bay, err := eng.BayNew(BayNewOptions{Dock: "labs", Branch: "fix/landed"})
+	if err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+	os.MkdirAll(bay.Path, 0o755)
+	eng.Git.(*git.Mock).SetBranch(bay.Path, "fix/landed")
+
+	mp := filepath.Join(dir, "manifest.json")
+	m, _ := manifest.Load(mp)
+	b := m.FindDock("labs").FindBayByID(bay.ID)
+	b.Description = "My deliberate brief"
+	b.DescriptionSource = manifest.DescriptionSourceUser
+	if err := manifest.Save(mp, m); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := eng.BayTidy("labs", bay.ID); err != nil {
+		t.Fatalf("BayTidy: %v", err)
+	}
+
+	m2, _ := manifest.Load(mp)
+	got := m2.FindDock("labs").FindBayByID(bay.ID)
+	if got.Description != "My deliberate brief" || got.DescriptionSource != manifest.DescriptionSourceUser {
+		t.Errorf("user description should survive tidy: desc=%q source=%q", got.Description, got.DescriptionSource)
+	}
+}
+
+func TestBayTidy_ClearsAutoDescriptionWhenAlreadyDetached(t *testing.T) {
+	eng, dir := testEngine(t)
+	bay, err := eng.BayNew(BayNewOptions{Dock: "labs", Branch: "fix/landed"})
+	if err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+	os.MkdirAll(bay.Path, 0o755)
+	// Detached HEAD (no branch) → tidy takes the AlreadyDetached path.
+	eng.Git.(*git.Mock).SetBranch(bay.Path, "")
+
+	mp := filepath.Join(dir, "manifest.json")
+	m, _ := manifest.Load(mp)
+	b := m.FindDock("labs").FindBayByID(bay.ID)
+	b.Description = "Old merged task"
+	b.DescriptionSource = manifest.DescriptionSourceAuto
+	if err := manifest.Save(mp, m); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := eng.BayTidy("labs", bay.ID)
+	if err != nil {
+		t.Fatalf("BayTidy: %v", err)
+	}
+	if !res.AlreadyDetached {
+		t.Fatalf("expected AlreadyDetached path, got %+v", res)
+	}
+
+	m2, _ := manifest.Load(mp)
+	got := m2.FindDock("labs").FindBayByID(bay.ID)
+	if got.Description != "" || got.DescriptionSource != "" {
+		t.Errorf("stale auto description not cleared on already-detached tidy: desc=%q source=%q",
+			got.Description, got.DescriptionSource)
+	}
+}
+
 func TestBayTidy_RefusesDirtyWorktree(t *testing.T) {
 	eng, _ := testEngine(t)
 
@@ -2322,6 +2419,11 @@ func TestDockInit_AppendsAwarenessLine(t *testing.T) {
 	if !strings.Contains(string(data), "bay agent-guide") {
 		t.Errorf("project file should mention bay agent-guide, got:\n%s", data)
 	}
+	// The awareness pointer must not ask agents to populate the
+	// description — that's auto-populated now.
+	if strings.Contains(string(data), "check the workspace description") {
+		t.Errorf("awareness block should not ask agents to maintain the description, got:\n%s", data)
+	}
 }
 
 func TestDockInit_IdempotentIfAlreadyPresent(t *testing.T) {
@@ -2345,38 +2447,6 @@ func TestDockInit_IdempotentIfAlreadyPresent(t *testing.T) {
 	data, _ := os.ReadFile(projectFile)
 	if strings.Count(string(data), "bay agent-guide") != 1 {
 		t.Errorf("bay awareness should appear exactly once, got:\n%s", data)
-	}
-}
-
-func TestDockInit_UpgradesOldAwarenessLine(t *testing.T) {
-	eng, dir := testEngine(t)
-
-	repoDir := filepath.Join(dir, "repos", "labs")
-	eng.Config.Agents["claude"] = config.AgentConfig{
-		Command:     "claude",
-		ProjectFile: "CLAUDE.md",
-	}
-
-	projectFile := filepath.Join(repoDir, "CLAUDE.md")
-	const oldLine = "This project uses bay for bay and surface management. Run `bay agent-guide` for commands."
-	os.WriteFile(projectFile, []byte("# My Project\n\n"+oldLine+"\n"), 0o644)
-
-	if err := eng.DockInit("labs"); err != nil {
-		t.Fatalf("DockInit: %v", err)
-	}
-
-	got, _ := os.ReadFile(projectFile)
-	if strings.Contains(string(got), "for bay and surface management") {
-		t.Errorf("old awareness line should be replaced, got:\n%s", got)
-	}
-	if !strings.Contains(string(got), "**At session start:** check the workspace description") {
-		t.Errorf("new block should be present, got:\n%s", got)
-	}
-	if !strings.Contains(string(got), "# My Project") {
-		t.Errorf("user content should be preserved, got:\n%s", got)
-	}
-	if strings.Count(string(got), "bay agent-guide") != 1 {
-		t.Errorf("bay agent-guide should appear exactly once, got:\n%s", got)
 	}
 }
 
@@ -2449,34 +2519,6 @@ func TestDockInit_SkipsWorktreeincludeForUnignoredExistingFile(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(repoDir, ".gitignore")); !os.IsNotExist(err) {
 		t.Errorf(".gitignore should be untouched for pre-existing project files")
-	}
-}
-
-func TestDockInit_UpgradesDocParaphrasePointer(t *testing.T) {
-	eng, dir := testEngine(t)
-
-	repoDir := filepath.Join(dir, "repos", "labs")
-	eng.Config.Agents["claude"] = config.AgentConfig{
-		Command:     "claude",
-		ProjectFile: "CLAUDE.md",
-	}
-
-	// Shorter paraphrase that lived in human-guide.md and may have been
-	// hand-pasted into project files. Not an exact match for any prior
-	// auto-installed phrasing.
-	projectFile := filepath.Join(repoDir, "CLAUDE.md")
-	os.WriteFile(projectFile, []byte("# My Project\n\nThis project uses bay. Run `bay agent-guide` for commands.\n"), 0o644)
-
-	if err := eng.DockInit("labs"); err != nil {
-		t.Fatalf("DockInit: %v", err)
-	}
-
-	got, _ := os.ReadFile(projectFile)
-	if !strings.Contains(string(got), "**At session start:** check the workspace description") {
-		t.Errorf("paraphrased pointer should be upgraded to the new block, got:\n%s", got)
-	}
-	if strings.Count(string(got), "bay agent-guide") != 1 {
-		t.Errorf("bay agent-guide should appear exactly once after upgrade, got:\n%s", got)
 	}
 }
 

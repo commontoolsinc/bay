@@ -186,7 +186,9 @@ Three surfaces, all navigable. `bay ls` lists bays in the current dock;
 
 With only a handful of tabs, `Option+h/l` cycles fine. Once you have
 more than a few bays, the picker is usually faster — especially
-with descriptions.
+with descriptions. Bay fills those in for you: it summarizes each bay's
+agent conversation in the background, so the picker is meaningful even
+if you never run `bay describe` yourself.
 
 All of these work without the Option-key shortcuts too:
 

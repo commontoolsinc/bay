@@ -97,20 +97,15 @@ func (e *Engine) initCheckout(repoPath string) error {
 	return nil
 }
 
-const bayAwarenessBlock = "This project uses bay for workspace management. Run `bay agent-guide` for commands.\n" +
-	"\n" +
-	"**At session start:** check the workspace description with `bay describe`. " +
-	"If empty, set one with `bay describe \"<short goal>\"`. Update the body via " +
-	"`bay describe --edit` when the situation meaningfully changes."
+const bayAwarenessBlock = "This project uses bay for workspace management. Run `bay agent-guide` for commands."
 
-const (
-	bayAwarenessMarker      = "**At session start:** check the workspace description"
-	bayAwarenessLegacyStart = "This project uses bay"
-	bayAgentGuideRef        = "bay agent-guide"
-)
+const bayAgentGuideRef = "bay agent-guide"
 
-// ensureBayAwareness installs (or upgrades) the bay-awareness block in a
-// project file. Returns true if the file did not exist before this call.
+// ensureBayAwareness installs the bay-awareness pointer in a project file
+// if it isn't already referenced. Returns true if the file did not exist
+// before this call. It only points agents at `bay agent-guide`; it does
+// not ask them to maintain the bay description — that's auto-populated
+// (see docs/design/auto-descriptions.md).
 func ensureBayAwareness(path string) (bool, error) {
 	data, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
@@ -119,23 +114,8 @@ func ensureBayAwareness(path string) (bool, error) {
 	created := os.IsNotExist(err)
 	content := string(data)
 
-	if strings.Contains(content, bayAwarenessMarker) {
-		return false, nil
-	}
-	// Any single line that looks like a previously-installed pointer
-	// (starts with "This project uses bay" and references the agent-guide
-	// command) gets upgraded in place. Covers every phrasing bay has ever
-	// auto-installed plus the doc paraphrase users may have hand-pasted.
-	lines := strings.Split(content, "\n")
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, bayAwarenessLegacyStart) && strings.Contains(trimmed, bayAgentGuideRef) {
-			lines[i] = bayAwarenessBlock
-			return false, os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644)
-		}
-	}
-	// Some other mention of `bay agent-guide` (e.g., a code sample or
-	// hand-written prose) — leave the file alone rather than double up.
+	// Idempotent: if the file already points agents at the agent-guide
+	// (a prior install or a hand-written mention), leave it alone.
 	if strings.Contains(content, bayAgentGuideRef) {
 		return false, nil
 	}

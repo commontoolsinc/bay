@@ -38,19 +38,14 @@ PR, dirty/merged flags). Each bay has three identity concepts:
   recall. The first line is a short label (cap 80) shown in the picker,
   `bay ls`/`bay tree`, and the `M-/` flash. Optional trailing lines
   (separated from the first line by a blank line) are a richer body —
-  shown only in the `M-?` popup and JSON output. Set with
-  `bay describe`. Does not affect tmux tab names.
+  shown only in the `M-?` popup and JSON output. Does not affect tmux
+  tab names.
 
-  **Agents should keep the description current.** Treat it as a
-  standing brief about the bay, not a log of recent activity —
-  git history already records what was done. The first line is the
-  bay's stable goal or scope; the body should let the user
-  swap the bay's overall context back into their head when
-  they open it cold. Update the body when the *situation*
-  meaningfully changes (scope shift, new blocker, approach pivot),
-  not on every pause. If the body would read the same after another
-  hour of similar work, it's at the right altitude. An unset body
-  defeats the feature.
+  Descriptions are **auto-populated** in the background (opt-in; the
+  auto-description backstop summarizes the bay's conversation), so you
+  don't need to maintain them. If you do want to set one explicitly,
+  `bay describe` overrides — a description set that way is owned and the
+  backstop won't touch it.
 
 A **full reference** is `dock:id` (e.g., `labs:b1`). A bare ID
 (`b1`) resolves to the current dock first; if absent there, falls

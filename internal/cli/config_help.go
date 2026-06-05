@@ -58,6 +58,17 @@ MONITOR (optional)
   [monitor]
   interval_seconds = 5            # default: 3 seconds
 
+AUTO-DESCRIPTIONS (optional)
+
+  [describe]
+  enabled = true                  # default: false (opt-in); 'bay setup' offers this
+  # Summarizer argv. The prompt is appended as the final arg. An "{out}"
+  # element becomes a temp file bay reads the answer from; otherwise it
+  # reads stdout. Set the model by editing the command. Unset = codex default.
+  command = ["codex", "exec", "--sandbox", "read-only", "--skip-git-repo-check",
+             "--ephemeral", "-c", "model_reasoning_effort=low",
+             "-m", "gpt-5.4-mini", "-o", "{out}"]
+
 EXAMPLE MINIMAL CONFIG
 
   An empty file works — bay auto-detects agents and editors.
