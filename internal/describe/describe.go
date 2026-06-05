@@ -36,6 +36,11 @@ const (
 	maxPromptLen     = 600
 	maxRecentPrompts = 6
 	maxInputLen      = 6000
+
+	// maxStableStreak caps the no-op streak the worker records. The
+	// monitor's backoff saturates well before this (see describeMaxInterval),
+	// so it only keeps the stored count from growing without bound.
+	maxStableStreak = 8
 )
 
 // Options identifies the bay a worker should describe.
@@ -99,35 +104,39 @@ func (w *Worker) Run(ctx context.Context, opts Options) error {
 	input, mode := assembleInput(prompts, git)
 	if mode == modeNone {
 		// Nothing to summarize (no transcript, no git signal). Stamp so
-		// the monitor's min-interval gate paces re-checks instead of
-		// re-probing every cycle (and so this bay doesn't perpetually
-		// sort to the front of the oldest-first dispatch queue).
-		return w.stampSummarized(opts)
+		// the monitor's gate paces re-checks instead of re-probing every
+		// cycle (and so this bay doesn't perpetually sort to the front of
+		// the oldest-first dispatch queue). This is a genuine quiet run,
+		// so it grows the backoff streak.
+		return w.stampSummarized(opts, true)
 	}
 
 	hash := hashInput(input)
 	if hash == bay.DescriptionInputHash {
 		// Unchanged since the last run: bump the timestamp so the
-		// monitor's min-interval gate backs off, and skip the summarizer.
-		return w.stampSummarized(opts)
+		// monitor's gate backs off, skip the summarizer, and grow the
+		// streak (the bay is quiet).
+		return w.stampSummarized(opts, true)
 	}
 
-	// Every terminal path below stamps DescriptionSummarizedAt, so a
-	// persistently-failing bay backs off to the min-interval cadence
-	// instead of burning a summarizer call every dispatch cycle.
+	// The input changed but we couldn't produce a description below. Each
+	// such terminal path stamps DescriptionSummarizedAt (so a persistently
+	// failing bay doesn't burn a summarizer call every cycle) but leaves
+	// the streak reset: the content is real and still unsummarized, so the
+	// retry stays at the base min-interval cadence rather than backing off.
 	desc, err := w.summarize(ctx, input, mode)
 	if err != nil {
 		w.logErr(opts, err)
-		return w.stampSummarized(opts)
+		return w.stampSummarized(opts, false)
 	}
 	desc = sanitizeDescription(desc)
 	if desc == "" {
 		w.logErr(opts, fmt.Errorf("summarizer produced an empty description"))
-		return w.stampSummarized(opts)
+		return w.stampSummarized(opts, false)
 	}
 	if err := engine.ValidateDescription(desc); err != nil {
 		w.logErr(opts, fmt.Errorf("generated description invalid: %w", err))
-		return w.stampSummarized(opts)
+		return w.stampSummarized(opts, false)
 	}
 	return w.commit(opts, desc, hash)
 }
@@ -167,9 +176,13 @@ func (w *Worker) now() int64 {
 	return time.Now().Unix()
 }
 
-// stampSummarized records that we ran without writing a new description
-// (input unchanged), so the monitor doesn't re-dispatch immediately.
-func (w *Worker) stampSummarized(opts Options) error {
+// stampSummarized records that we ran without writing a new description,
+// so the monitor doesn't re-dispatch immediately. quiet=true means the
+// bay was genuinely unchanged (no signal, or input identical): grow the
+// stable streak so the monitor backs off re-probing it. quiet=false means
+// the input changed but we failed to summarize it: reset the streak so the
+// retry stays at the base cadence (the content is still unsummarized).
+func (w *Worker) stampSummarized(opts Options, quiet bool) error {
 	now := w.now()
 	return manifest.LockedUpdateMaybe(w.ManifestPath, func(m *manifest.Manifest) (bool, error) {
 		bay := findBay(m, opts)
@@ -177,6 +190,13 @@ func (w *Worker) stampSummarized(opts Options) error {
 			return false, nil
 		}
 		bay.DescriptionSummarizedAt = now
+		if quiet {
+			if bay.DescriptionStableStreak < maxStableStreak {
+				bay.DescriptionStableStreak++
+			}
+		} else {
+			bay.DescriptionStableStreak = 0
+		}
 		return true, nil
 	})
 }
@@ -194,6 +214,7 @@ func (w *Worker) commit(opts Options, desc, hash string) error {
 		bay.DescriptionSource = manifest.DescriptionSourceAuto
 		bay.DescriptionSummarizedAt = now
 		bay.DescriptionInputHash = hash
+		bay.DescriptionStableStreak = 0 // content changed: reset to base cadence
 		return true, nil
 	})
 }

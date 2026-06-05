@@ -163,23 +163,38 @@ none of them yield any signal.
 
 To keep the monitor cheap (no transcript/log I/O in its loop), it uses
 a **coarse** trigger: dispatch when the bay is eligible, was active
-within `activityWindow`, and `now - DescriptionSummarizedAt >=
-minInterval`. It does *not* read transcripts to decide.
+within `activityWindow`, and is *due*. It does *not* read transcripts to
+decide. Due-ness is activity-aware:
+
+- If the user has touched the bay since the last run
+  (`LastActive > DescriptionSummarizedAt`), re-describe at the base
+  `minInterval` cadence — a bay command is a strong hint the focus may
+  have shifted.
+- Otherwise we're only probing for *agent-only* activity the monitor
+  can't see without reading logs, so we **back off**: the worker counts
+  consecutive unchanged runs in `DescriptionStableStreak`, and the
+  required interval doubles per quiet run (`minInterval` →
+  `maxInterval` cap). A real change resets the streak to the base
+  cadence.
 
 The **worker** is the precise gate. It gathers the merged prompts + git
 signal, hashes that assembled input, and compares to the hash stored in
 a small per-bay state file under `DataDir`. If unchanged, it bumps
-`DescriptionSummarizedAt` (so the monitor's `minInterval` gate backs
-off) and exits *without* calling the summarizer. An over-eager dispatch
-is therefore cheap — it reads a few files and returns; the costly
-`codex` call happens only when the input actually changed.
+`DescriptionSummarizedAt`, increments `DescriptionStableStreak`, and
+exits *without* calling the summarizer. An over-eager dispatch is
+therefore cheap — it reads a few files and returns; the costly `codex`
+call happens only when the input actually changed.
 
 This split means the monitor never needs to know where Claude or Codex
-store their logs. Known limitation: `LastActive` is updated by bay
-*commands*, not agent typing, so a bay the user hasn't navigated to in
-`activityWindow` won't be re-dispatched even if its agent is busy. In
-practice users touch bays often enough; if it bites, the activity gate
-can later be upgraded to a cheap cwd→log-mtime index.
+store their logs. The cost is that `LastActive` tracks bay *commands*,
+not agent typing: a busy agent in a bay the user isn't navigating gets
+its description refreshed only when a probe fires (at the backed-off
+cadence) or the user next touches the bay. That's an accepted trade for
+keeping the monitor out of the logs — without the backoff, a bay you
+focused and walked away from would re-dispatch a worker (process spawn +
+transcript walk + git) every `minInterval` for the whole
+`activityWindow`. If the latency on agent-only refresh ever bites, the
+activity gate can be upgraded to a cheap cwd→log-mtime index.
 
 ### Cadence and bounds
 
@@ -188,6 +203,9 @@ can later be upgraded to a cheap cwd→log-mtime index.
   `MergeCheckCycles`).
 - Only consider bays active within `activityWindow` (the existing
   2-hour window), so dead bays don't get summarized.
+- A bay re-described at the base `minInterval` only while it sees fresh
+  activity; an unchanging bay backs off toward `maxInterval` (see
+  Staleness) so a focused-then-abandoned bay isn't re-probed every cycle.
 - Per gate cycle, cap how many describe-workers are dispatched (avoid a
   thundering herd on monitor restart). A per-bay dispatch lock prevents
   two workers racing on the same bay.
@@ -225,8 +243,9 @@ can later be upgraded to a cheap cwd→log-mtime index.
    diff) → stamp `DescriptionSummarizedAt` (so the monitor paces
    re-checks) and leave the description empty.
 5. If the assembled input's hash matches the stored hash (per-bay state
-   file under `DataDir`), bump `DescriptionSummarizedAt` and exit (no
-   summarizer call).
+   file under `DataDir`), bump `DescriptionSummarizedAt`, increment
+   `DescriptionStableStreak` (feeding the monitor's backoff), and exit
+   (no summarizer call).
 6. Summarize: build one prompt (instruction + assembled input) and run
    the configured `command` argv with it (appended, or via `{prompt}`),
    reading the answer from the `{out}` temp file or stdout, with a
@@ -244,14 +263,19 @@ can later be upgraded to a cheap cwd→log-mtime index.
    terminal path is what paces retries to the min-interval instead of
    every cycle — and stops a failing or signal-less bay from sitting at
    `summarizedAt == 0` and starving healthy bays in the oldest-first
-   dispatch queue.
+   dispatch queue. A failed run also **resets** `DescriptionStableStreak`
+   (unlike a genuine no-op, which grows it): the input changed but stayed
+   unsummarized, so the retry should hold at the base cadence rather than
+   backing off as if the bay were quiet.
 7. Sanitize and clamp the output to the description limits (first line
    ≤ 80 on a word boundary, total ≤ 2000, no tabs/CR), then guard with
    `ValidateDescription`. An empty or (defensively) still-invalid result
    is logged and stamped, not written.
 8. `manifest.LockedUpdate`: re-check `source != "user"` under the lock
    (the user may have set it meanwhile), then write `Description`,
-   `DescriptionSource = "auto"`, `DescriptionSummarizedAt = now`.
+   `DescriptionSource = "auto"`, `DescriptionSummarizedAt = now`,
+   `DescriptionInputHash = hash`, and reset `DescriptionStableStreak = 0`
+   (content changed → back to the base cadence).
 
 ### Summarization prompt shape
 
@@ -275,12 +299,16 @@ Add to `Bay`:
   hash of the last summarized input, for the no-op skip. (Kept in the
   manifest rather than a sidecar so all backstop state is atomic under
   the manifest lock.)
+- `DescriptionStableStreak int json:"description_stable_streak,omitempty"` —
+  consecutive worker runs that found nothing changed; drives the
+  monitor's re-probe backoff for agent-only activity (see Staleness).
 
 No migration pass; empty source is interpreted as "don't touch."
 
 `bay tidy` (reset a worktree to a clean detached base for reuse) clears
-an `auto` description — Description/Source/SummarizedAt/InputHash — so a
-reused bay doesn't keep advertising the now-merged task; a user-set
+an `auto` description — Description/Source/SummarizedAt/InputHash/
+StableStreak — so a reused bay doesn't keep advertising the now-merged
+task; a user-set
 description is left alone. The backstop then regenerates from the new
 work (whose recency boundary is the fresh detached base).
 
@@ -305,8 +333,10 @@ backend can be added without touching the worker.)
   `startWorkerProcess` / `e.startWorker` so both share it.
 - Monitor `CheckOnce`: on the `DescribeCheckCycles` gate, dispatch
   workers for eligible bays (coarse trigger — no transcript I/O; see
-  Staleness), respecting `activityWindow`, `minInterval`, and the
-  per-cycle cap.
+  Staleness), respecting `activityWindow`, the per-cycle cap, and an
+  activity-aware due check: base `minInterval` when the user has touched
+  the bay since the last run, otherwise a `DescriptionStableStreak`-driven
+  backoff up to `maxInterval`.
 
 ### Reader + worker packages
 

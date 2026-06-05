@@ -50,9 +50,16 @@ const (
 	// docs/design/auto-descriptions.md.
 	DescribeCheckCycles = 100
 
-	// describeMinInterval floors how often a single bay is re-described,
-	// bounding the cheap transcript reads each dispatched worker does.
+	// describeMinInterval is the base cadence for re-describing a bay: the
+	// floor when the user has touched it since the last run, and the
+	// starting interval for probing agent-only activity the monitor can't
+	// see. It bounds the cheap transcript reads each dispatched worker does.
 	describeMinInterval = 10 * 60
+
+	// describeMaxInterval caps the backoff: a bay that keeps coming back
+	// unchanged is re-probed at most this often (until it falls out of the
+	// activity window), instead of every describeMinInterval forever.
+	describeMaxInterval = 60 * 60
 
 	// describeMaxPerCycle caps describe workers dispatched per round, so a
 	// monitor restart with many eligible bays doesn't spawn a herd.
@@ -370,8 +377,19 @@ func selectDescribeCandidates(mf *manifest.Manifest, now int64, max int) []descr
 			if bay.LastActive == 0 || now-bay.LastActive > activityWindow {
 				continue // not recently active
 			}
-			if bay.DescriptionSummarizedAt != 0 && now-bay.DescriptionSummarizedAt < describeMinInterval {
-				continue // described recently enough
+			if bay.DescriptionSummarizedAt != 0 {
+				// Already described once. Re-dispatch only when due. If the
+				// user has touched the bay since (LastActive newer than the
+				// last run), refresh at the base cadence; otherwise we're
+				// only probing for agent-only activity the monitor can't
+				// see without reading logs, so back off a quiet bay.
+				interval := int64(describeMinInterval)
+				if bay.LastActive < bay.DescriptionSummarizedAt {
+					interval = describeBackoff(bay.DescriptionStableStreak)
+				}
+				if now-bay.DescriptionSummarizedAt < interval {
+					continue // described recently enough
+				}
 			}
 			cands = append(cands, scored{describeCandidate{dock.Name, bay.ID}, bay.DescriptionSummarizedAt})
 		}
@@ -387,6 +405,21 @@ func selectDescribeCandidates(mf *manifest.Manifest, now int64, max int) []descr
 		out[i] = c.describeCandidate
 	}
 	return out
+}
+
+// describeBackoff returns how long to wait before re-probing a bay that
+// has come back unchanged for `streak` consecutive worker runs: the base
+// min-interval doubled per stable run, capped at describeMaxInterval. A
+// streak of 0 (just changed, or never stable) yields the base interval.
+func describeBackoff(streak int) int64 {
+	iv := int64(describeMinInterval)
+	for i := 0; i < streak && iv < describeMaxInterval; i++ {
+		iv *= 2
+	}
+	if iv > describeMaxInterval {
+		iv = describeMaxInterval
+	}
+	return iv
 }
 
 func (m *Monitor) prunePrepareLogsIfDue(now time.Time) error {

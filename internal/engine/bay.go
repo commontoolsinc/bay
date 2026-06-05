@@ -663,6 +663,7 @@ func resetAutoDescription(bay *manifest.Bay) bool {
 	bay.DescriptionSource = ""
 	bay.DescriptionSummarizedAt = 0
 	bay.DescriptionInputHash = ""
+	bay.DescriptionStableStreak = 0
 	return true
 }
 
@@ -1175,6 +1176,7 @@ func (e *Engine) BayDescribe(dockName, bayID, desc string) error {
 			bay.DescriptionSource = ""
 			bay.DescriptionSummarizedAt = 0
 			bay.DescriptionInputHash = ""
+			bay.DescriptionStableStreak = 0
 		} else {
 			// Explicit description (by the user or an agent) is owned and
 			// never auto-overwritten.

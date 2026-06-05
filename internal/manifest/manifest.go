@@ -157,10 +157,13 @@ type Bay struct {
 	// Auto-description backstop state (docs/design/auto-descriptions.md).
 	// Source distinguishes user-set from auto-generated descriptions so
 	// the backstop never clobbers human intent; SummarizedAt + InputHash
-	// let it skip redundant summarizer runs.
+	// let it skip redundant summarizer runs. StableStreak counts
+	// consecutive worker runs that found nothing changed, so the monitor
+	// backs off re-probing a quiet bay instead of dispatching every cycle.
 	DescriptionSource       string          `json:"description_source,omitempty"`
 	DescriptionSummarizedAt int64           `json:"description_summarized_at,omitempty"`
 	DescriptionInputHash    string          `json:"description_input_hash,omitempty"`
+	DescriptionStableStreak int             `json:"description_stable_streak,omitempty"`
 	LastFocused             int             `json:"last_focused,omitempty"`     // surface ID; 0 = none yet
 	LastActive              int64           `json:"last_active,omitempty"`      // unix timestamp; updated by bay commands
 	PendingCloseAt          int64           `json:"pending_close_at,omitempty"` // unix ts; non-zero = scheduled for auto-close at this time unless a surface is re-added first
