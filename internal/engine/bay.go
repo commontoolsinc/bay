@@ -208,14 +208,21 @@ func (e *Engine) BayNew(opts BayNewOptions) (*manifest.Bay, error) {
 	// Build bay. Name may be empty here (no explicit name, no branch);
 	// sync fills it from the branch on first detection and is sticky after,
 	// matching the design's "stable yet semantic" goal.
+	// A description passed at creation is user-owned, so the
+	// auto-description backstop never overwrites it.
+	descSource := ""
+	if desc != "" {
+		descSource = manifest.DescriptionSourceUser
+	}
 	bay := manifest.Bay{
-		Name:        displayName,
-		Type:        bayType,
-		Path:        bayPath,
-		Description: desc,
-		LastActive:  time.Now().Unix(),
-		Worktree:    worktreeAttrs,
-		Surfaces:    []manifest.Surface{},
+		Name:              displayName,
+		Type:              bayType,
+		Path:              bayPath,
+		Description:       desc,
+		DescriptionSource: descSource,
+		LastActive:        time.Now().Unix(),
+		Worktree:          worktreeAttrs,
+		Surfaces:          []manifest.Surface{},
 	}
 
 	var finalName string
@@ -645,6 +652,20 @@ type TidyResult struct {
 // It refuses to run when the worktree is dirty or carries commits that are
 // neither pushed nor merged, so no work is discarded. A worktree that is
 // already detached is a no-op.
+// resetAutoDescription blanks a backstop-generated description so a
+// reused bay starts fresh; a user-set description is left untouched (the
+// no-clobber invariant). Returns whether it changed anything.
+func resetAutoDescription(bay *manifest.Bay) bool {
+	if bay == nil || bay.DescriptionSource != manifest.DescriptionSourceAuto {
+		return false
+	}
+	bay.Description = ""
+	bay.DescriptionSource = ""
+	bay.DescriptionSummarizedAt = 0
+	bay.DescriptionInputHash = ""
+	return true
+}
+
 func (e *Engine) BayTidy(dockName, bayID string) (TidyResult, error) {
 	if manifest.IsReservedBayID(bayID) {
 		return TidyResult{}, fmt.Errorf("home is reserved; tidy applies only to worktree bays")
@@ -685,6 +706,15 @@ func (e *Engine) BayTidy(dockName, bayID string) (TidyResult, error) {
 		return TidyResult{}, fmt.Errorf("reading current branch: %w", err)
 	}
 	if branch == "" {
+		// Already a clean base — but still drop a stale auto description so
+		// a reused detached bay doesn't keep advertising old work.
+		_ = e.withManifestMaybe(func(m *manifest.Manifest) (bool, error) {
+			dock := m.FindDock(dockName)
+			if dock == nil {
+				return false, nil
+			}
+			return resetAutoDescription(dock.FindBayByID(bayID)), nil
+		})
 		return TidyResult{DefaultBranch: defaultBranch, AlreadyDetached: true}, nil
 	}
 
@@ -726,28 +756,35 @@ func (e *Engine) BayTidy(dockName, bayID string) (TidyResult, error) {
 	deletedBranch := ""
 	if delErr := e.Git.DeleteBranch(repoPath, branch); delErr == nil {
 		deletedBranch = branch
-		// Clear the now-stale branch metadata so display and the next sync
-		// pass converge immediately, mirroring the detached-branch path in
-		// SyncAll. Only do this on a successful delete: if the delete failed,
-		// leaving the metadata branch in place lets that same SyncAll path
-		// retry the deletion (and then clear it) rather than orphaning a
-		// local branch whose name we'd otherwise have forgotten.
-		_ = e.withManifest(func(m *manifest.Manifest) error {
-			dock := m.FindDock(dockName)
-			if dock == nil {
-				return nil
-			}
-			bay := dock.FindBayByID(bayID)
-			if bay == nil || bay.Worktree == nil {
-				return nil
-			}
+	}
+
+	// The bay is now a clean base for reuse. Clear stale metadata so display
+	// and the next sync pass converge:
+	//   - The auto-generated description (it described the now-merged task).
+	//     A user-set description is left alone — the no-clobber invariant —
+	//     and the auto-description backstop regenerates a fresh one once new
+	//     work starts (its recency boundary is the new detached base).
+	//   - The branch metadata, but only on a successful delete: if the delete
+	//     failed, leaving it in place lets SyncAll retry the deletion rather
+	//     than orphaning a local branch whose name we'd otherwise forget.
+	_ = e.withManifest(func(m *manifest.Manifest) error {
+		dock := m.FindDock(dockName)
+		if dock == nil {
+			return nil
+		}
+		bay := dock.FindBayByID(bayID)
+		if bay == nil {
+			return nil
+		}
+		resetAutoDescription(bay)
+		if deletedBranch != "" && bay.Worktree != nil {
 			bay.Worktree.Branch = ""
 			bay.Worktree.PR = ""
 			bay.Worktree.PRCheckedAt = 0
 			bay.Worktree.Merged = false
-			return nil
-		})
-	}
+		}
+		return nil
+	})
 
 	return TidyResult{DefaultBranch: defaultBranch, DeletedBranch: deletedBranch}, nil
 }
@@ -1132,6 +1169,17 @@ func (e *Engine) BayDescribe(dockName, bayID, desc string) error {
 			return fmt.Errorf("bay %q not found in dock %q", bayID, dockName)
 		}
 		bay.Description = desc
+		if desc == "" {
+			// Cleared: hand the bay back to the auto-description backstop
+			// and force it to regenerate from scratch.
+			bay.DescriptionSource = ""
+			bay.DescriptionSummarizedAt = 0
+			bay.DescriptionInputHash = ""
+		} else {
+			// Explicit description (by the user or an agent) is owned and
+			// never auto-overwritten.
+			bay.DescriptionSource = manifest.DescriptionSourceUser
+		}
 		bay.LastActive = time.Now().Unix()
 		return nil
 	})

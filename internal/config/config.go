@@ -21,6 +21,7 @@ type Config struct {
 	Editors          map[string]EditorConfig `toml:"editors,omitempty"`
 	Docks            map[string]DockConfig   `toml:"docks,omitempty"`
 	Monitor          MonitorConfig           `toml:"monitor,omitempty"`
+	Describe         DescribeConfig          `toml:"describe,omitempty"`
 }
 
 // EditorConfig allows marking a custom editor as GUI.
@@ -190,6 +191,58 @@ func (m MonitorConfig) EffectiveInterval() int {
 		return 3
 	}
 	return m.IntervalSeconds
+}
+
+// DescribeConfig configures the auto-description backstop, which
+// summarizes a bay's agent conversation into its description on a slow
+// background cadence. See docs/design/auto-descriptions.md.
+type DescribeConfig struct {
+	// Enabled toggles the backstop. Pointer so an absent key is
+	// distinguishable from an explicit false. Default is OFF: the
+	// backstop spends model calls and assumes a configured summarizer
+	// CLI, so it's opt-in (via this key or `bay setup`).
+	Enabled *bool `toml:"enabled,omitempty"`
+	// Command is the summarizer argv. The full prompt is appended as the
+	// final argument (or substituted for a "{prompt}" element). If an
+	// element contains "{out}", bay substitutes a temp file path and
+	// reads the answer from it; otherwise it reads stdout. This lets any
+	// CLI work — set the model by editing the command. Empty uses the
+	// default (codex, cheap model, read-only, low reasoning effort).
+	Command []string `toml:"command,omitempty"`
+}
+
+// DefaultDescribeCommand is the summarizer argv used when none is
+// configured: codex exec (non-interactive) at a cheap model and low
+// reasoning effort, sandboxed read-only with session persistence off,
+// writing only the final message to {out} (codex's stdout carries
+// chatter).
+var DefaultDescribeCommand = []string{
+	"codex", "exec",
+	"--sandbox", "read-only",
+	"--skip-git-repo-check",
+	"--ephemeral",
+	"-c", "model_reasoning_effort=low",
+	"-m", "gpt-5.4-mini",
+	"-o", "{out}",
+}
+
+// EffectiveEnabled reports whether the backstop is on. Default is OFF
+// (opt-in) so bay never spends model calls a user didn't ask for.
+func (d DescribeConfig) EffectiveEnabled() bool {
+	if d.Enabled == nil {
+		return false
+	}
+	return *d.Enabled
+}
+
+// EffectiveCommand returns the summarizer argv (a copy), defaulting to
+// DefaultDescribeCommand when unset.
+func (d DescribeConfig) EffectiveCommand() []string {
+	src := d.Command
+	if len(src) == 0 {
+		src = DefaultDescribeCommand
+	}
+	return append([]string(nil), src...)
 }
 
 // DefaultConfig returns an empty config with initialized maps.

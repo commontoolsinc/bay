@@ -9,17 +9,18 @@ import (
 	"github.com/commontoolsinc/bay/internal/prepare"
 )
 
-// startPrepareWorkerProcess is the default Engine.startWorker. Detaches the
-// child so the worker survives the parent (e.g., the CLI process) exiting.
-func startPrepareWorkerProcess(exe string, args []string) error {
+// startWorkerProcess is the default Engine.startWorker. Detaches the
+// child so the worker survives the parent (e.g., the CLI process)
+// exiting. Shared by the prepare and describe dispatchers.
+func startWorkerProcess(exe string, args []string) error {
 	cmd := exec.Command(exe, args...)
 	cmd.Dir = "/"
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("starting prepare worker: %w", err)
+		return fmt.Errorf("starting worker: %w", err)
 	}
 	if err := cmd.Process.Release(); err != nil {
-		return fmt.Errorf("releasing prepare worker: %w", err)
+		return fmt.Errorf("releasing worker: %w", err)
 	}
 	return nil
 }
@@ -53,7 +54,7 @@ func (e *Engine) DispatchPrepareWorker(dockName, bayID string) error {
 	args = append(args, "prepare-worker", "--dock", dockName, "--bay", bayID)
 	startWorker := e.startWorker
 	if startWorker == nil {
-		startWorker = startPrepareWorkerProcess
+		startWorker = startWorkerProcess
 	}
 	return startWorker(exe, args)
 }

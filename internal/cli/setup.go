@@ -102,6 +102,7 @@ Do you want to proceed
 			// Configure defaults
 			configureAgent(reader, configPath)
 			configureEditor(reader, configPath)
+			configureAutoDescriptions(reader, configPath)
 
 			fmt.Println("\nSetup complete. Next steps:")
 			fmt.Println("  bay new                create a bay in any git repo")
@@ -1174,6 +1175,65 @@ func configureEditor(reader *bufio.Reader, configPath string) {
 		return
 	}
 	fmt.Printf("Editor set to %q\n", answer)
+}
+
+// configureAutoDescriptions offers to enable the auto-description
+// backstop. It's off by default (it spends model calls), so setup is
+// where we surface it and suggest turning it on.
+func configureAutoDescriptions(reader *bufio.Reader, configPath string) {
+	fmt.Println()
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return
+	}
+
+	fmt.Println("Auto-descriptions (optional): bay can summarize each bay's agent")
+	fmt.Println("conversation into its description in the background, so 'bay ls' and the")
+	fmt.Println("picker stay meaningful without manual labeling. It runs a summarizer CLI")
+	fmt.Println("periodically (default: codex exec with a cheap model), spending model")
+	fmt.Println("calls on your account. Change or disable it anytime via [describe] in config.")
+
+	_, codexErr := exec.LookPath("codex")
+
+	// Default suggestion: on if the default summarizer is available, or
+	// whatever was already chosen explicitly.
+	suggestOn := codexErr == nil
+	if cfg.Describe.Enabled != nil {
+		suggestOn = *cfg.Describe.Enabled
+	}
+	if codexErr != nil && (cfg.Describe.Enabled == nil || len(cfg.Describe.Command) == 0) {
+		fmt.Println("(Note: the default summarizer 'codex' isn't on your PATH — enabling")
+		fmt.Println(" needs it installed, or set [describe].command to another CLI.)")
+	}
+
+	prompt := "Enable auto-descriptions? [y/N]: "
+	if suggestOn {
+		prompt = "Enable auto-descriptions? [Y/n]: "
+	}
+	fmt.Print(prompt)
+
+	answer, _ := reader.ReadString('\n')
+	answer = strings.ToLower(strings.TrimSpace(answer))
+
+	enable := suggestOn
+	switch answer {
+	case "y", "yes":
+		enable = true
+	case "n", "no":
+		enable = false
+	}
+
+	cfg.Describe.Enabled = &enable
+	if err := config.Save(configPath, cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not save auto-descriptions setting: %v\n", err)
+		return
+	}
+	if enable {
+		fmt.Println("Auto-descriptions enabled.")
+	} else {
+		fmt.Println("Auto-descriptions disabled.")
+	}
 }
 
 const baySkillContent = `---

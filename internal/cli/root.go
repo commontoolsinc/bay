@@ -168,6 +168,7 @@ func NewRootCmd(version string) *cobra.Command {
 	configCmd := newConfigCmd()
 	configCmd.GroupID = "infra"
 	prepareWorkerCmd := newPrepareWorkerCmd()
+	describeWorkerCmd := newDescribeWorkerCmd()
 
 	root.AddCommand(
 		bayNewCmd,
@@ -200,6 +201,7 @@ func NewRootCmd(version string) *cobra.Command {
 		versionCmd,
 		newPaletteCmd(), // hidden, for M-p keybinding
 		prepareWorkerCmd,
+		describeWorkerCmd,
 	)
 
 	agentGuideCmd := newAgentGuideCmd()

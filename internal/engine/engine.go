@@ -38,7 +38,7 @@ func New(cfg *config.Config, configPath, manifestPath, archivePath string, t tmu
 		archivePath:  archivePath,
 		Tmux:         t,
 		Git:          g,
-		startWorker:  startPrepareWorkerProcess,
+		startWorker:  startWorkerProcess,
 	}
 }
 
@@ -78,6 +78,22 @@ func (e *Engine) SaveConfig() error {
 		return nil
 	}
 	return config.Save(e.configPath, e.Config)
+}
+
+// ReloadConfig re-reads the config file into e.Config so a long-running
+// process (the monitor) picks up edits — e.g. enabling auto-descriptions
+// via `bay setup` — without a restart. On read/parse error or with no
+// config path, the existing config is kept.
+func (e *Engine) ReloadConfig() error {
+	if e.configPath == "" {
+		return nil
+	}
+	cfg, err := config.Load(e.configPath)
+	if err != nil {
+		return err
+	}
+	e.Config = cfg
+	return nil
 }
 
 // resolvedDockAgent returns the effective agent for a dock,

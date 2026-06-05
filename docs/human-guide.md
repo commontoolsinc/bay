@@ -227,6 +227,13 @@ text with two parts:
 Set it with `bay describe "Login flow fixes"` (or `bay describe`).
 Shells handle newlines in quoted strings, so you can pass a multi-line
 body directly; or use `bay describe --edit` to open `$EDITOR`.
+
+You may not have to set one: if you enable auto-descriptions (opt-in;
+see Configuration), bay fills in empty descriptions in the background by
+summarizing the bay's agent conversation (Claude or Codex). Anything you
+set by hand — or that an agent sets via `bay describe` — is owned and
+never overwritten; `bay describe --clear` hands a bay back to the
+auto-summarizer. `bay setup` offers to turn the feature on.
 Descriptions don't affect tmux tab names — tabs stay short and truncate
 to fit, while descriptions give you a more human-readable hint when
 you're scanning for the right bay.
@@ -395,6 +402,35 @@ terminal = "ghostty"                           # host terminal app
 codex = ["--model", "o3"]                      # per-dock agent args override
 ```
 
+### Auto-descriptions (optional)
+
+Bay can fill in empty bay descriptions automatically, summarizing the
+bay's agent conversation (Claude and Codex transcripts) on a slow
+background cadence run by the monitor. It never overwrites a description
+you (or an agent) set by hand.
+
+It's **off by default** — it spends model calls and assumes a summarizer
+CLI you have — so it's opt-in. `bay setup` offers to turn it on; or set
+it directly:
+
+```toml
+[describe]
+enabled = true
+# Summarizer argv. The full prompt is appended as the final argument.
+# If an element is "{out}", bay substitutes a temp file and reads the
+# answer from it (codex prints status chatter to stdout); otherwise it
+# reads stdout. Set the model by editing the command — any CLI works.
+command = ["codex", "exec", "--sandbox", "read-only", "--skip-git-repo-check",
+           "--ephemeral", "-c", "model_reasoning_effort=low",
+           "-m", "gpt-5.4-mini", "-o", "{out}"]
+```
+
+A plain stdout filter needs no `{out}`, e.g.
+`command = ["llm", "-m", "gpt-4o-mini"]`. Leaving `command` unset uses
+the codex default above. The summarizer runs as a detached background
+process and never blocks `bay` commands. See
+`docs/design/auto-descriptions.md` for the design.
+
 ## Agent integration
 
 ### Bay awareness
@@ -405,14 +441,11 @@ checkout.
 
 This does two things:
 1. For each built-in agent with a project file (e.g., `CLAUDE.local.md`
-   for Claude Code), writes a short awareness block: a pointer to
-   `bay agent-guide` plus an explicit *"at session start, check the
-   workspace description with `bay describe`"* trigger. Uses the local
-   file so bay awareness doesn't pollute the shared project config.
-   Any pre-existing single-line pointer (starts with *"This project
-   uses bay"* and references `bay agent-guide`) is rewritten in place
-   on the next `bay dock init`, regardless of which historical phrasing
-   it used. Files bay creates are added to both `.gitignore` and
+   for Claude Code), writes a short awareness block: a one-line pointer
+   to `bay agent-guide`. Uses the local file so bay awareness doesn't
+   pollute the shared project config. If the file already references
+   `bay agent-guide`, it's left alone. Files bay creates are added to
+   both `.gitignore` and
    `.worktreeinclude`. Pre-existing project files are left out of both
    unless they're already gitignored (in which case they go in
    `.worktreeinclude` so worktrees stay in sync) — bay never adds an
