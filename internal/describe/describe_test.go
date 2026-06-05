@@ -139,11 +139,17 @@ func TestNoSignalNoOp(t *testing.T) {
 	if got.DescriptionSummarizedAt != 1000 {
 		t.Errorf("summarizedAt = %d, want 1000 (stamped on no-signal)", got.DescriptionSummarizedAt)
 	}
+	// Each no-op grows the stable streak so the monitor backs off.
+	if got.DescriptionStableStreak != 1 {
+		t.Errorf("stable streak = %d, want 1 after a no-signal run", got.DescriptionStableStreak)
+	}
 }
 
 func TestStampsOnSummarizerFailure(t *testing.T) {
 	mp := filepath.Join(t.TempDir(), "manifest.json")
-	writeManifest(t, mp, eligibleBay())
+	bay := eligibleBay()
+	bay.DescriptionStableStreak = 3 // had been quiet before this changed input
+	writeManifest(t, mp, bay)
 	sum := &stubSummarizer{err: errors.New("boom")}
 	w := newWorker(t, mp, sum, []transcript.Prompt{{Text: "goal"}}, GitSignal{Branch: "x"})
 
@@ -156,6 +162,11 @@ func TestStampsOnSummarizerFailure(t *testing.T) {
 	}
 	if got.DescriptionSummarizedAt != 1000 {
 		t.Errorf("summarizedAt = %d, want 1000 (stamped on failure for backoff)", got.DescriptionSummarizedAt)
+	}
+	// The input changed but stayed unsummarized: reset to base cadence, do
+	// not grow the streak (which would back off a bay with real new work).
+	if got.DescriptionStableStreak != 0 {
+		t.Errorf("stable streak = %d, want 0 (reset on a failed-but-changed run)", got.DescriptionStableStreak)
 	}
 }
 
@@ -222,6 +233,7 @@ func TestRefreshesAuto(t *testing.T) {
 	bay.Description = "old auto"
 	bay.DescriptionSource = manifest.DescriptionSourceAuto
 	bay.DescriptionInputHash = "sha256:stale"
+	bay.DescriptionStableStreak = 4 // had been quiet; a real change resets it
 	writeManifest(t, mp, bay)
 	sum := &stubSummarizer{out: "New goal"}
 	w := newWorker(t, mp, sum, []transcript.Prompt{{Text: "changed goal"}}, GitSignal{})
@@ -232,8 +244,12 @@ func TestRefreshesAuto(t *testing.T) {
 	if sum.calls != 1 {
 		t.Fatalf("summarizer calls = %d, want 1", sum.calls)
 	}
-	if got := loadBay(t, mp); got.Description != "New goal" {
+	got := loadBay(t, mp)
+	if got.Description != "New goal" {
 		t.Errorf("description = %q, want refreshed", got.Description)
+	}
+	if got.DescriptionStableStreak != 0 {
+		t.Errorf("stable streak = %d, want 0 (reset on a real change)", got.DescriptionStableStreak)
 	}
 }
 
@@ -248,6 +264,7 @@ func TestInputHashSkip(t *testing.T) {
 	bay.Description = "existing auto"
 	bay.DescriptionSource = manifest.DescriptionSourceAuto
 	bay.DescriptionInputHash = hash
+	bay.DescriptionStableStreak = 2
 	writeManifest(t, mp, bay)
 	sum := &stubSummarizer{out: "should not be called"}
 	w := newWorker(t, mp, sum, prompts, git)
@@ -264,6 +281,31 @@ func TestInputHashSkip(t *testing.T) {
 	}
 	if got.DescriptionSummarizedAt != 1000 {
 		t.Errorf("summarizedAt = %d, want bumped to 1000", got.DescriptionSummarizedAt)
+	}
+	if got.DescriptionStableStreak != 3 {
+		t.Errorf("stable streak = %d, want 3 (incremented on no-op)", got.DescriptionStableStreak)
+	}
+}
+
+func TestStableStreakCaps(t *testing.T) {
+	prompts := []transcript.Prompt{{Text: "stable goal"}}
+	git := GitSignal{Branch: "x"}
+	input, _ := assembleInput(prompts, git)
+
+	mp := filepath.Join(t.TempDir(), "manifest.json")
+	bay := eligibleBay()
+	bay.Description = "existing auto"
+	bay.DescriptionSource = manifest.DescriptionSourceAuto
+	bay.DescriptionInputHash = hashInput(input)
+	bay.DescriptionStableStreak = maxStableStreak
+	writeManifest(t, mp, bay)
+	w := newWorker(t, mp, &stubSummarizer{}, prompts, git)
+
+	if err := w.Run(context.Background(), Options{Dock: "labs", Bay: "b1"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadBay(t, mp); got.DescriptionStableStreak != maxStableStreak {
+		t.Errorf("stable streak = %d, want capped at %d", got.DescriptionStableStreak, maxStableStreak)
 	}
 }
 

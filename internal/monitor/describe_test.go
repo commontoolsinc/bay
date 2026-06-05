@@ -46,6 +46,68 @@ func TestSelectDescribeCandidates(t *testing.T) {
 	}
 }
 
+func TestSelectDescribeCandidatesBackoff(t *testing.T) {
+	const now = 1_000_000
+	auto := manifest.DescriptionSourceAuto
+
+	mk := func(id string, lastActive, summarizedAt int64, streak int) manifest.Bay {
+		return manifest.Bay{
+			ID: id, Type: manifest.BayTypeWorktree, Path: "/" + id,
+			Description: "auto", DescriptionSource: auto,
+			LastActive: lastActive, DescriptionSummarizedAt: summarizedAt,
+			DescriptionStableStreak: streak,
+		}
+	}
+
+	mf := &manifest.Manifest{Docks: []manifest.Dock{{Name: "labs", Bays: []manifest.Bay{
+		// Agent-only (no bay command since the last run) and quiet: the base
+		// interval (600) would make it due, but backoff(3)=3600 holds it.
+		mk("backedoff", now-4000, now-3000, 3),
+		// Agent-only and quiet, but now past the backed-off interval → due.
+		mk("dueAgent", now-5000, now-4000, 3),
+		// User touched it since the last run → base cadence, past the floor,
+		// so it refreshes despite the streak that would otherwise back it off.
+		mk("userActive", now-100, now-1000, 3),
+		// User touched it but still within the base floor → not yet due.
+		mk("userFloor", now-100, now-300, 3),
+	}}}}
+
+	got := map[string]bool{}
+	for _, c := range selectDescribeCandidates(mf, now, describeMaxPerCycle) {
+		got[c.bay] = true
+	}
+	if got["backedoff"] {
+		t.Error("backedoff: quiet agent-only bay should be suppressed by backoff")
+	}
+	if !got["dueAgent"] {
+		t.Error("dueAgent: bay past its backed-off interval should be a candidate")
+	}
+	if !got["userActive"] {
+		t.Error("userActive: bay touched since last run should refresh at base cadence")
+	}
+	if got["userFloor"] {
+		t.Error("userFloor: bay within the base floor should not be a candidate")
+	}
+}
+
+func TestDescribeBackoff(t *testing.T) {
+	cases := []struct {
+		streak int
+		want   int64
+	}{
+		{0, describeMinInterval},     // just changed → base cadence
+		{1, 2 * describeMinInterval}, // doubles per quiet run
+		{2, 4 * describeMinInterval},
+		{3, describeMaxInterval},  // 8*base would exceed the cap
+		{50, describeMaxInterval}, // saturates, never overflows
+	}
+	for _, c := range cases {
+		if got := describeBackoff(c.streak); got != c.want {
+			t.Errorf("describeBackoff(%d) = %d, want %d", c.streak, got, c.want)
+		}
+	}
+}
+
 func TestSelectDescribeCandidatesCap(t *testing.T) {
 	const now = 1_000_000
 	var bays []manifest.Bay
