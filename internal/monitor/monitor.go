@@ -94,8 +94,11 @@ type Monitor struct {
 	// and PR/merge probing on its own cadence.
 	engine *engine.Engine
 
-	// tracked keeps state of which windows are currently highlighted to avoid
-	// redundant tmux calls and to know when to clear.
+	// tracked records which windows currently carry the monitor's red
+	// window-status-style, so we skip re-applying the style and know which
+	// windows to clear when their prompt goes away. It does NOT gate the
+	// @bay-waiting flag: that is re-asserted every cycle because the
+	// after-select-window hook clears it behind our back (see setHighlight).
 	tracked map[string]bool
 
 	// cycle counts check cycles for cadence-gated operations.
@@ -579,12 +582,23 @@ func (m *Monitor) checkWindow(windowID string, patterns []*regexp.Regexp) bool {
 }
 
 // setHighlight marks a window as waiting by setting the tmux user option and style.
+//
+// The @bay-waiting flag is re-asserted on every call, even for a window we
+// already track. We are not its only writer: setup installs an
+// after-select-window hook that clears @bay-waiting on focus (see
+// bayClearWaitingHook). So a window the agent is still blocking on has its
+// flag cleared out from under us the moment the user merely glances at the
+// tab — and if we short-circuited on m.tracked we'd never set it back, leaving
+// the tab styled red (the style does not self-clear on focus) but invisible to
+// `bay go --next-waiting`. Re-asserting each cycle keeps the flag in sync with
+// what the pattern still sees. The style is idempotent and gated on tracked
+// purely to avoid a redundant tmux call.
 func (m *Monitor) setHighlight(windowID string) error {
-	if m.tracked[windowID] {
-		return nil // already highlighted
-	}
 	if err := m.tmux.SetWindowOption(windowID, waitingOption, "1"); err != nil {
 		return err
+	}
+	if m.tracked[windowID] {
+		return nil // style already applied
 	}
 	if err := m.tmux.SetWindowOption(windowID, "window-status-style", highlightStyle); err != nil {
 		return err

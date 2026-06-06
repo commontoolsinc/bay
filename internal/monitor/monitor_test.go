@@ -409,6 +409,57 @@ func TestCheckLoop_ClearsHighlightWhenNoMatch(t *testing.T) {
 	}
 }
 
+// TestCheckLoop_ReassertsWaitingAfterFocusClear is the regression test for the
+// Option-R rot: setup's after-select-window hook clears @bay-waiting whenever a
+// window is focused (even just glanced at), out from under the monitor. While
+// the agent's prompt is still on screen the monitor must put the flag back, or
+// `bay go --next-waiting` can never return to a tab the user briefly visited.
+func TestCheckLoop_ReassertsWaitingAfterFocusClear(t *testing.T) {
+	dir := t.TempDir()
+	mock := tmux.NewMock()
+
+	mock.NewSession("dev")
+	winID, _ := mock.NewWindow("dev", "test-bay", "/tmp")
+	panes, _ := mock.ListPanes(winID)
+	paneID := panes[0].ID
+
+	mock.SetCaptureContent(paneID, "Waiting for input")
+
+	manifestPath := createTestManifest(t, dir, winID)
+	patternsPath := filepath.Join(dir, "waiting-patterns.txt")
+	if err := os.WriteFile(patternsPath, []byte("(?i)waiting for input\n"), 0o644); err != nil {
+		t.Fatalf("writing patterns: %v", err)
+	}
+
+	pidPath := filepath.Join(dir, "monitor.pid")
+	mon := New(mock, manifestPath, patternsPath, pidPath, 1)
+
+	if err := mon.CheckOnce(); err != nil {
+		t.Fatalf("CheckOnce (1): %v", err)
+	}
+	if val, _ := mock.GetWindowOption(winID, "@bay-waiting"); val != "1" {
+		t.Fatalf("expected @bay-waiting=1 after first check, got %q", val)
+	}
+
+	// Simulate the after-select-window hook firing when the user focuses the
+	// tab: @bay-waiting is cleared, but the red style (and the prompt) remain.
+	if err := mock.SetWindowOption(winID, "@bay-waiting", "0"); err != nil {
+		t.Fatalf("clearing flag: %v", err)
+	}
+
+	// The prompt is still on screen, so the next cycle must re-flag the window.
+	if err := mon.CheckOnce(); err != nil {
+		t.Fatalf("CheckOnce (2): %v", err)
+	}
+	val, err := mock.GetWindowOption(winID, "@bay-waiting")
+	if err != nil {
+		t.Fatalf("GetWindowOption: %v", err)
+	}
+	if val != "1" {
+		t.Errorf("expected @bay-waiting re-asserted to 1 after focus clear, got %q", val)
+	}
+}
+
 func TestCheckLoop_SkipsShellOnlyWindows(t *testing.T) {
 	dir := t.TempDir()
 	mock := tmux.NewMock()
