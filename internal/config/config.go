@@ -269,6 +269,18 @@ func (c *Config) lookupAgentConfig(name string) (AgentConfig, bool) {
 	return AgentConfig{}, false
 }
 
+// ProfileBase returns the canonical base agent name that extends-
+// resolution would use for name, or "" when name is not a profile
+// (or is disabled). Display code uses this to label profiles with
+// their base client, e.g. "fable (claude)".
+func (c *Config) ProfileBase(name string) string {
+	ac, ok := c.lookupAgentConfig(name)
+	if !ok || ac.Disabled || ac.Extends == "" {
+		return ""
+	}
+	return CanonicalAgentName(ac.Extends)
+}
+
 func appendArgs(base, extra []string) []string {
 	if len(extra) == 0 {
 		return base

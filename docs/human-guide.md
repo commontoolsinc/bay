@@ -414,7 +414,10 @@ launching `claude --model <name>` (`opus` pins `opus[1m]`, the
 Profiles work everywhere an agent name does: `bay new --agent=fable`,
 `bay agent fable --pane`, dock defaults (`[docks.dev] agent =
 "fable"`), `default_agent`, and your own tmux keybindings (pin custom
-bindings with `# bay-keep:` so `bay setup` preserves them).
+bindings with `# bay-keep:` so `bay setup` preserves them). The
+palette's agent picker labels profiles with their base client —
+`fable (claude)` — to keep them visually distinct from the clients
+themselves.
 
 Add your own the same way the built-ins are defined:
 

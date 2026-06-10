@@ -10,65 +10,97 @@ import (
 	"github.com/commontoolsinc/bay/internal/palette"
 )
 
+// identityDisplay is the no-decoration display func for picker tests
+// that don't exercise profile labeling.
+func identityDisplay(name string) string { return name }
+
 func TestBuildAgentPickerItems_FullListAlwaysContainsAllAgents(t *testing.T) {
 	mru := []string{"antigravity"}
 	available := []string{"antigravity", "claude", "codex"}
 
-	_, labels := buildAgentPickerItems(mru, available)
+	_, values := buildAgentPickerItems(mru, available, identityDisplay)
 
-	// Expected layout: mru first (antigravity), separator, then full sorted list.
-	want := []string{"antigravity", "──────", "antigravity", "claude", "codex"}
-	if len(labels) != len(want) {
-		t.Fatalf("labels=%v; want %v", labels, want)
+	// Expected layout: mru first (antigravity), separator (""), then
+	// the full sorted list.
+	want := []string{"antigravity", "", "antigravity", "claude", "codex"}
+	if len(values) != len(want) {
+		t.Fatalf("values=%v; want %v", values, want)
 	}
 	for i, w := range want {
-		if labels[i] != w {
-			t.Errorf("labels[%d]=%q; want %q", i, labels[i], w)
+		if values[i] != w {
+			t.Errorf("values[%d]=%q; want %q", i, values[i], w)
 		}
 	}
 }
 
 func TestBuildAgentPickerItems_NoMRUOmitsSeparator(t *testing.T) {
-	_, labels := buildAgentPickerItems(nil, []string{"claude", "codex"})
+	_, values := buildAgentPickerItems(nil, []string{"claude", "codex"}, identityDisplay)
 	want := []string{"claude", "codex"}
-	if len(labels) != len(want) {
-		t.Fatalf("labels=%v; want %v (no separator when MRU empty)", labels, want)
+	if len(values) != len(want) {
+		t.Fatalf("values=%v; want %v (no separator when MRU empty)", values, want)
 	}
 	for i, w := range want {
-		if labels[i] != w {
-			t.Errorf("labels[%d]=%q; want %q", i, labels[i], w)
+		if values[i] != w {
+			t.Errorf("values[%d]=%q; want %q", i, values[i], w)
 		}
 	}
 }
 
 func TestBuildAgentPickerItems_SeparatorValueIsSentinel(t *testing.T) {
-	items, _ := buildAgentPickerItems([]string{"codex"}, []string{"claude", "codex"})
-	// items[1] must be the separator and have Value < 0 so picker.Pick
-	// returning that value is treated as cancellation.
+	items, values := buildAgentPickerItems([]string{"codex"}, []string{"claude", "codex"}, identityDisplay)
+	// items[1] must be the separator: Value < 0 so picker.Pick returning
+	// it is treated as cancellation, and an empty values entry so
+	// paletteAgentPick's value lookup also rejects it.
 	if !strings.HasPrefix(items[1].Display, "─") {
 		t.Fatalf("items[1]=%+v; want separator", items[1])
 	}
 	if items[1].Value >= 0 {
 		t.Errorf("separator Value=%d; must be negative", items[1].Value)
 	}
+	if values[1] != "" {
+		t.Errorf("separator value=%q; must be empty", values[1])
+	}
 }
 
-func TestBuildAgentPickerItems_LabelsIndexedByItemValue(t *testing.T) {
-	// Real items have Value == their index in labels (except the separator).
-	// This test pins that invariant — paletteAgentPick relies on
-	// labels[sel] to resolve the chosen agent name.
-	items, labels := buildAgentPickerItems([]string{"codex"}, []string{"antigravity", "claude", "codex"})
+func TestBuildAgentPickerItems_ValuesIndexedByItemValue(t *testing.T) {
+	// Real items have Value == their index in values (except the
+	// separator). This test pins that invariant — paletteAgentPick
+	// relies on values[sel] to resolve the chosen agent name even when
+	// the display label is decorated.
+	decorate := func(name string) string { return name + " (claude)" }
+	items, values := buildAgentPickerItems([]string{"codex"}, []string{"antigravity", "claude", "codex"}, decorate)
 	for _, it := range items {
 		if it.Value < 0 {
 			continue // separator
 		}
-		if it.Value >= len(labels) {
-			t.Errorf("item Value=%d out of range (len=%d)", it.Value, len(labels))
+		if it.Value >= len(values) {
+			t.Errorf("item Value=%d out of range (len=%d)", it.Value, len(values))
 			continue
 		}
-		if labels[it.Value] != it.Display {
-			t.Errorf("labels[%d]=%q does not match item.Display=%q", it.Value, labels[it.Value], it.Display)
+		if decorate(values[it.Value]) != it.Display {
+			t.Errorf("values[%d]=%q does not correspond to item.Display=%q", it.Value, values[it.Value], it.Display)
 		}
+	}
+}
+
+func TestAgentDisplayName_DecoratesProfiles(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents["my-fable"] = config.AgentConfig{Extends: "claude", LaunchArgs: []string{"--model", "fable"}}
+
+	cases := map[string]string{
+		"claude":   "claude",            // base client: undecorated
+		"codex":    "codex",             // base client: undecorated
+		"fable":    "fable (claude)",    // built-in profile
+		"opus":     "opus (claude)",     // built-in profile
+		"my-fable": "my-fable (claude)", // user profile
+	}
+	for name, want := range cases {
+		if got := agentDisplayName(cfg, name); got != want {
+			t.Errorf("agentDisplayName(%q) = %q; want %q", name, got, want)
+		}
+	}
+	if got := agentDisplayName(nil, "fable"); got != "fable" {
+		t.Errorf("agentDisplayName(nil cfg) = %q; want undecorated fallback", got)
 	}
 }
 

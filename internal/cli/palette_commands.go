@@ -568,20 +568,31 @@ func paletteAgentPick(env *paletteEnv) (string, bool) {
 	}
 	mru := env.Recents.TopAgentTypes(availSet)
 
-	items, labels := buildAgentPickerItems(mru, available)
+	items, values := buildAgentPickerItems(mru, available, func(name string) string {
+		return agentDisplayName(env.Engine.Config, name)
+	})
 
 	sel, err := (&picker.Builtin{}).Pick(items, picker.Options{Prompt: "agent type> "})
 	if err != nil || sel < 0 {
 		return "", false
 	}
-	if sel >= len(labels) {
+	if sel >= len(values) || values[sel] == "" {
 		return "", false
 	}
-	chosen := labels[sel]
-	if strings.HasPrefix(chosen, "─") {
-		return "", false
+	return values[sel], true
+}
+
+// agentDisplayName decorates a profile with its base client — "fable
+// (claude)" — so profiles don't read as peers of the clients they wrap.
+// Plain agents display as their name.
+func agentDisplayName(cfg *config.Config, name string) string {
+	if cfg == nil {
+		return name
 	}
-	return chosen, true
+	if base := cfg.ProfileBase(name); base != "" {
+		return fmt.Sprintf("%s (%s)", name, base)
+	}
+	return name
 }
 
 // buildAgentPickerItems builds the sub-picker's item list. MRU entries
@@ -590,27 +601,32 @@ func paletteAgentPick(env *paletteEnv) (string, bool) {
 // also in MRU — so "pick an agent" feels like a stable directory and
 // the MRU is strictly a shortcut.
 //
-// Returns items paired with a parallel labels slice keyed by Item.Value,
-// so callers can look up the chosen string without a second pass.
-func buildAgentPickerItems(mru, available []string) ([]picker.Item, []string) {
+// display maps an agent name to its picker label (e.g. decorating
+// profiles with their base). Returns items paired with a parallel
+// values slice keyed by Item.Value holding the raw agent names — the
+// separator's value is "" — so callers resolve the chosen name
+// independent of how it was displayed.
+func buildAgentPickerItems(mru, available []string, display func(string) string) ([]picker.Item, []string) {
 	var items []picker.Item
+	var values []string
+	add := func(name string) {
+		items = append(items, picker.Item{Display: display(name), Value: len(items)})
+		values = append(values, name)
+	}
 	for _, name := range mru {
-		items = append(items, picker.Item{Display: name, Value: len(items)})
+		add(name)
 	}
 	if len(items) > 0 {
 		items = append(items, picker.Item{Display: strings.Repeat("─", 6), Value: -1})
+		values = append(values, "")
 	}
 	sortedAll := make([]string, len(available))
 	copy(sortedAll, available)
 	sort.Strings(sortedAll)
 	for _, name := range sortedAll {
-		items = append(items, picker.Item{Display: name, Value: len(items)})
+		add(name)
 	}
-	labels := make([]string, 0, len(items))
-	for _, it := range items {
-		labels = append(labels, it.Display)
-	}
-	return items, labels
+	return items, values
 }
 
 func agentAvailable(cfg *config.Config, agent string) bool {
