@@ -206,9 +206,21 @@ Rejected: a two-level chord (client key, then model key). It taxes
 every launch interaction to defend against a matrix nobody
 populates.
 
----
+### Amendment (same PR): seeded built-in profiles
 
-## Incremental path
+Bay ships four built-in profiles — `fable`, `opus`, `sonnet`,
+`haiku` — so the core identities work with zero config
+(`bay agent opus` out of the box). They're claude-based only:
+Claude Code maintains those aliases so the pins don't rot, while
+codex/antigravity model names churn and stay user-defined. The
+seeds are `extends = "claude"` entries, not static commands, so a
+user's `[agents.claude]` args flow through them. A same-named user
+config entry adjusts the profile field-wise — unless it sets
+`command` or `extends`, in which case it defines its own identity
+and replaces the profile (protects pre-existing custom agents that
+happen to share a seeded name). `disabled = true` removes one.
+Probe, hook installation, and setup still consider only the three
+base clients — profiles share their base's binary and hooks.
 
 ### Step 1: `launch_args` [SMALL — ~60-100 lines]
 
@@ -274,8 +286,9 @@ out of comfortable keys.
 7. **`default_agent` can name a profile.** `[default_agent]`
    resolution goes through `ResolveAgent`, so `default_agent =
    "fable"` works. Setup's probe (used when nothing is configured)
-   still probes built-ins only — acceptable, since a profile
-   implies a config file exists.
+   still probes base clients only — probing should pick a client,
+   not a model pin; built-in profiles resolve without config but
+   are never probe results.
 
 ---
 

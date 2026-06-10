@@ -670,3 +670,93 @@ codex = ["--model", "o3"]
 		t.Errorf("dock agent = %q, want fable", got)
 	}
 }
+
+func TestResolveAgent_BuiltinProfiles(t *testing.T) {
+	cfg := DefaultConfig()
+
+	for _, name := range []string{"fable", "opus", "sonnet", "haiku"} {
+		info, ok := cfg.ResolveAgent(name)
+		if !ok {
+			t.Fatalf("built-in profile %q should resolve with no config", name)
+		}
+		if info.Command != "claude" || info.ResumeArgs != "--continue" || info.ProjectFile != "CLAUDE.local.md" {
+			t.Errorf("%s = %+v, want claude base fields", name, info)
+		}
+		if len(info.LaunchArgs) != 2 || info.LaunchArgs[0] != "--model" || info.LaunchArgs[1] != name {
+			t.Errorf("%s launch_args = %v, want [--model %s]", name, info.LaunchArgs, name)
+		}
+	}
+}
+
+func TestResolveAgent_BuiltinProfileInheritsBaseConfig(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Agents["claude"] = AgentConfig{Args: []string{"--dangerously-skip-permissions"}}
+
+	info, ok := cfg.ResolveAgent("fable")
+	if !ok {
+		t.Fatal("fable should resolve")
+	}
+	if len(info.Args) != 1 || info.Args[0] != "--dangerously-skip-permissions" {
+		t.Errorf("args = %v, want base claude args to flow through", info.Args)
+	}
+}
+
+func TestResolveAgent_BuiltinProfileUserOverride(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Agents["opus"] = AgentConfig{LaunchArgs: []string{"--model", "opus[1m]"}}
+
+	info, ok := cfg.ResolveAgent("opus")
+	if !ok {
+		t.Fatal("overridden opus should resolve")
+	}
+	// User field wins; unset fields keep the profile's defaults.
+	if len(info.LaunchArgs) != 2 || info.LaunchArgs[1] != "opus[1m]" {
+		t.Errorf("launch_args = %v, want user override [--model opus[1m]]", info.LaunchArgs)
+	}
+	if info.Command != "claude" || info.ResumeArgs != "--continue" {
+		t.Errorf("info = %+v, want inherited claude base", info)
+	}
+}
+
+func TestResolveAgent_BuiltinProfileDisabled(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Agents["haiku"] = AgentConfig{Disabled: true}
+
+	if _, ok := cfg.ResolveAgent("haiku"); ok {
+		t.Error("disabled built-in profile should not resolve")
+	}
+	if errs := cfg.Validate(); len(errs) != 0 {
+		t.Errorf("disabled entry should not produce warnings: %v", errs)
+	}
+}
+
+func TestResolveAgent_ExtendingBuiltinProfileRejected(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Agents["my-fable"] = AgentConfig{Extends: "fable"}
+
+	if _, ok := cfg.ResolveAgent("my-fable"); ok {
+		t.Error("extending a built-in profile should be rejected (one level only)")
+	}
+	errs := cfg.Validate()
+	if len(errs) != 1 || !strings.Contains(errs[0], `"my-fable" extends "fable", which itself extends "claude"`) {
+		t.Errorf("Validate = %v, want chain error naming claude", errs)
+	}
+}
+
+func TestResolveAgent_ProfileNameWithOwnCommandStandsAlone(t *testing.T) {
+	// A pre-existing custom agent that happens to share a built-in
+	// profile's name must not be surprised with the profile's model pin.
+	cfg := DefaultConfig()
+	cfg.Agents["haiku"] = AgentConfig{Command: "haiku-cli", ResumeArgs: "--resume"}
+
+	info, ok := cfg.ResolveAgent("haiku")
+	if !ok {
+		t.Fatal("custom haiku should resolve")
+	}
+	if info.Command != "haiku-cli" || info.ResumeArgs != "--resume" {
+		t.Errorf("info = %+v, want standalone custom agent", info)
+	}
+	if len(info.LaunchArgs) != 0 {
+		t.Errorf("launch_args = %v, want none — profile pin must not leak into a standalone definition", info.LaunchArgs)
+	}
+}

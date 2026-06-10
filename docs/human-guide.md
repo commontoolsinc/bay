@@ -401,30 +401,46 @@ containing spaces or other special characters, so a multi-word value
 (e.g. an initial prompt) reaches the agent as a single argument;
 leading-tilde paths still expand.
 
-### Model profiles (optional)
+### Model profiles
 
-A profile is an agent that `extends` a base agent — use it to launch
-the same client pinned to different models, and give each identity a
-name:
+A profile is an agent that `extends` a base agent — the same client
+pinned to a model, with its own name. Four come built in, no config
+needed: **`fable`**, **`opus`**, **`sonnet`**, and **`haiku`**, each
+launching `claude --model <name>`. So `bay agent opus --pane` or
+`bay new --agent=fable` work out of the box.
+
+Profiles work everywhere an agent name does: `bay new --agent=fable`,
+`bay agent fable --pane`, dock defaults (`[docks.dev] agent =
+"fable"`), `default_agent`, and your own tmux keybindings (pin custom
+bindings with `# bay-keep:` so `bay setup` preserves them).
+
+Add your own the same way the built-ins are defined:
 
 ```toml
-[agents.fable]
+[agents.fable-fast]
 extends = "claude"
-launch_args = ["--model", "fable"]
-
-[agents.opus]
-extends = "claude"
-launch_args = ["--model", "opus"]
+launch_args = ["--model", "fable", "--fast"]
 ```
 
 A profile inherits the base's command, args, `resume_args`, and
 `project_file`; its `args`/`launch_args` are appended to the base's,
-and other fields it sets override. Profiles work everywhere an agent
-name does: `bay new --agent=fable`, `bay agent fable --pane`, dock
-defaults (`[docks.dev] agent = "fable"`), `default_agent`, and your
-own tmux keybindings (pin custom bindings with `# bay-keep:` so
-`bay setup` preserves them). Only one level — a profile can't extend
-another profile.
+and other fields it sets override. Only one level — a profile can't
+extend another profile (including the built-in ones; extend `claude`
+directly instead).
+
+Built-in profiles are yours to adjust: a same-named config entry that
+sets only args/launch_args/resume_args/project_file tweaks the
+profile (fields you set win, the rest keep the profile's defaults);
+one that sets `command` or `extends` replaces it entirely; and
+`disabled = true` removes it:
+
+```toml
+[agents.opus]
+launch_args = ["--model", "opus[1m]"]   # opus now means 1M-context opus
+
+[agents.haiku]
+disabled = true                         # drop the built-in haiku profile
+```
 
 The base stays unpinned: a plain `bay agent claude` still starts on
 whatever model Claude Code would pick itself, and resumed sessions

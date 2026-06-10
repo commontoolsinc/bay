@@ -618,6 +618,9 @@ func agentAvailable(cfg *config.Config, agent string) bool {
 		return false
 	}
 	if cfg == nil {
+		if _, ok := config.BuiltinProfiles[agent]; ok {
+			return true
+		}
 		_, ok := config.KnownAgents[config.CanonicalAgentName(agent)]
 		return ok
 	}
@@ -625,10 +628,14 @@ func agentAvailable(cfg *config.Config, agent string) bool {
 	return ok
 }
 
-// availableAgents returns the sorted list of known + configured agent names.
+// availableAgents returns the sorted list of known, built-in-profile,
+// and configured agent names that resolve (disabled entries drop out).
 func availableAgents(cfg *config.Config) []string {
 	seen := map[string]bool{}
 	for name := range config.KnownAgents {
+		seen[name] = true
+	}
+	for name := range config.BuiltinProfiles {
 		seen[name] = true
 	}
 	if cfg != nil {
@@ -638,6 +645,11 @@ func availableAgents(cfg *config.Config) []string {
 	}
 	out := make([]string, 0, len(seen))
 	for name := range seen {
+		if cfg != nil {
+			if _, ok := cfg.ResolveAgent(name); !ok {
+				continue
+			}
+		}
 		out = append(out, name)
 	}
 	sort.Strings(out)

@@ -36,18 +36,24 @@ CUSTOM AGENTS (optional)
   --model would override it. Each list element is one argument —
   elements with spaces or special characters are shell-quoted.
 
-MODEL PROFILES (optional)
+MODEL PROFILES
 
   A profile extends a base agent — same client, pinned model, its own
-  name. Inherits command/args/resume_args/project_file from the base;
-  args and launch_args append; one level only.
+  name. Built-in: fable, opus, sonnet, haiku (claude --model <name>),
+  usable with no config anywhere an agent name works: 'bay agent
+  fable', 'bay new --agent=opus', dock defaults, default_agent.
 
-  [agents.fable]
+  Define your own the same way (inherits command/args/resume_args/
+  project_file from the base; args and launch_args append; one level
+  only — extend claude, not another profile):
+
+  [agents.fable-fast]
   extends = "claude"
-  launch_args = ["--model", "fable"]
+  launch_args = ["--model", "fable", "--fast"]
 
-  Use anywhere an agent name works: 'bay agent fable', 'bay new
-  --agent=fable', dock defaults, default_agent.
+  Adjust a built-in by redefining fields ([agents.opus] launch_args =
+  ["--model", "opus[1m]"]), replace it by setting command or extends,
+  or remove it with disabled = true.
 
 CUSTOM EDITORS (optional)
 
