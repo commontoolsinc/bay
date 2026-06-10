@@ -54,8 +54,11 @@ func (e *Engine) resolveBayAgent(dockName string, m *manifest.Manifest, requeste
 // buildAgentCommand assembles the agent launch command. When resume is
 // true, the agent's configured resume_args are spliced in (e.g.
 // "--continue" for Claude Code) so the prior session is picked up;
-// used by recovery and undo-close.
-func (e *Engine) buildAgentCommand(agentName string, agentArgs []string, resume bool) (string, error) {
+// used by recovery and undo-close. launchArgs are dropped on resume:
+// they carry session-start flags like --model, and replaying those
+// would override state the resumed session restores itself (Claude
+// keeps a resumed session on its own last-selected model).
+func (e *Engine) buildAgentCommand(agentName string, agentArgs, launchArgs []string, resume bool) (string, error) {
 	if err := e.validateAgentName(agentName); err != nil {
 		return "", err
 	}
@@ -65,5 +68,8 @@ func (e *Engine) buildAgentCommand(agentName string, agentArgs []string, resume 
 		parts = append(parts, strings.Fields(info.ResumeArgs)...)
 	}
 	parts = append(parts, agentArgs...)
+	if !resume {
+		parts = append(parts, launchArgs...)
+	}
 	return strings.Join(parts, " "), nil
 }

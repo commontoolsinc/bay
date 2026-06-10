@@ -384,10 +384,47 @@ args = ["--dangerously-skip-permissions"]      # default args for claude
 
 [agents.my-agent]
 command = "my-agent-cli"
-args = ["--flag"]                              # default args
+args = ["--flag"]                              # args on every invocation
+launch_args = ["--profile", "work"]            # args on fresh launch only
 resume_args = "--resume"
 project_file = ".my-agent.md"
 ```
+
+`args` apply to every invocation, including resume (recover,
+undo-close restore). `launch_args` apply only to fresh launches —
+that's where session-start flags like `--model` belong. Claude Code
+restores a resumed session's own model, so a `--model` replayed on
+resume would override any model you switched to inside the session.
+
+### Model profiles (optional)
+
+A profile is an agent that `extends` a base agent — use it to launch
+the same client pinned to different models, and give each identity a
+name:
+
+```toml
+[agents.fable]
+extends = "claude"
+launch_args = ["--model", "fable"]
+
+[agents.opus]
+extends = "claude"
+launch_args = ["--model", "opus"]
+```
+
+A profile inherits the base's command, args, `resume_args`, and
+`project_file`; its `args`/`launch_args` are appended to the base's,
+and other fields it sets override. Profiles work everywhere an agent
+name does: `bay new --agent=fable`, `bay agent fable --pane`, dock
+defaults (`[docks.dev] agent = "fable"`), `default_agent`, and your
+own tmux keybindings (pin custom bindings with `# bay-keep:` so
+`bay setup` preserves them). Only one level — a profile can't extend
+another profile.
+
+The base stays unpinned: a plain `bay agent claude` still starts on
+whatever model Claude Code would pick itself, and resumed sessions
+always continue on the model they were last using (launch args are
+never replayed on resume).
 
 ### Per-dock overrides (optional)
 
@@ -399,7 +436,10 @@ agent = "codex"                                # override default agent
 terminal = "ghostty"                           # host terminal app
 
 [docks.dev.agent_args]
-codex = ["--model", "o3"]                      # per-dock agent args override
+codex = ["--full-auto"]                        # per-dock agent args override
+
+[docks.dev.launch_agent_args]
+codex = ["--model", "o3"]                      # per-dock launch-only args
 ```
 
 ### Auto-descriptions (optional)

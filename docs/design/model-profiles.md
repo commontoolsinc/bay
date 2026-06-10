@@ -1,6 +1,7 @@
 # Model profiles — design plan
 
-Captured 2026-06-10. No code has been written. The design emerged
+Captured 2026-06-10; steps 1 and 2 implemented in the same PR
+(step 3, the picker chord, remains deferred). The design emerged
 from a discussion about launching Claude with different models: the
 user thinks of running "a fable agent" or "a haiku agent" or "an
 opus agent," not just "a claude agent," and wants to choose at

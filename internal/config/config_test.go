@@ -479,3 +479,194 @@ func TestAgentLookupNames_LegacyAliasOrder(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveAgent_Extends(t *testing.T) {
+	cfg := &Config{
+		Agents: map[string]AgentConfig{
+			"claude": {Args: []string{"--base-flag"}},
+			"fable":  {Extends: "claude", LaunchArgs: []string{"--model", "fable"}},
+		},
+	}
+
+	info, ok := cfg.ResolveAgent("fable")
+	if !ok {
+		t.Fatal("fable profile should resolve")
+	}
+	// Inherited from the resolved base (config entry backfilled from built-in).
+	if info.Command != "claude" {
+		t.Errorf("command = %q, want claude", info.Command)
+	}
+	if info.ResumeArgs != "--continue" {
+		t.Errorf("resume_args = %q, want --continue", info.ResumeArgs)
+	}
+	if info.ProjectFile != "CLAUDE.local.md" {
+		t.Errorf("project_file = %q, want CLAUDE.local.md", info.ProjectFile)
+	}
+	// Base args flow through to the profile.
+	if len(info.Args) != 1 || info.Args[0] != "--base-flag" {
+		t.Errorf("args = %v, want [--base-flag]", info.Args)
+	}
+	if len(info.LaunchArgs) != 2 || info.LaunchArgs[0] != "--model" || info.LaunchArgs[1] != "fable" {
+		t.Errorf("launch_args = %v, want [--model fable]", info.LaunchArgs)
+	}
+
+	// Defining the profile doesn't change the base.
+	base, ok := cfg.ResolveAgent("claude")
+	if !ok {
+		t.Fatal("claude should resolve")
+	}
+	if len(base.LaunchArgs) != 0 {
+		t.Errorf("base launch_args = %v, want none", base.LaunchArgs)
+	}
+}
+
+func TestResolveAgent_ExtendsOverlay(t *testing.T) {
+	cfg := &Config{
+		Agents: map[string]AgentConfig{
+			"profile": {
+				Extends:     "claude",
+				Command:     "claude-beta",
+				Args:        []string{"--extra"},
+				ResumeArgs:  "--resume latest",
+				ProjectFile: "NOTES.md",
+			},
+		},
+	}
+
+	info, ok := cfg.ResolveAgent("profile")
+	if !ok {
+		t.Fatal("profile should resolve")
+	}
+	if info.Command != "claude-beta" {
+		t.Errorf("command = %q, want claude-beta (profile override)", info.Command)
+	}
+	if info.ResumeArgs != "--resume latest" {
+		t.Errorf("resume_args = %q, want --resume latest", info.ResumeArgs)
+	}
+	if info.ProjectFile != "NOTES.md" {
+		t.Errorf("project_file = %q, want NOTES.md", info.ProjectFile)
+	}
+	if len(info.Args) != 1 || info.Args[0] != "--extra" {
+		t.Errorf("args = %v, want [--extra]", info.Args)
+	}
+}
+
+func TestResolveAgent_ExtendsAliasBase(t *testing.T) {
+	cfg := &Config{
+		Agents: map[string]AgentConfig{
+			"fast-agy": {Extends: "gemini", LaunchArgs: []string{"--model", "flash"}},
+		},
+	}
+
+	info, ok := cfg.ResolveAgent("fast-agy")
+	if !ok {
+		t.Fatal("profile extending a legacy alias should resolve")
+	}
+	if info.Command != "agy" || info.ResumeArgs != "--continue" {
+		t.Errorf("info = %+v, want agy --continue via antigravity", info)
+	}
+}
+
+func TestResolveAgent_ExtendsChainRejected(t *testing.T) {
+	cfg := &Config{
+		Agents: map[string]AgentConfig{
+			"fable":  {Extends: "claude", LaunchArgs: []string{"--model", "fable"}},
+			"faster": {Extends: "fable"},
+			"loop":   {Extends: "loop"},
+			"orphan": {Extends: "no-such-agent"},
+		},
+	}
+
+	if _, ok := cfg.ResolveAgent("faster"); ok {
+		t.Error("profile extending a profile should not resolve (one level only)")
+	}
+	if _, ok := cfg.ResolveAgent("loop"); ok {
+		t.Error("self-extending profile should not resolve")
+	}
+	if _, ok := cfg.ResolveAgent("orphan"); ok {
+		t.Error("profile extending an unknown agent should not resolve")
+	}
+}
+
+func TestValidate_Extends(t *testing.T) {
+	cfg := &Config{
+		Agents: map[string]AgentConfig{
+			"fable":  {Extends: "claude", LaunchArgs: []string{"--model", "fable"}},
+			"faster": {Extends: "fable"},
+			"loop":   {Extends: "loop"},
+			"orphan": {Extends: "no-such-agent"},
+		},
+	}
+
+	errs := cfg.Validate()
+	if len(errs) != 3 {
+		t.Fatalf("expected 3 errors (chain, self, unknown base), got %d: %v", len(errs), errs)
+	}
+	joined := strings.Join(errs, "\n")
+	for _, want := range []string{
+		`"faster" extends "fable", which itself extends`,
+		`"loop" extends itself`,
+		`"orphan" extends unknown agent "no-such-agent"`,
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("errors missing %q:\n%s", want, joined)
+		}
+	}
+}
+
+func TestResolvedAgentLaunchArgs(t *testing.T) {
+	cfg := &Config{
+		Agents: map[string]AgentConfig{
+			"claude": {LaunchArgs: []string{"--model", "fable"}},
+		},
+		Docks: map[string]DockConfig{
+			"labs": {LaunchAgentArgs: map[string][]string{
+				"claude": {"--model", "opus"},
+			}},
+		},
+	}
+
+	// Per-dock override wins.
+	if got := cfg.ResolvedAgentLaunchArgs("labs", "claude"); len(got) != 2 || got[1] != "opus" {
+		t.Errorf("expected dock override [--model opus], got %v", got)
+	}
+	// Falls through to agent-level launch_args.
+	if got := cfg.ResolvedAgentLaunchArgs("other", "claude"); len(got) != 2 || got[1] != "fable" {
+		t.Errorf("expected agent launch_args [--model fable], got %v", got)
+	}
+	// No launch args anywhere.
+	if got := cfg.ResolvedAgentLaunchArgs("other", "codex"); len(got) != 0 {
+		t.Errorf("expected no launch args, got %v", got)
+	}
+}
+
+func TestParse_ModelProfile(t *testing.T) {
+	data := `
+[agents.fable]
+extends = "claude"
+launch_args = ["--model", "fable"]
+
+[docks.dev]
+agent = "fable"
+
+[docks.dev.launch_agent_args]
+codex = ["--model", "o3"]
+`
+	cfg, err := Parse(data)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if errs := cfg.Validate(); len(errs) != 0 {
+		t.Fatalf("Validate: %v", errs)
+	}
+	info, ok := cfg.ResolveAgent("fable")
+	if !ok || info.Command != "claude" {
+		t.Fatalf("fable = %+v ok=%v, want claude command", info, ok)
+	}
+	if got := cfg.ResolvedAgentLaunchArgs("dev", "codex"); len(got) != 2 || got[1] != "o3" {
+		t.Errorf("dock launch args = %v, want [--model o3]", got)
+	}
+	if got := cfg.ResolvedDockAgent("dev", ""); got != "fable" {
+		t.Errorf("dock agent = %q, want fable", got)
+	}
+}

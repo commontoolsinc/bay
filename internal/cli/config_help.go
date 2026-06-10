@@ -26,9 +26,27 @@ CUSTOM AGENTS (optional)
 
   [agents.my-agent]
   command = "my-agent-cli"
-  args = ["--flag", "value"]      # default args for this agent
+  args = ["--flag", "value"]      # args on every invocation (incl. resume)
+  launch_args = ["--x", "y"]      # args on fresh launch only, not resume
   resume_args = "--continue"      # added on recovery
   project_file = ".my-agent.md"   # checked when creating a dock
+
+  Session-start flags like --model belong in launch_args: resumed
+  sessions (recover, undo-close) keep their own model, and replaying
+  --model would override it.
+
+MODEL PROFILES (optional)
+
+  A profile extends a base agent — same client, pinned model, its own
+  name. Inherits command/args/resume_args/project_file from the base;
+  args and launch_args append; one level only.
+
+  [agents.fable]
+  extends = "claude"
+  launch_args = ["--model", "fable"]
+
+  Use anywhere an agent name works: 'bay agent fable', 'bay new
+  --agent=fable', dock defaults, default_agent.
 
 CUSTOM EDITORS (optional)
 
@@ -50,8 +68,10 @@ PER-DOCK OVERRIDES (optional)
   terminal = "ghostty"            # host terminal app
 
   [docks.myproject.agent_args]
-  claude = ["--model", "sonnet"]  # per-agent args override
-  codex = ["--model", "o3"]
+  claude = ["--dangerously-skip-permissions"]  # per-agent args override
+
+  [docks.myproject.launch_agent_args]
+  codex = ["--model", "o3"]       # per-agent launch-only args override
 
 MONITOR (optional)
 

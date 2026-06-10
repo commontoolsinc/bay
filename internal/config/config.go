@@ -31,19 +31,29 @@ type EditorConfig struct {
 
 // AgentConfig allows overriding built-in agent defaults.
 // Most users won't need this — the built-in registry covers claude,
-// codex, and antigravity. Use this for custom agents or to override
-// resume_args / project_file for a known agent.
+// codex, and antigravity. Use this for custom agents, to override
+// resume_args / project_file for a known agent, or to define a
+// profile of a base agent via extends (e.g. a model-pinned claude).
 type AgentConfig struct {
+	Extends     string   `toml:"extends,omitempty"`
 	Command     string   `toml:"command"`
 	Args        []string `toml:"args,omitempty"`
+	LaunchArgs  []string `toml:"launch_args,omitempty"`
 	ResumeArgs  string   `toml:"resume_args,omitempty"`
 	ProjectFile string   `toml:"project_file,omitempty"`
 }
 
 // AgentInfo describes a known or configured agent.
+//
+// Args apply to every invocation. LaunchArgs apply only to fresh
+// launches, never to resume (recover, undo-close restore) — that's
+// where session-start flags like --model belong. Claude Code restores
+// a resumed session's own model; replaying --model on resume would
+// clobber any in-session switch. See docs/design/model-profiles.md.
 type AgentInfo struct {
 	Command     string
 	Args        []string
+	LaunchArgs  []string
 	ResumeArgs  string
 	ProjectFile string
 }
@@ -92,9 +102,13 @@ func KnownAgentNames() []string {
 func (c *Config) ResolveAgent(name string) (AgentInfo, bool) {
 	canonical := CanonicalAgentName(name)
 	if ac, ok := c.Agents[name]; ok {
+		if ac.Extends != "" {
+			return c.resolveExtendedAgent(ac)
+		}
 		if canonical != name && aliasConfigUsesLegacyDefault(name, ac) {
 			info := c.agentInfoFromConfig(canonical, AgentConfig{
 				Args:        ac.Args,
+				LaunchArgs:  ac.LaunchArgs,
 				ProjectFile: ac.ProjectFile,
 			})
 			return info, info.Command != ""
@@ -115,14 +129,82 @@ func (c *Config) ResolveAgent(name string) (AgentInfo, bool) {
 
 func (c *Config) resolveConfiguredAgent(name string) (AgentInfo, bool) {
 	if ac, ok := c.Agents[name]; ok {
+		if ac.Extends != "" {
+			return c.resolveExtendedAgent(ac)
+		}
 		info := c.agentInfoFromConfig(name, ac)
 		return info, info.Command != ""
 	}
 	return AgentInfo{}, false
 }
 
+// resolveExtendedAgent resolves a profile entry: the base agent's
+// resolved info overlaid with the profile's explicitly set fields.
+// Args and launch_args append to the base's rather than replacing
+// them, so base flags flow through to every profile.
+func (c *Config) resolveExtendedAgent(ac AgentConfig) (AgentInfo, bool) {
+	base, ok := c.resolveExtendsBase(ac.Extends)
+	if !ok {
+		return AgentInfo{}, false
+	}
+	info := base
+	if ac.Command != "" {
+		info.Command = ac.Command
+	}
+	info.Args = appendArgs(base.Args, ac.Args)
+	info.LaunchArgs = appendArgs(base.LaunchArgs, ac.LaunchArgs)
+	if ac.ResumeArgs != "" {
+		info.ResumeArgs = ac.ResumeArgs
+	}
+	if ac.ProjectFile != "" {
+		info.ProjectFile = ac.ProjectFile
+	}
+	return info, info.Command != ""
+}
+
+// resolveExtendsBase resolves the base named by an extends field.
+// Profiles may only extend a base agent — a base that itself extends
+// (a chain, or a self-reference) does not resolve. Validate reports
+// these with a clearer message than the resolve-time failure.
+func (c *Config) resolveExtendsBase(baseName string) (AgentInfo, bool) {
+	if baseName == "" {
+		return AgentInfo{}, false
+	}
+	if ac, ok := c.lookupAgentConfig(baseName); ok && ac.Extends != "" {
+		return AgentInfo{}, false
+	}
+	return c.ResolveAgent(baseName)
+}
+
+// lookupAgentConfig finds the config entry for an agent name, trying
+// the literal name first, then its canonical alias target.
+func (c *Config) lookupAgentConfig(name string) (AgentConfig, bool) {
+	if ac, ok := c.Agents[name]; ok {
+		return ac, true
+	}
+	if canonical := CanonicalAgentName(name); canonical != name {
+		if ac, ok := c.Agents[canonical]; ok {
+			return ac, true
+		}
+	}
+	return AgentConfig{}, false
+}
+
+func appendArgs(base, extra []string) []string {
+	if len(extra) == 0 {
+		return base
+	}
+	return append(append([]string(nil), base...), extra...)
+}
+
 func (c *Config) agentInfoFromConfig(name string, ac AgentConfig) AgentInfo {
-	info := AgentInfo(ac)
+	info := AgentInfo{
+		Command:     ac.Command,
+		Args:        ac.Args,
+		LaunchArgs:  ac.LaunchArgs,
+		ResumeArgs:  ac.ResumeArgs,
+		ProjectFile: ac.ProjectFile,
+	}
 	// Fill in gaps from built-in if the config only partially overrides.
 	if builtin, ok := KnownAgents[CanonicalAgentName(name)]; ok {
 		if info.Command == "" {
@@ -130,6 +212,9 @@ func (c *Config) agentInfoFromConfig(name string, ac AgentConfig) AgentInfo {
 		}
 		if len(info.Args) == 0 {
 			info.Args = builtin.Args
+		}
+		if len(info.LaunchArgs) == 0 {
+			info.LaunchArgs = builtin.LaunchArgs
 		}
 		if info.ResumeArgs == "" {
 			info.ResumeArgs = builtin.ResumeArgs
@@ -154,6 +239,7 @@ func aliasConfigUsesLegacyDefault(alias string, ac AgentConfig) bool {
 type DockConfig struct {
 	Agent            string              `toml:"agent"`
 	AgentArgs        map[string][]string `toml:"agent_args"`
+	LaunchAgentArgs  map[string][]string `toml:"launch_agent_args"`
 	Terminal         string              `toml:"terminal,omitempty"`
 	TrustRepoBayToml *bool               `toml:"trust_repo_bay_toml,omitempty"`
 	BayPrepare       []BayPrepareConfig  `toml:"bay_prepare,omitempty"`
@@ -326,6 +412,28 @@ func (c *Config) Validate() []string {
 			errs = append(errs, fmt.Sprintf("default_agent %q is not a known or configured agent", c.DefaultAgent))
 		}
 	}
+	agentNames := make([]string, 0, len(c.Agents))
+	for name := range c.Agents {
+		agentNames = append(agentNames, name)
+	}
+	sort.Strings(agentNames)
+	for _, name := range agentNames {
+		ac := c.Agents[name]
+		if ac.Extends == "" {
+			continue
+		}
+		if ac.Extends == name {
+			errs = append(errs, fmt.Sprintf("agent %q extends itself", name))
+			continue
+		}
+		if base, ok := c.lookupAgentConfig(ac.Extends); ok && base.Extends != "" {
+			errs = append(errs, fmt.Sprintf("agent %q extends %q, which itself extends %q — profiles may only extend a base agent (one level)", name, ac.Extends, base.Extends))
+			continue
+		}
+		if _, ok := c.resolveExtendsBase(ac.Extends); !ok {
+			errs = append(errs, fmt.Sprintf("agent %q extends unknown agent %q", name, ac.Extends))
+		}
+	}
 	for name, dock := range c.Docks {
 		if dock.Agent != "" {
 			if _, ok := c.ResolveAgent(dock.Agent); !ok {
@@ -397,6 +505,20 @@ func (c *Config) ResolvedAgentArgs(dockName, agentName string, manifestDefault m
 	}
 	info, _ := c.ResolveAgent(agentName)
 	return info.Args
+}
+
+// ResolvedAgentLaunchArgs returns the effective launch-only args for
+// an agent in a dock (appended on fresh launch, never on resume).
+// Resolution order: per-dock launch_agent_args[agent] → agent
+// launch_args → nothing.
+func (c *Config) ResolvedAgentLaunchArgs(dockName, agentName string) []string {
+	if dc, ok := c.Docks[dockName]; ok {
+		if args := agentArgsFor(dc.LaunchAgentArgs, agentName); len(args) > 0 {
+			return args
+		}
+	}
+	info, _ := c.ResolveAgent(agentName)
+	return info.LaunchArgs
 }
 
 func agentArgsFor(argsByAgent map[string][]string, agentName string) []string {

@@ -392,7 +392,10 @@ auto-bootstraps from CWD (creates a dock automatically).
 
 Default behavior opens a shell. Use `--agent` for the dock's default
 agent, or `--agent TYPE` for a specific one. Or create the bay
-first and add an agent with `bay agent`.
+first and add an agent with `bay agent`. TYPE is a built-in agent
+(`claude`, `codex`, `antigravity`) or any agent/profile defined in
+config (e.g. a model-pinned profile like `fable`; see
+`bay help config`).
 
 `--description` is optional and can be set or changed later via
 `bay describe`.
@@ -717,7 +720,9 @@ window elapsed), the entry is silently discarded — call again to skip
 past stale entries.
 
 Agent surfaces relaunch with the agent's configured `resume_args`,
-so the prior session continues rather than starting fresh.
+so the prior session continues rather than starting fresh. The
+agent's `launch_args` (launch-only flags such as `--model`) are not
+replayed — the resumed session keeps its own session state.
 
 ```
 bay sf restore            # restore most recent

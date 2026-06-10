@@ -136,7 +136,7 @@ func (e *Engine) BayNew(opts BayNewOptions) (*manifest.Bay, error) {
 	// sync fills Name from the branch on first detection.
 
 	// Resolve agent args.
-	agentArgs := e.resolvedAgentArgs(dockName, agentName, m)
+	agentArgs, launchArgs := e.resolvedAgentArgs(dockName, agentName, m)
 
 	// rollbackWorktree cleans up a worktree on failure.
 	rollbackWorktree := func() {
@@ -194,7 +194,7 @@ func (e *Engine) BayNew(opts BayNewOptions) (*manifest.Bay, error) {
 		surfaceName = "shell"
 	}
 
-	surface, err := e.launchSurfaceInTmux(tmuxPaneID, dockName, surfaceType, agentName, "", bayPath, agentArgs, false)
+	surface, err := e.launchSurfaceInTmux(tmuxPaneID, dockName, surfaceType, agentName, "", bayPath, agentArgs, launchArgs, false)
 	if err != nil {
 		_ = e.Tmux.KillWindow(windowID)
 		rollbackWorktree()
