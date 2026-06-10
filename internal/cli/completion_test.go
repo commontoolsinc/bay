@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/spf13/cobra"
 )
@@ -476,6 +477,66 @@ func TestSplitCompletions(t *testing.T) {
 	completions, _ := splitCompletions(nil, nil, "")
 	if len(completions) != 2 {
 		t.Errorf("expected 2 split completions, got %d", len(completions))
+	}
+}
+
+// TestAgentCandidates_IncludesBuiltinsProfilesAndConfig pins the fix for
+// empty `bay agent <TAB>`: built-in clients and model profiles must be
+// offered even with no [agents.*] config, configured agents appear with their
+// command, profiles are labeled with their base client, and a disabled agent
+// is excluded.
+func TestAgentCandidates_IncludesBuiltinsProfilesAndConfig(t *testing.T) {
+	cfg := &config.Config{
+		Agents: map[string]config.AgentConfig{
+			"my-agent": {Command: "my-cli"},
+			"codex":    {Disabled: true}, // turned off — must not be offered
+		},
+	}
+
+	got := agentCandidates(cfg)
+	desc := map[string]string{}
+	count := map[string]int{}
+	for _, c := range got {
+		val, d, _ := strings.Cut(c, "\t")
+		desc[val] = d
+		count[val]++
+	}
+
+	// Built-in clients are offered without any config entry.
+	for _, name := range []string{"claude", "antigravity"} {
+		if _, ok := desc[name]; !ok {
+			t.Errorf("built-in client %q missing from completions: %v", name, got)
+		}
+	}
+	// Built-in model profiles are offered and labeled with their base client.
+	if desc["fable"] != "fable (claude)" {
+		t.Errorf("fable desc = %q, want %q", desc["fable"], "fable (claude)")
+	}
+	if _, ok := desc["opus"]; !ok {
+		t.Errorf("built-in profile opus missing from completions: %v", got)
+	}
+	// A configured custom agent shows its command.
+	if desc["my-agent"] != "my-cli" {
+		t.Errorf("my-agent desc = %q, want my-cli", desc["my-agent"])
+	}
+	// A disabled agent is not offered at all.
+	if _, ok := desc["codex"]; ok {
+		t.Errorf("disabled agent codex should not be offered: %v", got)
+	}
+	// No duplicate candidates.
+	for name, n := range count {
+		if n != 1 {
+			t.Errorf("agent %q appears %d times; want 1", name, n)
+		}
+	}
+}
+
+// TestAgentCandidates_NilConfigDoesNotPanic guards the completion path when
+// config can't be loaded; built-ins should still be offered.
+func TestAgentCandidates_NilConfigDoesNotPanic(t *testing.T) {
+	got := agentCandidates(nil)
+	if len(got) == 0 {
+		t.Error("nil config: expected built-in candidates, got none")
 	}
 }
 
