@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/manifest"
 	"github.com/commontoolsinc/bay/internal/tmux"
 )
@@ -688,5 +689,64 @@ func TestSurfaceRestore_AgentResumesPriorSession(t *testing.T) {
 					tc.want, mockTmux.Calls[before:])
 			}
 		})
+	}
+}
+
+// TestSurfaceRestore_LaunchArgsNotReplayed verifies the launch_args
+// contract end to end: a model profile's launch args appear on fresh
+// launch but are dropped on undo-close restore. Claude Code restores a
+// resumed session's own model, so replaying --model would clobber any
+// in-session model switch.
+func TestSurfaceRestore_LaunchArgsNotReplayed(t *testing.T) {
+	eng, _ := testEngine(t)
+	mockTmux := eng.Tmux.(*tmux.Mock)
+	eng.Config.Agents["fable"] = config.AgentConfig{
+		Extends:    "claude",
+		LaunchArgs: []string{"--model", "fable"},
+	}
+
+	if _, err := eng.BayNew(BayNewOptions{Dock: "labs", Agent: "fable"}); err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+	launched := false
+	for _, c := range mockTmux.Calls {
+		if c.Method == "RespawnPane" && len(c.Args) >= 3 && strings.Contains(c.Args[2], "claude --model fable") {
+			launched = true
+		}
+	}
+	if !launched {
+		t.Errorf("fresh launch should include launch args; calls=%+v", mockTmux.Calls)
+	}
+
+	// Split in a sibling so the restore path stays simple.
+	if err := eng.SurfaceAdd(SurfaceAddOptions{
+		DockName: "labs", BayName: "b1",
+		Type: manifest.SurfaceTypeAgent, Name: "side",
+		Agent: "fable", SplitDir: "v",
+	}); err != nil {
+		t.Fatalf("SurfaceAdd: %v", err)
+	}
+	if err := eng.SurfaceClose("labs", "b1", "side", false); err != nil {
+		t.Fatalf("SurfaceClose: %v", err)
+	}
+
+	before := len(mockTmux.Calls)
+	if _, err := eng.SurfaceRestore("labs"); err != nil {
+		t.Fatalf("SurfaceRestore: %v", err)
+	}
+	resumed := false
+	for _, c := range mockTmux.Calls[before:] {
+		if c.Method != "RespawnPane" || len(c.Args) < 3 {
+			continue
+		}
+		if strings.Contains(c.Args[2], "--model") {
+			t.Errorf("restore replayed launch args: %q", c.Args[2])
+		}
+		if strings.Contains(c.Args[2], "claude --continue") {
+			resumed = true
+		}
+	}
+	if !resumed {
+		t.Errorf("expected restore to respawn with claude --continue; calls=%+v", mockTmux.Calls[before:])
 	}
 }

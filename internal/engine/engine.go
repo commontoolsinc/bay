@@ -107,14 +107,17 @@ func (e *Engine) resolvedDockAgent(dockName string, m *manifest.Manifest) string
 	return e.Config.ResolvedDockAgent(dockName, manifestDefault)
 }
 
-// resolvedAgentArgs returns the effective args for a specific agent in a dock.
-func (e *Engine) resolvedAgentArgs(dockName, agentName string, m *manifest.Manifest) []string {
+// resolvedAgentArgs returns the effective args for a specific agent in
+// a dock: persistent args (every invocation) and launch-only args
+// (fresh launches, dropped on resume — e.g. --model).
+func (e *Engine) resolvedAgentArgs(dockName, agentName string, m *manifest.Manifest) (args, launchArgs []string) {
 	dock := m.FindDock(dockName)
 	var manifestDefault map[string][]string
 	if dock != nil {
 		manifestDefault = dock.AgentArgs
 	}
-	return e.Config.ResolvedAgentArgs(dockName, agentName, manifestDefault)
+	return e.Config.ResolvedAgentArgs(dockName, agentName, manifestDefault),
+		e.Config.ResolvedAgentLaunchArgs(dockName, agentName)
 }
 
 var validNameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
@@ -265,7 +268,7 @@ const branchAbbrevReservedPrefix = "br-"
 // Used by bay creation and surface add operations. When resume is
 // true and the surface is an agent, the agent is launched with its
 // configured resume_args so the prior session is picked up.
-func (e *Engine) launchSurfaceInTmux(tmuxPaneID, dockName string, surfaceType manifest.SurfaceType, agent, cmd, cwd string, agentArgs []string, resume bool) (manifest.Surface, error) {
+func (e *Engine) launchSurfaceInTmux(tmuxPaneID, dockName string, surfaceType manifest.SurfaceType, agent, cmd, cwd string, agentArgs, launchArgs []string, resume bool) (manifest.Surface, error) {
 	s := manifest.Surface{
 		Type:    surfaceType,
 		Backend: manifest.SurfaceBackendTmux,
@@ -275,7 +278,7 @@ func (e *Engine) launchSurfaceInTmux(tmuxPaneID, dockName string, surfaceType ma
 	switch surfaceType {
 	case manifest.SurfaceTypeAgent:
 		s.Agent = &agent
-		agentCmd, err := e.buildAgentCommand(agent, agentArgs, resume)
+		agentCmd, err := e.buildAgentCommand(agent, agentArgs, launchArgs, resume)
 		if err != nil {
 			return manifest.Surface{}, err
 		}

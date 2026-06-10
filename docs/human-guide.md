@@ -384,10 +384,73 @@ args = ["--dangerously-skip-permissions"]      # default args for claude
 
 [agents.my-agent]
 command = "my-agent-cli"
-args = ["--flag"]                              # default args
+args = ["--flag"]                              # args on every invocation
+launch_args = ["--profile", "work"]            # args on fresh launch only
 resume_args = "--resume"
 project_file = ".my-agent.md"
 ```
+
+`args` apply to every invocation, including resume (recover,
+undo-close restore). `launch_args` apply only to fresh launches —
+that's where session-start flags like `--model` belong. Claude Code
+restores a resumed session's own model, so a `--model` replayed on
+resume would override any model you switched to inside the session.
+
+Each list element is one argument. Bay shell-quotes elements
+containing spaces or other special characters, so a multi-word value
+(e.g. an initial prompt) reaches the agent as a single argument;
+leading-tilde paths still expand.
+
+### Model profiles
+
+A profile is an agent that `extends` a base agent — the same client
+pinned to a model, with its own name. Four come built in, no config
+needed: **`fable`**, **`opus`**, **`sonnet`**, and **`haiku`**, each
+launching `claude --model <name>` (`opus` pins `opus[1m]`, the
+1M-context variant). So `bay agent opus --pane` or
+`bay new --agent=fable` work out of the box, and `Option+o f` /
+`Option+o o` launch fable / opus in the current bay.
+
+Profiles work everywhere an agent name does: `bay new --agent=fable`,
+`bay agent fable --pane`, dock defaults (`[docks.dev] agent =
+"fable"`), `default_agent`, and your own tmux keybindings (pin custom
+bindings with `# bay-keep:` so `bay setup` preserves them). The
+palette's agent picker labels profiles with their base client —
+`fable (claude)` — to keep them visually distinct from the clients
+themselves.
+
+Add your own the same way the built-ins are defined:
+
+```toml
+[agents.fable-fast]
+extends = "claude"
+launch_args = ["--model", "fable", "--fast"]
+```
+
+A profile inherits the base's command, args, `resume_args`, and
+`project_file`; its `args`/`launch_args` are appended to the base's,
+and other fields it sets override. Only one level — a profile can't
+extend another profile (including the built-in ones; extend `claude`
+directly instead).
+
+Built-in profiles are yours to adjust: a same-named config entry that
+sets only args/launch_args/resume_args/project_file tweaks the
+profile (fields you set win, the rest keep the profile's defaults);
+one that sets `command` or `extends` replaces it entirely; and
+`disabled = true` removes it:
+
+```toml
+[agents.opus]
+launch_args = ["--model", "opus"]       # plain opus instead of the 1M default
+
+[agents.haiku]
+disabled = true                         # drop the built-in haiku profile
+```
+
+The base stays unpinned: a plain `bay agent claude` still starts on
+whatever model Claude Code would pick itself, and resumed sessions
+always continue on the model they were last using (launch args are
+never replayed on resume).
 
 ### Per-dock overrides (optional)
 
@@ -399,7 +462,10 @@ agent = "codex"                                # override default agent
 terminal = "ghostty"                           # host terminal app
 
 [docks.dev.agent_args]
-codex = ["--model", "o3"]                      # per-dock agent args override
+codex = ["--full-auto"]                        # per-dock agent args override
+
+[docks.dev.launch_agent_args]
+codex = ["--model", "o3"]                      # per-dock launch-only args
 ```
 
 ### Auto-descriptions (optional)
@@ -736,15 +802,25 @@ the letters.
 | `Option+o c` / `Option+o C` | Claude in current bay (pane / window) |
 | `Option+o x` / `Option+o X` | Codex in current bay (pane / window) |
 | `Option+o g` / `Option+o G` | Antigravity in current bay (pane / window) |
+| `Option+o f` / `Option+o F` | Fable in current bay (pane / window) |
+| `Option+o o` / `Option+o O` | Opus (1M) in current bay (pane / window) |
 | `Option+o b c` | New bay in current dock with Claude |
 | `Option+o b x` | New bay in current dock with Codex |
 | `Option+o b g` | New bay in current dock with Antigravity |
+| `Option+o b f` | New bay in current dock with Fable |
+| `Option+o b o` | New bay in current dock with Opus (1M) |
 | `Option+o h Enter` | Focus/create home shell (`bay home`) |
 | `Option+o h s` | Home shell (`bay shell --bay home`) |
 | `Option+o h e` | Home editor (`bay edit --bay home`) |
 | `Option+o h c` | Claude in home |
 | `Option+o h x` | Codex in home |
 | `Option+o h g` | Antigravity in home |
+| `Option+o h f` | Fable in home |
+| `Option+o h o` | Opus (1M) in home |
+
+The fable/opus chords launch the built-in model profiles; redefining
+or disabling those profiles in config changes (or breaks) what the
+chords run, so re-point the binding if you repurpose the name.
 
 ### Pattern
 

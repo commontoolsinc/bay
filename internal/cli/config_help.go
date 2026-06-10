@@ -26,9 +26,35 @@ CUSTOM AGENTS (optional)
 
   [agents.my-agent]
   command = "my-agent-cli"
-  args = ["--flag", "value"]      # default args for this agent
+  args = ["--flag", "value"]      # args on every invocation (incl. resume)
+  launch_args = ["--x", "y"]      # args on fresh launch only, not resume
   resume_args = "--continue"      # added on recovery
   project_file = ".my-agent.md"   # checked when creating a dock
+
+  Session-start flags like --model belong in launch_args: resumed
+  sessions (recover, undo-close) keep their own model, and replaying
+  --model would override it. Each list element is one argument —
+  elements with spaces or special characters are shell-quoted.
+
+MODEL PROFILES
+
+  A profile extends a base agent — same client, pinned model, its own
+  name. Built-in: fable, opus, sonnet, haiku (claude --model <name>;
+  opus pins opus[1m], the 1M-context variant), usable with no config
+  anywhere an agent name works: 'bay agent fable', 'bay new
+  --agent=opus', dock defaults, default_agent.
+
+  Define your own the same way (inherits command/args/resume_args/
+  project_file from the base; args and launch_args append; one level
+  only — extend claude, not another profile):
+
+  [agents.fable-fast]
+  extends = "claude"
+  launch_args = ["--model", "fable", "--fast"]
+
+  Adjust a built-in by redefining fields ([agents.opus] launch_args =
+  ["--model", "opus"] for plain opus), replace it by setting command
+  or extends, or remove it with disabled = true.
 
 CUSTOM EDITORS (optional)
 
@@ -50,8 +76,10 @@ PER-DOCK OVERRIDES (optional)
   terminal = "ghostty"            # host terminal app
 
   [docks.myproject.agent_args]
-  claude = ["--model", "sonnet"]  # per-agent args override
-  codex = ["--model", "o3"]
+  claude = ["--dangerously-skip-permissions"]  # per-agent args override
+
+  [docks.myproject.launch_agent_args]
+  codex = ["--model", "o3"]       # per-agent launch-only args override
 
 MONITOR (optional)
 

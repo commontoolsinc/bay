@@ -413,8 +413,8 @@ func (e *Engine) recoverSurfaceLaunch(dockName string, s *manifest.Surface, tmux
 			return fmt.Errorf("missing agent configuration")
 		}
 		agentName := *s.Agent
-		agentArgs := e.resolvedAgentArgs(dockName, agentName, m)
-		agentCmd, err := e.buildAgentCommand(agentName, agentArgs, true)
+		agentArgs, launchArgs := e.resolvedAgentArgs(dockName, agentName, m)
+		agentCmd, err := e.buildAgentCommand(agentName, agentArgs, launchArgs, true)
 		if err != nil {
 			return err
 		}
