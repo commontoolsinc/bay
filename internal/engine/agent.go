@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/commontoolsinc/bay/internal/manifest"
@@ -67,9 +68,31 @@ func (e *Engine) buildAgentCommand(agentName string, agentArgs, launchArgs []str
 	if resume && info.ResumeArgs != "" {
 		parts = append(parts, strings.Fields(info.ResumeArgs)...)
 	}
-	parts = append(parts, agentArgs...)
+	parts = append(parts, quoteArgs(agentArgs)...)
 	if !resume {
-		parts = append(parts, launchArgs...)
+		parts = append(parts, quoteArgs(launchArgs)...)
 	}
 	return strings.Join(parts, " "), nil
+}
+
+// shellSafeRe matches args that need no quoting when joined into a
+// shell command line. Conservative: anything outside this set gets
+// single-quoted. Deliberately keeps ~ unquoted so leading-tilde paths
+// still expand.
+var shellSafeRe = regexp.MustCompile(`^[a-zA-Z0-9@%+=:,./_^~-]+$`)
+
+// quoteArgs shell-quotes each configured arg as a single word. Args
+// come from TOML lists where one element is one argument, so an
+// element containing spaces or quotes (e.g. an initial prompt in
+// launch_args) must survive the shell as one word.
+func quoteArgs(args []string) []string {
+	quoted := make([]string, len(args))
+	for i, a := range args {
+		if a != "" && shellSafeRe.MatchString(a) {
+			quoted[i] = a
+			continue
+		}
+		quoted[i] = "'" + strings.ReplaceAll(a, "'", `'\''`) + "'"
+	}
+	return quoted
 }

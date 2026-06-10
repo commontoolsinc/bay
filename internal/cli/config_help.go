@@ -33,7 +33,8 @@ CUSTOM AGENTS (optional)
 
   Session-start flags like --model belong in launch_args: resumed
   sessions (recover, undo-close) keep their own model, and replaying
-  --model would override it.
+  --model would override it. Each list element is one argument —
+  elements with spaces or special characters are shell-quoted.
 
 MODEL PROFILES (optional)
 

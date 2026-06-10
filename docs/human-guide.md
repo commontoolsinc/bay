@@ -396,6 +396,11 @@ that's where session-start flags like `--model` belong. Claude Code
 restores a resumed session's own model, so a `--model` replayed on
 resume would override any model you switched to inside the session.
 
+Each list element is one argument. Bay shell-quotes elements
+containing spaces or other special characters, so a multi-word value
+(e.g. an initial prompt) reaches the agent as a single argument;
+leading-tilde paths still expand.
+
 ### Model profiles (optional)
 
 A profile is an agent that `extends` a base agent — use it to launch
