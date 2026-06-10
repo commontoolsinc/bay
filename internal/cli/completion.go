@@ -355,13 +355,35 @@ func dockCandidates(m *manifest.Manifest) []string {
 	return completions
 }
 
-// agentCandidates returns agent type candidates from config.
+// agentCandidates returns agent type candidates: the built-in clients and
+// model profiles plus any configured under [agents.*], deduped, sorted, and
+// with disabled agents removed. It reuses availableAgents — the same set the
+// palette's agent picker offers — so completion and the picker never drift.
+// Without this, `bay agent <TAB>` and `--agent` completion were empty for the
+// common case of a user relying on the built-ins with no [agents.*] config.
 func agentCandidates(cfg *config.Config) []string {
-	var completions []string
-	for name, agent := range cfg.Agents {
-		completions = append(completions, name+"\t"+agent.Command)
+	names := availableAgents(cfg)
+	completions := make([]string, 0, len(names))
+	for _, name := range names {
+		completions = append(completions, name+"\t"+agentCandidateDesc(cfg, name))
 	}
 	return completions
+}
+
+// agentCandidateDesc is the completion help text for an agent: a model
+// profile shows its base client ("fable (claude)"), so it doesn't read as a
+// peer of the clients it wraps; a plain agent shows the command it runs.
+func agentCandidateDesc(cfg *config.Config, name string) string {
+	if cfg == nil {
+		return name
+	}
+	if base := cfg.ProfileBase(name); base != "" {
+		return name + " (" + base + ")"
+	}
+	if info, ok := cfg.ResolveAgent(name); ok && info.Command != "" {
+		return info.Command
+	}
+	return name
 }
 
 // --- Positional completers (with len(args) > 0 short-circuit) ---
