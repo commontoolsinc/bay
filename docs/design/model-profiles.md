@@ -208,9 +208,15 @@ populates.
 
 ### Amendment (same PR): seeded built-in profiles
 
-Bay ships four built-in profiles — `fable`, `opus`, `sonnet`,
-`haiku` — so the core identities work with zero config
-(`bay agent opus` out of the box). They're claude-based only:
+Bay ships four built-in profiles — `fable`, `opus` (pinned to the
+1M-context `opus[1m]`), `sonnet`, `haiku` — so the core identities
+work with zero config (`bay agent opus` out of the box). The two
+most-used identities also get canonical chords (`M-o f/F` fable,
+`M-o o/O` opus, plus `b`/`h` submenu entries) — a measured walk-back
+of "profiles are user vocabulary, not bay vocabulary": seeded
+profiles are bay vocabulary, so binding them is consistent; sonnet
+and haiku stay unbound to conserve chord keys. They're claude-based
+only:
 Claude Code maintains those aliases so the pins don't rot, while
 codex/antigravity model names churn and stay user-defined. The
 seeds are `extends = "claude"` entries, not static commands, so a

@@ -80,7 +80,7 @@ var KnownAgents = map[string]AgentInfo{
 // removes one.
 var BuiltinProfiles = map[string]AgentConfig{
 	"fable":  {Extends: "claude", LaunchArgs: []string{"--model", "fable"}},
-	"opus":   {Extends: "claude", LaunchArgs: []string{"--model", "opus"}},
+	"opus":   {Extends: "claude", LaunchArgs: []string{"--model", "opus[1m]"}},
 	"sonnet": {Extends: "claude", LaunchArgs: []string{"--model", "sonnet"}},
 	"haiku":  {Extends: "claude", LaunchArgs: []string{"--model", "haiku"}},
 }

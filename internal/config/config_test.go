@@ -674,7 +674,13 @@ codex = ["--model", "o3"]
 func TestResolveAgent_BuiltinProfiles(t *testing.T) {
 	cfg := DefaultConfig()
 
-	for _, name := range []string{"fable", "opus", "sonnet", "haiku"} {
+	models := map[string]string{
+		"fable":  "fable",
+		"opus":   "opus[1m]", // opus defaults to the 1M-context variant
+		"sonnet": "sonnet",
+		"haiku":  "haiku",
+	}
+	for name, model := range models {
 		info, ok := cfg.ResolveAgent(name)
 		if !ok {
 			t.Fatalf("built-in profile %q should resolve with no config", name)
@@ -682,8 +688,8 @@ func TestResolveAgent_BuiltinProfiles(t *testing.T) {
 		if info.Command != "claude" || info.ResumeArgs != "--continue" || info.ProjectFile != "CLAUDE.local.md" {
 			t.Errorf("%s = %+v, want claude base fields", name, info)
 		}
-		if len(info.LaunchArgs) != 2 || info.LaunchArgs[0] != "--model" || info.LaunchArgs[1] != name {
-			t.Errorf("%s launch_args = %v, want [--model %s]", name, info.LaunchArgs, name)
+		if len(info.LaunchArgs) != 2 || info.LaunchArgs[0] != "--model" || info.LaunchArgs[1] != model {
+			t.Errorf("%s launch_args = %v, want [--model %s]", name, info.LaunchArgs, model)
 		}
 	}
 }
@@ -703,15 +709,15 @@ func TestResolveAgent_BuiltinProfileInheritsBaseConfig(t *testing.T) {
 
 func TestResolveAgent_BuiltinProfileUserOverride(t *testing.T) {
 	cfg := DefaultConfig()
-	cfg.Agents["opus"] = AgentConfig{LaunchArgs: []string{"--model", "opus[1m]"}}
+	cfg.Agents["opus"] = AgentConfig{LaunchArgs: []string{"--model", "opus"}}
 
 	info, ok := cfg.ResolveAgent("opus")
 	if !ok {
 		t.Fatal("overridden opus should resolve")
 	}
 	// User field wins; unset fields keep the profile's defaults.
-	if len(info.LaunchArgs) != 2 || info.LaunchArgs[1] != "opus[1m]" {
-		t.Errorf("launch_args = %v, want user override [--model opus[1m]]", info.LaunchArgs)
+	if len(info.LaunchArgs) != 2 || info.LaunchArgs[1] != "opus" {
+		t.Errorf("launch_args = %v, want user override [--model opus]", info.LaunchArgs)
 	}
 	if info.Command != "claude" || info.ResumeArgs != "--continue" {
 		t.Errorf("info = %+v, want inherited claude base", info)

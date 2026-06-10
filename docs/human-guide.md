@@ -406,8 +406,10 @@ leading-tilde paths still expand.
 A profile is an agent that `extends` a base agent — the same client
 pinned to a model, with its own name. Four come built in, no config
 needed: **`fable`**, **`opus`**, **`sonnet`**, and **`haiku`**, each
-launching `claude --model <name>`. So `bay agent opus --pane` or
-`bay new --agent=fable` work out of the box.
+launching `claude --model <name>` (`opus` pins `opus[1m]`, the
+1M-context variant). So `bay agent opus --pane` or
+`bay new --agent=fable` work out of the box, and `Option+o f` /
+`Option+o o` launch fable / opus in the current bay.
 
 Profiles work everywhere an agent name does: `bay new --agent=fable`,
 `bay agent fable --pane`, dock defaults (`[docks.dev] agent =
@@ -436,7 +438,7 @@ one that sets `command` or `extends` replaces it entirely; and
 
 ```toml
 [agents.opus]
-launch_args = ["--model", "opus[1m]"]   # opus now means 1M-context opus
+launch_args = ["--model", "opus"]       # plain opus instead of the 1M default
 
 [agents.haiku]
 disabled = true                         # drop the built-in haiku profile
@@ -797,15 +799,25 @@ the letters.
 | `Option+o c` / `Option+o C` | Claude in current bay (pane / window) |
 | `Option+o x` / `Option+o X` | Codex in current bay (pane / window) |
 | `Option+o g` / `Option+o G` | Antigravity in current bay (pane / window) |
+| `Option+o f` / `Option+o F` | Fable in current bay (pane / window) |
+| `Option+o o` / `Option+o O` | Opus (1M) in current bay (pane / window) |
 | `Option+o b c` | New bay in current dock with Claude |
 | `Option+o b x` | New bay in current dock with Codex |
 | `Option+o b g` | New bay in current dock with Antigravity |
+| `Option+o b f` | New bay in current dock with Fable |
+| `Option+o b o` | New bay in current dock with Opus (1M) |
 | `Option+o h Enter` | Focus/create home shell (`bay home`) |
 | `Option+o h s` | Home shell (`bay shell --bay home`) |
 | `Option+o h e` | Home editor (`bay edit --bay home`) |
 | `Option+o h c` | Claude in home |
 | `Option+o h x` | Codex in home |
 | `Option+o h g` | Antigravity in home |
+| `Option+o h f` | Fable in home |
+| `Option+o h o` | Opus (1M) in home |
+
+The fable/opus chords launch the built-in model profiles; redefining
+or disabling those profiles in config changes (or breaks) what the
+chords run, so re-point the binding if you repurpose the name.
 
 ### Pattern
 

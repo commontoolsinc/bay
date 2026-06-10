@@ -394,8 +394,9 @@ Default behavior opens a shell. Use `--agent` for the dock's default
 agent, or `--agent TYPE` for a specific one. Or create the bay
 first and add an agent with `bay agent`. TYPE is a built-in agent
 (`claude`, `codex`, `antigravity`), a built-in model profile
-(`fable`, `opus`, `sonnet`, `haiku` — claude pinned to that model),
-or any agent/profile defined in config (see `bay help config`).
+(`fable`, `opus`, `sonnet`, `haiku` — claude pinned to that model;
+`opus` pins the 1M-context `opus[1m]`), or any agent/profile defined
+in config (see `bay help config`).
 
 `--description` is optional and can be set or changed later via
 `bay describe`.

@@ -274,12 +274,16 @@ var bayKeybindings = []bayKeybinding{
 	// Shift=window matches the rest of bay's creation keys.
 	{
 		key: "M-o",
-		cmd: `display-message -d 2000 "agent: c Claude, x Codex, g Antigravity | Shift=window | b=bay | h=home" \; switch-client -T ` + tableAgent,
+		cmd: `display-message -d 2000 "agent: c Claude, x Codex, g Antigravity, f Fable, o Opus | Shift=window | b=bay | h=home" \; switch-client -T ` + tableAgent,
 		// previousCmds for display-message bindings hold the old
 		// quoted hint text, not the full bind line: parseBindLine
 		// extracts only the quoted region for tmux-command bindings,
 		// and that's what mismatched-binding detection compares.
-		previousCmds:  []string{"agent: c Claude, x Codex, g Gemini | Shift=window | b=bay", "agent: c Claude, x Codex, g Gemini | Shift=window | b=bay | h=home"},
+		previousCmds: []string{
+			"agent: c Claude, x Codex, g Gemini | Shift=window | b=bay",
+			"agent: c Claude, x Codex, g Gemini | Shift=window | b=bay | h=home",
+			"agent: c Claude, x Codex, g Antigravity | Shift=window | b=bay | h=home",
+		},
 		desc:          "Option+o: agent chord launcher",
 		isTmuxCommand: true,
 	},
@@ -290,13 +294,19 @@ var bayKeybindings = []bayKeybinding{
 	agentInBay("X", "codex", "window"),
 	agentInBay("g", "antigravity", "pane"),
 	agentInBay("G", "antigravity", "window"),
+	agentInBay("f", "fable", "pane"),
+	agentInBay("F", "fable", "window"),
+	agentInBay("o", "opus", "pane"),
+	agentInBay("O", "opus", "window"),
 
-	{table: tableAgent, key: "b", cmd: `display-message -d 2000 "bay: c Claude, x Codex, g Antigravity" \; switch-client -T ` + tableAgentBay, previousCmds: []string{"bay: c Claude, x Codex, g Gemini"}, desc: "M-o b: new-bay-with-agent submenu", isTmuxCommand: true},
-	{table: tableAgent, key: "h", cmd: `display-message -d 2000 "home: Enter home, s shell, e editor, c Claude, x Codex, g Antigravity" \; switch-client -T ` + tableHome, previousCmds: []string{"home: Enter home, s shell, e editor, c Claude, x Codex, g Gemini"}, desc: "M-o h: home submenu", isTmuxCommand: true},
+	{table: tableAgent, key: "b", cmd: `display-message -d 2000 "bay: c Claude, x Codex, g Antigravity, f Fable, o Opus" \; switch-client -T ` + tableAgentBay, previousCmds: []string{"bay: c Claude, x Codex, g Gemini", "bay: c Claude, x Codex, g Antigravity"}, desc: "M-o b: new-bay-with-agent submenu", isTmuxCommand: true},
+	{table: tableAgent, key: "h", cmd: `display-message -d 2000 "home: Enter home, s shell, e editor, c Claude, x Codex, g Antigravity, f Fable, o Opus" \; switch-client -T ` + tableHome, previousCmds: []string{"home: Enter home, s shell, e editor, c Claude, x Codex, g Gemini", "home: Enter home, s shell, e editor, c Claude, x Codex, g Antigravity"}, desc: "M-o h: home submenu", isTmuxCommand: true},
 
 	newBayWithAgent("c", "claude"),
 	newBayWithAgent("x", "codex"),
 	newBayWithAgent("g", "antigravity"),
+	newBayWithAgent("f", "fable"),
+	newBayWithAgent("o", "opus"),
 
 	homeBinding("Enter", "bay home", "focus/create home shell"),
 	homeBinding("s", "bay shell --bay home", "shell in home"),
@@ -304,6 +314,8 @@ var bayKeybindings = []bayKeybinding{
 	homeAgent("c", "claude"),
 	homeAgent("x", "codex"),
 	homeAgent("g", "antigravity"),
+	homeAgent("f", "fable"),
+	homeAgent("o", "opus"),
 }
 
 // Tmux key-table names for the M-o chord. Used both for the `table:`

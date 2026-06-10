@@ -713,14 +713,16 @@ func TestHomeChordKeybindings(t *testing.T) {
 	joined := strings.Join(lines, "\n")
 
 	for _, want := range []string{
-		`bind-key -n M-o display-message -d 2000 "agent: c Claude, x Codex, g Antigravity | Shift=window | b=bay | h=home" \; switch-client -T bay-agent`,
-		`bind-key -T bay-agent h display-message -d 2000 "home: Enter home, s shell, e editor, c Claude, x Codex, g Antigravity" \; switch-client -T bay-home`,
+		`bind-key -n M-o display-message -d 2000 "agent: c Claude, x Codex, g Antigravity, f Fable, o Opus | Shift=window | b=bay | h=home" \; switch-client -T bay-agent`,
+		`bind-key -T bay-agent h display-message -d 2000 "home: Enter home, s shell, e editor, c Claude, x Codex, g Antigravity, f Fable, o Opus" \; switch-client -T bay-home`,
 		`bind-key -T bay-home Enter run-shell 'bay home || true'`,
 		`bind-key -T bay-home s run-shell 'bay shell --bay home || true'`,
 		`bind-key -T bay-home e run-shell 'bay edit --bay home || true'`,
 		`bind-key -T bay-home c run-shell 'bay agent claude --bay home || true'`,
 		`bind-key -T bay-home x run-shell 'bay agent codex --bay home || true'`,
 		`bind-key -T bay-home g run-shell 'bay agent antigravity --bay home || true'`,
+		`bind-key -T bay-home f run-shell 'bay agent fable --bay home || true'`,
+		`bind-key -T bay-home o run-shell 'bay agent opus --bay home || true'`,
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("home chord binding missing %q\nall bindings:\n%s", want, joined)
