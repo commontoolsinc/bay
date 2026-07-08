@@ -287,10 +287,10 @@ func bayCloseTapMessage(eng *engine.Engine, dockName, bayID string, force bool) 
 	if force && bay.Path != "" {
 		if _, statErr := os.Stat(bay.Path); statErr == nil {
 			if dirty, err := eng.HasBlockingDirtyChanges(bay); err == nil && dirty {
-				return fmt.Sprintf("press again to force-close %q — discards uncommitted changes", label)
+				return fmt.Sprintf("press again to close %q and discard its uncommitted changes", label)
 			}
 			if unpushed, err := eng.HasUnlandedCommits(bay); err == nil && unpushed {
-				return fmt.Sprintf("press again to force-close %q — unlanded commits stay on the local branch", label)
+				return fmt.Sprintf("press again to close %q — unlanded commits stay on the local branch", label)
 			}
 		}
 	}
