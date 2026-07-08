@@ -92,6 +92,10 @@ func runDoctor(eng *engine.Engine, w io.Writer) {
 					ok = false
 				} else {
 					fmt.Fprintf(w, "[OK] dock %q checkout accessible\n", dock.Name)
+					wtAwareness := filepath.Join(dock.EffectiveWorktreeDir(), engine.WorktreeAwarenessFile)
+					if data, readErr := os.ReadFile(wtAwareness); readErr != nil || !strings.Contains(string(data), "bay agent-guide") {
+						fmt.Fprintf(w, "[INFO] dock %q: worktree dir missing bay awareness — run `bay dock init %s`\n", dock.Name, dock.Name)
+					}
 					for agentName := range config.KnownAgents {
 						info, _ := eng.Config.ResolveAgent(agentName)
 						if info.ProjectFile == "" {
@@ -99,10 +103,17 @@ func runDoctor(eng *engine.Engine, w io.Writer) {
 						}
 						pf := filepath.Join(path, info.ProjectFile)
 						data, readErr := os.ReadFile(pf)
-						if readErr != nil {
-							fmt.Fprintf(w, "[INFO] dock %q checkout: %s not found\n", dock.Name, info.ProjectFile)
-						} else if !strings.Contains(string(data), "bay agent-guide") {
-							fmt.Fprintf(w, "[INFO] dock %q checkout: %s missing bay awareness for %s\n", dock.Name, info.ProjectFile, agentName)
+						if readErr == nil && strings.Contains(string(data), "bay agent-guide") {
+							continue
+						}
+						ignored, _ := eng.Git.IsIgnored(path, info.ProjectFile)
+						switch {
+						case !ignored:
+							fmt.Fprintf(w, "[INFO] dock %q checkout: %s not gitignored — bay leaves it alone; gitignore it and run `bay dock init %s` for checkout bay awareness\n", dock.Name, info.ProjectFile, dock.Name)
+						case readErr != nil:
+							fmt.Fprintf(w, "[INFO] dock %q checkout: %s not found — run `bay dock init %s`\n", dock.Name, info.ProjectFile, dock.Name)
+						default:
+							fmt.Fprintf(w, "[INFO] dock %q checkout: %s missing bay awareness for %s — run `bay dock init %s`\n", dock.Name, info.ProjectFile, agentName, dock.Name)
 						}
 					}
 				}

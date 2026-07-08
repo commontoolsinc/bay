@@ -268,12 +268,6 @@ func (m *Mock) IsIgnored(repoPath, filename string) (bool, error) {
 	return m.repo(repoPath).ignored[filename], nil
 }
 
-func (m *Mock) AddToGitignore(repoPath, filename string) error {
-	m.record("AddToGitignore", repoPath, filename)
-	m.repo(repoPath).ignored[filename] = true
-	return nil
-}
-
 func (m *Mock) ExpandExcludes(repoPath, excludeFile string) ([]string, []string, error) {
 	m.record("ExpandExcludes", repoPath, excludeFile)
 	em := m.repo(repoPath).excludeMatches[excludeFile]

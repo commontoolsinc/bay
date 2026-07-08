@@ -506,25 +506,28 @@ awareness model. New docks run this setup automatically for their
 checkout.
 
 This does two things:
-1. For each built-in agent with a project file (e.g., `CLAUDE.local.md`
-   for Claude Code), writes a short awareness block: a one-line pointer
-   to `bay agent-guide`. Uses the local file so bay awareness doesn't
-   pollute the shared project config. If the file already references
-   `bay agent-guide`, it's left alone. Files bay creates are added to
-   both `.gitignore` and
-   `.worktreeinclude`. Pre-existing project files are left out of both
-   unless they're already gitignored (in which case they go in
-   `.worktreeinclude` so worktrees stay in sync) — bay never adds an
-   unignored file to `.worktreeinclude`, since `bay dock sync` would
-   refuse to copy it.
-2. Creates `.worktreeinclude` if missing, so gitignored files (`.env`,
-   etc.) get copied to new worktrees.
+1. Writes a `CLAUDE.md` with a one-line pointer to `bay agent-guide`
+   into the dock's **worktree directory**. Claude Code reads `CLAUDE.md`
+   from ancestor directories, so every bay — current and future — picks
+   the pointer up automatically. The file lives *outside* the worktrees,
+   so it never appears in `git status` and needs no gitignore entry.
+2. Appends the same pointer to each built-in agent's project file in
+   the dock checkout (e.g., `CLAUDE.local.md` for Claude Code), so
+   agents launched in the checkout itself know about bay too. This
+   happens **only when the repo already gitignores the file** — bay
+   never edits `.gitignore` or leaves files git would report as
+   untracked or modified. If the file isn't gitignored, `dock init`
+   skips it and prints a note; add it to `.gitignore` and re-run
+   `bay dock init` to enable it.
 
-`bay doctor` flags dock checkouts missing bay awareness.
+Files that already reference `bay agent-guide` are left alone.
+`bay doctor` flags docks missing bay awareness.
 
 ### .worktreeinclude
 
-Bay reads `.worktreeinclude` as a **gitignore-format** file — each line
+To copy gitignored local files (`.env`, credentials, overrides) from
+the dock checkout into new worktrees, create a `.worktreeinclude` file
+in the checkout. Bay reads it as a **gitignore-format** file — each line
 is a pattern (globs, negations, directory rules) resolved by git itself.
 At worktree creation time, bay expands the patterns and copies matching
 files from the dock checkout into the new worktree.
@@ -550,10 +553,8 @@ aid, not just a label. Expect them to:
   diff. They should update when the *situation* changes, not on
   every pause.
 
-The dock setup writes an explicit "At session start" trigger into each
-project's local agent file (e.g. `CLAUDE.local.md`), which agents pick
-up automatically — no user-global config needed. The full guidance for
-agents lives in `bay agent-guide`.
+The dock setup (above) points agents at `bay agent-guide`, which
+carries the full guidance — no user-global config needed.
 
 `bay describe` only writes bay metadata, so it's safe to allowlist
 and skip the permission prompt. For Claude Code, add to
@@ -711,7 +712,7 @@ matches open an interactive picker.
 bay dock new <name> --path <path>           # create dock + home shell
 bay dock new <name> --path <path> --agent <a>  # with default agent
 bay dock new <name> --terminal <t>          # with host terminal
-bay dock init [name]                        # set up bay files in checkout
+bay dock init [name]                        # set up bay awareness for a dock
 bay dock ls [name]                          # list dock contents (default: current)
 bay dock ls --json                          # machine-readable dock view
 bay dock show <name>                        # detailed dock info
@@ -724,9 +725,10 @@ bay dock sync [name]                        # copy .worktreeinclude files to wor
 
 `dk` is an alias for `dock`.
 
-`dock init` prepares the source checkout (`.worktreeinclude`,
-agent project files, `.gitignore`). `dock sync` copies configured
-checkout files into existing bay worktrees.
+`dock init` sets up bay awareness: a `CLAUDE.md` pointer in the
+worktree directory, plus agent project files in the checkout when the
+repo gitignores them (see [Bay awareness](#bay-awareness)). `dock sync`
+copies `.worktreeinclude` matches into existing bay worktrees.
 
 ### Listing and context
 

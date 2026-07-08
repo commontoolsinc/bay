@@ -2450,91 +2450,122 @@ func TestDockInit_IdempotentIfAlreadyPresent(t *testing.T) {
 	}
 }
 
-func TestDockInit_GitignoresFilesItCreates(t *testing.T) {
+func TestDockInit_WritesWorktreeDirAwareness(t *testing.T) {
 	eng, dir := testEngine(t)
-
-	repoDir := filepath.Join(dir, "repos", "labs")
-	eng.Config.Agents["claude"] = config.AgentConfig{
-		Command:     "claude",
-		ProjectFile: "CLAUDE.local.md",
-	}
 
 	if err := eng.DockInit("labs"); err != nil {
 		t.Fatalf("DockInit: %v", err)
 	}
 
-	gitignore, _ := os.ReadFile(filepath.Join(repoDir, ".gitignore"))
-	if !strings.Contains(string(gitignore), "CLAUDE.local.md") {
-		t.Errorf("file we created should be added to .gitignore, got:\n%s", gitignore)
-	}
-}
-
-func TestDockInit_LeavesGitignoreAloneForExistingFiles(t *testing.T) {
-	eng, dir := testEngine(t)
-
-	repoDir := filepath.Join(dir, "repos", "labs")
-	eng.Config.Agents["claude"] = config.AgentConfig{
-		Command:     "claude",
-		ProjectFile: "CLAUDE.local.md",
-	}
-
-	// User already has the project file — bay should append awareness
-	// but not touch .gitignore.
-	projectFile := filepath.Join(repoDir, "CLAUDE.local.md")
-	os.WriteFile(projectFile, []byte("# My Project\n"), 0o644)
-
-	if err := eng.DockInit("labs"); err != nil {
-		t.Fatalf("DockInit: %v", err)
-	}
-
-	if _, err := os.Stat(filepath.Join(repoDir, ".gitignore")); !os.IsNotExist(err) {
-		gitignore, _ := os.ReadFile(filepath.Join(repoDir, ".gitignore"))
-		t.Errorf(".gitignore should be untouched for pre-existing project files, got:\n%s", gitignore)
-	}
-}
-
-func TestDockInit_SkipsWorktreeincludeForUnignoredExistingFile(t *testing.T) {
-	eng, dir := testEngine(t)
-
-	mockGit := eng.Git.(*git.Mock)
-	mockGit.SetGlobalIgnored(false) // pre-existing file is NOT gitignored
-
-	repoDir := filepath.Join(dir, "repos", "labs")
-	eng.Config.Agents["claude"] = config.AgentConfig{
-		Command:     "claude",
-		ProjectFile: "CLAUDE.local.md",
-	}
-
-	projectFile := filepath.Join(repoDir, "CLAUDE.local.md")
-	os.WriteFile(projectFile, []byte("# My Project\n"), 0o644)
-
-	if err := eng.DockInit("labs"); err != nil {
-		t.Fatalf("DockInit: %v", err)
-	}
-
-	// .worktreeinclude must not list the file — dock sync would refuse it.
-	wt, _ := os.ReadFile(filepath.Join(repoDir, ".worktreeinclude"))
-	if strings.Contains(string(wt), "CLAUDE.local.md") {
-		t.Errorf("non-gitignored pre-existing file should not be in .worktreeinclude, got:\n%s", wt)
-	}
-	if _, err := os.Stat(filepath.Join(repoDir, ".gitignore")); !os.IsNotExist(err) {
-		t.Errorf(".gitignore should be untouched for pre-existing project files")
-	}
-}
-
-func TestDockInit_CreatesWorktreeinclude(t *testing.T) {
-	eng, dir := testEngine(t)
-
-	repoDir := filepath.Join(dir, "repos", "labs")
-
-	err := eng.DockInit("labs")
+	// Claude Code reads CLAUDE.md from ancestor directories, so this
+	// one file covers every bay under the worktree dir.
+	awareness := filepath.Join(dir, "repos", "labs-worktrees", "CLAUDE.md")
+	data, err := os.ReadFile(awareness)
 	if err != nil {
+		t.Fatalf("worktree-dir CLAUDE.md should be created: %v", err)
+	}
+	if !strings.Contains(string(data), "bay agent-guide") {
+		t.Errorf("worktree-dir CLAUDE.md should mention bay agent-guide, got:\n%s", data)
+	}
+
+	if err := eng.DockInit("labs"); err != nil {
+		t.Fatalf("DockInit re-run: %v", err)
+	}
+	data, _ = os.ReadFile(awareness)
+	if strings.Count(string(data), "bay agent-guide") != 1 {
+		t.Errorf("bay awareness should appear exactly once after re-run, got:\n%s", data)
+	}
+}
+
+func TestDockInit_CreatesIgnoredProjectFileWithoutTouchingGitignore(t *testing.T) {
+	eng, dir := testEngine(t)
+
+	repoDir := filepath.Join(dir, "repos", "labs")
+	eng.Config.Agents["claude"] = config.AgentConfig{
+		Command:     "claude",
+		ProjectFile: "CLAUDE.local.md",
+	}
+
+	if err := eng.DockInit("labs"); err != nil {
 		t.Fatalf("DockInit: %v", err)
 	}
 
-	wtInclude := filepath.Join(repoDir, ".worktreeinclude")
-	if _, err := os.Stat(wtInclude); err != nil {
-		t.Error(".worktreeinclude should be created")
+	// The repo gitignores the file (mock default), so it's created…
+	data, err := os.ReadFile(filepath.Join(repoDir, "CLAUDE.local.md"))
+	if err != nil {
+		t.Fatalf("gitignored project file should be created: %v", err)
+	}
+	if !strings.Contains(string(data), "bay agent-guide") {
+		t.Errorf("project file should mention bay agent-guide, got:\n%s", data)
+	}
+	// …but .gitignore is never edited.
+	if _, err := os.Stat(filepath.Join(repoDir, ".gitignore")); !os.IsNotExist(err) {
+		t.Error(".gitignore should never be created or edited")
+	}
+}
+
+func TestDockInit_SkipsUnignoredProjectFile(t *testing.T) {
+	eng, dir := testEngine(t)
+	eng.Git.(*git.Mock).SetGlobalIgnored(false)
+
+	repoDir := filepath.Join(dir, "repos", "labs")
+	eng.Config.Agents["claude"] = config.AgentConfig{
+		Command:     "claude",
+		ProjectFile: "CLAUDE.local.md",
+	}
+
+	if err := eng.DockInit("labs"); err != nil {
+		t.Fatalf("DockInit: %v", err)
+	}
+
+	// Creating the file would leave untracked dirt in the checkout.
+	if _, err := os.Stat(filepath.Join(repoDir, "CLAUDE.local.md")); !os.IsNotExist(err) {
+		t.Error("unignored project file should not be created")
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, ".gitignore")); !os.IsNotExist(err) {
+		t.Error(".gitignore should never be created or edited")
+	}
+	// Bays still get awareness via the worktree dir.
+	data, _ := os.ReadFile(filepath.Join(dir, "repos", "labs-worktrees", "CLAUDE.md"))
+	if !strings.Contains(string(data), "bay agent-guide") {
+		t.Error("worktree-dir awareness should be written regardless of gitignore state")
+	}
+}
+
+func TestDockInit_LeavesUnignoredExistingFileAlone(t *testing.T) {
+	eng, dir := testEngine(t)
+	eng.Git.(*git.Mock).SetGlobalIgnored(false)
+
+	repoDir := filepath.Join(dir, "repos", "labs")
+	eng.Config.Agents["claude"] = config.AgentConfig{
+		Command:     "claude",
+		ProjectFile: "CLAUDE.local.md",
+	}
+
+	projectFile := filepath.Join(repoDir, "CLAUDE.local.md")
+	os.WriteFile(projectFile, []byte("# My Project\n"), 0o644)
+
+	if err := eng.DockInit("labs"); err != nil {
+		t.Fatalf("DockInit: %v", err)
+	}
+
+	// Appending would show as a modification if the file is tracked.
+	data, _ := os.ReadFile(projectFile)
+	if string(data) != "# My Project\n" {
+		t.Errorf("unignored pre-existing file should be untouched, got:\n%s", data)
+	}
+}
+
+func TestDockInit_DoesNotCreateWorktreeinclude(t *testing.T) {
+	eng, dir := testEngine(t)
+
+	if err := eng.DockInit("labs"); err != nil {
+		t.Fatalf("DockInit: %v", err)
+	}
+
+	// .worktreeinclude is user opt-in; dock init must not scaffold it.
+	if _, err := os.Stat(filepath.Join(dir, "repos", "labs", ".worktreeinclude")); !os.IsNotExist(err) {
+		t.Error(".worktreeinclude should not be auto-created")
 	}
 }
 

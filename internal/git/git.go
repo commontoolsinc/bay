@@ -44,7 +44,6 @@ type Interface interface {
 
 	// Gitignore
 	IsIgnored(repoPath string, filename string) (bool, error)
-	AddToGitignore(repoPath string, filename string) error
 	// ExpandExcludes returns files in the repo that match the gitignore-format
 	// patterns in excludeFile (path relative to repoPath). Tracked files in the
 	// index are returned in `tracked`; untracked files on disk are returned in

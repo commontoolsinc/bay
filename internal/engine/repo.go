@@ -10,10 +10,19 @@ import (
 	"github.com/commontoolsinc/bay/internal/config"
 )
 
-// DockInit performs idempotent project setup for a dock checkout:
-// - Appends bay awareness line to each agent's project_file if missing.
-// - Creates .worktreeinclude if it doesn't exist, and adds project files to it.
-// - Adds project files to .gitignore.
+// WorktreeAwarenessFile is the file DockInit writes into the dock's
+// worktree directory. Claude Code reads CLAUDE.md from every ancestor
+// of its working directory, so one file there gives every bay the
+// agent-guide pointer with zero footprint inside the worktrees.
+const WorktreeAwarenessFile = "CLAUDE.md"
+
+// DockInit performs idempotent bay-awareness setup for a dock:
+//   - Writes CLAUDE.md with the agent-guide pointer into the dock's
+//     worktree directory, covering all current and future bays.
+//   - Appends the pointer to each agent's project_file in the dock
+//     checkout, but only when the repo already gitignores that file.
+//     Bay never edits .gitignore or leaves files git would report —
+//     the pointer serves bay, so it must not dirty the user's repo.
 func (e *Engine) DockInit(name string) error {
 	m, err := e.LoadManifest()
 	if err != nil {
@@ -23,21 +32,24 @@ func (e *Engine) DockInit(name string) error {
 	if dock == nil {
 		return fmt.Errorf("dock %q not found", name)
 	}
-	repoPath := config.ExpandPath(dock.Path)
-	return e.initCheckout(repoPath)
+	if dock.Path == "" {
+		return nil
+	}
+	return e.initCheckout(config.ExpandPath(dock.Path), dock.EffectiveWorktreeDir())
 }
 
-func (e *Engine) initCheckout(repoPath string) error {
-	// `toGitignore` is for files we just created. Pre-existing project
-	// files are left out — the user is presumed to have their gitignore
-	// the way they want it.
-	// `toSync` is for .worktreeinclude. A file only goes in if it's
-	// either created (we'll gitignore it) or already gitignored. Adding
-	// a non-ignored pre-existing file would make `bay dock sync` refuse
-	// to copy it (worktreeinclude requires gitignored matches).
+func (e *Engine) initCheckout(repoPath, wtDir string) error {
+	// Written unconditionally: agents that don't read CLAUDE.md just
+	// never look at it.
+	if err := os.MkdirAll(wtDir, 0o755); err != nil {
+		return fmt.Errorf("creating worktree dir: %w", err)
+	}
+	if err := ensureBayAwareness(filepath.Join(wtDir, WorktreeAwarenessFile)); err != nil {
+		return fmt.Errorf("updating %s: %w", filepath.Join(wtDir, WorktreeAwarenessFile), err)
+	}
+
 	seen := map[string]bool{}
-	toGitignore := map[string]bool{}
-	toSync := map[string]bool{}
+	var skipped []string
 	agentNames := make(map[string]struct{}, len(config.KnownAgents)+len(e.Config.Agents))
 	for name := range config.KnownAgents {
 		agentNames[name] = struct{}{}
@@ -51,49 +63,28 @@ func (e *Engine) initCheckout(repoPath string) error {
 			continue
 		}
 		seen[info.ProjectFile] = true
-		filePath := filepath.Join(repoPath, info.ProjectFile)
-		wasCreated, err := ensureBayAwareness(filePath)
-		if err != nil {
-			return fmt.Errorf("updating %s: %w", info.ProjectFile, err)
-		}
-		if wasCreated {
-			toGitignore[info.ProjectFile] = true
-			toSync[info.ProjectFile] = true
-			continue
-		}
 		ignored, err := e.Git.IsIgnored(repoPath, info.ProjectFile)
 		if err != nil {
 			return fmt.Errorf("checking ignore status of %s: %w", info.ProjectFile, err)
 		}
-		if ignored {
-			toSync[info.ProjectFile] = true
+		if !ignored {
+			// Creating the file would add untracked dirt (or modify a
+			// tracked file). Leave the checkout alone and say so.
+			skipped = append(skipped, info.ProjectFile)
+			continue
+		}
+		if err := ensureBayAwareness(filepath.Join(repoPath, info.ProjectFile)); err != nil {
+			return fmt.Errorf("updating %s: %w", info.ProjectFile, err)
 		}
 	}
 
-	// .worktreeinclude: create with a comment if it doesn't exist.
-	wtIncludePath := filepath.Join(repoPath, ".worktreeinclude")
-	if _, err := os.Stat(wtIncludePath); os.IsNotExist(err) {
-		content := "# Gitignore-syntax patterns copied into new worktrees.\n" +
-			"# Every match must also be covered by .gitignore.\n" +
-			"# Example: .env\n"
-		if err := os.WriteFile(wtIncludePath, []byte(content), 0o644); err != nil {
-			return fmt.Errorf("creating .worktreeinclude: %w", err)
-		}
+	if len(skipped) > 0 {
+		sort.Strings(skipped)
+		fmt.Fprintf(os.Stderr,
+			"note: %s not gitignored in %s — skipped, so agents launched in the checkout won't see the bay pointer.\n"+
+				"      Add to .gitignore and re-run `bay dock init` to enable it. (Bays get it from the worktree dir regardless.)\n",
+			strings.Join(skipped, ", "), repoPath)
 	}
-
-	if len(toSync) > 0 {
-		if err := ensureFileContainsLines(wtIncludePath, toSync); err != nil {
-			return fmt.Errorf("updating .worktreeinclude: %w", err)
-		}
-	}
-
-	if len(toGitignore) > 0 {
-		gitignorePath := filepath.Join(repoPath, ".gitignore")
-		if err := ensureFileContainsLines(gitignorePath, toGitignore); err != nil {
-			return fmt.Errorf("updating .gitignore: %w", err)
-		}
-	}
-
 	return nil
 }
 
@@ -101,23 +92,22 @@ const bayAwarenessBlock = "This project uses bay for workspace management. Run `
 
 const bayAgentGuideRef = "bay agent-guide"
 
-// ensureBayAwareness installs the bay-awareness pointer in a project file
-// if it isn't already referenced. Returns true if the file did not exist
-// before this call. It only points agents at `bay agent-guide`; it does
+// ensureBayAwareness installs the bay-awareness pointer in an
+// instructions file (creating it if missing) unless it's already
+// referenced. It only points agents at `bay agent-guide`; it does
 // not ask them to maintain the bay description — that's auto-populated
 // (see docs/design/auto-descriptions.md).
-func ensureBayAwareness(path string) (bool, error) {
+func ensureBayAwareness(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
-		return false, err
+		return err
 	}
-	created := os.IsNotExist(err)
 	content := string(data)
 
 	// Idempotent: if the file already points agents at the agent-guide
 	// (a prior install or a hand-written mention), leave it alone.
 	if strings.Contains(content, bayAgentGuideRef) {
-		return false, nil
+		return nil
 	}
 
 	prefix := "\n"
@@ -126,13 +116,11 @@ func ensureBayAwareness(path string) (bool, error) {
 	}
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
-		return false, err
+		return err
 	}
 	defer f.Close()
-	if _, err := f.WriteString(prefix + bayAwarenessBlock + "\n"); err != nil {
-		return false, err
-	}
-	return created, nil
+	_, err = f.WriteString(prefix + bayAwarenessBlock + "\n")
+	return err
 }
 
 // DockSync copies .worktreeinclude files from the dock checkout into all
@@ -179,44 +167,4 @@ func (e *Engine) DockSync(name string) (int, error) {
 		count++
 	}
 	return count, nil
-}
-
-// ensureFileContainsLines appends entries from the map to the file if they
-// don't already appear as whole lines. Creates the file if it doesn't exist.
-func ensureFileContainsLines(path string, entries map[string]bool) error {
-	data, _ := os.ReadFile(path)
-	existing := make(map[string]bool)
-	for line := range strings.SplitSeq(string(data), "\n") {
-		existing[strings.TrimSpace(line)] = true
-	}
-
-	var toAdd []string
-	for entry := range entries {
-		if !existing[entry] {
-			toAdd = append(toAdd, entry)
-		}
-	}
-	if len(toAdd) == 0 {
-		return nil
-	}
-	sort.Strings(toAdd)
-
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	content := string(data)
-	if len(content) > 0 && content[len(content)-1] != '\n' {
-		if _, err := f.WriteString("\n"); err != nil {
-			return err
-		}
-	}
-	for _, entry := range toAdd {
-		if _, err := f.WriteString(entry + "\n"); err != nil {
-			return err
-		}
-	}
-	return nil
 }
