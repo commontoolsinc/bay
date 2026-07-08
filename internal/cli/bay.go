@@ -957,7 +957,7 @@ func autoBootstrap(eng *engine.Engine, quiet bool) (string, error) {
 		if err := eng.DockNew(dockName, repoRoot, "", "", ""); err != nil {
 			return "", err
 		}
-		if initErr := eng.DockInit(dockName); initErr != nil && !quiet {
+		if _, initErr := eng.DockInit(dockName); initErr != nil && !quiet {
 			fmt.Fprintf(os.Stderr, "Warning: dock checkout setup failed: %v\n", initErr)
 		}
 	}

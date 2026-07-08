@@ -137,8 +137,9 @@ Important invariants:
   comes from the filesystem on every display. PR is looked up via `gh pr
   view` once and cached. Merged is set to true automatically when bay
   detects a merge.
-- Bay does not generate config files into worktrees. Project
-  instructions go in the repo's `CLAUDE.local.md` (or equivalent).
+- Bay does not generate config files into worktrees. Bay awareness
+  comes from a `CLAUDE.md` in the worktree directory (an ancestor of
+  every bay); project instructions go in the repo's own files.
   Per-bay context is discoverable via `bay pwd --json`.
 
 ## Parsing and output
@@ -907,13 +908,15 @@ bay dock sync [name]
 `bay dock new` runs `bay dock init` after creating the dock, then opens
 a `home` shell at the dock checkout path. Auto-bootstrap through
 `bay new` creates only the requested worktree bay. `bay dock init` sets
-up bay awareness: appends a short block to each agent's project file
-(e.g., `CLAUDE.local.md`) — pointer to `bay agent-guide` plus an explicit
-"at session start, check the workspace description with `bay describe`"
-trigger — and creates `.worktreeinclude` if missing. Older single-line
-pointers from prior bay versions are rewritten in place. `bay dock sync`
-copies `.worktreeinclude` matches from the checkout into existing
-worktrees.
+up bay awareness: it writes a `CLAUDE.md` pointing at `bay agent-guide`
+into the dock's worktree directory (Claude Code reads `CLAUDE.md` from
+ancestor directories, so every bay picks it up with no files inside the
+worktrees), and appends the same pointer to each agent's project file
+(e.g., `CLAUDE.local.md`) in the dock checkout — but only when the repo
+already gitignores that file. Bay never edits `.gitignore` or leaves
+files git would report as dirty, and non-git checkouts are left
+untouched. `bay dock sync` copies
+`.worktreeinclude` matches from the checkout into existing worktrees.
 
 `.worktreeinclude` uses gitignore syntax. Each pattern is resolved by
 git; matching files are copied from the dock checkout into new worktrees.

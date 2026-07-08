@@ -404,19 +404,6 @@ func lsFilesMatching(repoPath, excludeFile, mode string) ([]string, error) {
 	return parts, nil
 }
 
-func (r *Real) AddToGitignore(repoPath, filename string) error {
-	gitignorePath := filepath.Join(repoPath, ".gitignore")
-	f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return fmt.Errorf("opening .gitignore: %w", err)
-	}
-	defer f.Close()
-	if _, err := f.WriteString(filename + "\n"); err != nil {
-		return fmt.Errorf("writing to .gitignore: %w", err)
-	}
-	return nil
-}
-
 func (r *Real) BranchExists(repoPath, branchName string) (bool, error) {
 	// Check local branch.
 	local := exec.Command("git", "-C", repoPath, "rev-parse", "--verify", "refs/heads/"+branchName)

@@ -430,30 +430,6 @@ func runGit(t *testing.T, dir string, args ...string) {
 	}
 }
 
-func TestMock_AddToGitignore(t *testing.T) {
-	m := NewMock()
-
-	err := m.AddToGitignore("/repo", ".env")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// After adding, file should be ignored.
-	ignored, err := m.IsIgnored("/repo", ".env")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !ignored {
-		t.Error("expected .env to be ignored after AddToGitignore")
-	}
-
-	// Verify call tracking.
-	calls := m.Calls("AddToGitignore")
-	if len(calls) != 1 {
-		t.Fatalf("expected 1 AddToGitignore call, got %d", len(calls))
-	}
-}
-
 func TestMock_CallTracking(t *testing.T) {
 	m := NewMock()
 	m.SetDirty("/repo", false)

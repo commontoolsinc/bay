@@ -1,10 +1,14 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/commontoolsinc/bay/internal/config"
+	"github.com/commontoolsinc/bay/internal/engine"
+	"github.com/commontoolsinc/bay/internal/git"
 	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
@@ -75,6 +79,105 @@ func TestKeybindingsIncludeSurfaceNavigation(t *testing.T) {
 	}
 	if !strings.Contains(joined, "bind-key -T bay-home Enter run-shell 'bay home || true'") {
 		t.Errorf("keybindings should include bay-home Enter binding; got:\n%s", joined)
+	}
+}
+
+func TestCheckDockAwareness(t *testing.T) {
+	const pointer = "Run `bay agent-guide` for commands.\n"
+
+	write := func(t *testing.T, path, content string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("writing %s: %v", path, err)
+		}
+	}
+
+	cases := []struct {
+		name  string
+		setup func(t *testing.T, checkout, wtDir string, m *git.Mock)
+		want  []string // substrings that must appear in the output
+		quiet bool     // no output at all
+	}{
+		{
+			name: "fully initialized dock is quiet",
+			setup: func(t *testing.T, checkout, wtDir string, m *git.Mock) {
+				m.SetGlobalIgnored(true)
+				write(t, filepath.Join(wtDir, engine.WorktreeAwarenessFile), pointer)
+				write(t, filepath.Join(checkout, "CLAUDE.local.md"), pointer)
+			},
+			quiet: true,
+		},
+		{
+			name: "non-git checkout is left alone",
+			setup: func(t *testing.T, checkout, wtDir string, m *git.Mock) {
+				m.SetIsGitRepo(checkout, false)
+			},
+			quiet: true,
+		},
+		{
+			name: "worktree dir missing awareness",
+			setup: func(t *testing.T, checkout, wtDir string, m *git.Mock) {
+				m.SetGlobalIgnored(true)
+				write(t, filepath.Join(checkout, "CLAUDE.local.md"), pointer)
+			},
+			want: []string{"worktree dir missing bay awareness"},
+		},
+		{
+			name: "project file not gitignored",
+			setup: func(t *testing.T, checkout, wtDir string, m *git.Mock) {
+				m.SetGlobalIgnored(false)
+				write(t, filepath.Join(wtDir, engine.WorktreeAwarenessFile), pointer)
+			},
+			want: []string{"CLAUDE.local.md not gitignored"},
+		},
+		{
+			name: "gitignored project file missing",
+			setup: func(t *testing.T, checkout, wtDir string, m *git.Mock) {
+				m.SetGlobalIgnored(true)
+				write(t, filepath.Join(wtDir, engine.WorktreeAwarenessFile), pointer)
+			},
+			want: []string{"CLAUDE.local.md not found"},
+		},
+		{
+			name: "project file missing the pointer",
+			setup: func(t *testing.T, checkout, wtDir string, m *git.Mock) {
+				m.SetGlobalIgnored(true)
+				write(t, filepath.Join(wtDir, engine.WorktreeAwarenessFile), pointer)
+				write(t, filepath.Join(checkout, "CLAUDE.local.md"), "# My project\n")
+			},
+			want: []string{"CLAUDE.local.md missing bay awareness for claude"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			checkout := filepath.Join(dir, "labs")
+			wtDir := filepath.Join(dir, "labs-worktrees")
+			for _, d := range []string{checkout, wtDir} {
+				if err := os.MkdirAll(d, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			mockGit := git.NewMock()
+			cfg := &config.Config{Agents: map[string]config.AgentConfig{}}
+			eng := engine.New(cfg, "", "", "", nil, mockGit)
+			dock := &manifest.Dock{Name: "labs", Path: checkout, WorktreeDir: wtDir}
+			tc.setup(t, checkout, wtDir, mockGit)
+
+			var out strings.Builder
+			checkDockAwareness(eng, dock, checkout, &out)
+
+			if tc.quiet && out.Len() > 0 {
+				t.Fatalf("expected no output, got:\n%s", out.String())
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(out.String(), want) {
+					t.Errorf("output missing %q, got:\n%s", want, out.String())
+				}
+			}
+		})
 	}
 }
 

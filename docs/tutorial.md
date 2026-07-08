@@ -294,8 +294,10 @@ navigation instant.
 `bay dock new backend --path ~/projects/backend`. Explicit dock
 creation opens a `home` shell in that checkout.
 
-**Agent awareness:** new docks add a one-liner to your project's
-`CLAUDE.local.md` (or equivalent) so agents know about bay commands.
+**Agent awareness:** new docks write a one-line `CLAUDE.md` pointer
+into the dock's worktree directory so agents in every bay know about
+bay commands — nothing is added inside your repo unless it's already
+gitignored.
 
 **Explicit control:** The zero-config flow creates docks automatically.
 For more control: `bay dock new myproject --path ~/projects/myproject`

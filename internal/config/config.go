@@ -125,6 +125,42 @@ func KnownAgentNames() []string {
 	return names
 }
 
+// AgentProjectFile pairs an agent's project file (relative to the
+// checkout root) with the name of an agent that uses it.
+type AgentProjectFile struct {
+	Agent string
+	File  string
+}
+
+// AgentProjectFiles returns the distinct project files across built-in
+// and configured agents, each paired with one agent that uses it.
+// Sorted by file name so callers produce deterministic output.
+func (c *Config) AgentProjectFiles() []AgentProjectFile {
+	names := make([]string, 0, len(KnownAgents)+len(c.Agents))
+	for name := range KnownAgents {
+		names = append(names, name)
+	}
+	for name := range c.Agents {
+		if _, builtin := KnownAgents[name]; !builtin {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names) // deterministic representative when agents share a file
+
+	seen := map[string]bool{}
+	var out []AgentProjectFile
+	for _, name := range names {
+		info, ok := c.ResolveAgent(name)
+		if !ok || info.ProjectFile == "" || seen[info.ProjectFile] {
+			continue
+		}
+		seen[info.ProjectFile] = true
+		out = append(out, AgentProjectFile{Agent: name, File: info.ProjectFile})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].File < out[j].File })
+	return out
+}
+
 // ResolveAgent returns the effective AgentInfo for a named agent,
 // checking config overrides first, then built-in defaults.
 func (c *Config) ResolveAgent(name string) (AgentInfo, bool) {

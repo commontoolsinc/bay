@@ -36,12 +36,19 @@ func newDockCmd() *cobra.Command {
 func newDockInitCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "init [name]",
-		Short: "Set up bay files in a dock checkout",
-		Long: `Set up bay awareness in a dock checkout.
+		Short: "Set up bay awareness for a dock",
+		Long: `Set up bay awareness for a dock.
 
-This updates the source checkout: agent project files, .worktreeinclude,
-and .gitignore. It does not copy files into existing worktrees; use
-'bay dock sync' for that backfill step.`,
+Writes a CLAUDE.md pointing agents at 'bay agent-guide' into the dock's
+worktree directory — Claude Code reads CLAUDE.md from ancestor
+directories, so every bay picks it up automatically, with no bay files
+inside the worktrees themselves.
+
+Also appends the same pointer to agent project files in the dock
+checkout (e.g. CLAUDE.local.md), but only when the repo already
+gitignores them. Bay never edits .gitignore or leaves files git would
+report as untracked or modified. Docks whose checkout is not a git
+repository are left untouched.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -59,10 +66,15 @@ and .gitignore. It does not copy files into existing worktrees; use
 				}
 			}
 
-			if err := eng.DockInit(name); err != nil {
+			initialized, err := eng.DockInit(name)
+			if err != nil {
 				return err
 			}
-			fmt.Printf("Initialized dock checkout %q.\n", name)
+			if !initialized {
+				fmt.Printf("Dock %q checkout is not a git repository — nothing to set up.\n", name)
+				return nil
+			}
+			fmt.Printf("Initialized bay awareness for dock %q.\n", name)
 			return nil
 		},
 	}
@@ -103,7 +115,7 @@ func runDockNew(eng *engine.Engine, name, path, worktreeDir, agent, terminal str
 	if err := eng.DockNew(name, path, worktreeDir, agent, terminal); err != nil {
 		return err
 	}
-	if initErr := eng.DockInit(name); initErr != nil {
+	if _, initErr := eng.DockInit(name); initErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: dock checkout setup failed: %v\n", initErr)
 	}
 	if err := eng.Home(name); err != nil {

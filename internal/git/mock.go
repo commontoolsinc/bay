@@ -13,6 +13,7 @@ type Call struct {
 
 // repoState holds the simulated state for a single repository path.
 type repoState struct {
+	notGitRepo      bool // inverted so the zero value keeps the "is a repo" default
 	dirty           bool
 	unpushed        bool
 	branch          string
@@ -178,7 +179,12 @@ func (m *Mock) Clone(url, destPath string) error {
 
 func (m *Mock) IsGitRepo(path string) bool {
 	m.record("IsGitRepo", path)
-	return true // mock defaults to yes
+	return !m.repo(path).notGitRepo // defaults to yes
+}
+
+// SetIsGitRepo sets whether path reports as a git repository (default true).
+func (m *Mock) SetIsGitRepo(path string, isRepo bool) {
+	m.repo(path).notGitRepo = !isRepo
 }
 
 func (m *Mock) RepoRoot(path string) (string, error) {
@@ -266,12 +272,6 @@ func (m *Mock) IsIgnored(repoPath, filename string) (bool, error) {
 		return *m.globalIgnored, nil
 	}
 	return m.repo(repoPath).ignored[filename], nil
-}
-
-func (m *Mock) AddToGitignore(repoPath, filename string) error {
-	m.record("AddToGitignore", repoPath, filename)
-	m.repo(repoPath).ignored[filename] = true
-	return nil
 }
 
 func (m *Mock) ExpandExcludes(repoPath, excludeFile string) ([]string, []string, error) {
