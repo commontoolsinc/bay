@@ -682,7 +682,7 @@ func TestRunBayClose_TapDirty_DoubleTapForceCloses(t *testing.T) {
 		t.Fatalf("first tap should keep the bay: %v", err)
 	}
 	msgs := mockTmux.DisplayMessages()
-	if len(msgs) != 1 || !strings.Contains(msgs[0], "discards uncommitted changes") {
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "discard its uncommitted changes") {
 		t.Fatalf("first tap messages = %v, want uncommitted-changes warning", msgs)
 	}
 
@@ -735,7 +735,7 @@ func TestRunBayClose_TapClean_GenericMessage(t *testing.T) {
 	if len(msgs) != 1 || !strings.Contains(msgs[0], "press again to close") {
 		t.Fatalf("first tap messages = %v, want generic press-again wording", msgs)
 	}
-	if strings.Contains(msgs[0], "discards") || strings.Contains(msgs[0], "unlanded") {
+	if strings.Contains(msgs[0], "discard") || strings.Contains(msgs[0], "unlanded") {
 		t.Fatalf("clean bay message = %q, should not warn about discarded work", msgs[0])
 	}
 }
