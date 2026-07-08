@@ -910,7 +910,8 @@ ancestor directories, so every bay picks it up with no files inside the
 worktrees), and appends the same pointer to each agent's project file
 (e.g., `CLAUDE.local.md`) in the dock checkout — but only when the repo
 already gitignores that file. Bay never edits `.gitignore` or leaves
-files git would report as dirty. `bay dock sync` copies
+files git would report as dirty, and non-git checkouts are left
+untouched. `bay dock sync` copies
 `.worktreeinclude` matches from the checkout into existing worktrees.
 
 `.worktreeinclude` uses gitignore syntax. Each pattern is resolved by

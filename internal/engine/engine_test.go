@@ -2410,7 +2410,7 @@ func TestDockInit_AppendsAwarenessLine(t *testing.T) {
 	projectFile := filepath.Join(repoDir, "CLAUDE.md")
 	os.WriteFile(projectFile, []byte("# My Project\n"), 0o644)
 
-	err := eng.DockInit("labs")
+	_, err := eng.DockInit("labs")
 	if err != nil {
 		t.Fatalf("DockInit: %v", err)
 	}
@@ -2438,7 +2438,7 @@ func TestDockInit_IdempotentIfAlreadyPresent(t *testing.T) {
 	projectFile := filepath.Join(repoDir, "CLAUDE.md")
 	os.WriteFile(projectFile, []byte("# My Project\nRun bay agent-guide for commands.\n"), 0o644)
 
-	err := eng.DockInit("labs")
+	_, err := eng.DockInit("labs")
 	if err != nil {
 		t.Fatalf("DockInit: %v", err)
 	}
@@ -2453,7 +2453,7 @@ func TestDockInit_IdempotentIfAlreadyPresent(t *testing.T) {
 func TestDockInit_WritesWorktreeDirAwareness(t *testing.T) {
 	eng, dir := testEngine(t)
 
-	if err := eng.DockInit("labs"); err != nil {
+	if _, err := eng.DockInit("labs"); err != nil {
 		t.Fatalf("DockInit: %v", err)
 	}
 
@@ -2468,12 +2468,51 @@ func TestDockInit_WritesWorktreeDirAwareness(t *testing.T) {
 		t.Errorf("worktree-dir CLAUDE.md should mention bay agent-guide, got:\n%s", data)
 	}
 
-	if err := eng.DockInit("labs"); err != nil {
+	if _, err := eng.DockInit("labs"); err != nil {
 		t.Fatalf("DockInit re-run: %v", err)
 	}
 	data, _ = os.ReadFile(awareness)
 	if strings.Count(string(data), "bay agent-guide") != 1 {
 		t.Errorf("bay awareness should appear exactly once after re-run, got:\n%s", data)
+	}
+}
+
+func TestDockInit_SkipsNonGitCheckout(t *testing.T) {
+	eng, dir := testEngine(t)
+
+	repoDir := filepath.Join(dir, "repos", "labs")
+	eng.Git.(*git.Mock).SetIsGitRepo(repoDir, false)
+
+	// No repo → no worktree bays and no gitignore to gate on. DockInit
+	// must succeed as a no-op, not fail on git commands.
+	initialized, err := eng.DockInit("labs")
+	if err != nil {
+		t.Fatalf("DockInit on a non-git checkout should be a no-op, got: %v", err)
+	}
+	if initialized {
+		t.Error("DockInit should report initialized=false for a non-git checkout")
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "repos", "labs-worktrees", "CLAUDE.md")); !os.IsNotExist(err) {
+		t.Error("worktree-dir CLAUDE.md should not be created for a non-git checkout")
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, "CLAUDE.local.md")); !os.IsNotExist(err) {
+		t.Error("project file should not be created in a non-git checkout")
+	}
+}
+
+func TestDockInit_ErrorsWithoutCheckoutPath(t *testing.T) {
+	eng, dir := testEngine(t)
+
+	// Hand-edited manifests can lack a checkout path; report it rather
+	// than claiming success.
+	manifest.Save(filepath.Join(dir, "manifest.json"), &manifest.Manifest{
+		Version: manifest.CurrentVersion,
+		Docks:   []manifest.Dock{{Name: "pathless", Bays: []manifest.Bay{}}},
+	})
+
+	if _, err := eng.DockInit("pathless"); err == nil {
+		t.Fatal("DockInit should error for a dock with no checkout path")
 	}
 }
 
@@ -2486,7 +2525,7 @@ func TestDockInit_CreatesIgnoredProjectFileWithoutTouchingGitignore(t *testing.T
 		ProjectFile: "CLAUDE.local.md",
 	}
 
-	if err := eng.DockInit("labs"); err != nil {
+	if _, err := eng.DockInit("labs"); err != nil {
 		t.Fatalf("DockInit: %v", err)
 	}
 
@@ -2514,7 +2553,7 @@ func TestDockInit_SkipsUnignoredProjectFile(t *testing.T) {
 		ProjectFile: "CLAUDE.local.md",
 	}
 
-	if err := eng.DockInit("labs"); err != nil {
+	if _, err := eng.DockInit("labs"); err != nil {
 		t.Fatalf("DockInit: %v", err)
 	}
 
@@ -2545,7 +2584,7 @@ func TestDockInit_LeavesUnignoredExistingFileAlone(t *testing.T) {
 	projectFile := filepath.Join(repoDir, "CLAUDE.local.md")
 	os.WriteFile(projectFile, []byte("# My Project\n"), 0o644)
 
-	if err := eng.DockInit("labs"); err != nil {
+	if _, err := eng.DockInit("labs"); err != nil {
 		t.Fatalf("DockInit: %v", err)
 	}
 
@@ -2559,7 +2598,7 @@ func TestDockInit_LeavesUnignoredExistingFileAlone(t *testing.T) {
 func TestDockInit_DoesNotCreateWorktreeinclude(t *testing.T) {
 	eng, dir := testEngine(t)
 
-	if err := eng.DockInit("labs"); err != nil {
+	if _, err := eng.DockInit("labs"); err != nil {
 		t.Fatalf("DockInit: %v", err)
 	}
 
@@ -2576,7 +2615,7 @@ func TestDockInit_SkipsWorktreeincludeIfExists(t *testing.T) {
 	wtInclude := filepath.Join(repoDir, ".worktreeinclude")
 	os.WriteFile(wtInclude, []byte(".env\n"), 0o644)
 
-	err := eng.DockInit("labs")
+	_, err := eng.DockInit("labs")
 	if err != nil {
 		t.Fatalf("DockInit: %v", err)
 	}
@@ -2591,7 +2630,7 @@ func TestDockInit_SkipsWorktreeincludeIfExists(t *testing.T) {
 func TestDockInit_UnknownDock(t *testing.T) {
 	eng, _ := testEngine(t)
 
-	err := eng.DockInit("nonexistent")
+	_, err := eng.DockInit("nonexistent")
 	if err == nil {
 		t.Error("expected error for unknown dock")
 	}

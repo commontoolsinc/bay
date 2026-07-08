@@ -520,7 +520,10 @@ This does two things:
    skips it and prints a note; add it to `.gitignore` and re-run
    `bay dock init` to enable it.
 
-Files that already reference `bay agent-guide` are left alone.
+Files that already reference `bay agent-guide` are left alone, and
+project files from user-configured agents are covered the same way as
+built-ins. Docks whose checkout isn't a git repository are skipped
+entirely — without git there are no worktree bays to set up.
 `bay doctor` flags docks missing bay awareness.
 
 ### .worktreeinclude

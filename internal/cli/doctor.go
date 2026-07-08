@@ -92,30 +92,7 @@ func runDoctor(eng *engine.Engine, w io.Writer) {
 					ok = false
 				} else {
 					fmt.Fprintf(w, "[OK] dock %q checkout accessible\n", dock.Name)
-					wtAwareness := filepath.Join(dock.EffectiveWorktreeDir(), engine.WorktreeAwarenessFile)
-					if data, readErr := os.ReadFile(wtAwareness); readErr != nil || !strings.Contains(string(data), "bay agent-guide") {
-						fmt.Fprintf(w, "[INFO] dock %q: worktree dir missing bay awareness — run `bay dock init %s`\n", dock.Name, dock.Name)
-					}
-					for agentName := range config.KnownAgents {
-						info, _ := eng.Config.ResolveAgent(agentName)
-						if info.ProjectFile == "" {
-							continue
-						}
-						pf := filepath.Join(path, info.ProjectFile)
-						data, readErr := os.ReadFile(pf)
-						if readErr == nil && strings.Contains(string(data), "bay agent-guide") {
-							continue
-						}
-						ignored, _ := eng.Git.IsIgnored(path, info.ProjectFile)
-						switch {
-						case !ignored:
-							fmt.Fprintf(w, "[INFO] dock %q checkout: %s not gitignored — bay leaves it alone; gitignore it and run `bay dock init %s` for checkout bay awareness\n", dock.Name, info.ProjectFile, dock.Name)
-						case readErr != nil:
-							fmt.Fprintf(w, "[INFO] dock %q checkout: %s not found — run `bay dock init %s`\n", dock.Name, info.ProjectFile, dock.Name)
-						default:
-							fmt.Fprintf(w, "[INFO] dock %q checkout: %s missing bay awareness for %s — run `bay dock init %s`\n", dock.Name, info.ProjectFile, agentName, dock.Name)
-						}
-					}
+					checkDockAwareness(eng, dock, path, w)
 				}
 			}
 			for j := range dock.Bays {
@@ -209,6 +186,36 @@ func runDoctor(eng *engine.Engine, w io.Writer) {
 		fmt.Fprintln(w, "\nSome checks failed. Run `bay setup` to fix.")
 	} else {
 		fmt.Fprintln(w, "\nAll checks passed.")
+	}
+}
+
+// checkDockAwareness prints INFO lines for missing bay-awareness setup
+// in a dock's worktree dir and checkout (path is the expanded checkout
+// path). Non-git checkouts are skipped entirely: `bay dock init` leaves
+// them alone — no worktree bays, no gitignore — so there is nothing to
+// nudge toward.
+func checkDockAwareness(eng *engine.Engine, dock *manifest.Dock, path string, w io.Writer) {
+	if !eng.Git.IsGitRepo(path) {
+		return
+	}
+	wtAwareness := filepath.Join(dock.EffectiveWorktreeDir(), engine.WorktreeAwarenessFile)
+	if data, err := os.ReadFile(wtAwareness); err != nil || !strings.Contains(string(data), engine.BayAgentGuideRef) {
+		fmt.Fprintf(w, "[INFO] dock %q: worktree dir missing bay awareness — run `bay dock init %s`\n", dock.Name, dock.Name)
+	}
+	for _, pf := range eng.Config.AgentProjectFiles() {
+		data, readErr := os.ReadFile(filepath.Join(path, pf.File))
+		if readErr == nil && strings.Contains(string(data), engine.BayAgentGuideRef) {
+			continue
+		}
+		ignored, _ := eng.Git.IsIgnored(path, pf.File)
+		switch {
+		case !ignored:
+			fmt.Fprintf(w, "[INFO] dock %q checkout: %s not gitignored — bay leaves it alone; gitignore it and run `bay dock init %s` for checkout bay awareness\n", dock.Name, pf.File, dock.Name)
+		case readErr != nil:
+			fmt.Fprintf(w, "[INFO] dock %q checkout: %s not found — run `bay dock init %s`\n", dock.Name, pf.File, dock.Name)
+		default:
+			fmt.Fprintf(w, "[INFO] dock %q checkout: %s missing bay awareness for %s — run `bay dock init %s`\n", dock.Name, pf.File, pf.Agent, dock.Name)
+		}
 	}
 }
 

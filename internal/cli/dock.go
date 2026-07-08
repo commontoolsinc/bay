@@ -47,7 +47,8 @@ inside the worktrees themselves.
 Also appends the same pointer to agent project files in the dock
 checkout (e.g. CLAUDE.local.md), but only when the repo already
 gitignores them. Bay never edits .gitignore or leaves files git would
-report as untracked or modified.`,
+report as untracked or modified. Docks whose checkout is not a git
+repository are left untouched.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := newEngine()
@@ -65,8 +66,13 @@ report as untracked or modified.`,
 				}
 			}
 
-			if err := eng.DockInit(name); err != nil {
+			initialized, err := eng.DockInit(name)
+			if err != nil {
 				return err
+			}
+			if !initialized {
+				fmt.Printf("Dock %q checkout is not a git repository — nothing to set up.\n", name)
+				return nil
 			}
 			fmt.Printf("Initialized bay awareness for dock %q.\n", name)
 			return nil
@@ -109,7 +115,7 @@ func runDockNew(eng *engine.Engine, name, path, worktreeDir, agent, terminal str
 	if err := eng.DockNew(name, path, worktreeDir, agent, terminal); err != nil {
 		return err
 	}
-	if initErr := eng.DockInit(name); initErr != nil {
+	if _, initErr := eng.DockInit(name); initErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: dock checkout setup failed: %v\n", initErr)
 	}
 	if err := eng.Home(name); err != nil {
