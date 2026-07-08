@@ -391,7 +391,7 @@ func buildPaletteEntries(env *paletteEnv, mode palette.Mode) []palette.Entry {
 			Section: palette.SectionCurrentBay,
 			Needs:   palette.ScopeInBay,
 			Action: func() (string, error) {
-				return "", runBayClose(env.Engine, env.Ctx.Dock, env.Ctx.BayID, false)
+				return "", runBayClose(env.Engine, env.Ctx.Dock, env.Ctx.BayID, false, false)
 			},
 		},
 

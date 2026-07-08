@@ -597,7 +597,7 @@ func TestRunBayClose_HomeForceDismissesDock(t *testing.T) {
 	m, _ := eng.LoadManifest()
 	dockPath := m.FindDock("labs").Path
 
-	if err := runBayClose(eng, "labs", manifest.HomeBayID, true); err != nil {
+	if err := runBayClose(eng, "labs", manifest.HomeBayID, true, false); err != nil {
 		t.Fatalf("runBayClose(home --force): %v", err)
 	}
 	m2, _ := eng.LoadManifest()
@@ -628,7 +628,7 @@ func TestRunBayClose_HomeDoubleTapDismissesDock(t *testing.T) {
 	home := m.FindDock("labs").FindBayByID(manifest.HomeBayID)
 	winID := home.Surfaces[0].Tmux.WindowID
 
-	if err := runBayClose(eng, "labs", manifest.HomeBayID, false); err != nil {
+	if err := runBayClose(eng, "labs", manifest.HomeBayID, false, false); err != nil {
 		t.Fatalf("runBayClose first: %v", err)
 	}
 	if exists, _ := mockTmux.WindowExists(winID); !exists {
@@ -642,7 +642,7 @@ func TestRunBayClose_HomeDoubleTapDismissesDock(t *testing.T) {
 		t.Fatalf("first bay close messages = %v, want home dismissal guidance", msgs)
 	}
 
-	if err := runBayClose(eng, "labs", manifest.HomeBayID, false); err != nil {
+	if err := runBayClose(eng, "labs", manifest.HomeBayID, false, false); err != nil {
 		t.Fatalf("runBayClose second: %v", err)
 	}
 	m2, _ := eng.LoadManifest()
@@ -658,6 +658,133 @@ func TestRunBayClose_HomeDoubleTapDismissesDock(t *testing.T) {
 	}
 	if has, _ := mockTmux.HasSession("labs"); has {
 		t.Fatal("tmux session still exists after confirmed bay close home")
+	}
+}
+
+func TestRunBayClose_TapDirty_DoubleTapForceCloses(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	eng, mockTmux, mockGit, _ := testNavEngine(t)
+	bay, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true})
+	if err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+	if err := os.MkdirAll(bay.Path, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	mockGit.SetDirty(bay.Path, true)
+
+	// First tap: bay stays, flash names the blast radius.
+	if err := runBayClose(eng, "labs", "b1", true, true); err != nil {
+		t.Fatalf("runBayClose first tap: %v", err)
+	}
+	if _, err := eng.BayShow("labs", "b1"); err != nil {
+		t.Fatalf("first tap should keep the bay: %v", err)
+	}
+	msgs := mockTmux.DisplayMessages()
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "discards uncommitted changes") {
+		t.Fatalf("first tap messages = %v, want uncommitted-changes warning", msgs)
+	}
+
+	// Second tap within the window: force close proceeds despite dirty.
+	if err := runBayClose(eng, "labs", "b1", true, true); err != nil {
+		t.Fatalf("runBayClose second tap: %v", err)
+	}
+	if _, err := eng.BayShow("labs", "b1"); err == nil {
+		t.Fatal("second tap should force-close the dirty bay")
+	}
+}
+
+func TestRunBayClose_TapUnlanded_MessageMentionsBranch(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	eng, mockTmux, mockGit, _ := testNavEngine(t)
+	bay, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true})
+	if err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+	if err := os.MkdirAll(bay.Path, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	mockGit.SetUnpushed(bay.Path, true)
+
+	if err := runBayClose(eng, "labs", "b1", true, true); err != nil {
+		t.Fatalf("runBayClose first tap: %v", err)
+	}
+	if _, err := eng.BayShow("labs", "b1"); err != nil {
+		t.Fatalf("first tap should keep the bay: %v", err)
+	}
+	msgs := mockTmux.DisplayMessages()
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "unlanded commits stay") {
+		t.Fatalf("first tap messages = %v, want unlanded-commits wording", msgs)
+	}
+}
+
+func TestRunBayClose_TapClean_GenericMessage(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	eng, mockTmux, _, _ := testNavEngine(t)
+	if _, err := eng.BayNew(engine.BayNewOptions{Dock: "labs", Shell: true}); err != nil {
+		t.Fatalf("BayNew: %v", err)
+	}
+
+	if err := runBayClose(eng, "labs", "b1", true, true); err != nil {
+		t.Fatalf("runBayClose first tap: %v", err)
+	}
+	msgs := mockTmux.DisplayMessages()
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "press again to close") {
+		t.Fatalf("first tap messages = %v, want generic press-again wording", msgs)
+	}
+	if strings.Contains(msgs[0], "discards") || strings.Contains(msgs[0], "unlanded") {
+		t.Fatalf("clean bay message = %q, should not warn about discarded work", msgs[0])
+	}
+}
+
+func TestRunBayClose_TapHome_ForceDismissesAfterSecondTap(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	eng, mockTmux, _, _ := testNavEngine(t)
+	if err := eng.Home("labs"); err != nil {
+		t.Fatalf("Home: %v", err)
+	}
+
+	if err := runBayClose(eng, "labs", manifest.HomeBayID, true, true); err != nil {
+		t.Fatalf("runBayClose first tap: %v", err)
+	}
+	if has, _ := mockTmux.HasSession("labs"); !has {
+		t.Fatal("first tap should not dismiss the dock session")
+	}
+	msgs := mockTmux.DisplayMessages()
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "dismiss dock") {
+		t.Fatalf("first tap messages = %v, want home dismissal wording", msgs)
+	}
+
+	if err := runBayClose(eng, "labs", manifest.HomeBayID, true, true); err != nil {
+		t.Fatalf("runBayClose second tap: %v", err)
+	}
+	if has, _ := mockTmux.HasSession("labs"); has {
+		t.Fatal("second tap should dismiss the dock session")
+	}
+}
+
+func TestConfirmBayCloseTap_IndependentOfSurfaceCloseRecord(t *testing.T) {
+	// A pending Option+w last-surface tap must never be consumed as
+	// authorization for an Option+Shift+W force-close, and vice versa —
+	// the two records live in separate files.
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	msg := func() string { return "msg" }
+	if confirmLastSurfaceClose(noFlash, "labs", "b1") {
+		t.Fatal("first surface tap should require a second tap")
+	}
+	if confirmBayCloseTap(noFlash, "labs", "b1", msg) {
+		t.Error("pending surface tap must not authorize a force-close")
+	}
+	// The force tap above recorded its own first attempt, so a second
+	// force tap within the window confirms — independently of the
+	// surface-close record.
+	if !confirmBayCloseTap(noFlash, "labs", "b1", msg) {
+		t.Error("second force tap within the window should confirm")
 	}
 }
 

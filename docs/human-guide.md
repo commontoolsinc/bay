@@ -603,6 +603,7 @@ bay new [name] -q                        # suppress output (scripting)
 bay close <id>                           # close + delete pushed branch ('self' for current)
 bay close home                           # close home surfaces if other surfaces remain; keeps checkout
 bay close <id> --force                   # skip safety checks (keeps unlanded branches)
+bay close self --force --tap             # Option+Shift+W form: force-close after a quick second press
 bay close --done                         # close bays not dirty or pending
 bay close --clean                        # close all non-dirty bays
 bay close --done --dry-run               # preview what --done would close
@@ -786,6 +787,7 @@ prefix required — just press the key combo directly.
 | Key | Action |
 |-----|--------|
 | `Option+w` | Close current pane/surface (press twice when it is the last surface in a bay) |
+| `Option+W` | Force-close current bay even if dirty (press twice; the first press warns what will be discarded) |
 | `Option+z` | Restore most recently closed surface (undo-close) |
 | `Option+/` | Flash current bay (name — first-line description — branch — #PR) |
 | `Option+?` | Popup with full bay description (including body) |
@@ -1216,9 +1218,11 @@ default branch. For review bays where PR code was applied as dirty files,
 bay also closes when it can verify the whole dirty tree exactly matches a
 recoverable git ref. If a close keybinding refuses, bay could not verify
 the local changes as review changes it can recreate. If you're sure
-despite a refusal, use `--force`. Or use `bay close --done` to
-batch-close all finished bays, or `--clean` for anything non-dirty. Add
-`--dry-run` to preview first.
+despite a refusal, press `Option+Shift+W` twice to force-close the bay
+from the keyboard (uncommitted changes are discarded; unlanded commits
+stay on the local branch), or use `bay close <id> --force` from a
+terminal. Or use `bay close --done` to batch-close all finished bays, or
+`--clean` for anything non-dirty. Add `--dry-run` to preview first.
 
 **"The waiting indicator isn't working."**
 For bell-based detection: ensure `monitor-bell` is on in tmux (it is by

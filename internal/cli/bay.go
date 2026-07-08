@@ -134,7 +134,7 @@ func printPrepareStartedSummary(eng *engine.Engine, dockName, bayID string) {
 }
 
 func newBayCloseCmd() *cobra.Command {
-	var force, clean, done, all, dryRun bool
+	var force, tap, clean, done, all, dryRun bool
 	var dockFlag string
 
 	cmd := &cobra.Command{
@@ -152,7 +152,11 @@ bay, or use --done/--clean/--all to batch-close bays.
   bay close --done           close bays that are not dirty or pending
   bay close --clean          close all non-dirty bays
   bay close --all            close all bays, then home after confirmation if final
-  bay close --done --dry-run preview what --done would close`,
+  bay close --done --dry-run preview what --done would close
+
+The Option+Shift+W tmux keybinding runs 'bay close self --force --tap':
+--tap holds the close until a quick second invocation, so the keybinding
+needs a deliberate double-tap before uncommitted changes are discarded.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			batchFlags := 0
@@ -166,6 +170,9 @@ bay, or use --done/--clean/--all to batch-close bays.
 			}
 			if batchFlags > 0 && len(args) > 0 {
 				return fmt.Errorf("batch close flags do not take a bay ID; use bay close <id> or bay close --done/--clean/--all")
+			}
+			if tap && batchFlags > 0 {
+				return fmt.Errorf("--tap applies to a single bay close, not --done/--clean/--all")
 			}
 
 			eng, err := newEngine()
@@ -227,11 +234,12 @@ bay, or use --done/--clean/--all to batch-close bays.
 				return err
 			}
 
-			return runBayClose(eng, dockName, bayID, force)
+			return runBayClose(eng, dockName, bayID, force, tap)
 		},
 	}
 
 	cmd.Flags().BoolVar(&force, "force", false, "force close even if dirty; skip home dismissal confirmation")
+	cmd.Flags().BoolVar(&tap, "tap", false, "hold the close until a quick second invocation (keybinding double-tap guard)")
 	cmd.Flags().BoolVar(&done, "done", false, "close bays that are not dirty or pending")
 	cmd.Flags().BoolVar(&clean, "clean", false, "close all non-dirty bays")
 	cmd.Flags().BoolVar(&all, "all", false, "close all bays, then home after confirmation if final")
@@ -241,7 +249,12 @@ bay, or use --done/--clean/--all to batch-close bays.
 	return cmd
 }
 
-func runBayClose(eng *engine.Engine, dockName, bayID string, force bool) error {
+func runBayClose(eng *engine.Engine, dockName, bayID string, force, tap bool) error {
+	if tap && !confirmBayCloseTap(homeCloseFlash(eng), dockName, bayID, func() string {
+		return bayCloseTapMessage(eng, dockName, bayID, force)
+	}) {
+		return nil
+	}
 	closeForce := force
 	if !force {
 		dismisses, err := eng.BayCloseWouldDismissDock(dockName, bayID)
@@ -256,6 +269,32 @@ func runBayClose(eng *engine.Engine, dockName, bayID string, force bool) error {
 		}
 	}
 	return eng.BayClose(dockName, bayID, closeForce)
+}
+
+// bayCloseTapMessage names what a confirmed close will do, so the
+// first tap of Option+Shift+W states the blast radius before anything
+// is destroyed. Probes are best-effort: on error it falls back to
+// generic wording — the tap gate itself still applies.
+func bayCloseTapMessage(eng *engine.Engine, dockName, bayID string, force bool) string {
+	bay, err := eng.BayShow(dockName, bayID)
+	if err != nil {
+		return fmt.Sprintf("press again to close %q", bayID)
+	}
+	if manifest.IsHomeBay(bay) {
+		return homeCloseConfirmMessage(dockName)
+	}
+	label := engine.BayCompactLabel(bay)
+	if force && bay.Path != "" {
+		if _, statErr := os.Stat(bay.Path); statErr == nil {
+			if dirty, err := eng.HasBlockingDirtyChanges(bay); err == nil && dirty {
+				return fmt.Sprintf("press again to force-close %q — discards uncommitted changes", label)
+			}
+			if unpushed, err := eng.HasUnlandedCommits(bay); err == nil && unpushed {
+				return fmt.Sprintf("press again to force-close %q — unlanded commits stay on the local branch", label)
+			}
+		}
+	}
+	return fmt.Sprintf("press again to close %q", label)
 }
 
 func runBayCloseAll(eng *engine.Engine, dockName string, force, dryRun bool) ([]string, []string, error) {

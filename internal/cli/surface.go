@@ -281,7 +281,7 @@ func lastSurfaceCloseRefusal(eng *engine.Engine, bay *manifest.Bay) (string, err
 	}
 	label := engine.BayCompactLabel(bay)
 	if dirty {
-		return fmt.Sprintf("%s: bay kept (local changes may be work in progress).", label), nil
+		return fmt.Sprintf("%s: bay kept (local changes may be work in progress). Option+Shift+W force-closes.", label), nil
 	}
 
 	unpushed, err := eng.HasUnlandedCommits(bay)
@@ -289,7 +289,7 @@ func lastSurfaceCloseRefusal(eng *engine.Engine, bay *manifest.Bay) (string, err
 		return "", fmt.Errorf("bay %q: could not verify push status: %w (use --force to override)", label, err)
 	}
 	if unpushed {
-		return fmt.Sprintf("%s: bay kept (unlanded commits).", label), nil
+		return fmt.Sprintf("%s: bay kept (unlanded commits). Option+Shift+W force-closes.", label), nil
 	}
 	return "", nil
 }

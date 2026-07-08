@@ -14,6 +14,10 @@ type Paths struct {
 	MonitorStatus  string
 	PaletteRecents string
 	CloseConfirm   string
+	// ForceCloseConfirm is a separate double-tap record from CloseConfirm
+	// so a pending Option+w last-surface tap can never be consumed as
+	// authorization for an Option+Shift+W force-close.
+	ForceCloseConfirm string
 }
 
 // DefaultPaths returns the standard paths using XDG defaults.
@@ -21,15 +25,16 @@ func DefaultPaths() Paths {
 	configDir := DefaultConfigDir()
 	dataDir := DefaultDataDir()
 	return Paths{
-		ConfigDir:      configDir,
-		DataDir:        dataDir,
-		ConfigFile:     DefaultConfigPath(),
-		ManifestFile:   filepath.Join(dataDir, "manifest.json"),
-		ArchiveFile:    filepath.Join(dataDir, "archive.json"),
-		PatternsFile:   filepath.Join(configDir, "waiting-patterns.txt"),
-		PIDFile:        filepath.Join(dataDir, "monitor.pid"),
-		MonitorStatus:  filepath.Join(dataDir, "monitor-status.json"),
-		PaletteRecents: filepath.Join(dataDir, "palette-recents.json"),
-		CloseConfirm:   filepath.Join(dataDir, "close-confirm"),
+		ConfigDir:         configDir,
+		DataDir:           dataDir,
+		ConfigFile:        DefaultConfigPath(),
+		ManifestFile:      filepath.Join(dataDir, "manifest.json"),
+		ArchiveFile:       filepath.Join(dataDir, "archive.json"),
+		PatternsFile:      filepath.Join(configDir, "waiting-patterns.txt"),
+		PIDFile:           filepath.Join(dataDir, "monitor.pid"),
+		MonitorStatus:     filepath.Join(dataDir, "monitor-status.json"),
+		PaletteRecents:    filepath.Join(dataDir, "palette-recents.json"),
+		CloseConfirm:      filepath.Join(dataDir, "close-confirm"),
+		ForceCloseConfirm: filepath.Join(dataDir, "force-close-confirm"),
 	}
 }
