@@ -32,15 +32,12 @@ var shouldConfirmLastSurfaceClose = func() bool {
 // doesn't need the rest of the tmux surface.
 type flashFunc func(msg string, durationMs int) error
 
-// confirmLastSurfaceClose decides whether to proceed with closing the last
-// surface in a bay. Returns true if a recent close attempt for the same
-// (dock, bay) is on file (the user is double-tapping). Otherwise records a
-// fresh attempt, flashes a status message asking for a second tap, and
-// returns false.
-//
-// Package-level var so tests can substitute a deterministic implementation.
-var confirmLastSurfaceClose = func(flash flashFunc, dockName, bayName string) bool {
-	path := bayPaths().CloseConfirm
+// tapConfirmed implements the shared double-tap protocol: returns true and
+// consumes the record when a recent attempt for the same (dock, bay) is on
+// file (the user is double-tapping). Otherwise records a fresh attempt,
+// flashes msg asking for a second tap, and returns false. msg is a func so
+// callers whose message needs git probes only pay for them on the first tap.
+func tapConfirmed(path string, flash flashFunc, dockName, bayName string, msg func() string) bool {
 	if recordedRecently(path, dockName, bayName, time.Now()) {
 		_ = os.Remove(path)
 		return true
@@ -52,27 +49,39 @@ var confirmLastSurfaceClose = func(flash flashFunc, dockName, bayName string) bo
 	}
 	// Message duration matches the confirm window so the message vanishing
 	// is itself the deadline — no need to say "2s" and risk a stale number.
-	_ = flash(
-		fmt.Sprintf("press again to close last surface in %q", bayName),
-		int(closeConfirmWindow/time.Millisecond),
-	)
+	_ = flash(msg(), int(closeConfirmWindow/time.Millisecond))
 	return false
+}
+
+// confirmLastSurfaceClose decides whether to proceed with closing the last
+// surface in a bay.
+//
+// Package-level var so tests can substitute a deterministic implementation.
+var confirmLastSurfaceClose = func(flash flashFunc, dockName, bayName string) bool {
+	return tapConfirmed(bayPaths().CloseConfirm, flash, dockName, bayName, func() string {
+		return fmt.Sprintf("press again to close last surface in %q", bayName)
+	})
 }
 
 // confirmLastHomeClose uses the same double-tap record as normal last-surface
 // close, but with wording that makes clear the action dismisses the dock tmux
 // UI/session and does not unregister the dock.
 var confirmLastHomeClose = func(flash flashFunc, dockName string) bool {
-	path := bayPaths().CloseConfirm
-	if recordedRecently(path, dockName, manifest.HomeBayID, time.Now()) {
-		_ = os.Remove(path)
-		return true
-	}
-	if err := writeCloseConfirm(path, dockName, manifest.HomeBayID, time.Now()); err != nil {
-		return true
-	}
-	_ = flash(homeCloseConfirmMessage(dockName), int(closeConfirmWindow/time.Millisecond))
-	return false
+	return tapConfirmed(bayPaths().CloseConfirm, flash, dockName, manifest.HomeBayID, func() string {
+		return homeCloseConfirmMessage(dockName)
+	})
+}
+
+// confirmBayCloseTap gates `bay close --tap` (the Option+Shift+W force-close
+// keybinding) behind the same double-tap protocol. It uses its own record
+// file so a pending Option+w last-surface tap can never be consumed as
+// authorization to force-close a dirty bay; the two keys always require
+// their own second press. The caller supplies msg naming what a confirmed
+// close will discard; it runs only when the first tap flashes.
+//
+// Package-level var so tests can substitute a deterministic implementation.
+var confirmBayCloseTap = func(flash flashFunc, dockName, bayID string, msg func() string) bool {
+	return tapConfirmed(bayPaths().ForceCloseConfirm, flash, dockName, bayID, msg)
 }
 
 func homeCloseConfirmMessage(dockName string) string {

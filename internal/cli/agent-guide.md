@@ -424,7 +424,7 @@ bay home
 bay go home
 ```
 
-#### `bay close [id] [--force] [--done] [--clean] [--all] [--dry-run]`
+#### `bay close [id] [--force] [--tap] [--done] [--clean] [--all] [--dry-run]`
 
 Close a bay and all its surfaces. For worktree bays,
 checks for uncommitted changes and unlanded commits. Refuses if dirty
@@ -440,6 +440,10 @@ dock surfaces remain. Closing the last home surface in an otherwise
 empty dock uses close confirmation; confirming dismisses the dock tmux
 UI/session while keeping the dock registered and leaving `dock.path`
 untouched.
+
+`--tap` holds the close until a second identical invocation within
+1.5 s — it backs the Option+Shift+W force-close keybinding for human
+users. Agents should pass `--force` alone, never `--tap`.
 
 Batch flags (without an ID):
 - `--done`: close bays that are not dirty and not pending (have
