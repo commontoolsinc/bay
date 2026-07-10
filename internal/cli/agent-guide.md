@@ -345,7 +345,9 @@ Fields are omitted when empty.
 Across all create-verbs (`bay new`, `surface new`, `shell`, `agent`)
 the positional names the **thing being created**.
 The container (dock, bay) is selected via `--dock` / `--bay`
-flags or, when omitted, inherited from the current tmux session.
+flags or, when omitted, inferred from context: the dock of the
+current checkout (the repo your CWD is in) takes precedence, falling
+back to the current tmux session.
 
 Commands that target a bay take the **ID** as the positional
 (e.g., `bay close b1`). The exception is `bay new [name]`, where
@@ -355,7 +357,7 @@ qualified form: `id:surface-name` or `dock:id:surface-name`.
 
 | Command | Default target when omitted |
 |---------|-----------------------------|
-| `bay new [name]` | current dock from tmux session, or auto-bootstrap from CWD |
+| `bay new [name]` | current dock from CWD checkout, else tmux session, else auto-bootstrap from CWD |
 | `bay ls` | bays in current dock (errors outside a dock) |
 | `bay show [id]` | current bay |
 | `bay close [id]` | required (no default; use `--done`/`--clean`/`--all` for batch) |
@@ -368,8 +370,8 @@ qualified form: `id:surface-name` or `dock:id:surface-name`.
 | `bay surface close <name>` | required (use `self` for current pane) |
 | `bay surface show [name]` | current pane's surface |
 | `bay surface tree` (none) | n/a — surfaces are leaves; use `bay surface show` |
-| `bay dock ls [name]` | current dock from tmux session, or all docks |
-| `bay dock tree [name]` | current dock from tmux session |
+| `bay dock ls [name]` | current dock from CWD checkout or tmux session, or all docks |
+| `bay dock tree [name]` | current dock from CWD checkout or tmux session |
 | `bay go [query]` | bays in current dock |
 | `bay surface go [query]` | surfaces in current bay |
 | `bay edit [id]` / `bay edit --bay home` | current bay; `home` targets dock checkout |
@@ -387,9 +389,12 @@ shorthands exist for frequent surface creation.
 #### `bay new [name] [--dock DOCK] [--dir PATH] [--branch NAME] [--agent [TYPE]] [--description TEXT]`
 
 Create a bay with its first surface. The positional names the
-new bay; `--dock` selects which dock to create it in. `--dock`
-defaults to the current tmux session if it is a bay dock, or
-auto-bootstraps from CWD (creates a dock automatically).
+new bay; `--dock` selects which dock to create it in. When `--dock`
+is omitted, bay uses the dock of the current checkout (the repo your
+CWD is in); if CWD isn't a known checkout it falls back to the current
+tmux session, and otherwise auto-bootstraps a dock from CWD (creating
+one automatically). Standing in a dock's checkout therefore wins over
+the tmux session you're attached to.
 
 Default behavior opens a shell. Use `--agent` for the dock's default
 agent, or `--agent TYPE` for a specific one. Or create the bay
