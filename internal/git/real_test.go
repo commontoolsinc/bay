@@ -104,6 +104,47 @@ func TestReal_IsMergedIntoDefault_UnmergedBranchNotDetected(t *testing.T) {
 	}
 }
 
+// TestReal_DefaultBranch_SlashInBranchName verifies that a default
+// branch whose name contains slashes (origin/HEAD ->
+// origin/team/feature, as some forks configure) is returned intact.
+// Regression: the old parser split on "/" and kept only the last
+// component, so "team/feature" became "feature".
+func TestReal_DefaultBranch_SlashInBranchName(t *testing.T) {
+	clone := setupRemoteAndClone(t)
+
+	gitRun(t, "-C", clone, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/team/feature")
+
+	r := Real{}
+	branch, err := r.DefaultBranch(clone)
+	if err != nil {
+		t.Fatalf("DefaultBranch: %v", err)
+	}
+	if branch != "team/feature" {
+		t.Errorf("DefaultBranch = %q, want team/feature (slash must be preserved)", branch)
+	}
+}
+
+// TestReal_CreateWorktree_SlashDefaultBranch reproduces the `bay new`
+// failure in a repo whose default branch name contains a slash: the
+// detached worktree bases on origin/<default>, which must resolve to a
+// real ref. Before the DefaultBranch fix this tried origin/feature
+// (nonexistent) and git worktree add failed with "invalid reference".
+func TestReal_CreateWorktree_SlashDefaultBranch(t *testing.T) {
+	clone := setupRemoteAndClone(t)
+
+	// Namespaced default branch on the remote (origin/HEAD ->
+	// origin/team/feature).
+	gitRun(t, "-C", clone, "checkout", "-b", "team/feature")
+	gitRun(t, "-C", clone, "push", "-u", "origin", "team/feature")
+	gitRun(t, "-C", clone, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/team/feature")
+
+	wt := filepath.Join(t.TempDir(), "wt")
+	r := Real{}
+	if err := r.CreateWorktree(clone, wt, ""); err != nil {
+		t.Fatalf("CreateWorktree with slash default branch: %v", err)
+	}
+}
+
 // TestReal_ExpandExcludes verifies that gitignore-syntax patterns in an
 // exclude file match both tracked and untracked files, and that the two
 // buckets are returned separately.

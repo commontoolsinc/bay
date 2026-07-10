@@ -512,10 +512,15 @@ func (r *Real) DefaultBranch(repoPath string) (string, error) {
 	out, err := cmd.Output()
 	if err == nil {
 		ref := strings.TrimSpace(string(out))
-		// ref looks like "refs/remotes/origin/main"
-		parts := strings.Split(ref, "/")
-		if len(parts) > 0 {
-			return parts[len(parts)-1], nil
+		// ref looks like "refs/remotes/origin/main", or
+		// "refs/remotes/origin/team/feature" when the default branch
+		// name itself contains slashes. Strip the remote prefix instead
+		// of taking the last "/"-separated component, so those slashes
+		// survive — otherwise "origin/<branch>" resolves to a
+		// nonexistent ref and `git worktree add` fails.
+		const originPrefix = "refs/remotes/origin/"
+		if branch := strings.TrimPrefix(ref, originPrefix); branch != ref && branch != "" {
+			return branch, nil
 		}
 	}
 
