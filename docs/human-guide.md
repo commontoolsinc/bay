@@ -593,11 +593,14 @@ valuable conversation context.
 
 Across all create-verbs the rule is the same: the positional names the
 thing being created. Container (dock, bay) is selected via flags
-or, when omitted, inferred from context — the dock of the current
-checkout (the repo your CWD is in) takes precedence, falling back to
-the current tmux session. So `bay new` while standing in a dock's
-checkout targets that dock even if you're attached to another dock's
-session.
+or, when omitted, inferred from context — in an interactive shell the
+dock of the current checkout (the repo your CWD is in) takes
+precedence, falling back to the current tmux session. So `bay new`
+while standing in a dock's checkout targets that dock even if you're
+attached to another dock's session. Keybindings (like Option+c) are
+the exception: they run via tmux `run-shell`, whose working directory
+is the server's rather than yours, so they use the tmux session and
+create in the dock you're looking at.
 
 ```
 bay new [name]                           # new bay (positional sets the display Name)

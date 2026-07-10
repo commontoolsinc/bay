@@ -345,9 +345,12 @@ Fields are omitted when empty.
 Across all create-verbs (`bay new`, `surface new`, `shell`, `agent`)
 the positional names the **thing being created**.
 The container (dock, bay) is selected via `--dock` / `--bay`
-flags or, when omitted, inferred from context: the dock of the
-current checkout (the repo your CWD is in) takes precedence, falling
-back to the current tmux session.
+flags or, when omitted, inferred from context. In an interactive
+shell the dock of the current checkout (the repo your CWD is in)
+takes precedence, falling back to the current tmux session. Commands
+run from a tmux keybinding (via `run-shell`) use the tmux session
+instead — their working directory is the server's, not yours — so
+Option+c always creates in the dock you're looking at.
 
 Commands that target a bay take the **ID** as the positional
 (e.g., `bay close b1`). The exception is `bay new [name]`, where
@@ -394,7 +397,10 @@ is omitted, bay uses the dock of the current checkout (the repo your
 CWD is in); if CWD isn't a known checkout it falls back to the current
 tmux session, and otherwise auto-bootstraps a dock from CWD (creating
 one automatically). Standing in a dock's checkout therefore wins over
-the tmux session you're attached to.
+the tmux session you're attached to. The exception is a tmux
+keybinding (Option+c), which runs via `run-shell` where the CWD is the
+server's, not yours — there the tmux session wins, so bays land in the
+dock you're looking at.
 
 Default behavior opens a shell. Use `--agent` for the dock's default
 agent, or `--agent TYPE` for a specific one. Or create the bay
