@@ -982,36 +982,67 @@ func probeAgent() string {
 func resolveCurrentDock(eng *engine.Engine) (string, error) {
 	m, _ := eng.LoadManifest()
 
-	// Try: CWD → git checkout/worktree → matching dock.
-	if m != nil {
-		cwd, cwdErr := os.Getwd()
-		if cwdErr == nil {
-			if repoRoot, rootErr := eng.Git.RepoRoot(cwd); rootErr == nil {
-				root := config.CanonicalPath(repoRoot)
-				for i := range m.Docks {
-					d := &m.Docks[i]
-					if d.Path != "" && config.CanonicalPath(d.Path) == root {
-						return d.Name, nil
-					}
-					for j := range d.Bays {
-						bay := &d.Bays[j]
-						if bay.Path != "" && config.CanonicalPath(bay.Path) == root {
-							return d.Name, nil
-						}
-					}
+	// CWD → git checkout/worktree → matching dock.
+	tryCWD := func() string {
+		if m == nil {
+			return ""
+		}
+		cwd, err := os.Getwd()
+		if err != nil {
+			return ""
+		}
+		repoRoot, err := eng.Git.RepoRoot(cwd)
+		if err != nil {
+			return ""
+		}
+		root := config.CanonicalPath(repoRoot)
+		for i := range m.Docks {
+			d := &m.Docks[i]
+			if d.Path != "" && config.CanonicalPath(d.Path) == root {
+				return d.Name
+			}
+			for j := range d.Bays {
+				bay := &d.Bays[j]
+				if bay.Path != "" && config.CanonicalPath(bay.Path) == root {
+					return d.Name
 				}
 			}
 		}
+		return ""
 	}
 
-	// Fallback: current tmux session (only when inside tmux). Check
-	// $TMUX (not $TMUX_PANE) because tmux run-shell doesn't set
-	// TMUX_PANE. The FindDock check ensures we only use the session if
-	// it's actually a bay dock.
-	if os.Getenv("TMUX") != "" {
-		if sess, tmuxErr := eng.Tmux.CurrentSession(); tmuxErr == nil && m != nil && m.FindDock(sess) != nil {
-			return sess, nil
+	// Current tmux session, when it names a bay dock. CurrentSession
+	// works even from a run-shell keybinding (it reports the attached
+	// client's session).
+	trySession := func() string {
+		if os.Getenv("TMUX") == "" {
+			return ""
 		}
+		if sess, err := eng.Tmux.CurrentSession(); err == nil && m != nil && m.FindDock(sess) != nil {
+			return sess
+		}
+		return ""
+	}
+
+	// The CWD only reflects the user's intent when it's their real
+	// shell: an interactive tmux pane (TMUX_PANE set) or a plain
+	// terminal (no TMUX). When bay runs from a tmux keybinding via
+	// run-shell, TMUX is set but TMUX_PANE is not, and the CWD is the
+	// tmux server's start directory — unrelated to the session the user
+	// is looking at. There the session is authoritative, so it must win
+	// over the CWD; otherwise Option+c would create bays in whatever
+	// dock the server happens to sit in.
+	cwdReliable := os.Getenv("TMUX") == "" || os.Getenv("TMUX_PANE") != ""
+
+	first, second := tryCWD, trySession
+	if !cwdReliable {
+		first, second = trySession, tryCWD
+	}
+	if dock := first(); dock != "" {
+		return dock, nil
+	}
+	if dock := second(); dock != "" {
+		return dock, nil
 	}
 
 	return "", fmt.Errorf("cannot determine current dock — not in a tmux session or a known checkout")

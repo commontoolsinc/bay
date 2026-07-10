@@ -5,7 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/commontoolsinc/bay/internal/engine"
 	"github.com/commontoolsinc/bay/internal/manifest"
+	"github.com/commontoolsinc/bay/internal/tmux"
 )
 
 // TestResolveCurrentDock_TmuxSession verifies the primary path: if
@@ -84,15 +86,15 @@ func TestResolveCurrentDock_NeitherErrors(t *testing.T) {
 	}
 }
 
-// TestResolveCurrentDock_CWDBeatsTmuxSession is the regression test for
-// the bug where `bay new` in one dock's checkout created the bay in the
-// dock of the current tmux session instead. Standing in a known
-// checkout must win over the ambient session.
-func TestResolveCurrentDock_CWDBeatsTmuxSession(t *testing.T) {
+// setupCWDvsSession builds an engine with the testNavEngine "labs" dock
+// plus a second "otherdock" that has its own checkout, then chdirs into
+// otherdock's checkout and points the git mock at it. Tests then attach
+// (via TMUX/TMUX_PANE + SetCurrentSession) to a *different* session to
+// exercise the CWD-vs-session precedence.
+func setupCWDvsSession(t *testing.T) (*engine.Engine, *tmux.Mock) {
+	t.Helper()
 	eng, mockTmux, mockGit, dir := testNavEngine(t)
 
-	// Add a second dock "otherdock" with its own checkout, alongside
-	// the "labs" dock that testNavEngine creates.
 	otherRepo := filepath.Join(dir, "repos", "otherdock")
 	if err := os.MkdirAll(filepath.Join(otherRepo, ".git"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -109,26 +111,61 @@ func TestResolveCurrentDock_CWDBeatsTmuxSession(t *testing.T) {
 		t.Fatalf("save manifest: %v", err)
 	}
 
-	// Attached to the "labs" tmux session...
-	mockTmux.SetCurrentSession("labs")
-	t.Setenv("TMUX", "/tmp/tmux-501/default,12345,0")
-
-	// ...but standing in "otherdock"'s checkout. Use the actual path
-	// from Getwd after chdir (macOS symlinks /tmp → /private/tmp).
+	// Stand in otherdock's checkout. Use the actual path from Getwd
+	// after chdir (macOS symlinks /tmp → /private/tmp).
 	oldWd, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(oldWd) })
 	if err := os.Chdir(otherRepo); err != nil {
 		t.Fatalf("chdir: %v", err)
 	}
-	defer os.Chdir(oldWd)
-
 	actualCwd, _ := os.Getwd()
 	mockGit.SetRepoRoot(actualCwd, actualCwd)
+
+	return eng, mockTmux
+}
+
+// TestResolveCurrentDock_CWDBeatsTmuxSession is the regression test for
+// the bug where `bay new` in one dock's checkout created the bay in the
+// dock of the current tmux session instead. In a real interactive pane
+// (TMUX_PANE set), standing in a known checkout must win over the
+// ambient session.
+func TestResolveCurrentDock_CWDBeatsTmuxSession(t *testing.T) {
+	eng, mockTmux := setupCWDvsSession(t)
+
+	// Attached to "labs", in an interactive pane, but CWD is otherdock.
+	mockTmux.SetCurrentSession("labs")
+	t.Setenv("TMUX", "/tmp/tmux-501/default,12345,0")
+	t.Setenv("TMUX_PANE", "%1")
 
 	dock, err := resolveCurrentDock(eng)
 	if err != nil {
 		t.Fatalf("resolveCurrentDock: %v", err)
 	}
 	if dock != "otherdock" {
-		t.Errorf("dock = %q, want otherdock (CWD must beat tmux session)", dock)
+		t.Errorf("dock = %q, want otherdock (CWD must beat session in an interactive pane)", dock)
+	}
+}
+
+// TestResolveCurrentDock_KeybindingPrefersSession is the regression test
+// for the inverse bug: a tmux keybinding runs bay via run-shell, where
+// TMUX is set but TMUX_PANE is not and the CWD is the tmux server's
+// directory (here, otherdock's checkout). The session the user is
+// looking at must win, so Option+c creates bays in the current dock —
+// not wherever the server happens to sit.
+func TestResolveCurrentDock_KeybindingPrefersSession(t *testing.T) {
+	eng, mockTmux := setupCWDvsSession(t)
+
+	// Attached to "labs"; run-shell context has no TMUX_PANE even though
+	// the CWD sits in otherdock's checkout.
+	mockTmux.SetCurrentSession("labs")
+	t.Setenv("TMUX", "/tmp/tmux-501/default,12345,0")
+	t.Setenv("TMUX_PANE", "")
+
+	dock, err := resolveCurrentDock(eng)
+	if err != nil {
+		t.Fatalf("resolveCurrentDock: %v", err)
+	}
+	if dock != "labs" {
+		t.Errorf("dock = %q, want labs (session must beat CWD from a run-shell keybinding)", dock)
 	}
 }
