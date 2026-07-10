@@ -49,20 +49,11 @@ func newBayNewCmd() *cobra.Command {
 				return fmt.Errorf("home is reserved for the dock checkout; use `bay home`")
 			}
 
-			// Resolve dock: explicit --dock > current tmux session > known checkout > auto-bootstrap.
-			// Check $TMUX (not $TMUX_PANE) because tmux run-shell doesn't
-			// set TMUX_PANE. The FindDock check below ensures we only use
-			// the session if it's actually a bay dock.
+			// Resolve dock: explicit --dock > current checkout/session > auto-bootstrap.
+			// resolveCurrentDock prefers the CWD's dock over the tmux
+			// session, so `bay new` in dock Y's checkout targets Y even
+			// when attached to dock X's session.
 			opts.Dock = dockFlag
-			if opts.Dock == "" && os.Getenv("TMUX") != "" {
-				dock, tmuxErr := eng.Tmux.CurrentSession()
-				if tmuxErr == nil {
-					m, _ := eng.LoadManifest()
-					if m != nil && m.FindDock(dock) != nil {
-						opts.Dock = dock
-					}
-				}
-			}
 			if opts.Dock == "" {
 				if dockName, resolveErr := resolveCurrentDock(eng); resolveErr == nil {
 					opts.Dock = dockName
@@ -110,7 +101,7 @@ func newBayNewCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (defaults to current tmux session)")
+	cmd.Flags().StringVar(&dockFlag, "dock", "", "dock name (defaults to current checkout, else tmux session)")
 	cmd.Flags().StringVar(&opts.Dir, "dir", "", "external directory (creates external bay)")
 	cmd.Flags().StringVar(&opts.Agent, "agent", "", "agent type (bare --agent uses dock default; use --agent=TYPE for a specific type)")
 	cmd.Flags().BoolVar(&shell, "shell", false, "open shell instead of agent")
@@ -980,19 +971,18 @@ func probeAgent() string {
 }
 
 // resolveCurrentDock resolves the dock for listing commands. Tries:
-// 1. Current tmux session (if it's a bay dock)
-// 2. CWD → git checkout/worktree → matching dock in the manifest
+// 1. CWD → git checkout/worktree → matching dock in the manifest
+// 2. Current tmux session (if it's a bay dock)
+//
+// CWD wins over the tmux session: standing in a known checkout is an
+// explicit signal that outranks the ambient session, so `bay new`/`bay
+// ls` in dock Y's checkout act on Y even when you're attached to dock
+// X's tmux session. The session is only a fallback for when CWD isn't a
+// recognized checkout (a scratch dir, an unrelated repo, /tmp, ...).
 func resolveCurrentDock(eng *engine.Engine) (string, error) {
 	m, _ := eng.LoadManifest()
 
-	// Try: current tmux session (only when inside tmux).
-	if os.Getenv("TMUX") != "" {
-		if sess, tmuxErr := eng.Tmux.CurrentSession(); tmuxErr == nil && m != nil && m.FindDock(sess) != nil {
-			return sess, nil
-		}
-	}
-
-	// Fallback: CWD → git checkout/worktree → matching dock.
+	// Try: CWD → git checkout/worktree → matching dock.
 	if m != nil {
 		cwd, cwdErr := os.Getwd()
 		if cwdErr == nil {
@@ -1011,6 +1001,16 @@ func resolveCurrentDock(eng *engine.Engine) (string, error) {
 					}
 				}
 			}
+		}
+	}
+
+	// Fallback: current tmux session (only when inside tmux). Check
+	// $TMUX (not $TMUX_PANE) because tmux run-shell doesn't set
+	// TMUX_PANE. The FindDock check ensures we only use the session if
+	// it's actually a bay dock.
+	if os.Getenv("TMUX") != "" {
+		if sess, tmuxErr := eng.Tmux.CurrentSession(); tmuxErr == nil && m != nil && m.FindDock(sess) != nil {
+			return sess, nil
 		}
 	}
 
