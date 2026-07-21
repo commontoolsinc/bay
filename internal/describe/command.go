@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/commontoolsinc/bay/internal/config"
@@ -68,6 +69,7 @@ func (c commandSummarizer) Summarize(ctx context.Context, prompt string) (string
 
 	cmd := exec.CommandContext(ctx, final[0], final[1:]...)
 	cmd.Dir = "/" // the summarizer runs nowhere in particular
+	cmd.Env = summarizerEnv(final[0])
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -91,4 +93,46 @@ func (c commandSummarizer) Summarize(ctx context.Context, prompt string) (string
 		return "", fmt.Errorf("%s produced no output", final[0])
 	}
 	return out, nil
+}
+
+// summarizerEnv makes a symlinked, runtime-managed CLI self-contained enough
+// to launch from the long-running monitor. Tools installed by managers such as
+// mise commonly use a stable symlink for the CLI while its shebang resolves a
+// sibling runtime through /usr/bin/env (for example, codex -> "env node"). The
+// monitor may have inherited PATH before that runtime was installed or
+// activated, even though the CLI symlink itself remains reachable.
+//
+// Prepending the resolved executable's directory lets the shebang find that
+// sibling runtime without changing Bay's own environment or requiring a
+// monitor restart. Other configured summarizers are unaffected beyond seeing
+// their own installation directory first on PATH.
+func summarizerEnv(command string) []string {
+	env := os.Environ()
+	executable, err := exec.LookPath(command)
+	if err != nil {
+		return env
+	}
+	resolved, err := filepath.EvalSymlinks(executable)
+	if err != nil {
+		return env
+	}
+	dir := filepath.Dir(resolved)
+	currentPath := os.Getenv("PATH")
+	for _, entry := range filepath.SplitList(currentPath) {
+		if entry == dir {
+			return env
+		}
+	}
+
+	path := dir
+	if currentPath != "" {
+		path += string(os.PathListSeparator) + currentPath
+	}
+	for i, entry := range env {
+		if strings.HasPrefix(entry, "PATH=") {
+			env[i] = "PATH=" + path
+			return env
+		}
+	}
+	return append(env, "PATH="+path)
 }
