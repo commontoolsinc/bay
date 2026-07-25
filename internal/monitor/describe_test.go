@@ -22,8 +22,15 @@ func TestSelectDescribeCandidates(t *testing.T) {
 				Description: "mine", DescriptionSource: manifest.DescriptionSourceUser},
 			// Skip: legacy (non-empty, empty source).
 			{ID: "b4", Type: manifest.BayTypeWorktree, Path: "/p4", LastActive: now - 60, Description: "legacy"},
-			// Skip: not recently active.
+			// Eligible backlog: never described, even though not recently active.
 			{ID: "b5", Type: manifest.BayTypeWorktree, Path: "/p5", LastActive: now - activityWindow - 1},
+			// Skip: inactive and already probed without finding any signal.
+			{ID: "quiet", Type: manifest.BayTypeWorktree, Path: "/quiet",
+				LastActive: now - activityWindow - 1, DescriptionSummarizedAt: now - 3600,
+				DescriptionStableStreak: 1},
+			// Eligible backlog: an earlier summarizer failure leaves streak zero.
+			{ID: "failed", Type: manifest.BayTypeWorktree, Path: "/failed",
+				LastActive: now - activityWindow - 1, DescriptionSummarizedAt: now - 3600},
 			// Skip: summarized within the min interval.
 			{ID: "b6", Type: manifest.BayTypeWorktree, Path: "/p6", LastActive: now - 60,
 				DescriptionSource: manifest.DescriptionSourceAuto, DescriptionSummarizedAt: now - 10},
@@ -35,14 +42,12 @@ func TestSelectDescribeCandidates(t *testing.T) {
 	}}}
 
 	got := selectDescribeCandidates(mf, now, describeMaxPerCycle)
-	if len(got) != 2 {
-		t.Fatalf("got %d candidates, want 2: %+v", len(got), got)
+	if len(got) != 4 {
+		t.Fatalf("got %d candidates, want 4: %+v", len(got), got)
 	}
-	// Oldest-summarized first: b2 (summarized long ago) before b1 (never, 0).
-	// b1 has summarizedAt 0, which sorts before b2's now-3600. So order is b1, b2.
-	ids := []string{got[0].bay, got[1].bay}
-	if ids[0] != "b1" || ids[1] != "b2" {
-		t.Errorf("candidate order = %v, want [b1 b2]", ids)
+	ids := []string{got[0].bay, got[1].bay, got[2].bay, got[3].bay}
+	if ids[0] != "b1" || ids[1] != "b5" || ids[2] != "b2" || ids[3] != "failed" {
+		t.Errorf("candidate order = %v, want [b1 b5 b2 failed]", ids)
 	}
 }
 
