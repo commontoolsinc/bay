@@ -162,9 +162,12 @@ none of them yield any signal.
 ### Staleness: coarse trigger in the monitor, precise dedup in the worker
 
 To keep the monitor cheap (no transcript/log I/O in its loop), it uses
-a **coarse** trigger: dispatch when the bay is eligible, was active
-within `activityWindow`, and is *due*. It does *not* read transcripts to
-decide. Due-ness is activity-aware:
+a **coarse** trigger. Never-described bays and empty descriptions left
+by a failed summarizer form a bounded oldest-first backlog even after
+their activity window expires. Once a quiet worker run establishes that
+an inactive bay has no signal, it leaves the backlog. Auto-description
+refreshes otherwise require activity within `activityWindow`. The
+monitor does *not* read transcripts to decide. Due-ness is activity-aware:
 
 - If the user has touched the bay since the last run
   (`LastActive > DescriptionSummarizedAt`), re-describe at the base
@@ -201,8 +204,11 @@ activity gate can be upgraded to a cheap cwd→log-mtime index.
 - Reuse the cycle-gate pattern: a new `DescribeCheckCycles` constant
   (start at 100 ≈ 5 min at the default 3 s interval, matching
   `MergeCheckCycles`).
-- Only consider bays active within `activityWindow` (the existing
-  2-hour window), so dead bays don't get summarized.
+- Backfill never-described bays (and retry failed empty descriptions)
+  regardless of `activityWindow`, capped by the per-cycle dispatch
+  limit. Successfully probed quiet bays leave this backlog.
+- Only refresh existing auto descriptions for bays active within
+  `activityWindow` (the existing 2-hour window).
 - A bay re-described at the base `minInterval` only while it sees fresh
   activity; an unchanging bay backs off toward `maxInterval` (see
   Staleness) so a focused-then-abandoned bay isn't re-probed every cycle.

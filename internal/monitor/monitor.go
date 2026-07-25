@@ -358,9 +358,11 @@ type describeCandidate struct {
 	bay  string
 }
 
-// selectDescribeCandidates returns bays due for an auto-description
-// refresh: empty-or-auto descriptions, recently active, and past the
-// min re-describe interval. Oldest-summarized first, capped at max.
+// selectDescribeCandidates returns bays due for an auto-description refresh.
+// Never-described bays and failed empty descriptions form a bounded backlog
+// even after their activity window expires. Successfully probed quiet bays and
+// auto-description refreshes still require recent activity. Candidates are
+// oldest-summarized first, capped at max.
 func selectDescribeCandidates(mf *manifest.Manifest, now int64, max int) []describeCandidate {
 	type scored struct {
 		describeCandidate
@@ -377,8 +379,11 @@ func selectDescribeCandidates(mf *manifest.Manifest, now int64, max int) []descr
 			if bay.Description != "" && bay.DescriptionSource != manifest.DescriptionSourceAuto {
 				continue // user-set or legacy — never auto-overwrite
 			}
-			if bay.LastActive == 0 || now-bay.LastActive > activityWindow {
-				continue // not recently active
+			recentlyActive := bay.LastActive != 0 && now-bay.LastActive <= activityWindow
+			needsBackfill := bay.Description == "" &&
+				(bay.DescriptionSummarizedAt == 0 || bay.DescriptionStableStreak == 0)
+			if !recentlyActive && !needsBackfill {
+				continue
 			}
 			if bay.DescriptionSummarizedAt != 0 {
 				// Already described once. Re-dispatch only when due. If the

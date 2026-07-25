@@ -95,17 +95,17 @@ func (c commandSummarizer) Summarize(ctx context.Context, prompt string) (string
 	return out, nil
 }
 
-// summarizerEnv makes a symlinked, runtime-managed CLI self-contained enough
-// to launch from the long-running monitor. Tools installed by managers such as
-// mise commonly use a stable symlink for the CLI while its shebang resolves a
-// sibling runtime through /usr/bin/env (for example, codex -> "env node"). The
-// monitor may have inherited PATH before that runtime was installed or
-// activated, even though the CLI symlink itself remains reachable.
+// summarizerEnv repairs the stale PATH inherited by a long-running monitor
+// when a configured CLI uses a runtime-manager install. Managed CLIs may put
+// their env-based shebang runtime beside the resolved script, or—as mise does
+// for separately managed tools—in a sibling install tree. For example:
 //
-// Prepending the resolved executable's directory lets the shebang find that
-// sibling runtime without changing Bay's own environment or requiring a
-// monitor restart. Other configured summarizers are unaffected beyond seeing
-// their own installation directory first on PATH.
+//	.../mise/installs/npm-openai-codex/latest/bin/codex
+//	.../mise/installs/node/latest/bin/node
+//
+// A monitor started before Node was activated can find codex but not node.
+// Detect both layouts from the command's shebang and prepend the matching
+// runtime directory for the child only.
 func summarizerEnv(command string) []string {
 	env := os.Environ()
 	executable, err := exec.LookPath(command)
@@ -116,14 +116,76 @@ func summarizerEnv(command string) []string {
 	if err != nil {
 		return env
 	}
-	dir := filepath.Dir(resolved)
+	interpreter := envShebangInterpreter(executable)
+	if interpreter == "" {
+		return env
+	}
+	if _, err := exec.LookPath(interpreter); err == nil {
+		return env
+	}
+	for _, dir := range []string{
+		filepath.Dir(resolved),
+		managedRuntimeDir(executable, interpreter),
+	} {
+		if isExecutable(filepath.Join(dir, interpreter)) {
+			return withPathPrefix(env, dir)
+		}
+	}
+	return env
+}
+
+// envShebangInterpreter returns the command named after /usr/bin/env in an
+// executable's shebang. EvalSymlinks is important because managed commands are
+// commonly stable symlinks to scripts elsewhere in the install.
+func envShebangInterpreter(executable string) string {
+	resolved, err := filepath.EvalSymlinks(executable)
+	if err != nil {
+		return ""
+	}
+	data, err := os.ReadFile(resolved)
+	if err != nil {
+		return ""
+	}
+	line := string(data)
+	if i := strings.IndexByte(line, '\n'); i >= 0 {
+		line = line[:i]
+	}
+	fields := strings.Fields(strings.TrimSpace(strings.TrimPrefix(line, "#!")))
+	if len(fields) < 2 || filepath.Base(fields[0]) != "env" {
+		return ""
+	}
+	for _, field := range fields[1:] {
+		if strings.HasPrefix(field, "-") || strings.Contains(field, "=") {
+			continue
+		}
+		return field
+	}
+	return ""
+}
+
+func managedRuntimeDir(executable, interpreter string) string {
+	clean := filepath.Clean(executable)
+	separator := string(filepath.Separator) + "installs" + string(filepath.Separator)
+	i := strings.Index(clean, separator)
+	if i < 0 {
+		return ""
+	}
+	installRoot := clean[:i+len(separator)]
+	return filepath.Join(installRoot, interpreter, "latest", "bin")
+}
+
+func isExecutable(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir() && info.Mode()&0o111 != 0
+}
+
+func withPathPrefix(env []string, dir string) []string {
 	currentPath := os.Getenv("PATH")
 	for _, entry := range filepath.SplitList(currentPath) {
 		if entry == dir {
 			return env
 		}
 	}
-
 	path := dir
 	if currentPath != "" {
 		path += string(os.PathListSeparator) + currentPath
