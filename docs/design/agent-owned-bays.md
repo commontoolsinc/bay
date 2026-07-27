@@ -117,29 +117,10 @@ Materializing is what happens when the user wants to look:
                   (live claim only)
 ```
 
-That return arrow is conditional, and it is the part most easily gotten
-wrong: **it applies only when the claim is live.** A bay with no claim
-— every bay a human creates today — keeps its current behavior when
-its last surface goes away.
-
-| Bay state when last surface closes | Result |
-|---|---|
-| Live claim | returns to detached; `PendingCloseAt` stays 0 |
-| No claim | unchanged: 60s grace → `BayClose(force=false)` |
-| Stale claim | treated as unclaimed; takes the unclaimed path |
-
-The stale row matters: a claim that has expired stops protecting the
-bay from cleanup, so a dead agent's clean, landed bay is collected
-normally rather than accumulating as a locked orphan. Dirty or unlanded
-bays are still refused by the existing gates, so nothing unsafe is
-collected.
-
-The user-facing protections on the unclaimed path are unchanged — the
-`Option+W` last-surface double-tap still fires, then the grace window.
-Note that for a live-claim bay the double-tap now guards a
-non-destructive transition; leaving it uniform is simpler than making
-the same keystroke behave differently based on ownership, but it is a
-deliberate choice rather than a requirement.
+That return arrow is conditional — it applies only when the claim is
+live. A bay with no claim, which is every bay a human creates today,
+keeps its current behavior when its last surface goes away. The exact
+rule is specified in [Lifecycle rules](#materialize-and-de-materialize).
 
 Detached bays appear in `bay ls`, `bay tree`, and the `M-g` picker with
 a distinct marker. Detached is orthogonal to the existing `st=` values
@@ -247,31 +228,60 @@ Additive; empty zero-values are legacy-compatible. No schema bump.
 ```go
 type Bay struct {
     // ...
-    Detached bool   `json:"detached,omitempty"`
-    Owner    *Owner `json:"owner,omitempty"`
+    Owner *Owner `json:"owner,omitempty"`
 }
 ```
 
-`Detached` is derivable from "worktree bay with zero surfaces," but
-storing it explicitly keeps the never-materialized state distinct from
-the accidentally-emptied state, which is precisely the distinction the
-orphan finalizer needs.
+One field. **Detached is not stored** — it is derived:
+
+```text
+detached := bay.Type == BayTypeWorktree &&
+            len(bay.Surfaces) == 0 &&
+            bay.PendingCloseAt == 0
+```
+
+An earlier draft carried a `Detached bool` to distinguish the
+never-materialized state from the accidentally-emptied one. That
+justification does not survive the rule above: once a live claim
+returns a de-materialized bay to detached, those two states are
+deliberately identical, and every branch keys off claim liveness rather
+than history. `PendingCloseAt` already separates a detached bay from an
+orphan awaiting close, so the stored bool would be redundant state that
+can disagree with the surface list.
 
 ## Lifecycle rules
 
 ### Materialize and de-materialize
 
 - `bay go`, `bay shell`, `bay edit`, and `bay surface new` on a
-  detached bay create the tmux window and clear `Detached`.
+  detached bay create the tmux window. The bay is materialized by
+  virtue of having a surface; no flag is flipped.
 - Materializing an owned bay **defaults to a shell**. Spawning an agent
   surface would put two agents in one worktree editing the same files.
   `--agent` on an owned bay is an explicit override and should warn.
-- When the last surface of a bay with a **live claim** goes away, the
-  bay returns to detached: set `Detached = true` and leave
-  `PendingCloseAt` at 0. Unclaimed and stale-claimed bays are
-  untouched by this design and follow the existing grace-window path.
 
-That rule is the highest-risk correctness requirement in this design,
+When a bay's last surface goes away:
+
+| Claim state | Result |
+|---|---|
+| Live | returns to detached; leave `PendingCloseAt` at 0 |
+| None | unchanged: 60s grace → `BayClose(force=false)` |
+| Stale | treated as unclaimed; takes the unclaimed path |
+
+The stale row matters: an expired claim stops protecting the bay from
+cleanup, so a dead agent's clean, landed bay is collected normally
+rather than accumulating as a locked orphan. Dirty or unlanded bays are
+still refused by the existing gates, so nothing unsafe is collected.
+
+The user-facing protections on the unclaimed path are unchanged — the
+`Option+W` last-surface double-tap still fires, then the grace window.
+For a live-claim bay that double-tap now guards a non-destructive
+transition; leaving it uniform is simpler than making the same
+keystroke behave differently based on invisible ownership state, but it
+is a deliberate choice rather than a requirement.
+
+The live-claim row is the highest-risk correctness requirement in this
+design,
 and it is a narrow carve-out rather than a change to the default.
 Today, `internal/engine/sync.go:452-473` schedules
 `PendingCloseAt = now + 60s` whenever a sync pass strips a bay's last
