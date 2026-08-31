@@ -622,8 +622,10 @@ func (m *Mock) CapturePane(paneID string, lines int) (string, error) {
 	return p.capture, nil
 }
 
-func (m *Mock) RespawnPane(paneID string, cwd string, command string) error {
-	m.record("RespawnPane", paneID, cwd, command)
+func (m *Mock) RespawnPane(paneID string, cwd string, command string, env []string) error {
+	// env is recorded after the fixed args so existing assertions on
+	// Args[0:3] keep working.
+	m.record("RespawnPane", append([]string{paneID, cwd, command}, env...)...)
 	if _, ok := m.panes[paneID]; !ok {
 		return fmt.Errorf("pane %q not found", paneID)
 	}

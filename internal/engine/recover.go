@@ -164,7 +164,7 @@ func (e *Engine) recoverDockSurfaces(dock *manifest.Dock, outcome *recoverOutcom
 		if len(panes) > 0 {
 			s.Tmux.PaneID = panes[0].ID
 			if s.Command != nil && *s.Command != "" {
-				_ = e.Tmux.RespawnPane(panes[0].ID, cwd, *s.Command)
+				_ = e.Tmux.RespawnPane(panes[0].ID, cwd, *s.Command, nil)
 			}
 		}
 		s.Tmux.WindowID = winID
@@ -418,7 +418,7 @@ func (e *Engine) recoverSurfaceLaunch(dockName string, s *manifest.Surface, tmux
 		if err != nil {
 			return err
 		}
-		if err := e.Tmux.SendKeys(tmuxPaneID, agentCmd); err != nil {
+		if err := e.Tmux.SendKeys(tmuxPaneID, envPrefix(e.agentEnv(agentName))+agentCmd); err != nil {
 			return err
 		}
 	case manifest.SurfaceTypeCmd:
@@ -431,7 +431,7 @@ func (e *Engine) recoverSurfaceLaunch(dockName string, s *manifest.Surface, tmux
 		// No command needed.
 	case manifest.SurfaceTypeEditor:
 		if s.Command != nil && *s.Command != "" {
-			if err := e.Tmux.RespawnPane(tmuxPaneID, cwd, *s.Command); err != nil {
+			if err := e.Tmux.RespawnPane(tmuxPaneID, cwd, *s.Command, nil); err != nil {
 				return err
 			}
 		}

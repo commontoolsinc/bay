@@ -23,6 +23,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // integrationServer wraps a tmux server running on a private socket
@@ -336,5 +337,41 @@ func TestIntegration_SessionOptionsTargetExact(t *testing.T) {
 	}
 	if got, err := r.GetSessionOption("loom-old", "@bay-test-marker"); err != nil || got != "VALUE-OLD" {
 		t.Errorf("loom-old marker = %q, err=%v; want VALUE-OLD", got, err)
+	}
+}
+
+// TestIntegration_RespawnPaneSetsEnv pins the -e flag against real tmux:
+// the variable must reach the respawned process, and a value containing
+// a space must survive intact. That second half is the reason the launch
+// path uses -e rather than prefixing the command string — with -e there
+// is no shell quoting to get wrong. See docs/design/agent-accounts.md.
+func TestIntegration_RespawnPaneSetsEnv(t *testing.T) {
+	s, _, rootPaneID := setupSession(t)
+	realTmux := s.realImplementation(t)
+
+	dir, err := os.MkdirTemp("/tmp", "bayenv-")
+	if err != nil {
+		t.Fatalf("mkdir tmp: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	outPath := filepath.Join(dir, "out")
+
+	const want = "two words"
+	cmd := fmt.Sprintf("printf '%%s' \"$BAY_TEST_VAR\" > %s", outPath)
+	if err := realTmux.RespawnPane(rootPaneID, "/tmp", cmd, []string{"BAY_TEST_VAR=" + want}); err != nil {
+		t.Fatalf("RespawnPane: %v", err)
+	}
+
+	// The respawned process writes and exits; poll briefly for the file.
+	var got []byte
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if got, err = os.ReadFile(outPath); err == nil && len(got) > 0 {
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if string(got) != want {
+		t.Errorf("BAY_TEST_VAR in respawned pane = %q, want %q", string(got), want)
 	}
 }
