@@ -37,7 +37,11 @@ type Interface interface {
 	KillPane(paneID string) error
 	SendKeys(paneID string, keys string) error
 	CapturePane(paneID string, lines int) (string, error)
-	RespawnPane(paneID string, cwd string, command string) error
+	// RespawnPane replaces the pane's process with command. env holds
+	// KEY=VALUE strings passed to tmux as -e, which sets them in the
+	// respawned process directly rather than through shell quoting;
+	// pass nil for surfaces that need no environment of their own.
+	RespawnPane(paneID string, cwd string, command string, env []string) error
 	ListPanes(windowID string) ([]Pane, error)
 	GetPanePID(paneID string) (int, error)
 

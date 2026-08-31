@@ -766,3 +766,66 @@ func TestResolveAgent_ProfileNameWithOwnCommandStandsAlone(t *testing.T) {
 		t.Errorf("launch_args = %v, want none — profile pin must not leak into a standalone definition", info.LaunchArgs)
 	}
 }
+
+// TestResolveAgent_EnvMergesThroughExtends pins the rule that a profile
+// extends its base's environment rather than replacing it. The failure
+// this guards against is specific: a model-pinned profile built on an
+// account agent silently losing CLAUDE_CONFIG_DIR, so the agent
+// authenticates as the wrong account while looking correct.
+func TestResolveAgent_EnvMergesThroughExtends(t *testing.T) {
+	cfg := &Config{
+		Agents: map[string]AgentConfig{
+			"work": {
+				Command: "claude",
+				Env: map[string]string{
+					"CLAUDE_CONFIG_DIR": "~/.claude-work",
+					"SHARED":            "base",
+				},
+			},
+			"work-opus": {
+				Extends: "work",
+				Env:     map[string]string{"SHARED": "profile"},
+			},
+		},
+	}
+
+	info, ok := cfg.ResolveAgent("work-opus")
+	if !ok {
+		t.Fatal("work-opus should resolve")
+	}
+	if got := info.Env["CLAUDE_CONFIG_DIR"]; got != "~/.claude-work" {
+		t.Errorf("CLAUDE_CONFIG_DIR = %q, want the base's value to survive the profile", got)
+	}
+	if got := info.Env["SHARED"]; got != "profile" {
+		t.Errorf("SHARED = %q, want profile to win over base", got)
+	}
+
+	// Resolution must not mutate the config it read from, or the next
+	// lookup of the base sees the profile's overrides.
+	if got := cfg.Agents["work"].Env["SHARED"]; got != "base" {
+		t.Errorf("base env mutated by profile resolution: SHARED = %q, want base", got)
+	}
+}
+
+// TestResolveAgent_EnvOnBuiltinProfile covers a user entry that adjusts
+// a same-named built-in profile (the effectiveAgentConfig path) rather
+// than defining its own agent.
+func TestResolveAgent_EnvOnBuiltinProfile(t *testing.T) {
+	cfg := &Config{
+		Agents: map[string]AgentConfig{
+			"opus": {Env: map[string]string{"CLAUDE_CONFIG_DIR": "/tmp/alt"}},
+		},
+	}
+
+	info, ok := cfg.ResolveAgent("opus")
+	if !ok {
+		t.Fatal("opus should resolve")
+	}
+	if got := info.Env["CLAUDE_CONFIG_DIR"]; got != "/tmp/alt" {
+		t.Errorf("CLAUDE_CONFIG_DIR = %q, want /tmp/alt", got)
+	}
+	// The built-in profile's model pin must survive the env-only override.
+	if len(info.LaunchArgs) == 0 {
+		t.Errorf("launch args = %v, want the built-in opus model pin retained", info.LaunchArgs)
+	}
+}

@@ -3,8 +3,10 @@ package engine
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
+	"github.com/commontoolsinc/bay/internal/config"
 	"github.com/commontoolsinc/bay/internal/manifest"
 )
 
@@ -73,6 +75,56 @@ func (e *Engine) buildAgentCommand(agentName string, agentArgs, launchArgs []str
 		parts = append(parts, quoteArgs(launchArgs)...)
 	}
 	return strings.Join(parts, " "), nil
+}
+
+// agentEnv returns the agent's configured environment as KEY=VALUE
+// strings, sorted by key. Sorting keeps the tmux command line and the
+// typed resume prefix byte-identical across runs — Go map iteration
+// order is randomized, so without it two otherwise-identical launches
+// would differ and assertions on them would flake.
+//
+// Values are expanded with config.ExpandPath so a leading ~ works in
+// paths like CLAUDE_CONFIG_DIR. Unlike launch args, this applies on
+// resume too: see the AgentInfo doc comment.
+func (e *Engine) agentEnv(agentName string) []string {
+	info, ok := e.Config.ResolveAgent(agentName)
+	if !ok || len(info.Env) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(info.Env))
+	for k := range info.Env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	env := make([]string, 0, len(keys))
+	for _, k := range keys {
+		env = append(env, k+"="+config.ExpandPath(info.Env[k]))
+	}
+	return env
+}
+
+// envPrefix renders env as an `env` command prefix, for the resume path
+// where the command is typed into a live shell instead of being handed
+// to tmux (which takes -e and needs no quoting).
+//
+// It emits `env K=V cmd` rather than the shorter `K=V cmd` because the
+// bare form is a POSIX-shell assignment that fish rejects outright, and
+// this line is typed into whatever interactive shell the pane happens to
+// be running. Only the value is quoted: quoting the whole KEY=VALUE word
+// would make the shell read it as a command name, not an assignment.
+func envPrefix(env []string) string {
+	parts := make([]string, 0, len(env))
+	for _, kv := range env {
+		key, value, found := strings.Cut(kv, "=")
+		if !found || key == "" {
+			continue
+		}
+		parts = append(parts, key+"="+quoteArgs([]string{value})[0])
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "env " + strings.Join(parts, " ") + " "
 }
 
 // shellSafeRe matches args that need no quoting when joined into a

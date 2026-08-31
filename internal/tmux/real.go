@@ -293,10 +293,13 @@ func (r *Real) CapturePane(paneID string, lines int) (string, error) {
 	return out, nil
 }
 
-func (r *Real) RespawnPane(paneID string, cwd string, command string) error {
+func (r *Real) RespawnPane(paneID string, cwd string, command string, env []string) error {
 	// -k kills the pane's process if still alive before respawning.
 	// Without -k, respawn-pane fails on live panes with "pane still active".
 	args := []string{"respawn-pane", "-k", "-t", paneID, "-c", cwd}
+	for _, kv := range env {
+		args = append(args, "-e", kv)
+	}
 	if command != "" {
 		args = append(args, command)
 	}

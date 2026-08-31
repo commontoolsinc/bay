@@ -99,7 +99,7 @@ func (e *Engine) DockEditorAdd(dockName, editorCmd, editPath string) error {
 
 	// Launch the editor.
 	fullCmd := editorCmd + " " + editPath
-	_ = e.Tmux.RespawnPane(paneID, editPath, fullCmd)
+	_ = e.Tmux.RespawnPane(paneID, editPath, fullCmd, nil)
 
 	// Record in manifest.
 	return e.withManifest(func(m *manifest.Manifest) error {

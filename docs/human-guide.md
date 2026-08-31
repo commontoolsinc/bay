@@ -388,6 +388,7 @@ args = ["--flag"]                              # args on every invocation
 launch_args = ["--profile", "work"]            # args on fresh launch only
 resume_args = "--resume"
 project_file = ".my-agent.md"
+env = { MY_AGENT_HOME = "~/.my-agent" }        # environment for the agent process
 ```
 
 `args` apply to every invocation, including resume (recover,
@@ -395,6 +396,23 @@ undo-close restore). `launch_args` apply only to fresh launches —
 that's where session-start flags like `--model` belong. Claude Code
 restores a resumed session's own model, so a `--model` replayed on
 resume would override any model you switched to inside the session.
+
+`env` sets environment variables for the agent process. It applies to
+every invocation, including resume — like `args`, and for a stronger
+reason: environment usually carries *identity* rather than preference.
+The motivating case is `CLAUDE_CONFIG_DIR`, which selects which Claude
+account the agent authenticates as:
+
+```toml
+[agents.work]
+extends = "claude"
+env = { CLAUDE_CONFIG_DIR = "~/.claude-work" }
+```
+
+`bay new --agent work` then launches Claude against that account's
+credentials. Values beginning with `~/` are expanded. An agent that
+resumed without its `env` would silently reattach to your default
+account, so bay replays it on every launch path.
 
 Each list element is one argument. Bay shell-quotes elements
 containing spaces or other special characters, so a multi-word value
@@ -427,14 +445,16 @@ extends = "claude"
 launch_args = ["--model", "fable", "--fast"]
 ```
 
-A profile inherits the base's command, args, `resume_args`, and
-`project_file`; its `args`/`launch_args` are appended to the base's,
-and other fields it sets override. Only one level — a profile can't
+A profile inherits the base's command, args, `resume_args`,
+`project_file`, and `env`; its `args`/`launch_args` are appended to the
+base's, its `env` is merged key by key over the base's (so a profile
+that pins a model keeps the base's account), and other fields it sets
+override. Only one level — a profile can't
 extend another profile (including the built-in ones; extend `claude`
 directly instead).
 
 Built-in profiles are yours to adjust: a same-named config entry that
-sets only args/launch_args/resume_args/project_file tweaks the
+sets only args/launch_args/resume_args/project_file/env tweaks the
 profile (fields you set win, the rest keep the profile's defaults);
 one that sets `command` or `extends` replaces it entirely; and
 `disabled = true` removes it:

@@ -41,6 +41,11 @@ type AgentConfig struct {
 	LaunchArgs  []string `toml:"launch_args,omitempty"`
 	ResumeArgs  string   `toml:"resume_args,omitempty"`
 	ProjectFile string   `toml:"project_file,omitempty"`
+	// Env sets environment variables for the agent process. Values
+	// starting with ~/ are expanded. The motivating case is
+	// CLAUDE_CONFIG_DIR, which selects which account an agent
+	// authenticates as — see docs/design/agent-accounts.md.
+	Env map[string]string `toml:"env,omitempty"`
 	// Disabled removes the agent from resolution — use it to drop a
 	// built-in profile (or any agent) without redefining it.
 	Disabled bool `toml:"disabled,omitempty"`
@@ -53,12 +58,19 @@ type AgentConfig struct {
 // where session-start flags like --model belong. Claude Code restores
 // a resumed session's own model; replaying --model on resume would
 // clobber any in-session switch. See docs/design/model-profiles.md.
+//
+// Env, like Args, applies to every invocation including resume. It
+// carries identity — which account the agent authenticates as — not a
+// launch preference, and an agent that resumes into a different account
+// than it started in looks correct while spending the wrong account's
+// quota. See docs/design/agent-accounts.md.
 type AgentInfo struct {
 	Command     string
 	Args        []string
 	LaunchArgs  []string
 	ResumeArgs  string
 	ProjectFile string
+	Env         map[string]string
 }
 
 // KnownAgents are built-in agent definitions, similar to how editors
@@ -227,6 +239,9 @@ func effectiveAgentConfig(name string, ac AgentConfig) AgentConfig {
 	if ac.ProjectFile != "" {
 		merged.ProjectFile = ac.ProjectFile
 	}
+	if len(ac.Env) > 0 {
+		merged.Env = ac.Env
+	}
 	return merged
 }
 
@@ -259,6 +274,7 @@ func (c *Config) resolveExtendedAgent(ac AgentConfig) (AgentInfo, bool) {
 	}
 	info.Args = appendArgs(base.Args, ac.Args)
 	info.LaunchArgs = appendArgs(base.LaunchArgs, ac.LaunchArgs)
+	info.Env = mergeEnv(base.Env, ac.Env)
 	if ac.ResumeArgs != "" {
 		info.ResumeArgs = ac.ResumeArgs
 	}
@@ -324,6 +340,24 @@ func appendArgs(base, extra []string) []string {
 	return append(append([]string(nil), base...), extra...)
 }
 
+// mergeEnv overlays extra onto base key by key, returning a new map so
+// neither input is mutated. Profiles extend a base agent's environment
+// rather than replacing it, mirroring how args append: a profile that
+// pins a model must not silently drop the base's account selection.
+func mergeEnv(base, extra map[string]string) map[string]string {
+	if len(base) == 0 && len(extra) == 0 {
+		return nil
+	}
+	merged := make(map[string]string, len(base)+len(extra))
+	for k, v := range base {
+		merged[k] = v
+	}
+	for k, v := range extra {
+		merged[k] = v
+	}
+	return merged
+}
+
 func (c *Config) agentInfoFromConfig(name string, ac AgentConfig) AgentInfo {
 	info := AgentInfo{
 		Command:     ac.Command,
@@ -331,6 +365,7 @@ func (c *Config) agentInfoFromConfig(name string, ac AgentConfig) AgentInfo {
 		LaunchArgs:  ac.LaunchArgs,
 		ResumeArgs:  ac.ResumeArgs,
 		ProjectFile: ac.ProjectFile,
+		Env:         ac.Env,
 	}
 	// Fill in gaps from built-in if the config only partially overrides.
 	if builtin, ok := KnownAgents[CanonicalAgentName(name)]; ok {
@@ -348,6 +383,9 @@ func (c *Config) agentInfoFromConfig(name string, ac AgentConfig) AgentInfo {
 		}
 		if info.ProjectFile == "" {
 			info.ProjectFile = builtin.ProjectFile
+		}
+		if len(info.Env) == 0 {
+			info.Env = builtin.Env
 		}
 	}
 	return info

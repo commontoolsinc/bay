@@ -575,7 +575,7 @@ func TestRespawnPane(t *testing.T) {
 	winID, _ := m.NewWindow("work", "editor", "/home")
 	panes, _ := m.ListPanes(winID)
 	paneID := panes[0].ID
-	if err := m.RespawnPane(paneID, "/tmp", "bash"); err != nil {
+	if err := m.RespawnPane(paneID, "/tmp", "bash", nil); err != nil {
 		t.Fatalf("RespawnPane: %v", err)
 	}
 	found := false
