@@ -1263,6 +1263,16 @@ you need a separate dock.
 Run `bay setup` again. It replaces the bay keybinding block in
 `~/.tmux.conf` while preserving your other settings.
 
+**"Bay acted on, or reported, the wrong bay or dock."**
+Bay works out which dock you are in by asking tmux for the current
+session. Asked without a target, tmux answers with the most recently
+active session on the server — including a detached one just created by
+unrelated background tooling — which is not necessarily the session bay
+was invoked from. Bay now anchors that question to its own session, so
+the answer no longer depends on what else is running. Upgrade to pick
+it up; no `bay setup` re-run is needed, the fix is entirely in the
+binary.
+
 **"What's the ~ window?"**
 A legacy placeholder that keeps a tmux session alive when bay cannot
 open a real surface. Checkout-backed docks now use a `home` shell for

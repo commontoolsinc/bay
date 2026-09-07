@@ -369,28 +369,76 @@ func (r *Real) GetPaneCursorY(paneID string) (int, error) {
 
 // --- Current context ---
 
-func (r *Real) CurrentSession() (string, error) {
-	out, err := run("display-message", "-p", "#{session_name}")
+// currentTarget returns a tmux target anchoring "current" queries to
+// this process's own tmux context, or "" when there is nothing to
+// anchor to.
+//
+// An untargeted `display-message -p` does NOT report the session that
+// invoked bay. With no client context tmux falls back to the most
+// recently active session on the server — attached or not — so any
+// unrelated session that happens to be newer silently captures the
+// answer. Background tooling that spawns detached sessions (an agent
+// review harness, a build script) reliably outranks the user's dock.
+//
+// That fallback reaches every keybinding: bay's bindings run via tmux
+// run-shell, which exports no TMUX_PANE, so an unanchored query is
+// resolved against whatever session sorted first. The user presses a
+// key in one dock and bay acts on another, or errors out with "not in
+// a bay context" and the binding's trailing `|| true` swallows it.
+//
+// Two anchors, most precise first:
+//
+//   - $TMUX_PANE — an interactive shell's own pane.
+//   - $TMUX ("socket,pid,session-id") — run-shell propagates the
+//     session the binding fired in, so the trailing field identifies
+//     the pressing client's session even with no pane in the
+//     environment.
+func currentTarget() string {
+	if pane := os.Getenv("TMUX_PANE"); pane != "" {
+		return pane
+	}
+	// Take the last field rather than index 2: a socket path may itself
+	// contain a comma. The session ID is always last and always numeric.
+	if parts := strings.Split(os.Getenv("TMUX"), ","); len(parts) >= 3 {
+		if id := parts[len(parts)-1]; id != "" {
+			if _, err := strconv.Atoi(id); err == nil {
+				return "$" + id
+			}
+		}
+	}
+	return ""
+}
+
+// currentFormat evaluates a tmux format against currentTarget().
+//
+// On failure it retries untargeted. A stale $TMUX_PANE (its pane
+// killed out from under a still-running shell) is the case that needs
+// it, and the retry cannot resurrect the bug currentTarget() exists to
+// fix: there the anchored query succeeds and simply returns the right
+// answer.
+func currentFormat(format string) (string, error) {
+	if target := currentTarget(); target != "" {
+		if out, err := run("display-message", "-t", target, "-p", format); err == nil {
+			return strings.TrimSpace(out), nil
+		}
+	}
+	out, err := run("display-message", "-p", format)
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(out), nil
+}
+
+func (r *Real) CurrentSession() (string, error) {
+	return currentFormat("#{session_name}")
 }
 
 func (r *Real) CurrentWindowID() (string, error) {
-	out, err := run("display-message", "-p", "#{window_id}")
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(out), nil
+	return currentFormat("#{window_id}")
 }
 
 func (r *Real) CurrentPaneID() (string, error) {
-	out, err := run("display-message", "-p", "#{pane_id}")
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(out), nil
+	return currentFormat("#{pane_id}")
 }
 
 // --- Client display ---

@@ -338,3 +338,79 @@ func TestIntegration_SessionOptionsTargetExact(t *testing.T) {
 		t.Errorf("loom-old marker = %q, err=%v; want VALUE-OLD", got, err)
 	}
 }
+
+// TestIntegration_CurrentSessionAnchoring pins the tmux behavior that
+// makes currentTarget() necessary.
+//
+// With no client context, tmux resolves an untargeted query against the
+// most recently active session on the server — not the session that
+// invoked the command. bay's keybindings run via run-shell, which
+// exports TMUX but no TMUX_PANE, so before anchoring, a key pressed in
+// one dock resolved to whichever session happened to be newest
+// (including a detached one spawned by unrelated background tooling).
+func TestIntegration_CurrentSessionAnchoring(t *testing.T) {
+	s := startTmux(t)
+	s.newDetachedSession("alpha")
+	// beta is created second, so it is the most recently active session
+	// and wins any untargeted resolution.
+	s.newDetachedSession("beta")
+
+	alphaID := s.mustCmd("display-message", "-t", "alpha", "-p", "#{session_id}")
+	if !strings.HasPrefix(alphaID, "$") {
+		t.Fatalf("unexpected session id %q", alphaID)
+	}
+
+	r := s.realImplementation(t)
+
+	// Reproduce the run-shell environment: TMUX names alpha's session,
+	// TMUX_PANE is absent.
+	t.Setenv("TMUX", fmt.Sprintf("%s,1234,%s", s.socketPath, strings.TrimPrefix(alphaID, "$")))
+	t.Setenv("TMUX_PANE", "")
+
+	// Ground truth: untargeted resolution picks beta, not the invoking
+	// session. If tmux ever stops doing this, the fix is no longer
+	// load-bearing and this test should be the thing that says so.
+	if got := s.mustCmd("display-message", "-p", "#{session_name}"); got != "beta" {
+		t.Errorf("untargeted display-message = %q, want %q "+
+			"(tmux no longer prefers the newest session)", got, "beta")
+	}
+
+	// The fix: anchored to TMUX's session, bay sees alpha.
+	got, err := r.CurrentSession()
+	if err != nil {
+		t.Fatalf("CurrentSession: %v", err)
+	}
+	if got != "alpha" {
+		t.Errorf("CurrentSession() = %q, want %q", got, "alpha")
+	}
+}
+
+// TestIntegration_CurrentPaneIDAnchoring covers the destructive edge of
+// the same bug: `bay close self` / `bay sf close self` resolve the
+// target from the current pane, so an unanchored answer closes a
+// surface in the wrong session.
+func TestIntegration_CurrentPaneIDAnchoring(t *testing.T) {
+	s := startTmux(t)
+	s.newDetachedSession("alpha")
+	alphaPane := s.listPaneIDs(s.firstWindowID("alpha"))[0]
+	s.newDetachedSession("beta")
+	betaPane := s.listPaneIDs(s.firstWindowID("beta"))[0]
+
+	r := s.realImplementation(t)
+
+	// The run-shell environment again: no TMUX_PANE to fall back on.
+	// (tmux honors TMUX_PANE natively when it is set, so anchoring only
+	// has to earn its keep when it is absent — exactly the keybinding
+	// case, and exactly when `close self` is destructive.)
+	alphaID := s.mustCmd("display-message", "-t", "alpha", "-p", "#{session_id}")
+	t.Setenv("TMUX", fmt.Sprintf("%s,1234,%s", s.socketPath, strings.TrimPrefix(alphaID, "$")))
+	t.Setenv("TMUX_PANE", "")
+
+	got, err := r.CurrentPaneID()
+	if err != nil {
+		t.Fatalf("CurrentPaneID: %v", err)
+	}
+	if got != alphaPane {
+		t.Errorf("CurrentPaneID() = %q, want %q (beta's pane is %q)", got, alphaPane, betaPane)
+	}
+}
