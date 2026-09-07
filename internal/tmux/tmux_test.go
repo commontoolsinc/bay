@@ -696,3 +696,64 @@ func TestCallTracking(t *testing.T) {
 		t.Errorf("expected call[3] ListSessions, got %q", m.Calls[3].Method)
 	}
 }
+
+// --- currentTarget tests ---
+
+// currentTarget decides what "current" means for CurrentSession /
+// CurrentWindowID / CurrentPaneID. An untargeted tmux query resolves
+// against the most recently active session on the server, which is not
+// necessarily the one that invoked bay, so these anchors are what keep
+// keybindings acting on the dock the user pressed the key in.
+func TestCurrentTarget(t *testing.T) {
+	tests := []struct {
+		name     string
+		tmux     string
+		tmuxPane string
+		want     string
+	}{
+		{
+			name:     "pane wins when both are set",
+			tmux:     "/tmp/tmux-501/default,29529,1",
+			tmuxPane: "%241",
+			want:     "%241",
+		},
+		{
+			name: "falls back to the session id from TMUX",
+			tmux: "/tmp/tmux-501/default,29529,1",
+			want: "$1",
+		},
+		{
+			name: "socket path containing a comma still yields the session",
+			tmux: "/tmp/od,d/default,29529,7",
+			want: "$7",
+		},
+		{
+			name: "session id zero is a valid target",
+			tmux: "/tmp/tmux-501/default,29529,0",
+			want: "$0",
+		},
+		{
+			name: "no anchor outside tmux",
+			want: "",
+		},
+		{
+			name: "malformed TMUX yields no anchor",
+			tmux: "/tmp/tmux-501/default,29529",
+			want: "",
+		},
+		{
+			name: "non-numeric session field yields no anchor",
+			tmux: "/tmp/tmux-501/default,29529,abc",
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("TMUX", tt.tmux)
+			t.Setenv("TMUX_PANE", tt.tmuxPane)
+			if got := currentTarget(); got != tt.want {
+				t.Errorf("currentTarget() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
