@@ -1302,6 +1302,17 @@ you need a separate dock.
 Run `bay setup` again. It replaces the bay keybinding block in
 `~/.tmux.conf` while preserving your other settings.
 
+**"Bay's keys do nothing in this tmux session."**
+Bay's command keys are live only in the sessions bay manages, so in
+your own session — including one that links bay windows in as views —
+they are meant to do nothing: the keystroke goes to the application.
+Inside a dock, the same symptom means that session has lost its
+`@bay-session-id` marker, which happens when something other than bay
+recreated it. The tell is that navigation (`Option+h/l`) still works
+while the command keys are silent. `bay doctor` names the dock; `bay
+recover` re-tags it. Note that a *wrong-target* symptom — the keys fire
+but act on another dock — is the next entry, not this one.
+
 **"Bay acted on, or reported, the wrong bay or dock."**
 Bay works out which dock you are in by asking tmux for the current
 session. Asked without a target, tmux answers with the most recently

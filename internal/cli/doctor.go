@@ -96,7 +96,9 @@ func runDoctor(eng *engine.Engine, w io.Writer) {
 					checkDockAwareness(eng, dock, path, w)
 				}
 			}
-			checkSessionMarker(eng, dock, w)
+			if !checkSessionMarker(eng, dock, w) {
+				ok = false
+			}
 			for j := range dock.Bays {
 				bay := &dock.Bays[j]
 				if bay.Worktree != nil && bay.Worktree.Branch != "" {
@@ -196,22 +198,28 @@ func runDoctor(eng *engine.Engine, w io.Writer) {
 }
 
 // checkSessionMarker reports a live dock session that bay has not
-// tagged with @bay-session-id. Bay's keybindings are scoped to that
-// marker, so an untagged session is one where Option+c and friends
-// fall through to the application instead of running bay. It happens
-// when a session bay owns is recreated by something else — a restored
-// tmux server, or a hand-made session with a dock's name — and
-// `bay recover` re-tags it.
-func checkSessionMarker(eng *engine.Engine, dock *manifest.Dock, w io.Writer) {
+// tagged with @bay-session-id, returning false when it warns. Bay's
+// keybindings are scoped to that marker, so an untagged session is one
+// where Option+c and friends fall through to the application instead
+// of running bay — a whole dock's command keys dead while the
+// navigation keys keep working. It happens when a session bay owns is
+// recreated by something else (a restored tmux server, or a hand-made
+// session with a dock's name); `bay recover` re-tags it.
+//
+// Warned rather than noted: the symptom is easy to misread as bay
+// failing to resolve the dock, and this is the line that tells the two
+// apart.
+func checkSessionMarker(eng *engine.Engine, dock *manifest.Dock, w io.Writer) bool {
 	exists, err := eng.Tmux.HasSession(dock.Name)
 	if err != nil || !exists {
-		return
+		return true
 	}
 	if marker, _ := eng.Tmux.GetSessionOption(dock.Name, tmux.SessionIDOption); marker != "" {
-		return
+		return true
 	}
-	fmt.Fprintf(w, "[INFO] dock %q: tmux session not tagged %s — bay keybindings won't fire there; run `bay recover`\n",
+	fmt.Fprintf(w, "[WARN] dock %q: tmux session not tagged %s — bay's command keys are dead there (navigation keys still work); run `bay recover`\n",
 		dock.Name, tmux.SessionIDOption)
+	return false
 }
 
 // checkDockAwareness prints INFO lines for missing bay-awareness setup
