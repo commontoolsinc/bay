@@ -870,10 +870,19 @@ Two consequences worth knowing:
 - **A key bay owns is bay's, in scope or out.** If you had a personal
   binding on `Option+c` earlier in `~/.tmux.conf`, bay's block replaces
   it; outside a bay session `Option+c` reaches the application rather
-  than reviving your binding. To take a key back for yourself, rebind
-  it *after* bay's block — your binding then wins everywhere. To keep
-  bay's command on a key but leave it bound in every session, pin the
-  old line with `# bay-keep:` (below).
+  than reviving your binding. Scoping keeps bay's *command* out of your
+  other sessions; it does not hand the key back. Your options, in full:
+  - Rebind the key *after* bay's block. Yours wins everywhere — which
+    includes inside docks, so you give up bay's command on that key.
+  - Keep both, by writing the same test bay uses into your own line
+    after bay's block:
+
+    ```
+    bind -n M-c if -F '#{@bay-session-id}' { run-shell 'bay new -q || true' } { <your command> }
+    ```
+
+  - Keep bay's command but leave it bound in every session: pin the
+    unscoped line with `# bay-keep:` (below).
 - **The scoping follows the session, not the window.** The same bay
   window viewed through its own dock runs bay's keys; viewed through a
   session bay doesn't manage, it doesn't.
@@ -893,11 +902,13 @@ pane, or confining the command keys to bay-managed sessions), `bay
 setup` on re-run detects keys whose binding has drifted from canonical
 and prompts to update them in place. A block installed before bay
 scoped its keys shows up here: the commands are right, but they fire
-in every tmux session. Opt out per-key by adding `# bay-keep: M-s` to
-the bay block — bay will stop asking about that key, and `bay doctor`
-will stop reporting it as out of date. That is also how you keep a bay
-command bound globally on purpose: leave the unscoped line in place
-and pin it. Chord sub-table bindings use a `table:key` form, e.g.
+in every tmux session. Only lines bay wrote itself are offered — a key
+whose command you changed is left as it is. Opt out per-key by adding
+`# bay-keep: M-s` to the bay block — bay will stop asking about that
+key, and `bay doctor` will stop reporting it as out of date. That is
+also how you keep a bay command bound globally on purpose: leave the
+unscoped line in place and pin it. Chord sub-table bindings use a
+`table:key` form, e.g.
 `# bay-keep: bay-agent:c bay-agent-bay:x bay-home:Enter`.
 
 After writing changes, `bay setup` offers to reload `~/.tmux.conf` in

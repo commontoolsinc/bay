@@ -486,6 +486,7 @@ type parsedBind struct {
 	table  string // "" = root table (`-n`); else the `-T <table>` name
 	key    string
 	cmd    string // command the binding runs, with bay's session scoping unwrapped
+	tail   string // whole tmux command after the key, scoping unwrapped, nothing extracted
 	scoped bool   // the line guards the command with bay's session-scope conditional
 }
 
@@ -503,7 +504,10 @@ func (pb parsedBind) id() string { return bindID(pb.table, pb.key) }
 //
 // For bay-invoking bindings the returned command is the quoted shell
 // contents (e.g. `bay new -q || true`); for tmux-native bindings
-// it's the raw tmux command (e.g. `previous-window`, `select-pane -L`).
+// it's the quoted region when there is one (a display-message hint) and
+// otherwise the raw tmux command (e.g. `previous-window`). `tail` keeps
+// the command whole, without that extraction, for callers that need to
+// recognize a line bay wrote rather than the command inside it.
 func parseBindLine(line string) (pb parsedBind, ok bool) {
 	trimmed := strings.TrimSpace(line)
 	if strings.HasPrefix(trimmed, "#") {
@@ -545,6 +549,7 @@ func parseBindLine(line string) (pb parsedBind, ok bool) {
 		pb.scoped = true
 		rest = then
 	}
+	pb.tail = rest
 	pb.cmd = rest
 	if open := strings.IndexAny(rest, "'\""); open >= 0 {
 		close := strings.LastIndexByte(rest, rest[open])
@@ -775,12 +780,30 @@ func canonicalCommandMatches(cmd, canonical string) bool {
 	return cmd == canonical || strings.HasPrefix(cmd, canonical+" ||")
 }
 
+// bayWroteCommandTail reports whether tail — a bind line's whole command,
+// scope guard already unwrapped — is what bay itself writes for kb.
+//
+// The comparison is on the exact bytes, not the command extracted out of
+// the quoting, because this is the gate on rewriting a user's line: only
+// a line bay produced verbatim may be migrated in place. `bay shell
+// --pane` run through a different tmux verb, or a bay command a user
+// edited, is theirs to keep.
+//
+// Two spellings count as bay's: the tail as written on a pre-scoping
+// line, and the same command as it appears inside a scope guard, where
+// ScopeBinding rewrites `\;` to `;` (inside `{ }` tmux lexes a bare `;`
+// as the command separator).
+func bayWroteCommandTail(tail string, kb bayKeybinding) bool {
+	want := kb.tmuxCommand()
+	return tail == want || tail == strings.ReplaceAll(want, `\;`, ";")
+}
+
 // bayKeybindingMismatch records a canonical key whose active binding
 // has drifted from what bay ships — the silent-drift case that appears
 // when bay ships a canonical change and the user hasn't re-run setup.
 // Two kinds of drift: the key runs a bay command that exists in the
 // canonical set but isn't the canonical one for that key, or it runs
-// the right command with the wrong session scoping.
+// bay's own line for that key with the wrong session scoping.
 type bayKeybindingMismatch struct {
 	canonical bayKeybinding
 	userCmd   string
@@ -792,8 +815,8 @@ type bayKeybindingMismatch struct {
 // session scoping. Keys pinned via `# bay-keep:` are skipped, which is
 // also how a user keeps a bay binding global on purpose; truly-missing
 // keys are left for missingBindings. We only flag command drift
-// against bay's own canonical set so unrelated user rebinds aren't
-// touched.
+// against bay's own canonical set, and scoping drift only on a line bay
+// wrote verbatim, so unrelated user rebinds aren't touched.
 func mismatchedBindings(block string, kbs []bayKeybinding) []bayKeybindingMismatch {
 	active := activeBindings(block)
 	kept := keptKeys(block)
@@ -811,12 +834,19 @@ func mismatchedBindings(block string, kbs []bayKeybinding) []bayKeybindingMismat
 		if !ok {
 			continue
 		}
-		// Scoping drift is checked before the command, and on its own:
-		// a binding installed before bay scoped its keys runs the right
-		// command in every session, and rewriting the line is what
-		// confines it to bay's own.
-		if bound.scoped != kb.scoped() {
-			out = append(out, bayKeybindingMismatch{canonical: kb, userCmd: bound.cmd, scoping: true})
+		// Scope migration applies only to lines bay wrote itself. A
+		// binding installed before bay scoped its keys carries the
+		// canonical command verbatim and runs it in every session;
+		// rewriting the line is what confines it to bay's own. Anything
+		// else on the key — a user's own command, or a bay command they
+		// edited — is command drift at most, and the checks below decide
+		// that. Testing the command first matters: a scoping prompt says
+		// nothing about the command, but accepting it rewrites the whole
+		// line, so it must never be offered for a line bay didn't write.
+		if bayWroteCommandTail(bound.tail, kb) {
+			if bound.scoped != kb.scoped() {
+				out = append(out, bayKeybindingMismatch{canonical: kb, userCmd: bound.cmd, scoping: true})
+			}
 			continue
 		}
 		userCmd := bound.cmd
